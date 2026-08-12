@@ -23,11 +23,25 @@ const DARK = `latchlive-dark-${TAG}`;
 // POWER_WAIT_TICKS is 1800 (30s) plus the 60-tick poll; allow margin for a loaded cluster.
 const DEFERRAL_WAIT_MS = 42000;
 
+// The Lua is flattened to ONE line before it is sent. JSON.stringify turns real newlines into literal
+// \n escape sequences, which arrive at Factorio outside any Lua string and are a syntax error — the
+// command then fails silently and every downstream read returns "". None of the Lua below uses --
+// comments, so joining on whitespace is safe.
 const rcon = (lua) => execFileSync("docker", [
 	"exec", "surface-export-controller", "sh", "-c",
 	`npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error `
-	+ `instance send-rcon "${INSTANCE}" ${JSON.stringify(lua)}`,
+	+ `instance send-rcon "${INSTANCE}" ${JSON.stringify("/sc " + lua.replace(/\s*\n\s*/g, " ").trim())}`,
 ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).trim();
+
+// An empty RCON reply means the command did not run. Treating that as data is how a broken probe
+// reports success — every assertion below goes through here first.
+const answered = (value, label) => {
+	if (value === "" || value === undefined) {
+		check(false, label, "RCON returned NOTHING — the command did not execute; this is not a result");
+		return false;
+	}
+	return true;
+};
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -138,8 +152,16 @@ async function main() {
 
 		const litStatus = rcon(statusLua(LIT));
 		const darkStatus = rcon(statusLua(DARK));
+		if (!answered(litStatus, "powered decider status readable")) { return; }
+		if (!answered(darkStatus, "dark decider status readable")) { return; }
 		check(litStatus.startsWith("working|"), "powered decider reports working", litStatus);
-		check(!darkStatus.startsWith("working|"), "dark decider does NOT report working", darkStatus);
+		// A dark decider reports no_power when the platform never had a producer, and low_power when a
+		// producer existed and was removed — both measured 2026-08-11/12. Asserting one of them alone
+		// over-fits to how the fixture went dark; asserting only "not working" would pass on a garbage
+		// status, so the check requires a KNOWN dark status.
+		const DARK_STATUSES = ["no_power", "low_power", "not_plugged_in_electric_network"];
+		check(DARK_STATUSES.some(s => darkStatus.startsWith(`${s}|`)),
+			"dark decider reports a known unpowered status", darkStatus);
 		const darkConditionsBefore = Number(darkStatus.split("conditions=")[1]);
 
 		check(rcon(scheduleLua(LIT)) === "scheduled=1", "powered latch scheduled");
@@ -156,11 +178,14 @@ async function main() {
 		await sleep(DEFERRAL_WAIT_MS);
 
 		const dark = rcon(resultLua(DARK));
+		if (!answered(dark, "dark latch result readable")) { return; }
+		check(dark !== "PENDING", "dark latch finalized rather than hanging", dark);
 		check(dark.includes("unpowered — re-arm not evaluated"),
 			"dark latch finalizes as unpowered, never evaluated", dark);
-		check(!dark.includes("cleared to 0"),
+		check(dark !== "PENDING" && !dark.includes("cleared to 0"),
 			"dark latch NEVER reports a verified clear",
-			"this is the whole point: an empty register on a dark decider read as 'stable' and licensed the clear");
+			"an empty register on a dark decider read as 'stable' and licensed the clear — the PENDING "
+			+ "guard is here so a job that never ran cannot pass this by absence");
 		check(dark.includes("failed=1") && dark.includes("cleared=0"),
 			"the unpowered outcome buckets as failed, not cleared", dark);
 
