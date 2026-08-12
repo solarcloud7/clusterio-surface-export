@@ -8,10 +8,11 @@
 // No export, no import, no race. The stage machine is scheduled DIRECTLY against two real deciders
 // on two real platforms, so the fixture cannot drift out from under the assertion.
 //
-// TWO platforms, not one: a platform surface has a single global electric network (measured
-// 2026-08-11 — 526 entities all on network id 9 on lab-transfer-fixture-v1), so a powered and a dark
-// decider CANNOT coexist on one platform. That is also why whole-job power deferral costs nothing in
-// production: every decider on a platform is powered, or none is.
+// TWO platforms, not one. On lab-transfer-fixture-v1 every one of its 526 networked entities measured
+// onto a SINGLE electric network (id 9, 2026-08-11), so on that fixture a powered and a dark decider
+// cannot coexist. That is a fixture measurement, not a law — a decider out of reach of any pole would
+// form its own network. Two platforms is the shape that holds either way, and it is why whole-job
+// power deferral is cheap in practice: a platform's deciders are usually all lit or all dark together.
 
 import { execFileSync } from "node:child_process";
 
@@ -48,7 +49,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let failures = 0;
 const check = (ok, label, detail = "") => {
 	console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
-	if (!ok) { failures += 1; }
+	// Set at the point of failure, not only at the terminal exit(): an early return past that exit
+	// would report a recorded FAILURE as a green run — the vacuous-pass class again.
+	if (!ok) { failures += 1; process.exitCode = 1; }
 };
 
 // Builds one platform holding one self-feedback decider, already latched to S=1.

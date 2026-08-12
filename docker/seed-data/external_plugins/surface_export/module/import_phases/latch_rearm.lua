@@ -357,7 +357,16 @@ local function run_stage(job_key, record)
       record.stage = "clear_restore"
       record.at_tick = game.tick + CLEAR_TICKS
     else
-      finalize(job_key, record, "completed — no stable mismatch to clear")
+      local dark = 0
+      for _, item in ipairs(record.items) do
+        if item.instrument_dead then dark = dark + 1 end
+      end
+      if dark > 0 then
+        finalize(job_key, record, string.format(
+          "completed — %d mismatched latch(es) went dark during sampling; stability unknown, no clear", dark))
+      else
+        finalize(job_key, record, "completed — no stable mismatch to clear")
+      end
     end
   elseif record.stage == "clear_restore" then
     write_stage(record.items, function(item) return item.captured_parameters end, "clear restore",
