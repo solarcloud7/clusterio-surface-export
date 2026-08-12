@@ -234,7 +234,9 @@ return { success = true, leftovers = n }`);
 			if (left.leftovers !== 0) fail(`sweep left ${left.leftovers} loaderfreeze platform(s) behind`);
 			else say("cleanup: zero leftovers");
 		} catch (error) {
-			fail(`cleanup failed: ${error.message} — sweep by hand with tools/tests/cleanup-test-surfaces.ps1`);
+			console.error(`cleanup failed: ${error && error.stack ? error.stack : error} — sweep by hand with tools/tests/cleanup-test-surfaces.ps1`);
+			problems.push("cleanup failed");
+			process.exitCode = 1;
 		}
 	}
 }
