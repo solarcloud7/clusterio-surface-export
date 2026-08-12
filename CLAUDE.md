@@ -624,8 +624,9 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
 
 ```
 1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items             — belts keep moving; single-tick restore is
-                            the current conservative implementation (see the canonical belt section)
+2. Belt items             — belts keep moving (measured by tests/instruments/belt-freeze, which also
+                            finds disabled_by_script does nothing to a belt); single-tick restore is
+                            the current conservative implementation
 3. Entity state           — control behavior, filters, circuit connections
 4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (ordering retained; the cap rationale is retracted)

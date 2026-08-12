@@ -271,10 +271,13 @@ census-vs-census comparisons across the transfer boundary, never ledger-vs-same-
 
 ### Verified engine facts the census relies on
 
-`get_item_count` completeness — a per-entity count includes that entity's belt lines and its inserter's
-held items, and summing it over every entity does not double-count shared belt runs — is asserted against
-a live cluster by [tests/instruments/engine-invariants](../tests/instruments/engine-invariants/run-tests.ps1),
-not recorded here.
+`get_item_count` completeness is asserted against a live cluster by
+[tests/instruments/engine-invariants](../tests/instruments/engine-invariants/run-tests.ps1) rather than
+recorded here. Two halves, and they do not carry the same weight: that a per-entity count includes the
+entity's belt lines, and that summing it over every entity does not double-count shared belt runs, are
+asserted on **every** run. Held-item inclusion is asserted **only when an inserter happens to be holding
+on the sampled snapshot** — otherwise that rung warns and says the run proves nothing about it, so a green
+run is not by itself evidence for the held half.
 
 - Ground items are entities (`item-entity`) and are counted by the same enumeration
   (`count_items` has a dedicated ground-item pass).
