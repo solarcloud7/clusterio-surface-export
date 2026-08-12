@@ -1,3 +1,5 @@
+#Requires -Version 7
+
 param(
 	[switch]$Upload,
 	[string]$ModPack = "Space Age 2.0",
@@ -32,43 +34,70 @@ Remove-Item -Path $stage -Recurse -Force
 Write-Host "  -> $zipPath" -ForegroundColor Green
 
 if (-not $SkipClientSync) {
-	$clientMods = Join-Path $env:APPDATA "Factorio/mods"
-	if (-not (Test-Path $clientMods)) {
-		Write-Host "Client sync SKIPPED: no Factorio user data at $clientMods" -ForegroundColor Yellow
-		Write-Host "  This machine has no local game install; the cluster copy is unaffected." -ForegroundColor Gray
-	} else {
-		Copy-Item -Path $zipPath -Destination (Join-Path $clientMods "${folder}.zip") -Force
-		Write-Host "Client sync: ${folder}.zip -> $clientMods" -ForegroundColor Green
-
-		$listPath = Join-Path $clientMods "mod-list.json"
-		if (-not (Test-Path $listPath)) {
-			throw "Client sync: $listPath is missing — refusing to guess the mod list format."
-		}
-		$list = Get-Content $listPath -Raw | ConvertFrom-Json
-		$entry = $list.mods | Where-Object { $_.name -eq $modName }
-		if (-not $entry) {
-			$list.mods += [pscustomobject]@{ name = $modName; enabled = $true }
-			Write-Host "  mod-list.json: added '$modName' (enabled)" -ForegroundColor Green
-		} elseif (-not $entry.enabled) {
-			$entry.enabled = $true
-			Write-Host "  mod-list.json: '$modName' was DISABLED — enabled it" -ForegroundColor Yellow
+	# A client-sync failure must never abort the cluster upload below. Aborting would leave the
+	# cluster on the OLD mod while the operator believes the build shipped — the same desync this
+	# whole feature exists to remove, just pointing the other way.
+	try {
+		$appData = $env:APPDATA
+		$clientMods = if ([string]::IsNullOrWhiteSpace($appData)) { $null } else { Join-Path $appData "Factorio/mods" }
+		if (-not $clientMods -or -not (Test-Path $clientMods)) {
+			$where = if ($clientMods) { $clientMods } else { '$env:APPDATA is not set' }
+			Write-Host "Client sync SKIPPED: no Factorio user data ($where)" -ForegroundColor Yellow
+			Write-Host "  Headless/CI has no local game install; the cluster copy is unaffected." -ForegroundColor Gray
 		} else {
-			Write-Host "  mod-list.json: '$modName' already enabled" -ForegroundColor Gray
-		}
-		$list | ConvertTo-Json -Depth 10 | Set-Content $listPath -Encoding utf8
+			Copy-Item -Path $zipPath -Destination (Join-Path $clientMods "${folder}.zip") -Force
+			Write-Host "Client sync: ${folder}.zip -> $clientMods" -ForegroundColor Green
 
-		$stale = Get-ChildItem $clientMods -Filter "${modName}_*.zip" |
-			Where-Object { $_.Name -ne "${folder}.zip" }
-		if ($stale) {
-			if ($PruneOldClientVersions) {
-				$stale | Remove-Item -Force
-				Write-Host "  pruned $($stale.Count) older client copy/copies: $($stale.Name -join ', ')" -ForegroundColor Yellow
-			} else {
-				Write-Host "  $($stale.Count) older copy/copies left in place (Factorio loads the newest): $($stale.Name -join ', ')" -ForegroundColor Gray
-				Write-Host "  re-run with -PruneOldClientVersions to delete them" -ForegroundColor Gray
+			$listPath = Join-Path $clientMods "mod-list.json"
+			if (-not (Test-Path $listPath)) {
+				throw "$listPath is missing — refusing to guess the mod list format."
 			}
+			$list = Get-Content $listPath -Raw | ConvertFrom-Json
+			$entry = $list.mods | Where-Object { $_.name -eq $modName }
+			$needsWrite = $true
+			if (-not $entry) {
+				$list.mods += [pscustomobject]@{ name = $modName; enabled = $true }
+				Write-Host "  mod-list.json: added '$modName' (enabled)" -ForegroundColor Green
+			} elseif (-not $entry.enabled) {
+				$entry.enabled = $true
+				Write-Host "  mod-list.json: '$modName' was DISABLED — enabled it" -ForegroundColor Yellow
+			} else {
+				$needsWrite = $false
+				Write-Host "  mod-list.json: '$modName' already enabled" -ForegroundColor Gray
+			}
+			if ($needsWrite) {
+				$backup = "$listPath.bak-surfexp"
+				Copy-Item -Path $listPath -Destination $backup -Force
+				# Temp + rename: an interrupted in-place write leaves the player with a truncated
+				# mod-list.json, which disables every mod they have.
+				$tmp = "$listPath.tmp-surfexp"
+				$list | ConvertTo-Json -Depth 10 | Set-Content $tmp -Encoding utf8
+				Move-Item -Path $tmp -Destination $listPath -Force
+				Write-Host "  mod-list.json written (previous copy at $(Split-Path $backup -Leaf))" -ForegroundColor Gray
+			}
+
+			$others = Get-ChildItem $clientMods -Filter "${modName}_*.zip" |
+				Where-Object { $_.Name -ne "${folder}.zip" }
+			if ($others) {
+				$parse = { param($n) if ($n -match "^${modName}_(.+)\.zip$") { [version]$Matches[1] } else { $null } }
+				$built = & $parse "${folder}.zip"
+				$newer = @($others | Where-Object { $v = & $parse $_.Name; $v -and $built -and $v -gt $built })
+				if ($PruneOldClientVersions) {
+					$others | Remove-Item -Force
+					Write-Host "  pruned $($others.Count) other client copy/copies: $($others.Name -join ', ')" -ForegroundColor Yellow
+				} elseif ($newer.Count -gt 0) {
+					Write-Host "  WARNING: $($newer.Count) NEWER copy/copies present — Factorio will load those, NOT the build you just made: $($newer.Name -join ', ')" -ForegroundColor Red
+					Write-Host "  re-run with -PruneOldClientVersions to remove them" -ForegroundColor Red
+				} else {
+					Write-Host "  $($others.Count) older copy/copies left in place (Factorio loads the newest): $($others.Name -join ', ')" -ForegroundColor Gray
+					Write-Host "  re-run with -PruneOldClientVersions to delete them" -ForegroundColor Gray
+				}
+			}
+			Write-Host "  Factorio reads mods at startup — restart the client if it is open." -ForegroundColor Gray
 		}
-		Write-Host "  Factorio reads mods at startup — restart the client if it is open." -ForegroundColor Gray
+	} catch {
+		Write-Warning "Client sync FAILED — the cluster copy is unaffected and the upload continues: $_"
+		Write-Warning "  Your local client may not match the server. Fix and re-run, or pass -SkipClientSync."
 	}
 }
 
