@@ -233,8 +233,7 @@ while order, exact coordinate, and individual belt-tile window may change. BELT-
 engine transport-line identity as a restoration key for the known DUP-233855 loss components. The proven
 lab recipe is now side-scoped reverse first-fit with the `belt_speed` position floor (BELT-R10/R11/R12 —
 243/243 and 431/431 with filtered purity preserved; production adoption pending the DUP-233855
-kill-measurement). Belt physics facts live ONLY in the canonical belt section of
-[factorio-2.0-api-notes.md](factorio-2.0-api-notes.md); do not restate them here. Preserve repeated small belt-loss black boxes
+kill-measurement). Preserve repeated small belt-loss black boxes
 as described above rather than treating a globally green transfer as proof of whole-lane fidelity.
 
 **Q: What if my inserters are holding items mid-swing?**

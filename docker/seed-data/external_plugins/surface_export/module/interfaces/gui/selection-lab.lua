@@ -370,7 +370,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
 			local message = string.format(
-				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
+				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback)",
 				placed, unplaced, anomalies)
 			if transactional then error(message) end
 			say(player, message, { r = 1, g = 0.6, b = 0.3 })

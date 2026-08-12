@@ -1541,7 +1541,7 @@
 				"expected": "Acid and patch each within one refill cycle of the bake; drill non-empty; ground ore present.",
 				"forbidden": "Do not pin acid or patch EXACTLY - the one-cycle refill is engine behaviour a lossless transfer cannot avoid. Do not widen either range beyond one cycle per drill; a second cycle's worth is a real regression. Do not top up acid or patch to hide the refill: that manufactures resources the source never sent."
 			},
-			"note": "Held-product refill mechanism and the LuaControl mining_progress clause are recorded in docs/factorio-2.0-api-notes.md; the deferred mining_progress queue lives in active_state_restoration.lua (serviced by AsyncProcessor.process_tick)."
+			"note": "The one-cycle held-product refill is what this pad's own acid and patch ranges pin; the mining_progress range clause is upstream (LuaControl.mining_progress), and the deferred write lives in active_state_restoration.lua (serviced by AsyncProcessor.process_tick)."
 		},
 		{
 			"id": "omnibus-spoilage-midspoil",
