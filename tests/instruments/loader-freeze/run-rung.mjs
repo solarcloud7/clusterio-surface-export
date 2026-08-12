@@ -201,14 +201,19 @@ return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 			return;
 		}
 
-		say("\n=== VERDICT ===");
+		say("\n=== VERDICT (pinned 2026-08-12: loaders FREEZE under disabled_by_script, unlike belts) ===");
 		say(`  readback true on ${bReadback.length}/${b.rows.length} loaders after the write`);
+		if (bReadback.length !== b.rows.length) {
+			fail(`readback DIVERGED: only ${bReadback.length}/${b.rows.length} loaders read back true — at the ` +
+				"measured pin the write sticks on every loader (belts are the type that silently drops it)");
+		}
 		if (bFed.length === 0) {
 			say(`  FREEZES: 0/${b.rows.length} loaders refilled under disabled_by_script=true (control and re-enable ` +
-				"arms both refilled). docs/testing.md's instruction is TRUE for loaders at this pin.");
+				"arms both refilled). docs/testing.md's instruction holds for loaders at this pin.");
 		} else {
-			say(`  NO-OP: ${bFed.length}/${b.rows.length} loaders kept feeding under disabled_by_script=true — ` +
-				"docs/testing.md's freeze instruction is FALSE for loaders at this pin, same class as belts.");
+			fail(`freeze DIVERGED: ${bFed.length}/${b.rows.length} loaders kept feeding under disabled_by_script=true — ` +
+				"docs/testing.md's freeze instruction no longer holds for loaders at this pin; re-measure before " +
+				"trusting any fill-harness freeze window");
 		}
 	} finally {
 		try {
