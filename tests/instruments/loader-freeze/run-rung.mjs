@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // loader-freeze — does disabled_by_script = true stop the standard fill harness's loader at this pin?
 //
-// requires: a running surface-export cluster whose host-1 gallery save carries the owner-built fill
-//           harness (filtered turbo-loaders fed by infinity chests on lab-omnibus-state-v1)
+// requires: a running surface-export cluster with lab-omnibus-state-v1 on host-1 (the rung BUILDS the
+//           doc-prescribed harness — infinity chest -> filtered turbo-loader -> belt — on a throwaway
+//           clone, because the live golden save carries zero infinity-containers and the doc's
+//           exemplar platform lab-omnibus-platform-v1 does not exist; measured 2026-08-12)
 // produces: per-loader refill counts for three arms (control, disabled_by_script=true, re-enabled) on
-//           a throwaway clone, readback of the written flag, per-arm status names, and a verdict on
+//           the built rigs, readback of the written flag, per-arm status names, and a verdict on
 //           docs/testing.md's "freeze the feed with disabled_by_script = true" instruction
 // does not: measure transport-belt behavior (tests/instruments/belt-freeze on PR #211 covers that),
-//           measure paused-platform behavior, assert item conservation, or touch a protected fixture
-//           (it clones lab-omnibus-state-v1 and sweeps the clone unconditionally)
+//           measure paused-platform behavior, assert item conservation, measure the save's four
+//           feed-less native loaders, or touch a protected fixture (it clones and sweeps)
 
 import { lua as luaRaw, sleep } from "../../lab-gallery/batch-lifecycle.mjs";
 
@@ -45,7 +47,10 @@ local s = p.surface
 if not (s and s.valid) then return { success = false, error = 'platform has no valid surface' } end
 local function loaders()
   local m = {}
-  for _, e in pairs(s.find_entities_filtered{ type = 'loader' }) do m[e.unit_number] = e end
+  local rig = st.rig_units or {}
+  for _, e in pairs(s.find_entities_filtered{ type = 'loader' }) do
+    if rig[tostring(e.unit_number)] then m[e.unit_number] = e end
+  end
   return m
 end
 local function status_name(e)
@@ -129,17 +134,48 @@ return { success = true, index = idx }`);
 return { success = true }`);
 		const state = lua(PRE + `
 p.paused = false
+local maxx = -math.huge
+for _, e in pairs(s.find_entities_filtered{}) do if e.position.x > maxx then maxx = e.position.x end end
+if maxx == -math.huge then return { success = false, error = 'clone has no entities' } end
+local rigs = {}
+local rig_units = {}
+local items = { 'iron-plate', 'copper-plate' }
+for i = 1, 2 do
+  local tx = math.floor(maxx) + 4 + i * 3
+  local ty = 40
+  local tiles = {}
+  for dy = 0, 4 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { tx, ty + dy } } end
+  s.set_tiles(tiles)
+  local chest = s.create_entity{ name = 'infinity-chest', position = { tx + 0.5, ty + 0.5 }, force = 'player' }
+  if not chest then return { success = false, error = 'chest did not place at column '..tx } end
+  chest.set_infinity_container_filter(1, { name = items[i], count = 100, mode = 'at-least' })
+  chest.remove_unfiltered_items = true
+  local loader = s.create_entity{ name = 'turbo-loader', position = { tx + 0.5, ty + 2 },
+    direction = defines.direction.south, force = 'player' }
+  if not loader then return { success = false, error = 'loader did not place at column '..tx } end
+  loader.loader_type = 'output'
+  loader.set_filter(1, { name = items[i] })
+  local belt = s.create_entity{ name = 'transport-belt', position = { tx + 0.5, ty + 3.5 },
+    direction = defines.direction.south, force = 'player' }
+  if not belt then return { success = false, error = 'belt did not place at column '..tx } end
+  rig_units[tostring(loader.unit_number)] = true
+  rigs[#rigs + 1] = { unit = loader.unit_number, item = items[i],
+    chest_items = chest.get_inventory(defines.inventory.chest).get_item_count() }
+end
+st.rig_units = rig_units
 local list = {}
 for u, e in pairs(loaders()) do
   list[#list + 1] = { unit = u, name = e.name, kind = e.loader_type,
     filtered = e.get_filter(1) ~= nil, status = status_name(e), carried = line_total(e) }
 end
-return { success = true, paused = p.paused, loaders = list }`);
+return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 		if (state.paused !== false) throw new Error("clone did not unpause; every arm would be confounded");
-		if (!Array.isArray(state.loaders) || state.loaders.length === 0) {
-			throw new Error("clone carries no loaders — harness absent, no fact measurable");
+		if (!Array.isArray(state.loaders) || state.loaders.length !== 2) {
+			throw new Error(`rig build did not yield 2 measurable loaders: ${JSON.stringify(state.loaders)}`);
 		}
-		say(`clone [${cloneIndex}] unpaused with ${state.loaders.length} loaders: ` +
+		say(`clone [${cloneIndex}] unpaused; built ${state.loaders.length} harness rigs: ` +
+			state.rigs.map(r => `unit ${r.unit} feeding ${r.item} (chest holds ${r.chest_items})`).join(", "));
+		say(`  rig loaders: ` +
 			state.loaders.map(l => `${l.name}(${l.kind}, filtered=${l.filtered}, status=${l.status})`).join(", "));
 
 		say("\n=== ARM A (control): loaders enabled — the feed must measurably refill cleared lines ===");
