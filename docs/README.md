@@ -195,5 +195,4 @@ For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMP
 | [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
 | [config-survey.md](config-survey.md) | Every hardcoded operational value classified TUNABLE / LAW / INTERNAL, with the rule that decides which — plus the four-place wiring pattern an instance→Lua field must follow or it silently drops |
-| a measurement taken now (the engine-notes doc was deleted 2026-08-11) | Measured simulation behavior Wube does NOT document, scoped to zero-loss/zero-gain transfer (fluid segments, belt transport-line laws, item counting, inventory sizing) |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |

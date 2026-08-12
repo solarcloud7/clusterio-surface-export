@@ -85,8 +85,9 @@ sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
 The feature was originally built on pre-pin evidence that was purged with the rest of the 2.0.x
 documentation; these are the re-certification measurements from the 2026-08-03 headless spike. Each is
 a one-line RCON `/sc` probe reproducible on the dev cluster (probe platforms swept after every run).
-Per the api-notes charter, anything the [official docs](https://lua-api.factorio.com/2.1.11/) state is
-linked, not restated — only unstated behavior gets a claim here.
+Per the evidence discipline in [CLAUDE.md](../CLAUDE.md), anything the
+[official docs](https://lua-api.factorio.com/2.1.11/) state is linked, not restated — only unstated
+behavior gets a claim here.
 
 - **Platform creation is STAGED: `create_space_platform` builds nothing** — no surface, no hub,
   `paused = false`, state `waiting_for_starter_pack`. **`apply_starter_pack()` creates the surface + hub
@@ -260,7 +261,7 @@ section of [CLAUDE.md](../CLAUDE.md).
   [control.lua](../docker/seed-data/external_plugins/surface_export/module/control.lua)
   (the `on_space_platform_changed_state` handler),
   [transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)
-  (two-phase commit), and a measurement taken now (the engine-notes doc was deleted 2026-08-11). Platform deletion goes
-  through `GameUtils.delete_platform`, whose comment carries the measurement for why it uses
-  `game.delete_surface` rather than the platform's own destroy method — read it there rather than
-  trusting a second copy here.
+  (two-phase commit). Platform deletion goes through `GameUtils.delete_platform`, which uses
+  `game.delete_surface` rather than the platform's own destroy method;
+  [tests/instruments/engine-invariants](../tests/instruments/engine-invariants/run-tests.ps1) is what
+  re-measures both halves of that choice against a live cluster.

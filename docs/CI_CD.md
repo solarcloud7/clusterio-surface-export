@@ -53,8 +53,7 @@ Two jobs:
    for the `.ps1` tests). The job fails if any test fails.
 9. **On failure** — dump controller/host/Factorio logs, then capture and upload a re-importable repro
     (serialized source payload + host-2 save) as the `failing-repro` artifact. Saves complete
-    asynchronously (`.tmp.zip` → atomic rename; the four-signal completion predicate lives in
-    a measurement taken now (the engine-notes doc was deleted 2026-08-11)), so the capture resolves host-2's exact
+    asynchronously (`.tmp.zip` → atomic rename), so the capture resolves host-2's exact
     active save from `factorio-current.log`, deadline-polls tmp-gone + mtime + inode + size after the
     stop, and `unzip -t`-validates every captured zip before upload — a stale or truncated capture
     surfaces as a `::warning::`, never silently. The cluster is always torn down

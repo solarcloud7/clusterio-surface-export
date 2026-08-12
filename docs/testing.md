@@ -92,9 +92,11 @@ default test pattern.
 The standard instrument for populating a belt fixture is an **infinity chest (filtered, `at-least N`) feeding
 a filtered loader** onto the circuit. It saturates the circuit to a deterministic steady state, needs no
 hand-seeding, and reproduces natural kinetic compression — the hardest restore case. The recipe is buildable
-from script: `tests/instruments/loader-freeze/run-rung.mjs` constructs it on a throwaway clone. Operational facts
-(canonical citations in the belt section of a measurement taken now (the engine-notes doc was deleted 2026-08-11)):
+from script: `tests/instruments/loader-freeze/run-rung.mjs` constructs it on a throwaway clone. Operational facts:
 loaders keep running on paused platforms, and belts keep moving, so census reads must be same-execution.
+The belt half is re-measured by [tests/instruments/belt-freeze](../tests/instruments/belt-freeze/run-rung.mjs),
+which also measures that `disabled_by_script = true` does nothing at all to a transport belt (readback
+`false`, lines keep moving) and that the one freeze it found needs a real circuit wire.
 **Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** [empirical, 2.1.11,
 tests/instruments/loader-freeze/run-rung.mjs 2026-08-12: on a turbo-loader the write reads back `true`,
 status becomes `disabled_by_script`, and 0 items feed over a 221-tick window versus 4 in the control and
@@ -197,7 +199,8 @@ Engine knowledge keeps the evidence tags defined in the "Testing discipline" sec
   one claim — a bullet whose measurement is followed by a "so/therefore" consequence is two claims sharing one
   citation, and the consequence is uncited.
 - **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation. It is usable in design
-  notes and plans; it does NOT exist in api-notes, where an unprovable claim is deleted instead.
+  notes and plans; it is not an evidence tier, and CLAUDE.md's evidence discipline deletes an unprovable
+  claim rather than demoting it to one.
 
 The **[API]** tier was abolished 2026-07-31 (owner ruling). If <https://lua-api.factorio.com/> documents
 something, we link it where the code needs it and never mirror it into our docs — a mirror rots when upstream
@@ -268,8 +271,10 @@ census-vs-census comparisons across the transfer boundary, never ledger-vs-same-
 
 ### Verified engine facts the census relies on
 
-Evidence tags and measurement details are in
-a measurement taken now (the engine-notes doc was deleted 2026-08-11) (see "Item counting").
+`get_item_count` completeness — a per-entity count includes that entity's belt lines and its inserter's
+held items, and summing it over every entity does not double-count shared belt runs — is asserted against
+a live cluster by [tests/instruments/engine-invariants](../tests/instruments/engine-invariants/run-tests.ps1),
+not recorded here.
 
 - Ground items are entities (`item-entity`) and are counted by the same enumeration
   (`count_items` has a dedicated ground-item pass).

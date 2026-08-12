@@ -85,7 +85,7 @@ if ($meterRaw -match 'bchecked=(\d+) bmeter=(\d+) bphys=(\d+) hchecked=(\d+) hba
         Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "No transport-belt on the clone carried any tracked item (bchecked=0) — a clone of '$SourcePlatform' must have belt items; the probe or fixture is broken ($meterRaw)"
         $failed++
     } elseif ($bMeter -ne $bPhys) {
-        Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "meter=$bMeter != physical=$bPhys over $bChecked belts — get_item_count is dropping belt items or double-counting shared runs; the get_item_count completeness engine-fact is BROKEN at this Factorio version (see a measurement taken now (the engine-notes doc was deleted 2026-08-11) Item counting)"
+        Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "meter=$bMeter != physical=$bPhys over $bChecked belts — get_item_count is dropping belt items or double-counting shared runs; the get_item_count completeness engine-fact this test exists to assert is BROKEN at this Factorio version"
         $failed++
     } else {
         Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total ($bChecked belts, $bMeter items)" -Status "passed"
@@ -99,7 +99,7 @@ if ($meterRaw -match 'bchecked=(\d+) bmeter=(\d+) bphys=(\d+) hchecked=(\d+) hba
         Write-TestResult -TestId "get-item-count-includes-held" -TestName "get_item_count includes inserter held_stack ($hChecked holding inserters)" -Status "passed"
         $passed++
     } else {
-        Write-Status "get_item_count/held invariant: no inserter holding an item on the clone this snapshot — held inclusion not exercised this run (belt meter still asserted; held inclusion is verified in a measurement taken now (the engine-notes doc was deleted 2026-08-11))" -Type warning
+        Write-Status "get_item_count/held invariant: no inserter holding an item on the clone this snapshot — held inclusion NOT exercised this run (the belt meter is still asserted; this run proves nothing about held inclusion). Re-run against a busier snapshot to exercise it." -Type warning
     }
 } else {
     Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count meter invariant" -Status "failed" -Message "Unexpected probe output (Lua probe errored or returned an unparseable string): $meterRaw"
@@ -145,7 +145,7 @@ rcon.print('RESULT hubp='..hubp..' ctlp='..ctlp..' mf1='..mf..' iron1='..hub.get
             Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed, request NOT preserved (control proxy survives)" -Status "passed"
             $passed++
         } elseif ($hubP -gt 0) {
-            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed" -Status "failed" -Message "hub-targeted proxy PERSISTED ($hubP present after 10 ticks) — the engine now keeps them, so a pending hub proxy is exportable state the sections-only model (hub-request-sections) does not carry; revisit a measurement taken now (the engine-notes doc was deleted 2026-08-11)"
+            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed" -Status "failed" -Message "hub-targeted proxy PERSISTED ($hubP present after 10 ticks) — the engine now keeps them, so a pending hub proxy is exportable state the sections-only model (hub-request-sections) does not carry; revisit the sections-only model in tests/integration/hub-request-sections"
             $failed++
         } elseif ($ctlP -eq 0) {
             Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed (control proxy survives)" -Status "failed" -Message "the CONTROL container-targeted proxy ALSO vanished — the differential is invalid (probe broken, or proxies no longer persist at all, which breaks proxy transfer support)"
@@ -171,7 +171,7 @@ Start-Sleep -Seconds 1
 
 if (-not (Test-PlatformPresent -Name $cloneName)) {
     Write-Status "destroy() REMOVED the platform — it is FUNCTIONAL at this Factorio version." -Type warning
-    Write-Status "Revisit platform.destroy is a no-op / a measurement taken now (the engine-notes doc was deleted 2026-08-11) (they document destroy() as a no-op)." -Type warning
+    Write-Status "The no-platform-destroy lint guard and GameUtils.delete_platform both assume destroy() does nothing — revisit both." -Type warning
     Write-Status "Re-cloning so the delete_surface MUST-PASS still runs on a live platform..." -Type info
     $cloneName = New-DisposableClone
 } else {

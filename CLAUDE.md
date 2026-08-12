@@ -585,8 +585,9 @@ Project invariants that still bite if changed:
   same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
   [Import Phase Ordering](#import-phase-ordering-critical).
 - **Belt restoration.** The canonical belt-law section went with the deleted engine-notes doc
-  (2026-08-11); belt physics is re-measured when a change needs it, not cited. What the pipeline
-  relies on: the fidelity unit is one
+  (2026-08-11); belt physics is re-measured when a change needs it, not cited —
+  `tests/instruments/belt-freeze` is the standing rung for what does and does not stop a belt.
+  What the pipeline relies on: the fidelity unit is one
   continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
   invariants — restoring position is handoff avoidance, not a new invariant). The production restore
   places every item **at its captured source position** (2026-07-27): each payload side carries a compact

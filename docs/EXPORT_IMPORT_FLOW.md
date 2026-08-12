@@ -337,8 +337,8 @@ ImportCompletion.run_phase2()  (single tick)      [core/import-completion.lua]
   → clusterio_api.send_json("surface_export_import_complete", result)
 ```
 
-**Belt restore design constraints.** Two rules the restore is built on, kept here rather than in the
-engine notes because they are properties of THIS pipeline, not of Factorio:
+**Belt restore design constraints.** Two rules the restore is built on, kept here because they are
+properties of THIS pipeline, not of Factorio:
 
 - **Engine transport-line identity is not a cross-import key.** The same physical belt does not carry
   a stable line identity from the source instance to the destination, so nothing may key a restore on
@@ -353,9 +353,9 @@ engine notes because they are properties of THIS pipeline, not of Factorio:
 
 Both were originally measured pre-2.1.11 and their rungs were deleted on 2026-07-31 with the rest of
 the stale evidence. They are retained because the code depends on them - re-measure before treating
-either as proven on this pin. Belt PHYSICS (what a lane is, what the fidelity unit is) stays in the
-canonical belt section of a measurement taken now (the engine-notes doc was deleted 2026-08-11); this section covers
-only how the pipeline uses it.
+either as proven on this pin. This section covers only how the pipeline uses a belt; the fidelity
+unit it is written against is one continuous lane/side keyed on its `(name, quality, stack count)`
+multiset, with order, exact coordinate, and belt-tile window explicitly NOT invariants.
 
 For transfers, `instance.ts` → `handleImportCompleteValidation` consumes the validation
 result carried by the Lua completion event (no name-keyed refetch) and sends a
