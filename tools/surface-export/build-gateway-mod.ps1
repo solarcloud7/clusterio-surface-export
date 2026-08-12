@@ -1,6 +1,8 @@
 param(
 	[switch]$Upload,
-	[string]$ModPack = "Space Age 2.0"
+	[string]$ModPack = "Space Age 2.0",
+	[switch]$SkipClientSync,
+	[switch]$PruneOldClientVersions
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +30,47 @@ if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path $stageMod -DestinationPath $zipPath -Force
 Remove-Item -Path $stage -Recurse -Force
 Write-Host "  -> $zipPath" -ForegroundColor Green
+
+if (-not $SkipClientSync) {
+	$clientMods = Join-Path $env:APPDATA "Factorio/mods"
+	if (-not (Test-Path $clientMods)) {
+		Write-Host "Client sync SKIPPED: no Factorio user data at $clientMods" -ForegroundColor Yellow
+		Write-Host "  This machine has no local game install; the cluster copy is unaffected." -ForegroundColor Gray
+	} else {
+		Copy-Item -Path $zipPath -Destination (Join-Path $clientMods "${folder}.zip") -Force
+		Write-Host "Client sync: ${folder}.zip -> $clientMods" -ForegroundColor Green
+
+		$listPath = Join-Path $clientMods "mod-list.json"
+		if (-not (Test-Path $listPath)) {
+			throw "Client sync: $listPath is missing — refusing to guess the mod list format."
+		}
+		$list = Get-Content $listPath -Raw | ConvertFrom-Json
+		$entry = $list.mods | Where-Object { $_.name -eq $modName }
+		if (-not $entry) {
+			$list.mods += [pscustomobject]@{ name = $modName; enabled = $true }
+			Write-Host "  mod-list.json: added '$modName' (enabled)" -ForegroundColor Green
+		} elseif (-not $entry.enabled) {
+			$entry.enabled = $true
+			Write-Host "  mod-list.json: '$modName' was DISABLED — enabled it" -ForegroundColor Yellow
+		} else {
+			Write-Host "  mod-list.json: '$modName' already enabled" -ForegroundColor Gray
+		}
+		$list | ConvertTo-Json -Depth 10 | Set-Content $listPath -Encoding utf8
+
+		$stale = Get-ChildItem $clientMods -Filter "${modName}_*.zip" |
+			Where-Object { $_.Name -ne "${folder}.zip" }
+		if ($stale) {
+			if ($PruneOldClientVersions) {
+				$stale | Remove-Item -Force
+				Write-Host "  pruned $($stale.Count) older client copy/copies: $($stale.Name -join ', ')" -ForegroundColor Yellow
+			} else {
+				Write-Host "  $($stale.Count) older copy/copies left in place (Factorio loads the newest): $($stale.Name -join ', ')" -ForegroundColor Gray
+				Write-Host "  re-run with -PruneOldClientVersions to delete them" -ForegroundColor Gray
+			}
+		}
+		Write-Host "  Factorio reads mods at startup — restart the client if it is open." -ForegroundColor Gray
+	}
+}
 
 if (-not $Upload) {
 	Write-Host "Done (build only). Re-run with -Upload to load it into the running cluster." -ForegroundColor Gray
