@@ -90,12 +90,15 @@ default test pattern.
 #### Standard fill harness (belt fixtures)
 
 The standard instrument for populating a belt fixture is an **infinity chest (filtered, `at-least N`) feeding
-a filtered loader** onto the circuit. It saturates the circuit to a deterministic steady state (owner-built
-exemplars: the green-belt omnibus and the filtered-splitter fixture on `lab-omnibus-platform-v1`), needs no
-hand-seeding, and reproduces natural kinetic compression — the hardest restore case. Operational facts
+a filtered loader** onto the circuit. It saturates the circuit to a deterministic steady state, needs no
+hand-seeding, and reproduces natural kinetic compression — the hardest restore case. The recipe is buildable
+from script: `tests/instruments/loader-freeze/run-rung.mjs` constructs it on a throwaway clone. Operational facts
 (canonical citations in the belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md)):
 loaders keep running on paused platforms, and belts keep moving, so census reads must be same-execution.
-**Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** This paragraph used to say
+**Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** [empirical, 2.1.11,
+tests/instruments/loader-freeze/run-rung.mjs 2026-08-12: on a turbo-loader the write reads back `true`,
+status becomes `disabled_by_script`, and 0 items feed over a 221-tick window versus 4 in the control and
+re-enable arms.] This paragraph used to say
 the loader's `active` flag is writable and to deactivate loaders for a measurement window; that is FALSE at
 the 2.1.11 pin — measured 2026-07-31, assignment throws `LuaEntity::active is read only.` on a loader and on
 a crafter alike (it was `RW` at 2.0.77). Any instrument still built on the old recipe does not work. Clone the chests WITH the fixture
