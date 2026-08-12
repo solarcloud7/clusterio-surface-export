@@ -20,9 +20,14 @@ const rcon = (lua) => execFileSync("docker", [
 	+ `instance send-rcon "${INSTANCE}" ${JSON.stringify(lua)}`,
 ], { encoding: "utf8" }).trim();
 
-const hostLog = () => execFileSync("docker", [
-	"exec", HOST, "sh", "-c", "cat /clusterio/logs/host/host-*.log",
-], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+// Counted inside the container, not pulled out of it: the host log grows without bound and reading it
+// whole blew execFileSync's buffer (spawnSync ENOBUFS) on the first live run. `|| true` because grep
+// exits 1 on no-match, which execFileSync would raise as a throw.
+const logCount = (needle) => Number(execFileSync("docker", [
+	"exec", HOST, "sh", "-c",
+	`grep -acF ${JSON.stringify(needle)} /clusterio/logs/host/host-*.log 2>/dev/null | `
+	+ `awk -F: '{ s += $NF } END { print s+0 }' || true`,
+], { encoding: "utf8" }).trim() || 0);
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -47,7 +52,8 @@ async function main() {
 		check(Number.isInteger(index) && Number.isInteger(surfaceIndex), "probe platform created", created);
 		if (!Number.isInteger(index)) { return; }
 
-		const before = hostLog().length;
+		const marker = `Tree rebroadcast requested: surface ${surfaceIndex} deleted`;
+		const before = logCount(marker);
 
 		// The name guard is the whole safety story for a destructive call on a shared cluster: the index
 		// is resolved fresh and the delete only runs if it still names the throwaway.
@@ -58,10 +64,11 @@ async function main() {
 
 		await sleep(6000);
 
-		const emitted = hostLog().slice(before);
-		check(emitted.includes(`Tree rebroadcast requested: surface ${surfaceIndex} deleted`),
+		const after = logCount(marker);
+		check(after > before,
 			"the deletion emitted a tree rebroadcast",
-			"this is the assertion #206 lacked: its handler never fired and nothing noticed");
+			`"${marker}" count ${before} -> ${after}; this is the assertion #206 lacked — its handler `
+			+ "never fired and nothing noticed");
 	} finally {
 		// The happy path deletes the probe as its subject; this is the FAILURE path's net. Without it a
 		// failed run leaks a platform, and cleanup-test-surfaces.ps1 only sweeps registered prefixes.
