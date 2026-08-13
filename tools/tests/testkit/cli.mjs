@@ -192,20 +192,37 @@ async function cmdMutation() {
 }
 
 async function cmdCoverage() {
+	const VALUE_FLAGS = new Set(["--class", "--per-type", "--host", "--md", "--json"]);
 	const platforms = [];
-	for (const arg of rest) {
-		if (arg.startsWith("--")) break;
-		platforms.push(arg);
+	const stray = [];
+	let live = false;
+	for (let i = 0; i < rest.length; i++) {
+		const arg = rest[i];
+		if (arg === "--live") {
+			live = true;
+			while (i + 1 < rest.length && !rest[i + 1].startsWith("--")) platforms.push(rest[++i]);
+		} else if (VALUE_FLAGS.has(arg)) {
+			i++;
+		} else if (!arg.startsWith("--")) {
+			stray.push(arg);
+		}
 	}
-	if (platforms.length === 0) {
-		fail("usage: coverage <platform> [<platform>...] [--host 1] [--per-type 2] [--md <path>] [--json <path>]");
+	if (live && platforms.length === 0) fail("--live needs at least one platform name after it");
+	if (stray.length > 0) {
+		fail(`platform names only make sense after --live (offline needs no cluster): ${stray.join(", ")}\n`
+			+ "usage: coverage [--live <platform>...] [--class A,B] [--per-type 2] [--host 1] [--md <path>] [--json <path>]");
 	}
-	const { coverage, renderChecklist, summarize } = await import("./coverage.mjs");
-	const report = await coverage({
-		platforms,
-		host: Number(valueOf("--host") ?? 1),
-		perType: Number(valueOf("--per-type") ?? 2),
-	});
+	const { coverageOffline, enrichLive, renderChecklist, summarize, DEFAULT_CLASSES }
+		= await import("./coverage.mjs");
+	const classes = valueOf("--class") ? valueOf("--class").split(",").map(s => s.trim()) : DEFAULT_CLASSES;
+	let report = coverageOffline({ classes });
+	if (platforms.length > 0) {
+		report = await enrichLive(report, {
+			platforms,
+			host: Number(valueOf("--host") ?? 1),
+			perType: Number(valueOf("--per-type") ?? 2),
+		});
+	}
 	const { writeFileSync } = await import("node:fs");
 	const { tmpdir } = await import("node:os");
 	const { join } = await import("node:path");

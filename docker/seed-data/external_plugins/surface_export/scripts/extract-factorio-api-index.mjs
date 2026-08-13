@@ -36,6 +36,8 @@ function ownMembers(cls) {
 			kind: "attribute",
 			read: Boolean(attribute.read_type),
 			write: Boolean(attribute.write_type),
+			...(Array.isArray(attribute.subclasses) && attribute.subclasses.length
+				? { subclasses: attribute.subclasses } : {}),
 		};
 	}
 	for (const method of cls.methods) {
