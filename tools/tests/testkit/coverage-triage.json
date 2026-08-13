@@ -2,6 +2,12 @@
 	"entries": [
 		{
 			"class": "LuaEntity",
+			"attribute": "character_health_bonus",
+			"disposition": "derived",
+			"reason": "research-driven force bonus — writing it fights the game (owner)"
+		},
+		{
+			"class": "LuaEntity",
 			"attribute": "electric_buffer_size",
 			"disposition": "ignore",
 			"reason": "power not tracked on purpose (owner, 2026-08-12)"

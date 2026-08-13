@@ -87,7 +87,7 @@ export function moduleIdentifiers() {
 	return { files, identifiers };
 }
 
-function readTriageFile() {
+export function readTriageFile() {
 	const parsed = JSON.parse(readFileSync(TRIAGE_PATH, "utf8"));
 	if (!Array.isArray(parsed.entries)) {
 		throw new Error(`${TRIAGE_PATH} must carry { entries: [{ class, attribute, disposition, reason }] }`);
@@ -95,35 +95,40 @@ function readTriageFile() {
 	return parsed.entries;
 }
 
-function writeTriageFile(entries) {
+export function writeTriageFile(entries) {
 	writeFileSync(TRIAGE_PATH, JSON.stringify({ entries }, null, "\t") + "\n");
 }
 
-export function loadTriage(identifiers) {
+export function validateTriageEntries(entries, identifiers) {
 	const index = loadIndex();
-	const entries = readTriageFile();
-	const stale = [];
+	const problems = [];
 	const seen = new Set();
 	for (const entry of entries) {
 		if (typeof entry.class !== "string" || typeof entry.attribute !== "string"
 			|| typeof entry.reason !== "string" || !entry.reason.trim()
 			|| !DISPOSITIONS.includes(entry.disposition)) {
-			stale.push(`${JSON.stringify(entry)} — every entry needs class, attribute, a disposition in `
+			problems.push(`${JSON.stringify(entry)} — every entry needs class, attribute, a disposition in `
 				+ `[${DISPOSITIONS.join(", ")}], and a non-empty reason`);
 			continue;
 		}
 		const key = `${entry.class}.${entry.attribute}`;
-		if (seen.has(key)) { stale.push(`"${key}" appears twice — one decision per attribute`); continue; }
+		if (seen.has(key)) { problems.push(`"${key}" appears twice — one decision per attribute`); continue; }
 		seen.add(key);
 		if (!isRw(member(index, entry.class, entry.attribute))) {
-			stale.push(`"${key}" is not a read+write attribute at this pin — the row it would `
+			problems.push(`"${key}" is not a read+write attribute at this pin — the row it would `
 				+ "suppress cannot appear; delete the entry");
 		} else if (identifiers.has(entry.attribute)) {
-			stale.push(entry.disposition === "track"
+			problems.push(entry.disposition === "track"
 				? `"${key}" is now referenced in module/ — the track entry is completed; delete the entry`
 				: `"${key}" is now referenced in module/ — the ${entry.disposition} rule is dead; delete the entry`);
 		}
 	}
+	return problems;
+}
+
+export function loadTriage(identifiers) {
+	const entries = readTriageFile();
+	const stale = validateTriageEntries(entries, identifiers);
 	if (stale.length) {
 		throw new Error("stale triage entries — a dead rule can silently suppress a future real row, "
 			+ "so the run refuses:\n  " + stale.join("\n  "));
@@ -177,7 +182,6 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 
 	let pin = null;
 	const byClass = [];
-	const decided = [];
 	for (const className of classes) {
 		const found = writableAttributes(className);
 		pin = found.pin;
@@ -192,6 +196,7 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 		for (const a of unknown) {
 			const decision = decisionByKey.get(`${className}.${a.name}`);
 			const row = {
+				class: className,
 				attribute: a.name,
 				doc: a.doc,
 				docUrl: `https://lua-api.factorio.com/${pin}/classes/${a.definingClass}.html#${a.name}`,
@@ -201,12 +206,10 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 					...(protoNames && protoNames.has(a.name)
 						? [`same name on ${protoPair} — likely a prototype-derived default`] : []),
 				],
+				disposition: decision ? decision.disposition : null,
+				reason: decision ? decision.reason : null,
 				sample: null, types: null,
 			};
-			if (decision) {
-				decided.push({ ...row, class: className, disposition: decision.disposition, reason: decision.reason });
-				continue;
-			}
 			if (a.subclasses === null) { universal.push(row); continue; }
 			const key = a.subclasses.join(", ");
 			if (!bySubclass.has(key)) bySubclass.set(key, []);
@@ -225,10 +228,13 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 		mode: "offline", pin, classes,
 		filter: { files, identifiers: identifiers.size,
 			positiveControls: POSITIVE_CONTROLS, negativeControl: NEGATIVE_CONTROL },
-		decided,
 		byClass,
 		live: null,
 	};
+}
+
+export function allRows(report) {
+	return report.byClass.flatMap(c => [...c.universal, ...c.subclassSections.flatMap(s => s.rows)]);
 }
 
 function sweepLua(platformIndex, force, targets, attributeNames) {
@@ -373,27 +379,32 @@ export function renderChecklist(report) {
 		return text;
 	};
 	for (const cls of report.byClass) {
-		const open = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
+		const openUniversal = cls.universal.filter(r => r.disposition === null);
+		const openSections = cls.subclassSections
+			.map(s => ({ subclass: s.subclass, rows: s.rows.filter(r => r.disposition === null) }))
+			.filter(s => s.rows.length > 0);
+		const open = openUniversal.length + openSections.reduce((n, s) => n + s.rows.length, 0);
 		lines.push(`## ${cls.className} — ${open} OPEN of ${cls.writable} read+write attributes`);
 		lines.push("");
-		if (cls.universal.length) {
-			lines.push(`### Universal (no subclass restriction) — ${cls.universal.length}`);
+		if (openUniversal.length) {
+			lines.push(`### Universal (no subclass restriction) — ${openUniversal.length}`);
 			lines.push("");
-			for (const r of cls.universal) lines.push(rowText(r));
+			for (const r of openUniversal) lines.push(rowText(r));
 			lines.push("");
 		}
-		for (const section of cls.subclassSections) {
+		for (const section of openSections) {
 			lines.push(`### ${section.subclass} — ${section.rows.length}`);
 			lines.push("");
 			for (const r of section.rows) lines.push(rowText(r));
 			lines.push("");
 		}
 	}
-	if (report.decided.length) {
+	const decided = allRows(report).filter(r => r.disposition !== null);
+	if (decided.length) {
 		lines.push("## Decided");
 		lines.push("");
 		for (const disposition of DISPOSITIONS) {
-			const rows = report.decided.filter(d => d.disposition === disposition);
+			const rows = decided.filter(d => d.disposition === disposition);
 			if (!rows.length) continue;
 			const heading = disposition === "track" ? "TRACK — accepted as recording work"
 				: disposition === "derived" ? "DERIVED — auto-populated by the game; never write"
@@ -411,11 +422,13 @@ export function renderChecklist(report) {
 
 export function summarize(report) {
 	const parts = report.byClass.map(cls => {
-		const open = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
+		const open = [...cls.universal, ...cls.subclassSections.flatMap(s => s.rows)]
+			.filter(r => r.disposition === null).length;
 		return `${cls.className} ${open}/${cls.writable}`;
 	});
+	const decided = allRows(report).filter(r => r.disposition !== null);
 	const byDisposition = DISPOSITIONS
-		.map(d => [d, report.decided.filter(e => e.disposition === d).length])
+		.map(d => [d, decided.filter(e => e.disposition === d).length])
 		.filter(([, n]) => n > 0)
 		.map(([d, n]) => `${n} ${d}`);
 	return `${report.mode} @ Factorio ${report.pin}: OPEN — ${parts.join(", ")}`

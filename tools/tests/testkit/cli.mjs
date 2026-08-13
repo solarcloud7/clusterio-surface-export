@@ -192,6 +192,13 @@ async function cmdMutation() {
 }
 
 async function cmdCoverage() {
+	if (rest[0] === "ui") {
+		const { startTriageUi } = await import("./coverage-ui.mjs");
+		const { DEFAULT_CLASSES } = await import("./coverage.mjs");
+		const classes = valueOf("--class") ? valueOf("--class").split(",").map(s => s.trim()) : DEFAULT_CLASSES;
+		await startTriageUi({ classes, port: Number(valueOf("--port") ?? 3199) });
+		return new Promise(() => {});
+	}
 	if (rest[0] === "mark" || rest[0] === "unmark") {
 		const verb = rest[0];
 		const target = /^(\w+)\.(\w+)$/.exec(rest[1] || "");
