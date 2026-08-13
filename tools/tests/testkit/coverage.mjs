@@ -1,79 +1,102 @@
-// coverage — which readable LuaEntity attributes have no representative in the export payload?
+// coverage — per-entity-type checklist of read+write LuaEntity attributes unknown to the serializer
 //
-// requires: a running cluster carrying the named platform, and the vendored factorio-api-index.json
-// produces: per (prototype type, attribute) a verdict of PRESENT / ABSENT / TRIVIAL / THROWS /
-//           UNDECIDABLE, sampled over entities drawn from a real production export
-// does not: prove a property is LOST. ABSENT means "this attribute's live value was not found by
-//           value-search anywhere in that entity's payload record" — a property can be absent from
-//           the payload and still be restored, because create_entity sets it implicitly or it is
-//           derived from a field that IS carried. Every ABSENT is a candidate to investigate, never
-//           a defect. It also does not read methods, does not follow LuaObject references, and does
-//           not measure restoration on a destination.
+// requires: a running surface-export cluster carrying the named platform(s); the vendored
+//           scripts/factorio-api-index.json at the current pin; tools/tests/testkit/coverage-ignore.json
+// produces: a markdown checklist grouped by entity type (universal block + per-type blocks), each
+//           row a read+write attribute that read successfully on a live entity of that type, whose
+//           identifier appears nowhere in module/**/*.lua, and which is not on the committed
+//           ignore list; plus a JSON report of the same
+// does not: prove a property is LOST — a row is a question ("should we record this?"), not a
+//           defect: create_entity sets some attributes implicitly and an equivalent may ride
+//           another payload field. Reads no methods, follows no LuaObject references, measures no
+//           restoration, and refuses to emit anything when the reference filter fails its controls.
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { lua } from "../../../tests/lab-gallery/batch-lifecycle.mjs";
 import { exportInspect, resolvePlatformIndex } from "./export-inspect.mjs";
 import { loadIndex } from "./api-oracle.mjs";
 
-const ENTITIES_PER_CALL = 4;
-const VALUE_CHARS = 160;
+const here = path.dirname(fileURLToPath(import.meta.url));
+const MODULE_ROOT = path.join(here, "..", "..", "..",
+	"docker", "seed-data", "external_plugins", "surface_export", "module");
+const IGNORE_PATH = path.join(here, "coverage-ignore.json");
 
-export function readableAttributes(className = "LuaEntity") {
+const ENTITIES_PER_CALL = 4;
+const VALUE_CHARS = 120;
+const UNIVERSAL_SHARE = 0.9;
+const POSITIVE_CONTROLS = ["direction", "energy"];
+const NEGATIVE_CONTROL = "zzz_coverage_negative_control_zzz";
+const MIN_CORPUS_FILES = 50;
+const MIN_CORPUS_IDENTIFIERS = 1000;
+
+export function writableAttributes(className = "LuaEntity") {
 	const index = loadIndex();
 	const members = (index.classes || {})[className];
 	if (!members) throw new Error(`${className} is not in the vendored API index`);
-	return Object.entries(members)
-		.filter(([, d]) => d.kind === "attribute" && d.read === true)
-		.map(([name]) => name)
-		.sort();
+	return {
+		pin: index.application_version,
+		attributes: Object.entries(members)
+			.filter(([, d]) => d.kind === "attribute" && d.read === true && d.write === true)
+			.map(([name]) => name)
+			.sort(),
+	};
 }
 
-// A value only proves presence if a coincidental match is implausible. Booleans, 0/1, empty strings
-// and empty tables collide with everything in a payload, so they are reported as UNDECIDABLE rather
-// than counted as evidence in either direction.
-function entropy(value) {
-	if (value === null || value === undefined) return "trivial";
-	if (typeof value === "boolean") return "low";
-	if (typeof value === "number") return (value === 0 || value === 1) ? "low" : "high";
-	if (typeof value === "string") {
-		if (value === "" || value === "{}" || value === "[]") return "trivial";
-		return value.length >= 3 ? "high" : "low";
+export function moduleIdentifiers() {
+	let files = 0;
+	const identifiers = new Set();
+	for (const entry of readdirSync(MODULE_ROOT, { recursive: true })) {
+		const rel = String(entry);
+		if (!rel.endsWith(".lua")) continue;
+		files += 1;
+		const source = readFileSync(path.join(MODULE_ROOT, rel), "utf8");
+		for (const token of source.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []) identifiers.add(token);
 	}
-	return "low";
-}
-
-function payloadValues(record, out = [], depth = 0) {
-	if (depth > 8 || record === null || record === undefined) return out;
-	if (typeof record !== "object") { out.push(record); return out; }
-	for (const value of Object.values(record)) payloadValues(value, out, depth + 1);
-	return out;
-}
-
-function matchesScalar(live, values) {
-	if (typeof live === "number") {
-		return values.some(v => typeof v === "number" && Math.abs(v - live) < 1e-9);
+	const failures = [];
+	if (files < MIN_CORPUS_FILES) failures.push(`corpus holds ${files} .lua files (minimum ${MIN_CORPUS_FILES})`);
+	if (identifiers.size < MIN_CORPUS_IDENTIFIERS) {
+		failures.push(`corpus holds ${identifiers.size} identifiers (minimum ${MIN_CORPUS_IDENTIFIERS})`);
 	}
-	if (typeof live === "string") {
-		const needle = live.toLowerCase();
-		return values.some(v => typeof v === "string" && v.toLowerCase() === needle)
-			|| values.some(v => typeof v === "string" && v.length > 8 && v.toLowerCase().includes(needle));
+	for (const name of POSITIVE_CONTROLS) {
+		if (!identifiers.has(name)) failures.push(`positive control "${name}" reads as UNKNOWN`);
 	}
-	return values.some(v => v === live);
+	if (identifiers.has(NEGATIVE_CONTROL)) failures.push(`negative control "${NEGATIVE_CONTROL}" reads as KNOWN`);
+	if (failures.length) {
+		throw new Error("reference filter failed its controls — a broken filter floods the checklist "
+			+ "exactly like a real gap would, so no checklist is emitted:\n  " + failures.join("\n  "));
+	}
+	return { files, identifiers };
 }
 
-// A table attribute arrives as a JSON string. Comparing that string against the payload would never
-// match, because the payload stores the same information as nested fields with its own key names —
-// which is how position, a value the payload demonstrably carries, first showed up as ABSENT. Compare
-// the table's leaves instead, and only decide on the ones that carry enough entropy to mean anything.
-function matchesTable(encoded, values) {
-	let parsed;
-	try { parsed = JSON.parse(encoded); } catch { return "undecidable"; }
-	const leaves = payloadValues(parsed);
-	const decidable = leaves.filter(l => entropy(l) === "high");
-	if (decidable.length === 0) return "undecidable";
-	return decidable.every(l => matchesScalar(l, values)) ? "present" : "absent";
+export function loadIgnoreList(identifiers, writable) {
+	const parsed = JSON.parse(readFileSync(IGNORE_PATH, "utf8"));
+	const entries = Array.isArray(parsed.entries) ? parsed.entries : null;
+	if (!entries) throw new Error(`${IGNORE_PATH} must carry { entries: [{ attribute, reason }] }`);
+	const writableSet = new Set(writable);
+	const stale = [];
+	for (const entry of entries) {
+		if (typeof entry.attribute !== "string" || typeof entry.reason !== "string" || !entry.reason.trim()) {
+			stale.push(`${JSON.stringify(entry)} — every entry needs a non-empty attribute and reason`);
+			continue;
+		}
+		if (!writableSet.has(entry.attribute)) {
+			stale.push(`"${entry.attribute}" is not a read+write LuaEntity attribute at this pin — `
+				+ "the row it would suppress cannot appear; delete the entry");
+		} else if (identifiers.has(entry.attribute)) {
+			stale.push(`"${entry.attribute}" is now referenced in module/ — the row it suppressed no `
+				+ "longer appears; delete the entry");
+		}
+	}
+	if (stale.length) {
+		throw new Error("stale ignore entries — a dead ignore rule can silently suppress a future real "
+			+ "row, so the run refuses:\n  " + stale.join("\n  "));
+	}
+	return entries;
 }
 
-function luaSweep(platformIndex, force, targets, attributes) {
+function sweepLua(platformIndex, force, targets, attributes) {
 	const attrList = attributes.map(a => `"${a}"`).join(",");
 	const targetList = targets
 		.map(t => `{name="${t.name}",x=${t.position.x},y=${t.position.y}}`)
@@ -94,191 +117,180 @@ for _, t in ipairs(targets) do
   end)
   local e = ok_find and found and found[1]
   local row = { name = t.name, x = t.x, y = t.y }
-  if not ok_find then
+  if not e then
     row.missing = true
-    row.reason = 'not an entity prototype name'
-  elseif not e then
-    row.missing = true
-    row.reason = 'no entity at that position'
   else
     row.type = e.type
-    local vals, threw = {}, {}
+    local vals = {}
     for _, a in ipairs(attrs) do
       local ok, v = pcall(function() return e[a] end)
-      if not ok then
-        threw[a] = true
-      elseif v == nil then
-        vals[a] = { kind = 'nil' }
-      elseif type(v) == 'boolean' or type(v) == 'number' then
-        vals[a] = { kind = type(v), v = v }
-      elseif type(v) == 'string' then
-        vals[a] = { kind = 'string', v = string.sub(v, 1, ${VALUE_CHARS}) }
-      elseif type(v) == 'table' then
-        local enc_ok, enc = pcall(helpers.table_to_json, v)
-        vals[a] = { kind = 'table', v = enc_ok and string.sub(enc, 1, ${VALUE_CHARS}) or nil }
-      else
-        local on_ok, on = pcall(function() return v.object_name end)
-        vals[a] = { kind = 'object', v = on_ok and on or 'userdata' }
+      if ok then
+        if v == nil then
+          vals[a] = { kind = 'nil' }
+        elseif type(v) == 'boolean' or type(v) == 'number' then
+          vals[a] = { kind = type(v), v = v }
+        elseif type(v) == 'string' then
+          vals[a] = { kind = 'string', v = string.sub(v, 1, ${VALUE_CHARS}) }
+        elseif type(v) == 'table' then
+          local enc_ok, enc = pcall(helpers.table_to_json, v)
+          vals[a] = { kind = 'table', v = enc_ok and string.sub(enc, 1, ${VALUE_CHARS}) or '(unencodable table)' }
+        else
+          local on_ok, on = pcall(function() return v.object_name end)
+          vals[a] = { kind = 'object', v = on_ok and on or 'userdata' }
+        end
       end
     end
     row.values = vals
-    row.threw = threw
   end
   out[#out + 1] = row
 end
 return { success = true, rows = out }`;
 }
 
-function classify(samples) {
-	if (samples.length === 0) return "NO-SAMPLE";
-	if (samples.every(s => s === "THROWS")) return "THROWS";
-	const decided = samples.filter(s => s !== "THROWS");
-	if (decided.every(s => s === "REFERENCE")) return "REFERENCE";
-	if (decided.every(s => s === "TRIVIAL")) return "TRIVIAL";
-	if (decided.some(s => s === "ABSENT")) return "ABSENT";
-	if (decided.some(s => s === "PRESENT")) return "PRESENT";
-	return "UNDECIDABLE";
+function callSweep(host, platformIndex, force, batch, attributes) {
+	const answer = lua(host, sweepLua(platformIndex, force, batch, attributes));
+	if (answer === null || typeof answer !== "object" || answer.success !== true) {
+		throw new Error(`live sweep failed: ${answer && answer.error ? answer.error : JSON.stringify(answer)}`);
+	}
+	const rows = Array.isArray(answer.rows) ? answer.rows : Object.values(answer.rows || {});
+	if (rows.length !== batch.length) {
+		throw new Error(`live sweep returned ${rows.length} rows for a batch of ${batch.length} — the sweep `
+			+ "and the payload disagree about which entities exist, so no verdict is safe");
+	}
+	return rows;
 }
 
-export async function coverage({ platform, host = 1, force = "player", perType = 2, only = null }) {
-	const attributes = readableAttributes("LuaEntity");
-	const inspector = await exportInspect({ platform, host, force });
-	const entities = inspector.entities.filter(e => e && e.name && e.position);
-	if (entities.length === 0) throw new Error(`payload for ${platform} carries no positioned entities`);
+function display(cell) {
+	if (cell.kind === "string") return JSON.stringify(cell.v);
+	if (cell.kind === "object") return `<${cell.v}>`;
+	if (cell.kind === "table") return cell.v;
+	return String(cell.v);
+}
 
-	const byType = new Map();
-	for (const e of entities) {
-		const type = e.type || "(untyped)";
-		if (only && type !== only) continue;
-		if (!byType.has(type)) byType.set(type, []);
-		if (byType.get(type).length < perType) byType.get(type).push(e);
+export async function coverage({ platforms, host = 1, force = "player", perType = 2 }) {
+	if (!Array.isArray(platforms) || platforms.length === 0) {
+		throw new Error("coverage needs { platforms: [name, ...] }");
 	}
-	const sampled = [...byType.values()].flat();
-	if (sampled.length === 0) throw new Error(only ? `no entities of type "${only}" in the payload` : "no samples");
+	const { pin, attributes } = writableAttributes("LuaEntity");
+	const { files, identifiers } = moduleIdentifiers();
+	const ignored = loadIgnoreList(identifiers, attributes);
+	const ignoredSet = new Set(ignored.map(e => e.attribute));
 
-	const platformIndex = resolvePlatformIndex(host, platform, force);
+	const perTypeState = new Map();
+	let entitiesSampled = 0;
+	let entitiesNotFoundLive = 0;
 
-	const rows = [];
-	for (let i = 0; i < sampled.length; i += ENTITIES_PER_CALL) {
-		const batch = sampled.slice(i, i + ENTITIES_PER_CALL);
-		const answer = lua(host, luaSweep(platformIndex, force, batch, attributes));
-		if (answer.success !== true) throw new Error(`live sweep failed: ${answer.error ?? JSON.stringify(answer)}`);
-		const got = Array.isArray(answer.rows) ? answer.rows : Object.values(answer.rows || {});
-		if (got.length !== batch.length) {
-			throw new Error(`live sweep returned ${got.length} rows for a batch of ${batch.length} — `
-				+ "the sweep and the payload disagree about which entities exist, so no verdict is safe");
+	for (const platform of platforms) {
+		const inspector = await exportInspect({ platform, host, force });
+		const entities = inspector.entities.filter(e => e && e.name && e.position);
+		if (entities.length === 0) throw new Error(`payload for ${platform} carries no positioned entities`);
+		const platformIndex = resolvePlatformIndex(host, platform, force);
+		const byType = new Map();
+		for (const e of entities) {
+			const type = e.type || "(untyped)";
+			if (!byType.has(type)) byType.set(type, []);
+			if (byType.get(type).length < perType) byType.get(type).push(e);
 		}
-		rows.push(...got.map((row, n) => ({ row, record: batch[n] })));
-	}
-
-	const verdicts = new Map();
-	let missing = 0;
-	for (const { row, record } of rows) {
-		if (row.missing) { missing++; continue; }
-		const values = payloadValues(record);
-		const type = row.type || record.type || "(untyped)";
-		for (const attribute of attributes) {
-			const key = `${type} ${attribute}`;
-			if (!verdicts.has(key)) {
-				verdicts.set(key, { type, attribute, samples: [], example: null, seen: new Set(), distinct: new Set() });
-			}
-			const slot = verdicts.get(key);
-			if (row.threw?.[attribute]) { slot.samples.push("THROWS"); continue; }
-			const cell = row.values?.[attribute];
-			if (!cell || cell.kind === "nil" || cell.v === undefined || cell.v === null) {
-				slot.samples.push("TRIVIAL");
-				continue;
-			}
-			// A LuaObject reduces to its class name here, so matching it would compare the string
-			// "LuaForce" against the payload and call every reference a loss. Following references is
-			// option A's job; this screen reports them as out of its reach.
-			if (cell.kind === "object") { slot.samples.push("REFERENCE"); continue; }
-			slot.seen.add(JSON.stringify([record.name, cell.v]));
-			slot.distinct.add(JSON.stringify(cell.v));
-			if (cell.kind === "table") {
-				const verdict = matchesTable(cell.v, values);
-				slot.samples.push(verdict === "undecidable" ? "UNDECIDABLE"
-					: verdict === "present" ? "PRESENT" : "ABSENT");
-				if (verdict === "absent" && slot.example === null) {
-					slot.example = { at: `${row.name}@${row.x},${row.y}`, value: cell.v };
+		const sampled = [...byType.values()].flat();
+		entitiesSampled += sampled.length;
+		for (let i = 0; i < sampled.length; i += ENTITIES_PER_CALL) {
+			const batch = sampled.slice(i, i + ENTITIES_PER_CALL);
+			for (const row of callSweep(host, platformIndex, force, batch, attributes)) {
+				if (row.missing) { entitiesNotFoundLive += 1; continue; }
+				const type = row.type || "(untyped)";
+				if (!perTypeState.has(type)) perTypeState.set(type, new Map());
+				const slotByAttr = perTypeState.get(type);
+				for (const attribute of attributes) {
+					const cell = row.values ? row.values[attribute] : undefined;
+					if (!cell) continue;
+					if (!slotByAttr.has(attribute)) slotByAttr.set(attribute, { sample: null });
+					const slot = slotByAttr.get(attribute);
+					if (slot.sample === null && cell.kind !== "nil") {
+						slot.sample = { value: display(cell), at: `${row.name}@${row.x},${row.y}`, platform };
+					}
 				}
-				continue;
 			}
-			const rank = entropy(cell.v);
-			if (rank === "trivial") { slot.samples.push("TRIVIAL"); continue; }
-			if (rank === "low") { slot.samples.push("UNDECIDABLE"); continue; }
-			if (matchesScalar(cell.v, values)) { slot.samples.push("PRESENT"); continue; }
-			slot.samples.push("ABSENT");
-			if (slot.example === null) slot.example = { at: `${row.name}@${row.x},${row.y}`, value: cell.v };
 		}
 	}
 
-	const results = [...verdicts.values()].map(v => ({
-		type: v.type, attribute: v.attribute, verdict: classify(v.samples),
-		samples: v.samples.length, example: v.example,
-		// One value across every entity of this type is weak evidence the attribute is derived from
-		// the prototype rather than held per entity. Weak, not proof: two inserters can legitimately
-		// agree. It ranks the list; it never decides a verdict.
-		constant: v.distinct.size === 1 && v.samples.length > 1,
-	}));
+	const typesSampled = perTypeState.size;
+	const rowsByAttr = new Map();
+	for (const [type, slotByAttr] of perTypeState) {
+		for (const [attribute, slot] of slotByAttr) {
+			if (identifiers.has(attribute) || ignoredSet.has(attribute)) continue;
+			if (!rowsByAttr.has(attribute)) rowsByAttr.set(attribute, []);
+			rowsByAttr.get(attribute).push({ type, sample: slot.sample });
+		}
+	}
+	const universal = [];
+	const typeRows = new Map();
+	for (const [attribute, hits] of [...rowsByAttr.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+		if (hits.length >= typesSampled * UNIVERSAL_SHARE) {
+			universal.push({ attribute, types: hits.length, sample: hits.find(h => h.sample)?.sample ?? null });
+		} else {
+			for (const hit of hits) {
+				if (!typeRows.has(hit.type)) typeRows.set(hit.type, []);
+				typeRows.get(hit.type).push({ attribute, sample: hit.sample });
+			}
+		}
+	}
 
 	return {
-		platform, host, attributesSwept: attributes.length,
-		entitiesInPayload: entities.length, entitiesSampled: sampled.length,
-		entitiesNotFoundLive: missing,
-		types: byType.size,
-		results,
+		pin, platforms, host, perType,
+		filter: {
+			files, identifiers: identifiers.size,
+			positiveControls: POSITIVE_CONTROLS, negativeControl: NEGATIVE_CONTROL,
+		},
+		ignored,
+		attributesConsidered: attributes.length,
+		typesSampled, entitiesSampled, entitiesNotFoundLive,
+		universal,
+		byType: [...typeRows.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+			.map(([type, rows]) => ({ type, rows })),
 	};
 }
 
-export function formatCoverage(report) {
+export function renderChecklist(report) {
 	const lines = [];
-	const absent = report.results.filter(r => r.verdict === "ABSENT");
-	const counts = {};
-	for (const r of report.results) counts[r.verdict] = (counts[r.verdict] || 0) + 1;
-
-	lines.push(`platform ${report.platform} (host ${report.host}) — ${report.attributesSwept} readable `
-		+ `LuaEntity attributes swept over ${report.entitiesSampled} entities across ${report.types} `
-		+ `prototype type(s); payload carries ${report.entitiesInPayload} entities`);
+	lines.push(`# Property coverage checklist — ${report.platforms.join(", ")} (Factorio ${report.pin})`);
+	lines.push("");
+	lines.push("A row is a question — \"should we record this?\" — not a defect: `create_entity` sets some");
+	lines.push("attributes implicitly, and an equivalent may already ride another payload field. Filters:");
+	lines.push("read+write at the pin; read successfully on a live entity of the type; identifier absent");
+	lines.push("from `module/**/*.lua`; not on the committed ignore list.");
+	lines.push("");
+	lines.push(`Reference filter: ${report.filter.files} files, ${report.filter.identifiers} identifiers; `
+		+ `controls green (${report.filter.positiveControls.join("/")} known, negative token unknown).`);
 	if (report.entitiesNotFoundLive > 0) {
-		lines.push(`  WARNING ${report.entitiesNotFoundLive} payload entit(ies) were not found live — `
-			+ "the world moved under the export; those rows are excluded");
+		lines.push(`WARNING: ${report.entitiesNotFoundLive} payload entities were not found live `
+			+ "(the world moved under the export); their rows are excluded.");
 	}
-	lines.push(`  ${Object.entries(counts).map(([k, v]) => `${k}=${v}`).sort().join("  ")}`);
 	lines.push("");
-
-	if (absent.length === 0) {
-		lines.push("No ABSENT candidates: every high-entropy attribute value was found in its entity's "
-			+ "payload record. That is a screen, not a proof — UNDECIDABLE rows carry values too "
-			+ "low-entropy to match either way.");
-		return lines.join("\n");
-	}
-
-	lines.push(`${absent.length} ABSENT candidate(s) — a live value with no match in the payload record.`);
-	lines.push("ABSENT is not a defect: create_entity sets some of these implicitly, and some are derived");
-	lines.push("from fields that ARE carried. Each one is a question to answer, not a bug to file.");
-	lines.push("");
-	const varying = absent.filter(r => !r.constant);
-	const constant = absent.filter(r => r.constant);
-	lines.push(`  ${varying.length} vary between entities of the same type (investigate first)`);
-	lines.push(`  ${constant.length} held one value across every sample — weak evidence they come from`);
-	lines.push("  the prototype rather than per-entity state; listed second, not excluded");
-	lines.push("");
-
-	for (const [heading, list] of [["VARYING", varying], ["CONSTANT ACROSS SAMPLES", constant]]) {
-		if (list.length === 0) continue;
-		lines.push(`=== ${heading} ===`);
-		const byType = {};
-		for (const r of list) (byType[r.type] ||= []).push(r);
-		for (const [type, rows] of Object.entries(byType).sort((a, b) => b[1].length - a[1].length)) {
-			lines.push(`  ${type}  (${rows.length})`);
-			for (const r of rows.sort((a, b) => a.attribute.localeCompare(b.attribute))) {
-				const shown = typeof r.example?.value === "string"
-					? `"${r.example.value.slice(0, 56)}"` : String(r.example?.value);
-				lines.push(`    ${r.attribute.padEnd(36)} ${shown}   ${r.example?.at ?? ""}`);
-			}
-		}
+	if (report.ignored.length) {
+		lines.push("Ignored on purpose:");
+		for (const e of report.ignored) lines.push(`- \`${e.attribute}\` — ${e.reason}`);
 		lines.push("");
 	}
+	const sampleText = s => (s
+		? `${s.value} _(${s.at}, ${s.platform})_`
+		: "(nil on all samples — fixture may not exercise it)");
+	lines.push(`## Universal — on ≥90% of the ${report.typesSampled} sampled types (${report.universal.length})`);
+	lines.push("");
+	for (const u of report.universal) lines.push(`- [ ] \`${u.attribute}\` — ${sampleText(u.sample)}`);
+	for (const { type, rows } of report.byType) {
+		lines.push("");
+		lines.push(`## ${type} (${rows.length})`);
+		lines.push("");
+		for (const r of rows) lines.push(`- [ ] \`${r.attribute}\` — ${sampleText(r.sample)}`);
+	}
+	lines.push("");
 	return lines.join("\n");
+}
+
+export function summarize(report) {
+	const specific = report.byType.reduce((n, t) => n + t.rows.length, 0);
+	return `${report.platforms.join(", ")} @ Factorio ${report.pin}: ${report.attributesConsidered} RW attributes `
+		+ `screened over ${report.entitiesSampled} entities across ${report.typesSampled} types → `
+		+ `${report.universal.length} universal + ${specific} type-specific checklist rows `
+		+ `(${report.ignored.length} ignored on purpose)`;
 }

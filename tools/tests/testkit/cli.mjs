@@ -192,24 +192,29 @@ async function cmdMutation() {
 }
 
 async function cmdCoverage() {
-	const platform = rest[0];
-	if (!platform || platform.startsWith("--")) {
-		fail("usage: coverage <platform> [--host 1] [--per-type 2] [--only <prototype-type>] [--json <path>]");
+	const platforms = [];
+	for (const arg of rest) {
+		if (arg.startsWith("--")) break;
+		platforms.push(arg);
 	}
-	const { coverage, formatCoverage } = await import("./coverage.mjs");
+	if (platforms.length === 0) {
+		fail("usage: coverage <platform> [<platform>...] [--host 1] [--per-type 2] [--md <path>] [--json <path>]");
+	}
+	const { coverage, renderChecklist, summarize } = await import("./coverage.mjs");
 	const report = await coverage({
-		platform,
+		platforms,
 		host: Number(valueOf("--host") ?? 1),
 		perType: Number(valueOf("--per-type") ?? 2),
-		only: valueOf("--only"),
 	});
+	const { writeFileSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const mdPath = valueOf("--md") ?? join(tmpdir(), "testkit-coverage-checklist.md");
+	writeFileSync(mdPath, renderChecklist(report));
 	const jsonPath = valueOf("--json");
-	if (jsonPath) {
-		const { writeFileSync } = await import("node:fs");
-		writeFileSync(jsonPath, JSON.stringify(report, null, 2));
-		console.log(`wrote ${jsonPath}`);
-	}
-	console.log(formatCoverage(report));
+	if (jsonPath) writeFileSync(jsonPath, JSON.stringify(report, null, 2));
+	console.log(summarize(report));
+	console.log(`checklist: ${mdPath}${jsonPath ? `\njson: ${jsonPath}` : ""}`);
 }
 
 const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation, coverage: cmdCoverage };

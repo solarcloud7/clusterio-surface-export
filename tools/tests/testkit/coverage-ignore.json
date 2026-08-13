@@ -1,0 +1,8 @@
+{
+	"entries": [
+		{
+			"attribute": "electric_buffer_size",
+			"reason": "power not tracked on purpose (owner, 2026-08-12)"
+		}
+	]
+}
