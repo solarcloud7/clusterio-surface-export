@@ -199,6 +199,7 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 				class: className,
 				attribute: a.name,
 				doc: a.doc,
+				definingClass: a.definingClass,
 				docUrl: `https://lua-api.factorio.com/${pin}/classes/${a.definingClass}.html#${a.name}`,
 				warnings: [
 					...(forceNames.has(a.name)

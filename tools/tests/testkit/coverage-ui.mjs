@@ -1,32 +1,118 @@
 // coverage-ui — browser triage for the coverage checklist: click dispositions, one Save writes the ledger
 //
-// requires: the same inputs as coverage.mjs offline mode; a browser on this machine
-// produces: a loopback HTTP server (127.0.0.1 only) serving the checklist as an interactive page;
+// requires: the same inputs as coverage.mjs offline mode; a browser on this machine; network to
+//           lua-api.factorio.com ONCE per pin for the full attribute docs (cached in the OS temp
+//           dir; the page works without them, minus the info panels)
+// produces: a loopback HTTP server (127.0.0.1 only) serving the checklist as an interactive page —
+//           each row carries an (i) panel with the FULL upstream description and read/write type;
 //           Save POSTs the full decision set, which is validated by the SAME rules as the CLI
 //           (unknown attribute, bad disposition, empty reason, born-stale referenced attribute)
 //           and then written to coverage-triage.json
-// does not: bind beyond loopback, serve anything but the checklist, touch the cluster, or write
-//           the ledger when any decision fails validation — a failed save writes nothing and
-//           reports every problem
+// does not: bind beyond loopback, serve anything but the checklist, touch the cluster, commit the
+//           full docs anywhere (the vendored index keeps first sentences only), or write the
+//           ledger when any decision fails validation — a failed save writes nothing and reports
+//           every problem
 
 import http from "node:http";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
 	DEFAULT_CLASSES, DISPOSITIONS, allRows, coverageOffline,
 	moduleIdentifiers, readTriageFile, validateTriageEntries, writeTriageFile,
 } from "./coverage.mjs";
 
-function pageModel(classes) {
+function formatType(t) {
+	if (t == null) return null;
+	if (typeof t === "string") return t;
+	switch (t.complex_type) {
+		case "array": return `array[${formatType(t.value)}]`;
+		case "dictionary": return `dictionary[${formatType(t.key)} → ${formatType(t.value)}]`;
+		case "union": return t.options.map(formatType).join(" | ");
+		case "literal": return JSON.stringify(t.value);
+		case "type": return formatType(t.value);
+		case "LuaLazyLoadedValue": return `LuaLazyLoadedValue[${formatType(t.value)}]`;
+		case "table": case "tuple": return t.complex_type;
+		default: return t.complex_type || "?";
+	}
+}
+
+function plainText(description) {
+	return String(description || "")
+		.replace(/\[([^\]]+)\]\((?:runtime|prototype):[^)]*\)/g, "$1")
+		.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+}
+
+async function loadRichDocs(pin) {
+	const cachePath = path.join(os.tmpdir(), `factorio-runtime-api-${pin}.json`);
+	let api = null;
+	let source = null;
+	if (existsSync(cachePath)) {
+		try {
+			api = JSON.parse(readFileSync(cachePath, "utf8"));
+			source = "cache";
+		} catch (error) {
+			console.error(`coverage ui: cache at ${cachePath} unreadable (${error.message}) — refetching`);
+		}
+	}
+	if (!api) {
+		try {
+			const response = await fetch(`https://lua-api.factorio.com/${pin}/runtime-api.json`);
+			if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+			const body = await response.text();
+			api = JSON.parse(body);
+			writeFileSync(cachePath, body);
+			source = "fetched";
+		} catch (error) {
+			console.error(`coverage ui: full docs unavailable (${error.message}) — info panels will fall back`);
+			return { source: "unavailable", byKey: new Map() };
+		}
+	}
+	if (api.application_version !== pin) {
+		console.error(`coverage ui: cached/fetched docs are for ${api.application_version}, not ${pin} — ignoring`);
+		return { source: "unavailable", byKey: new Map() };
+	}
+	const byKey = new Map();
+	for (const cls of api.classes) {
+		for (const attribute of cls.attributes) {
+			byKey.set(`${cls.name}.${attribute.name}`, {
+				text: plainText(attribute.description),
+				readType: formatType(attribute.read_type),
+				writeType: formatType(attribute.write_type),
+			});
+		}
+	}
+	return { source, byKey };
+}
+
+function pageModel(classes, richDocs) {
 	const report = coverageOffline({ classes });
+	const enrich = row => {
+		const rich = richDocs.byKey.get(`${row.definingClass}.${row.attribute}`);
+		return {
+			...row,
+			info: rich ? {
+				text: rich.text || "(upstream carries no description)",
+				type: [
+					rich.readType ? `Read: ${rich.readType}` : null,
+					rich.writeType ? `Write: ${rich.writeType}` : null,
+				].filter(Boolean).join("   "),
+				definedOn: row.definingClass,
+			} : null,
+		};
+	};
 	return {
 		pin: report.pin,
 		classes: report.classes,
 		dispositions: DISPOSITIONS,
+		docsSource: richDocs.source,
 		groups: report.byClass.map(cls => ({
 			className: cls.className,
 			writable: cls.writable,
 			sections: [
-				...(cls.universal.length ? [{ title: "Universal (no subclass restriction)", rows: cls.universal }] : []),
-				...cls.subclassSections.map(s => ({ title: s.subclass, rows: s.rows })),
+				...(cls.universal.length
+					? [{ title: "Universal (no subclass restriction)", rows: cls.universal.map(enrich) }] : []),
+				...cls.subclassSections.map(s => ({ title: s.subclass, rows: s.rows.map(enrich) })),
 			],
 		})),
 	};
@@ -71,6 +157,11 @@ function renderPage(model) {
 	.controls .d.on-ignore { background: #4a4f5a; }
 	.controls input { background: #23262e; color: inherit; border: 1px solid #3a3f4a;
 		border-radius: 6px; padding: 5px 10px; flex: 1; min-width: 240px; }
+	button.i { background: #23262e; border: 1px solid #3a3f4a; color: #7ab7ff; border-radius: 50%;
+		width: 22px; height: 22px; padding: 0; font-style: italic; font-weight: 700; line-height: 1; }
+	.info { background: #12141a; border: 1px solid #2a2e37; border-radius: 6px; padding: 8px 12px;
+		margin-top: 6px; white-space: pre-wrap; color: #c2c8d2; font-size: 13px; }
+	.info .type { color: #8ecf9d; font-family: monospace; margin-bottom: 6px; }
 	.dirty { outline: 1px dashed #e8c46f; }
 	.hide { display: none; }
 </style>
@@ -138,7 +229,13 @@ function renderPage(model) {
 						esc((row.attribute + " " + (row.doc || "") + " " + row.warnings.join(" ")).toLowerCase()) + '">';
 					html += "<div><code>" + esc(row.attribute) + "</code> ";
 					if (row.doc) html += '<span class="doc">' + esc(row.doc) + "</span> ";
-					html += '<a href="' + esc(row.docUrl) + '" target="_blank">docs</a></div>';
+					html += '<a href="' + esc(row.docUrl) + '" target="_blank">docs</a> ';
+					if (row.info) html += '<button type="button" class="i" title="full upstream doc">i</button>';
+					html += "</div>";
+					if (row.info) {
+						html += '<div class="info hide"><div class="type">' + esc(row.info.type) +
+							"   (defined on " + esc(row.info.definedOn) + ")</div>" + esc(row.info.text) + "</div>";
+					}
 					row.warnings.forEach(function (w) { html += '<div class="warn">&#9888; ' + esc(w) + "</div>"; });
 					html += '<div class="controls">';
 					["open"].concat(model.dispositions).forEach(function (d) {
@@ -157,6 +254,13 @@ function renderPage(model) {
 
 	function wireRow(rowEl) {
 		var k = rowEl.getAttribute("data-key");
+		var infoButton = rowEl.querySelector("button.i");
+		if (infoButton) {
+			infoButton.addEventListener("click", function () {
+				var panel = rowEl.querySelector(".info");
+				panel.className = panel.className.indexOf("hide") !== -1 ? "info" : "info hide";
+			});
+		}
 		Array.prototype.forEach.call(rowEl.querySelectorAll("button.d"), function (button) {
 			button.addEventListener("click", function () {
 				state[k].disposition = button.getAttribute("data-d");
@@ -252,12 +356,15 @@ function readBody(req) {
 	});
 }
 
-export function startTriageUi({ classes = DEFAULT_CLASSES, port = 3199 } = {}) {
+export async function startTriageUi({ classes = DEFAULT_CLASSES, port = 3199 } = {}) {
+	const pin = coverageOffline({ classes }).pin;
+	const richDocs = await loadRichDocs(pin);
+	console.log(`coverage ui: full upstream docs ${richDocs.source} (${richDocs.byKey.size} attributes)`);
 	const server = http.createServer(async (req, res) => {
 		try {
 			if (req.method === "GET" && (req.url === "/" || req.url.startsWith("/?"))) {
 				res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-				res.end(renderPage(pageModel(classes)));
+				res.end(renderPage(pageModel(classes, richDocs)));
 				return;
 			}
 			if (req.method === "POST" && req.url === "/save") {
