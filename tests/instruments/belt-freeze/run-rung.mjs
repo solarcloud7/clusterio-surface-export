@@ -59,7 +59,8 @@ local function line_sig(e)
   for li = 1, e.get_max_transport_line_index() do
     local ps = {}
     for _, d in ipairs(e.get_transport_line(li).get_detailed_contents()) do
-      ps[#ps + 1] = string.format('%.4f', d.position)
+      local q = d.stack.quality
+      ps[#ps + 1] = string.format('%s.%s@%.4f', d.stack.name, q and q.name or 'normal', d.position)
       n = n + 1
     end
     parts[#parts + 1] = table.concat(ps, ',')
@@ -221,6 +222,11 @@ async function snapshotAndMeasure(label) {
 		`gone=${m.gone} window=${m.window_ticks}t ` +
 		`[frozen ${m.frozen_moved}/${m.frozen_moved + m.frozen_still} moved, ` +
 		`control ${m.control_moved}/${m.control_moved + m.control_still} moved]`);
+	if (m.gone > 0) {
+		fail(`${label}: ${m.gone} of ${m.gone + m.tracked} tracked belts no longer exist at measure time. ` +
+			"A destroyed belt is counted neither moved nor still, so every count in this arm is over a " +
+			"population that shrank while it was being measured.");
+	}
 	return m;
 }
 
@@ -240,6 +246,7 @@ async function cloneFixture(sourceIndex, sourceName) {
 	throw new Error(`clone '${CLONE}' did not materialize within ${CLONE_WAIT_MS} ms`);
 }
 
+let baseline = null;
 const verdicts = [];
 function verdict(id, claim, status, evidence) {
 	verdicts.push({ id, claim, status, evidence });
@@ -251,6 +258,12 @@ function verdict(id, claim, status, evidence) {
 async function main() {
 	let cloneIndex = null;
 	try {
+		baseline = lua(`return { success = true,
+			jobs = table_size(storage.async_jobs or {}),
+			locks = table_size(storage.locked_platforms or {}),
+			holds = table_size(storage.destination_holds or {}),
+			tick_paused = game.tick_paused == true }`);
+		say(`cluster state before this run: ${JSON.stringify(baseline)}`);
 		lua("storage.__belt_freeze_rung = { platform = -1 } return { success = true }");
 
 		say("\n=== fixture check: which platform's belts actually MOVE? ===");
@@ -265,7 +278,7 @@ async function main() {
 			if (candidate.carrying === 0) continue;
 			lua(`storage.__belt_freeze_rung.platform = ${candidate.index} return { success = true }`);
 			const m = await snapshotAndMeasure(`  fixture ${candidate.name}`);
-			if (m.moved > 0 && source === null) source = candidate;
+			if (m.moved > 0) { source = candidate; break; }
 		}
 		if (source === null) {
 			fail("no available platform carries MOVING belt items — this rung cannot be run against the " +
@@ -319,11 +332,24 @@ async function main() {
 		say(`  wrote disabled_by_script=true on ${written.wrote} belts ` +
 			`(threw on ${written.threw}); readback true on ${written.readback_true}`);
 		const armC = await snapshotAndMeasure("ARM C disabled_by_script");
+		if (armC.moved === 0 && written.readback_true === 0 && written.threw === 0) {
+			fail("ARM C INVALID: not one tracked belt moved, and the flag did not stick on any of them. A clone " +
+				"whose loop has saturated is still for a lawful reason, so this window cannot tell a no-op flag " +
+				"from a stopped world. F2 is NOT measured this run.");
+			return;
+		}
 		verdict("F2", "disabled_by_script = true on a transport-belt is a SILENT NO-OP (readback false, lines keep moving)",
 			(written.readback_true === 0 && written.threw === 0 && armC.moved > 0) ? "REPRODUCED" : "DIVERGED",
 			`${written.wrote} belts written, ${written.threw} threw, readback true on ${written.readback_true}; ` +
 			`${armC.moved}/${armC.tracked} carrying belts still moved over ${armC.window_ticks} ticks`);
-		lua(PRE + "for _, e in pairs(belts()) do e.disabled_by_script = false end return { success = true }");
+		const restored = nums(lua(PRE + `
+			local cleared, threw = 0, 0
+			for _, e in pairs(belts()) do
+			  if pcall(function() e.disabled_by_script = false end) then cleared = cleared + 1
+			  else threw = threw + 1 end
+			end
+			return { success = true, cleared = cleared, threw = threw }`), ["cleared", "threw"]);
+		if (restored.threw > 0) say(`  note: clearing the flag threw on ${restored.threw} belt(s)`);
 
 		say("\n=== ARM D: circuit_enable_disable + a FALSE condition, NO wire ===");
 		if (!Array.isArray(armA.moved_units) || armA.moved_units.length === 0) {
@@ -411,21 +437,27 @@ async function main() {
 		let swept = null;
 		try {
 			const deleted = L.lua(HOST, `
-				local removed = 0
+				local removed, strays = 0, 0
 				for _, pl in pairs(game.forces.player.platforms) do
-				  if pl.valid and pl.name:sub(1, 11) == 'beltfreeze-' and pl.surface and pl.surface.valid then
-				    game.delete_surface(pl.surface)
-				    removed = removed + 1
+				  if pl.valid and pl.name:sub(1, 11) == 'beltfreeze-' then
+				    if pl.name == '${CLONE}' then
+				      if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end
+				      removed = removed + 1
+				    else strays = strays + 1 end
 				  end
 				end
 				storage.__belt_freeze_rung = nil
-				return { success = true, removed = removed }`);
+				return { success = true, removed = removed, strays = strays }`);
 			say(`cleanup: delete_surface issued for ${JSON.stringify(deleted)}`);
+			if (deleted.strays > 0) {
+				say(`cleanup: ${deleted.strays} other beltfreeze-* platform(s) left untouched — they belong to ` +
+					"another run; sweep them with tools/tests/cleanup-test-surfaces.ps1");
+			}
 			await L.sleep(5000);
 			swept = L.lua(HOST, `
 				local leftover = 0
 				for _, pl in pairs(game.forces.player.platforms) do
-				  if pl.valid and pl.name:sub(1, 11) == 'beltfreeze-' then leftover = leftover + 1 end
+				  if pl.valid and pl.name == '${CLONE}' then leftover = leftover + 1 end
 				end
 				return { success = true, leftover = leftover,
 				  storage_cleared = storage.__belt_freeze_rung == nil,
@@ -441,12 +473,17 @@ async function main() {
 		say(`\ncleanup: ${JSON.stringify(swept)}`);
 		if (swept === null || swept.success !== true) fail(`cleanup did not answer: ${JSON.stringify(swept)}`);
 		else {
-			if (swept.leftover !== 0) fail(`${swept.leftover} beltfreeze-* platform(s) left behind`);
+			if (swept.leftover !== 0) fail(`${CLONE} is still on the cluster after delete_surface`);
 			if (swept.storage_cleared !== true) fail("storage.__belt_freeze_rung was not cleared");
 			for (const key of ["jobs", "locks", "holds"]) {
-				if (swept[key] !== 0) fail(`${key}=${swept[key]} after cleanup (expected 0)`);
+				const before = baseline ? baseline[key] : 0;
+				if (swept[key] > before) {
+					fail(`${key}=${swept[key]} after cleanup, ${before} before the run — this rung added ${key}`);
+				} else if (swept[key] !== 0) {
+					say(`  note: ${key}=${swept[key]}, unchanged from before this run — not this rung's to clear`);
+				}
 			}
-			if (swept.tick_paused !== false) fail("game left tick-paused");
+			if (swept.tick_paused !== false && !(baseline && baseline.tick_paused)) fail("game left tick-paused");
 		}
 	}
 

@@ -8,7 +8,7 @@
 // produces: per-loader refill counts for three arms (control, disabled_by_script=true, re-enabled) on
 //           the built rigs, readback of the written flag, per-arm status names, and a verdict on
 //           docs/testing.md's "freeze the feed with disabled_by_script = true" instruction
-// does not: measure transport-belt behavior (tests/instruments/belt-freeze on PR #211 covers that),
+// does not: measure transport-belt behavior (tests/instruments/belt-freeze covers that),
 //           measure paused-platform behavior, assert item conservation, measure the save's four
 //           feed-less native loaders, or touch a protected fixture (it clones and sweeps)
 
@@ -20,6 +20,7 @@ const CLONE = `loaderfreeze-${Date.now().toString(36)}`;
 const CLONE_WAIT_MS = 180_000;
 const WINDOW_MS = 3000;
 const MIN_WINDOW_TICKS = 60;
+const RIG_COUNT = 2;
 
 const say = (...a) => console.log(...a);
 const problems = [];
@@ -88,15 +89,34 @@ end
 return { success = true, rows = rows, window_ticks = game.tick - (st.arm_tick or 0), tick = game.tick, paused = p.paused }
 `;
 
+function rows(value, label, field) {
+	if (!Array.isArray(value)) {
+		throw new Error(`${label}: '${field}' came back as ${JSON.stringify(value)} rather than a list. An empty `
+			+ "Lua table serializes as {}, so this means the rig loaders are gone from the clone — no arm can "
+			+ "be read and nothing about the flag is measured.");
+	}
+	if (value.length !== RIG_COUNT) {
+		throw new Error(`${label}: measured ${value.length} loader(s), but the rig was built with ${RIG_COUNT}. `
+			+ "A verdict over a shrunken rig would report a freeze that was never measured on the missing one.");
+	}
+	return value;
+}
+
 async function runArm(label, flagWrite) {
 	const start = lua(armStart(flagWrite));
+	rows(start.loaders, `${label} arming`, "loaders");
 	say(`  ${label}: armed on ${start.loaders.length} loaders at tick ${start.tick}` +
 		` readback=[${start.loaders.map(l => l.readback).join(",")}]` +
 		` status=[${start.loaders.map(l => l.status).join(",")}]`);
 	await sleep(WINDOW_MS);
 	const m = lua(ARM_MEASURE);
+	rows(m.rows, `${label} measure`, "rows");
 	if (m.window_ticks < MIN_WINDOW_TICKS) {
 		throw new Error(`${label}: window only ${m.window_ticks} ticks (< ${MIN_WINDOW_TICKS}) — game not advancing, no fact measured`);
+	}
+	if (m.paused !== false) {
+		throw new Error(`${label}: the platform read paused=${m.paused} at measure time. A paused platform is a `
+			+ "second reason for a loader to stop feeding, so this window cannot be attributed to the flag.");
 	}
 	for (const row of m.rows) {
 		say(`    unit ${row.unit}: refill=${row.refill} readback=${row.readback} status=${row.status}`);
@@ -170,8 +190,8 @@ for u, e in pairs(loaders()) do
 end
 return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 		if (state.paused !== false) throw new Error("clone did not unpause; every arm would be confounded");
-		if (!Array.isArray(state.loaders) || state.loaders.length !== 2) {
-			throw new Error(`rig build did not yield 2 measurable loaders: ${JSON.stringify(state.loaders)}`);
+		if (!Array.isArray(state.loaders) || state.loaders.length !== RIG_COUNT) {
+			throw new Error(`rig build did not yield ${RIG_COUNT} measurable loaders: ${JSON.stringify(state.loaders)}`);
 		}
 		say(`clone [${cloneIndex}] unpaused; built ${state.loaders.length} harness rigs: ` +
 			state.rigs.map(r => `unit ${r.unit} feeding ${r.item} (chest holds ${r.chest_items})`).join(", "));
@@ -201,7 +221,7 @@ return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 			return;
 		}
 
-		say("\n=== VERDICT (pinned 2026-08-12: loaders FREEZE under disabled_by_script, unlike belts) ===");
+		say("\n=== VERDICT ===");
 		say(`  readback true on ${bReadback.length}/${b.rows.length} loaders after the write`);
 		if (bReadback.length !== b.rows.length) {
 			fail(`readback DIVERGED: only ${bReadback.length}/${b.rows.length} loaders read back true — at the ` +
@@ -217,21 +237,27 @@ return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 		}
 	} finally {
 		try {
-			const deleted = lua(`local names = {}
+			const deleted = lua(`local names, strays = {}, 0
 for _, pl in pairs(game.forces.player.platforms) do
-  if pl.valid and pl.name:sub(1, 12) == 'loaderfreeze' and pl.surface and pl.surface.valid then
-    names[#names + 1] = pl.name
-    game.delete_surface(pl.surface)
+  if pl.valid and pl.name:sub(1, 12) == 'loaderfreeze' then
+    if pl.name == '${CLONE}' then
+      names[#names + 1] = pl.name
+      if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end
+    else strays = strays + 1 end
   end
 end
 storage.__loader_freeze_rung = nil
-return { success = true, deleted = names }`);
+return { success = true, deleted = names, strays = strays }`);
 			say(`\ncleanup: delete_surface issued for ${JSON.stringify(deleted.deleted)}; rung storage cleared`);
+			if (deleted.strays > 0) {
+				say(`cleanup: ${deleted.strays} other loaderfreeze-* platform(s) left untouched — they belong to `
+					+ "another run; sweep them with tools/tests/cleanup-test-surfaces.ps1");
+			}
 			await sleep(5000);
 			const left = lua(`local n = 0
-for _, pl in pairs(game.forces.player.platforms) do if pl.valid and pl.name:sub(1, 12) == 'loaderfreeze' then n = n + 1 end end
+for _, pl in pairs(game.forces.player.platforms) do if pl.valid and pl.name == '${CLONE}' then n = n + 1 end end
 return { success = true, leftovers = n }`);
-			if (left.leftovers !== 0) fail(`sweep left ${left.leftovers} loaderfreeze platform(s) behind`);
+			if (left.leftovers !== 0) fail(`sweep left ${CLONE} behind`);
 			else say("cleanup: zero leftovers");
 		} catch (error) {
 			console.error(`cleanup failed: ${error && error.stack ? error.stack : error} — sweep by hand with tools/tests/cleanup-test-surfaces.ps1`);
