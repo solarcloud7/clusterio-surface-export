@@ -191,7 +191,28 @@ async function cmdMutation() {
 	process.exit(killed && process.exitCode !== 1 ? 0 : 1);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation };
+async function cmdCoverage() {
+	const platform = rest[0];
+	if (!platform || platform.startsWith("--")) {
+		fail("usage: coverage <platform> [--host 1] [--per-type 2] [--only <prototype-type>] [--json <path>]");
+	}
+	const { coverage, formatCoverage } = await import("./coverage.mjs");
+	const report = await coverage({
+		platform,
+		host: Number(valueOf("--host") ?? 1),
+		perType: Number(valueOf("--per-type") ?? 2),
+		only: valueOf("--only"),
+	});
+	const jsonPath = valueOf("--json");
+	if (jsonPath) {
+		const { writeFileSync } = await import("node:fs");
+		writeFileSync(jsonPath, JSON.stringify(report, null, 2));
+		console.log(`wrote ${jsonPath}`);
+	}
+	console.log(formatCoverage(report));
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation, coverage: cmdCoverage };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }
