@@ -3,6 +3,7 @@
 		{
 			"class": "LuaEntity",
 			"attribute": "electric_buffer_size",
+			"disposition": "ignore",
 			"reason": "power not tracked on purpose (owner, 2026-08-12)"
 		}
 	]

@@ -1,18 +1,20 @@
-// coverage — per-class checklist of read+write attributes unknown to the serializer, offline
+// coverage — per-class checklist of read+write attributes unknown to the serializer, offline,
+// with a committed triage ledger carrying the owner's decisions
 //
-// requires: the vendored scripts/factorio-api-index.json at the current pin (with subclasses),
-//           tools/tests/testkit/coverage-ignore.json; a running cluster ONLY when --live is used
-// produces: a markdown checklist grouped by class and upstream subclass annotation (Loader,
-//           CraftingMachine, ...), each row a read+write attribute whose identifier appears
-//           nowhere in module/**/*.lua and which is not on the committed ignore list; --live
-//           enriches LuaEntity rows with sample values read off named platforms
-// does not: prove a property is LOST — a row is a question ("should we record this?"), not a
-//           defect: create_entity sets some attributes implicitly and an equivalent may ride
-//           another payload field. Reads no methods, measures no restoration, touches no cluster
-//           on the offline path, and refuses to emit anything when the reference filter fails
-//           its controls.
+// requires: the vendored scripts/factorio-api-index.json at the current pin (subclasses + doc),
+//           tools/tests/testkit/coverage-triage.json; a running cluster ONLY when --live is used
+// produces: a markdown checklist — OPEN rows grouped by class and upstream subclass, each with the
+//           upstream first-sentence doc, a doc link, and computed derivation warnings (same-name
+//           twin on LuaForce / on the paired prototype class); decided rows rendered [x] under
+//           their disposition (track / derived / ignore). --live enriches LuaEntity rows with
+//           sample values read off named platforms
+// does not: prove a property is LOST — an OPEN row is a question, not a defect: create_entity
+//           sets some attributes implicitly and an equivalent may ride another payload field.
+//           Twin warnings are name-coincidence signals, not measurements. Reads no methods,
+//           touches no cluster on the offline path, and refuses to emit anything when the
+//           reference filter fails its controls or the ledger carries a stale entry.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadIndex } from "./api-oracle.mjs";
@@ -20,16 +22,26 @@ import { loadIndex } from "./api-oracle.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MODULE_ROOT = path.join(here, "..", "..", "..",
 	"docker", "seed-data", "external_plugins", "surface_export", "module");
-const IGNORE_PATH = path.join(here, "coverage-ignore.json");
+const TRIAGE_PATH = path.join(here, "coverage-triage.json");
 
 export const DEFAULT_CLASSES = ["LuaEntity", "LuaItemStack", "LuaInventory", "LuaTrain", "LuaSpacePlatform"];
+export const DISPOSITIONS = ["track", "derived", "ignore"];
 
+const PROTOTYPE_PAIR = { LuaEntity: "LuaEntityPrototype", LuaItemStack: "LuaItemPrototype" };
 const ENTITIES_PER_CALL = 4;
 const VALUE_CHARS = 120;
 const POSITIVE_CONTROLS = ["direction", "energy"];
 const NEGATIVE_CONTROL = "zzz_coverage_negative_control_zzz";
 const MIN_CORPUS_FILES = 50;
 const MIN_CORPUS_IDENTIFIERS = 1000;
+
+function member(index, className, attribute) {
+	return ((index.classes || {})[className] || {})[attribute];
+}
+
+function isRw(d) {
+	return d && d.kind === "attribute" && d.read === true && d.write === true;
+}
 
 export function writableAttributes(className) {
 	const index = loadIndex();
@@ -38,8 +50,13 @@ export function writableAttributes(className) {
 	return {
 		pin: index.application_version,
 		attributes: Object.entries(members)
-			.filter(([, d]) => d.kind === "attribute" && d.read === true && d.write === true)
-			.map(([name, d]) => ({ name, subclasses: Array.isArray(d.subclasses) ? d.subclasses : null }))
+			.filter(([, d]) => isRw(d))
+			.map(([name, d]) => ({
+				name,
+				subclasses: Array.isArray(d.subclasses) ? d.subclasses : null,
+				doc: d.doc ?? null,
+				definingClass: d.inherited_from ?? className,
+			}))
 			.sort((a, b) => a.name.localeCompare(b.name)),
 	};
 }
@@ -70,53 +87,130 @@ export function moduleIdentifiers() {
 	return { files, identifiers };
 }
 
-export function loadIgnoreList(identifiers) {
+function readTriageFile() {
+	const parsed = JSON.parse(readFileSync(TRIAGE_PATH, "utf8"));
+	if (!Array.isArray(parsed.entries)) {
+		throw new Error(`${TRIAGE_PATH} must carry { entries: [{ class, attribute, disposition, reason }] }`);
+	}
+	return parsed.entries;
+}
+
+function writeTriageFile(entries) {
+	writeFileSync(TRIAGE_PATH, JSON.stringify({ entries }, null, "\t") + "\n");
+}
+
+export function loadTriage(identifiers) {
 	const index = loadIndex();
-	const parsed = JSON.parse(readFileSync(IGNORE_PATH, "utf8"));
-	const entries = Array.isArray(parsed.entries) ? parsed.entries : null;
-	if (!entries) throw new Error(`${IGNORE_PATH} must carry { entries: [{ class, attribute, reason }] }`);
+	const entries = readTriageFile();
 	const stale = [];
+	const seen = new Set();
 	for (const entry of entries) {
 		if (typeof entry.class !== "string" || typeof entry.attribute !== "string"
-			|| typeof entry.reason !== "string" || !entry.reason.trim()) {
-			stale.push(`${JSON.stringify(entry)} — every entry needs non-empty class, attribute and reason`);
+			|| typeof entry.reason !== "string" || !entry.reason.trim()
+			|| !DISPOSITIONS.includes(entry.disposition)) {
+			stale.push(`${JSON.stringify(entry)} — every entry needs class, attribute, a disposition in `
+				+ `[${DISPOSITIONS.join(", ")}], and a non-empty reason`);
 			continue;
 		}
-		const member = ((index.classes || {})[entry.class] || {})[entry.attribute];
-		if (!member || member.kind !== "attribute" || member.read !== true || member.write !== true) {
-			stale.push(`"${entry.class}.${entry.attribute}" is not a read+write attribute at this pin — `
-				+ "the row it would suppress cannot appear; delete the entry");
+		const key = `${entry.class}.${entry.attribute}`;
+		if (seen.has(key)) { stale.push(`"${key}" appears twice — one decision per attribute`); continue; }
+		seen.add(key);
+		if (!isRw(member(index, entry.class, entry.attribute))) {
+			stale.push(`"${key}" is not a read+write attribute at this pin — the row it would `
+				+ "suppress cannot appear; delete the entry");
 		} else if (identifiers.has(entry.attribute)) {
-			stale.push(`"${entry.attribute}" is now referenced in module/ — the row it suppressed no `
-				+ "longer appears; delete the entry");
+			stale.push(entry.disposition === "track"
+				? `"${key}" is now referenced in module/ — the track entry is completed; delete the entry`
+				: `"${key}" is now referenced in module/ — the ${entry.disposition} rule is dead; delete the entry`);
 		}
 	}
 	if (stale.length) {
-		throw new Error("stale ignore entries — a dead ignore rule can silently suppress a future real "
-			+ "row, so the run refuses:\n  " + stale.join("\n  "));
+		throw new Error("stale triage entries — a dead rule can silently suppress a future real row, "
+			+ "so the run refuses:\n  " + stale.join("\n  "));
 	}
 	return entries;
 }
 
+export function markTriage({ class: className, attribute, disposition, reason }) {
+	const index = loadIndex();
+	if (!DISPOSITIONS.includes(disposition)) {
+		throw new Error(`disposition must be one of [${DISPOSITIONS.join(", ")}], got "${disposition}"`);
+	}
+	if (typeof reason !== "string" || !reason.trim()) {
+		throw new Error("a mark needs a non-empty reason — the reason IS the context the checklist exists for");
+	}
+	if (!isRw(member(index, className, attribute))) {
+		throw new Error(`${className}.${attribute} is not a read+write attribute at this pin — nothing to mark`);
+	}
+	const { identifiers } = moduleIdentifiers();
+	if (identifiers.has(attribute)) {
+		throw new Error(`${className}.${attribute} is already referenced in module/ — it never appears on `
+			+ "the checklist, so a mark for it would be born stale");
+	}
+	const entries = readTriageFile();
+	if (entries.some(e => e.class === className && e.attribute === attribute)) {
+		throw new Error(`${className}.${attribute} already has a decision — unmark it first`);
+	}
+	entries.push({ class: className, attribute, disposition, reason: reason.trim() });
+	writeTriageFile(entries);
+	loadTriage(identifiers);
+	return { message: `${className}.${attribute} → ${disposition.toUpperCase()}: ${reason.trim()}` };
+}
+
+export function unmarkTriage({ class: className, attribute }) {
+	const entries = readTriageFile();
+	const remaining = entries.filter(e => !(e.class === className && e.attribute === attribute));
+	if (remaining.length === entries.length) {
+		throw new Error(`${className}.${attribute} has no triage entry to remove`);
+	}
+	writeTriageFile(remaining);
+	return { message: `${className}.${attribute} → OPEN (decision removed)` };
+}
+
 export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
+	const index = loadIndex();
 	const { files, identifiers } = moduleIdentifiers();
-	const ignored = loadIgnoreList(identifiers);
-	const ignoredSet = new Set(ignored.map(e => `${e.class}.${e.attribute}`));
+	const triage = loadTriage(identifiers);
+	const decisionByKey = new Map(triage.map(e => [`${e.class}.${e.attribute}`, e]));
+	const forceNames = new Set(Object.entries((index.classes || {}).LuaForce || {})
+		.filter(([, d]) => d.kind === "attribute").map(([n]) => n));
 
 	let pin = null;
 	const byClass = [];
+	const decided = [];
 	for (const className of classes) {
 		const found = writableAttributes(className);
 		pin = found.pin;
-		const rows = found.attributes
-			.filter(a => !identifiers.has(a.name) && !ignoredSet.has(`${className}.${a.name}`));
+		const protoPair = PROTOTYPE_PAIR[className];
+		const protoNames = protoPair
+			? new Set(Object.entries((index.classes || {})[protoPair] || {})
+				.filter(([, d]) => d.kind === "attribute").map(([n]) => n))
+			: null;
+		const unknown = found.attributes.filter(a => !identifiers.has(a.name));
 		const bySubclass = new Map();
 		const universal = [];
-		for (const row of rows) {
-			if (row.subclasses === null) { universal.push({ attribute: row.name, sample: null, types: null }); continue; }
-			const key = row.subclasses.join(", ");
+		for (const a of unknown) {
+			const decision = decisionByKey.get(`${className}.${a.name}`);
+			const row = {
+				attribute: a.name,
+				doc: a.doc,
+				docUrl: `https://lua-api.factorio.com/${pin}/classes/${a.definingClass}.html#${a.name}`,
+				warnings: [
+					...(forceNames.has(a.name)
+						? ["same name on LuaForce — force/research-scoped; an entity-level write rides on or fights the force value"] : []),
+					...(protoNames && protoNames.has(a.name)
+						? [`same name on ${protoPair} — likely a prototype-derived default`] : []),
+				],
+				sample: null, types: null,
+			};
+			if (decision) {
+				decided.push({ ...row, class: className, disposition: decision.disposition, reason: decision.reason });
+				continue;
+			}
+			if (a.subclasses === null) { universal.push(row); continue; }
+			const key = a.subclasses.join(", ");
 			if (!bySubclass.has(key)) bySubclass.set(key, []);
-			bySubclass.get(key).push({ attribute: row.name, sample: null, types: null });
+			bySubclass.get(key).push(row);
 		}
 		byClass.push({
 			className,
@@ -131,7 +225,7 @@ export function coverageOffline({ classes = DEFAULT_CLASSES } = {}) {
 		mode: "offline", pin, classes,
 		filter: { files, identifiers: identifiers.size,
 			positiveControls: POSITIVE_CONTROLS, negativeControl: NEGATIVE_CONTROL },
-		ignored,
+		decided,
 		byClass,
 		live: null,
 	};
@@ -255,10 +349,11 @@ export function renderChecklist(report) {
 	const lines = [];
 	lines.push(`# Property coverage checklist — ${report.mode}, Factorio ${report.pin}`);
 	lines.push("");
-	lines.push("A row is a question — \"should we record this?\" — not a defect: `create_entity` sets some");
-	lines.push("attributes implicitly, and an equivalent may already ride another payload field. Filters:");
-	lines.push("read+write at the pin; identifier absent from `module/**/*.lua`; not on the committed");
-	lines.push("ignore list. Subclass headings come from the upstream runtime docs.");
+	lines.push("An OPEN row is a question — \"should we record this?\" — not a defect: `create_entity` sets");
+	lines.push("some attributes implicitly, and an equivalent may already ride another payload field. Decide a");
+	lines.push("row with `node tools/tests/testkit/cli.mjs coverage mark <Class.attribute> <track|derived|ignore> \"<reason>\"`;");
+	lines.push("decisions live in coverage-triage.json and are staleness-guarded. Twin warnings are");
+	lines.push("name-coincidence signals from the API index, not measurements.");
 	lines.push("");
 	lines.push(`Reference filter: ${report.filter.files} files, ${report.filter.identifiers} identifiers; `
 		+ `controls green (${report.filter.positiveControls.join("/")} known, negative token unknown).`);
@@ -268,20 +363,18 @@ export function renderChecklist(report) {
 				? ` (${report.live.entitiesNotFoundLive} payload entities not found live; excluded)` : "") + ".");
 	}
 	lines.push("");
-	if (report.ignored.length) {
-		lines.push("Ignored on purpose:");
-		for (const e of report.ignored) lines.push(`- \`${e.class}.${e.attribute}\` — ${e.reason}`);
-		lines.push("");
-	}
 	const rowText = r => {
 		let text = `- [ ] \`${r.attribute}\``;
-		if (r.sample) text += ` — ${r.sample.value} _(${r.sample.at}, ${r.sample.platform})_`;
-		else if (r.types && r.types.length === 0) text += " — (nil on all live samples)";
+		if (r.doc) text += ` — ${r.doc}`;
+		text += ` [docs](${r.docUrl})`;
+		if (r.sample) text += `\n  - live sample: ${r.sample.value} _(${r.sample.at}, ${r.sample.platform})_`;
+		else if (r.types && r.types.length === 0) text += "\n  - (nil on all live samples)";
+		for (const w of r.warnings) text += `\n  - ⚠ ${w}`;
 		return text;
 	};
 	for (const cls of report.byClass) {
-		const total = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
-		lines.push(`## ${cls.className} — ${total} of ${cls.writable} read+write attributes unaccounted for`);
+		const open = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
+		lines.push(`## ${cls.className} — ${open} OPEN of ${cls.writable} read+write attributes`);
 		lines.push("");
 		if (cls.universal.length) {
 			lines.push(`### Universal (no subclass restriction) — ${cls.universal.length}`);
@@ -296,14 +389,35 @@ export function renderChecklist(report) {
 			lines.push("");
 		}
 	}
+	if (report.decided.length) {
+		lines.push("## Decided");
+		lines.push("");
+		for (const disposition of DISPOSITIONS) {
+			const rows = report.decided.filter(d => d.disposition === disposition);
+			if (!rows.length) continue;
+			const heading = disposition === "track" ? "TRACK — accepted as recording work"
+				: disposition === "derived" ? "DERIVED — auto-populated by the game; never write"
+					: "IGNORE — out of scope on purpose";
+			lines.push(`### ${heading} (${rows.length})`);
+			lines.push("");
+			for (const d of rows.sort((a, b) => `${a.class}.${a.attribute}`.localeCompare(`${b.class}.${b.attribute}`))) {
+				lines.push(`- [x] \`${d.class}.${d.attribute}\` — ${d.reason} [docs](${d.docUrl})`);
+			}
+			lines.push("");
+		}
+	}
 	return lines.join("\n");
 }
 
 export function summarize(report) {
 	const parts = report.byClass.map(cls => {
-		const total = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
-		return `${cls.className} ${total}/${cls.writable}`;
+		const open = cls.universal.length + cls.subclassSections.reduce((n, s) => n + s.rows.length, 0);
+		return `${cls.className} ${open}/${cls.writable}`;
 	});
-	return `${report.mode} @ Factorio ${report.pin}: unaccounted RW attributes — ${parts.join(", ")} `
-		+ `(${report.ignored.length} ignored on purpose)`;
+	const byDisposition = DISPOSITIONS
+		.map(d => [d, report.decided.filter(e => e.disposition === d).length])
+		.filter(([, n]) => n > 0)
+		.map(([d, n]) => `${n} ${d}`);
+	return `${report.mode} @ Factorio ${report.pin}: OPEN — ${parts.join(", ")}`
+		+ (byDisposition.length ? ` | decided: ${byDisposition.join(", ")}` : "");
 }

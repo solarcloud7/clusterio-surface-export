@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // extract-factorio-api-index — derive the vendored API-name index from Wube's machine-readable docs.
 // requires: network access to lua-api.factorio.com (run at repin time, not in CI)
-// produces: scripts/factorio-api-index.json — every class's attribute/method names with read/write flags
-// does not: run in CI, validate anything itself (lint-api-names.mjs consumes the output), or shrink
-//          types — names and rw flags only, so the index stays small enough to vendor
+// produces: scripts/factorio-api-index.json — every class's attribute/method names with read/write
+//          flags, plus per-attribute subclasses and first-sentence doc where upstream carries them
+// does not: run in CI, validate anything itself (lint-api-names.mjs consumes the output), or keep
+//          full descriptions — one sentence capped at 200 chars, so the index stays vendorable
 
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,15 +30,26 @@ if (api.application_version !== PIN) {
 
 const byName = new Map(api.classes.map(cls => [cls.name, cls]));
 
+function firstSentence(description) {
+	if (typeof description !== "string" || !description.trim()) return null;
+	const plain = description.replace(/\[([^\]]+)\]\((?:runtime|prototype):[^)]*\)/g, "$1");
+	const sentence = plain.split(/\.\s/)[0].trim();
+	if (!sentence) return null;
+	const capped = sentence.length > 200 ? sentence.slice(0, 197) + "..." : sentence;
+	return capped.endsWith(".") || capped.endsWith("...") ? capped : capped + ".";
+}
+
 function ownMembers(cls) {
 	const members = {};
 	for (const attribute of cls.attributes) {
+		const doc = firstSentence(attribute.description);
 		members[attribute.name] = {
 			kind: "attribute",
 			read: Boolean(attribute.read_type),
 			write: Boolean(attribute.write_type),
 			...(Array.isArray(attribute.subclasses) && attribute.subclasses.length
 				? { subclasses: attribute.subclasses } : {}),
+			...(doc ? { doc } : {}),
 		};
 	}
 	for (const method of cls.methods) {

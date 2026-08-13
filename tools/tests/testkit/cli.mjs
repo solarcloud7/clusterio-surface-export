@@ -192,6 +192,21 @@ async function cmdMutation() {
 }
 
 async function cmdCoverage() {
+	if (rest[0] === "mark" || rest[0] === "unmark") {
+		const verb = rest[0];
+		const target = /^(\w+)\.(\w+)$/.exec(rest[1] || "");
+		if (!target) {
+			fail(verb === "mark"
+				? "usage: coverage mark <Class.attribute> <track|derived|ignore> \"<reason>\""
+				: "usage: coverage unmark <Class.attribute>");
+		}
+		const { markTriage, unmarkTriage } = await import("./coverage.mjs");
+		const result = verb === "mark"
+			? markTriage({ class: target[1], attribute: target[2], disposition: rest[2], reason: rest[3] })
+			: unmarkTriage({ class: target[1], attribute: target[2] });
+		console.log(result.message);
+		return;
+	}
 	const VALUE_FLAGS = new Set(["--class", "--per-type", "--host", "--md", "--json"]);
 	const platforms = [];
 	const stray = [];
