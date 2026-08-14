@@ -2,15 +2,93 @@
 	"entries": [
 		{
 			"class": "LuaEntity",
-			"attribute": "character_health_bonus",
-			"disposition": "derived",
-			"reason": "research-driven force bonus — writing it fights the game (owner)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "electric_buffer_size",
 			"disposition": "ignore",
 			"reason": "power not tracked on purpose (owner, 2026-08-12)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_additional_mining_categories",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_build_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_crafting_speed_modifier",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_inventory_slots_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_item_drop_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_item_pickup_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_loot_pickup_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_maximum_following_robot_count_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_mining_speed_modifier",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_reach_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_resource_reach_distance_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_running_speed_modifier",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_trash_slot_count_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_health_bonus",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
 		}
 	]
 }
