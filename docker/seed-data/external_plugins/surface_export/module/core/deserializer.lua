@@ -79,7 +79,6 @@ local SIMPLE_RESTORE_RULES = {
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
   { field = "color", safecall = true },
   { field = "always_on", present = true, safecall = true },
-  { field = "auto_launch", present = true },
   { field = "rocket_parts" },
   { field = "switch_state", present = true, safecall = true },
   { field = "artillery_auto_targeting", present = true, safecall = true },

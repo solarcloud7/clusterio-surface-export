@@ -624,10 +624,6 @@ EntityHandlers["rocket-silo"] = function(entity)
     data.rocket_parts = entity.rocket_parts
   end
 
-  if entity.auto_launch ~= nil then
-    data.auto_launch = entity.auto_launch
-  end
-
   local send_to_orbit_automatically = GameUtils.safe_get(entity, "send_to_orbit_automatically")
   if send_to_orbit_automatically ~= nil then
     data.send_to_orbit_automatically = send_to_orbit_automatically
