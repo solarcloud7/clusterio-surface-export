@@ -2,12 +2,6 @@
 	"entries": [
 		{
 			"class": "LuaEntity",
-			"attribute": "electric_buffer_size",
-			"disposition": "ignore",
-			"reason": "power not tracked on purpose (owner, 2026-08-12)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "character_additional_mining_categories",
 			"disposition": "ignore",
 			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
@@ -21,6 +15,12 @@
 		{
 			"class": "LuaEntity",
 			"attribute": "character_crafting_speed_modifier",
+			"disposition": "ignore",
+			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "character_health_bonus",
 			"disposition": "ignore",
 			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
 		},
@@ -86,24 +86,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "character_health_bonus",
-			"disposition": "ignore",
-			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaItemStack",
-			"attribute": "spoil_tick",
-			"disposition": "ignore",
-			"reason": "spoil state is carried and restored as spoil_percent (inventory-scanner.lua:44, deserializer.lua:25); spoil_tick is the absolute-engine-tick twin — not portable across instances, and upstream documents that a write below the current tick spoils the item instantly (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "initial_amount",
-			"disposition": "ignore",
-			"reason": "infinite-resource-only (owner): reads nil on the finite patches platforms carry, and upstream documents that writing it on a finite resource errors — recording it blindly would crash restore (2.1.11 doc, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "cheat_mode",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -116,6 +98,12 @@
 		},
 		{
 			"class": "LuaEntity",
+			"attribute": "cursor_ghost",
+			"disposition": "ignore",
+			"reason": "batch triage in the UI — no per-row note (owner, 2026-08-14)"
+		},
+		{
+			"class": "LuaEntity",
 			"attribute": "custom_status",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -125,6 +113,18 @@
 			"attribute": "driving",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "electric_buffer_size",
+			"disposition": "ignore",
+			"reason": "power not tracked on purpose (owner, 2026-08-12)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "graphics_variation",
+			"disposition": "ignore",
+			"reason": "batch triage in the UI — no per-row note (owner, 2026-08-14)"
 		},
 		{
 			"class": "LuaEntity",
@@ -143,6 +143,12 @@
 			"attribute": "minable_flag",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "mining_state",
+			"disposition": "ignore",
+			"reason": "batch triage in the UI — no per-row note (owner, 2026-08-14)"
 		},
 		{
 			"class": "LuaEntity",
@@ -332,6 +338,12 @@
 		},
 		{
 			"class": "LuaEntity",
+			"attribute": "products_finished",
+			"disposition": "ignore",
+			"reason": "batch triage in the UI — no per-row note (owner, 2026-08-14)"
+		},
+		{
+			"class": "LuaEntity",
 			"attribute": "result_quality",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -518,6 +530,12 @@
 		},
 		{
 			"class": "LuaEntity",
+			"attribute": "initial_amount",
+			"disposition": "ignore",
+			"reason": "infinite-resource-only (owner): reads nil on the finite patches platforms carry, and upstream documents that writing it on a finite resource errors — recording it blindly would crash restore (2.1.11 doc, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
 			"attribute": "send_to_orbit_automatically",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -611,6 +629,12 @@
 			"attribute": "preview_icons",
 			"disposition": "derived",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaItemStack",
+			"attribute": "spoil_tick",
+			"disposition": "ignore",
+			"reason": "spoil state is carried and restored as spoil_percent (inventory-scanner.lua:44, deserializer.lua:25); spoil_tick is the absolute-engine-tick twin — not portable across instances, and upstream documents that a write below the current tick spoils the item instantly (owner, 2026-08-13)"
 		},
 		{
 			"class": "LuaItemStack",
