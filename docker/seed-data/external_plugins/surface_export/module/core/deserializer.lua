@@ -65,7 +65,8 @@ local SIMPLE_RESTORE_RULES = {
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
   { field = "spoil_priority", prop = "inserter_spoil_priority", safecall = true },
-  { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
+  { field = "filter", prop = "splitter_filter", safecall = true,
+    types = { ["splitter"] = true, ["lane-splitter"] = true } },
   { field = "pickup_from_left_lane", present = true, safecall = true, types = { ["inserter"] = true } },
   { field = "pickup_from_right_lane", present = true, safecall = true, types = { ["inserter"] = true } },
   { field = "loader_filter_mode", safecall = true, types = { ["loader"] = true, ["loader-1x1"] = true } },
@@ -371,6 +372,11 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   apply_simple_restore_rules(entity, data)
+
+  if entity.type == "linked-belt" and entity_data.direction ~= nil then
+    safe_call(string.format("linked-belt direction for %s", entity.name),
+      function() entity.direction = entity_data.direction end)
+  end
 
   if data.schedule and entity.train then
     entity.train.schedule = data.schedule

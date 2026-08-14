@@ -98,8 +98,8 @@ local function sections_key(v)
       local val = f.value or {}
       fparts[#fparts + 1] = string.format("%s@%s>=%s", q_name(val.name), q_name(val.quality), num(f.min))
     end
-    parts[#parts + 1] = string.format("[m=%s a=%s {%s}]", num(sec.multiplier), tostring(sec.active),
-      table.concat(fparts, ","))
+    parts[#parts + 1] = string.format("[i=%s g=%s m=%s a=%s {%s}]", tostring(sec.index), tostring(sec.group),
+      num(sec.multiplier), tostring(sec.active), table.concat(fparts, ","))
   end
   return string.format("trash=%s %s", tostring(v.trash_not_requested), table.concat(parts, ";"))
 end`;
@@ -178,8 +178,10 @@ const ATTRS = [
 			+ 'e.result_quality = "rare"',
 		read: "return q_name(e.result_quality)", expect: "rare",
 		describe: "result_quality is nil unless a craft is IN PROGRESS, so the rig holds one open by filling "
-			+ "the output — a machine that can eject its product finishes the craft within ~90 ticks of "
-			+ "getting power and the attribute is gone before any transfer can carry it",
+			+ "the output — a machine that can eject its product finishes the craft and the attribute is "
+			+ "gone before any transfer can carry it (measured 2026-08-14 at 2.1.11 on a clone of "
+			+ "lab-transfer-fixture-v1: crafting_progress 0.5 -> 0 and result_quality rare -> nil within "
+			+ "90 ticks of the machine reaching a powered network)",
 	},
 	{
 		key: "display_panel_icon", attribute: "display_panel_icon", on: "display",
@@ -218,7 +220,7 @@ const ATTRS = [
 			+ 'value = { type = "item", name = "iron-plate", quality = "normal", comparator = "=" }, '
 			+ "min = 42 } }, multiplier = 2 } }, trash_not_requested = true }",
 		read: "return sections_key(e.saved_request_filters)",
-		expect: "trash=true [m=2 a=true {iron-plate@normal>=42}]",
+		expect: "trash=true [i=nil g= m=2 a=true {iron-plate@normal>=42}]",
 	},
 	{
 		key: "saved_storage_filters", attribute: "saved_storage_filters", on: "infchest",
@@ -226,7 +228,7 @@ const ATTRS = [
 			+ 'value = { type = "item", name = "copper-plate", quality = "normal", comparator = "=" }, '
 			+ "min = 7 } }, multiplier = 3 } }, trash_not_requested = false }",
 		read: "return sections_key(e.saved_storage_filters)",
-		expect: "trash=false [m=3 a=true {copper-plate@normal>=7}]",
+		expect: "trash=false [i=nil g= m=3 a=true {copper-plate@normal>=7}]",
 	},
 	{
 		key: "saved_request_from_buffers", attribute: "saved_request_from_buffers", on: "infchest",
@@ -241,6 +243,17 @@ const ATTRS = [
 	{
 		key: "linked_belt_type", attribute: "linked_belt_type", on: "linkedbelt",
 		write: 'e.linked_belt_type = "output"', read: STRING_READ("linked_belt_type"), expect: "output",
+	},
+	{
+		key: "linked_belt_direction", attribute: "direction", on: "linkedbelt",
+		write: "e.direction = defines.direction.east",
+		read: "return define_name(defines.direction, e.direction)",
+		dynamicExpect: true,
+		describe: "assigning linked_belt_type a DIFFERENT value rotates the belt 180 degrees (measured "
+			+ "2026-08-14 at 2.1.11: assigning the value it already holds does not rotate, assigning the "
+			+ "other value does), and the destination reaches the type through exactly that change — so a "
+			+ "restore that does not re-assert the captured direction leaves the belt facing backwards "
+			+ "while linked_belt_type itself reads correct",
 	},
 	{
 		key: "link_id", attribute: "link_id", on: "linkedchest",
@@ -437,7 +450,7 @@ function adjudicateGate() {
 }
 
 async function main() {
-	say(`=== config-attrs: ten config attributes across a real transfer (clone '${CLONE}') ===`);
+	say(`=== config-attrs: ${ATTRS.length} attribute rows across a real transfer (clone '${CLONE}') ===`);
 
 	const fixtureIndex = findPlatformIndex(SOURCE_HOST, FIXTURE);
 	if (fixtureIndex === null) {
