@@ -152,12 +152,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "name_tag",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "operable",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -208,12 +202,6 @@
 			"class": "LuaEntity",
 			"attribute": "shooting_state",
 			"disposition": "ignore",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "storage_filter",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
@@ -434,18 +422,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "pickup_from_left_lane",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "pickup_from_right_lane",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "pickup_target",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -471,24 +447,6 @@
 		{
 			"class": "LuaEntity",
 			"attribute": "link_id",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "loader_belt_stack_size_override",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "loader_filter_mode",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "mining_drill_filter_mode",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
@@ -533,18 +491,6 @@
 			"attribute": "initial_amount",
 			"disposition": "ignore",
 			"reason": "infinite-resource-only (owner): reads nil on the finite patches platforms carry, and upstream documents that writing it on a finite resource errors — recording it blindly would crash restore (2.1.11 doc, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "send_to_orbit_automatically",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "use_transitional_requests",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
 			"class": "LuaEntity",
@@ -616,12 +562,6 @@
 			"class": "LuaEntity",
 			"attribute": "shooting_target",
 			"disposition": "ignore",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "valve_threshold_override",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{

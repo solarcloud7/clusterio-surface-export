@@ -102,6 +102,11 @@ function EntityScanner.serialize_entity(entity)
     entity_data.destructible = false
   end
 
+  local name_tag = GameUtils.safe_get(entity, "name_tag")
+  if name_tag ~= nil and name_tag ~= "" then
+    entity_data.name_tag = name_tag
+  end
+
   local category = Util.get_entity_category(entity)
 
   local specific_data = EntityHandlers.handle_entity(entity, category)

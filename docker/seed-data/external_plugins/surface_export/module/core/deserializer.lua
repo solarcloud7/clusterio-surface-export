@@ -65,11 +65,20 @@ local SIMPLE_RESTORE_RULES = {
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
   { field = "spoil_priority", prop = "inserter_spoil_priority", safecall = true },
   { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
+  { field = "pickup_from_left_lane", present = true, safecall = true, types = { ["inserter"] = true } },
+  { field = "pickup_from_right_lane", present = true, safecall = true, types = { ["inserter"] = true } },
+  { field = "loader_filter_mode", safecall = true, types = { ["loader"] = true, ["loader-1x1"] = true } },
+  { field = "loader_belt_stack_size_override", safecall = true,
+    types = { ["loader"] = true, ["loader-1x1"] = true } },
+  { field = "mining_drill_filter_mode", safecall = true, types = { ["mining-drill"] = true } },
+  { field = "storage_filter", safecall = true, types = { ["logistic-container"] = true } },
+  { field = "valve_threshold_override", safecall = true, types = { ["valve"] = true } },
+  { field = "send_to_orbit_automatically", present = true, safecall = true, types = { ["rocket-silo"] = true } },
+  { field = "use_transitional_requests", present = true, safecall = true, types = { ["rocket-silo"] = true } },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
   { field = "color", safecall = true },
   { field = "always_on", present = true, safecall = true },
-  { field = "auto_launch", present = true },
   { field = "rocket_parts" },
   { field = "switch_state", present = true, safecall = true },
   { field = "artillery_auto_targeting", present = true, safecall = true },
@@ -258,6 +267,11 @@ function Deserializer.restore_entity_state(entity, entity_data)
   if entity_data.destructible == false then
     local ok, err = pcall(function() entity.destructible = false end)
     if not ok then log("[Deserializer] destructible restore failed for " .. entity.name .. ": " .. tostring(err)) end
+  end
+
+  if entity_data.name_tag ~= nil then
+    local ok, err = pcall(function() entity.name_tag = entity_data.name_tag end)
+    if not ok then log("[Deserializer] name_tag restore failed for " .. entity.name .. ": " .. tostring(err)) end
   end
 
   if not entity_data.specific_data then

@@ -206,6 +206,39 @@ EntityHandlers["splitter"] = function(entity)
   return data
 end
 
+EntityHandlers["loader"] = function(entity)
+  local data = {
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
+  }
+
+  local filter_mode = GameUtils.safe_get(entity, "loader_filter_mode")
+  if filter_mode ~= nil then
+    data.loader_filter_mode = filter_mode
+  end
+
+  local stack_size_override = GameUtils.safe_get(entity, "loader_belt_stack_size_override")
+  if stack_size_override ~= nil and stack_size_override > 0 then
+    data.loader_belt_stack_size_override = stack_size_override
+  end
+
+  return data
+end
+
+EntityHandlers["loader-1x1"] = EntityHandlers["loader"]
+
+EntityHandlers["valve"] = function(entity)
+  local data = {
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
+  }
+
+  local threshold_override = GameUtils.safe_get(entity, "valve_threshold_override")
+  if threshold_override ~= nil then
+    data.valve_threshold_override = threshold_override
+  end
+
+  return data
+end
+
 EntityHandlers["inserter"] = function(entity)
   local data = {}
 
@@ -216,6 +249,16 @@ EntityHandlers["inserter"] = function(entity)
 
   if entity.inserter_filter_mode then
     data.filter_mode = entity.inserter_filter_mode
+  end
+
+  local pickup_from_left_lane = GameUtils.safe_get(entity, "pickup_from_left_lane")
+  if pickup_from_left_lane ~= nil then
+    data.pickup_from_left_lane = pickup_from_left_lane
+  end
+
+  local pickup_from_right_lane = GameUtils.safe_get(entity, "pickup_from_right_lane")
+  if pickup_from_right_lane ~= nil then
+    data.pickup_from_right_lane = pickup_from_right_lane
   end
   
   data.use_filters = GameUtils.safe_get(entity, "use_filters")
@@ -244,7 +287,24 @@ EntityHandlers["container"] = function(entity)
   if bar_success and bar and bar < 65535 then
     data.bar = bar
   end
-  
+
+  if entity.type == "logistic-container" then
+    local storage_filter = GameUtils.safe_get(entity, "storage_filter")
+    if storage_filter then
+      local filter_name = storage_filter.name
+      if type(filter_name) ~= "string" and filter_name then
+        filter_name = filter_name.name
+      end
+      local quality = storage_filter.quality
+      if type(quality) ~= "string" and quality then
+        quality = quality.name
+      end
+      if filter_name then
+        data.storage_filter = { name = filter_name, quality = quality or GameUtils.QUALITY_NORMAL }
+      end
+    end
+  end
+
   return data
 end
 
@@ -515,6 +575,11 @@ EntityHandlers["mining-drill"] = function(entity)
     end
   end
 
+  local drill_filter_mode = GameUtils.safe_get(entity, "mining_drill_filter_mode")
+  if drill_filter_mode ~= nil then
+    data.mining_drill_filter_mode = drill_filter_mode
+  end
+
   return data
 end
 
@@ -559,8 +624,14 @@ EntityHandlers["rocket-silo"] = function(entity)
     data.rocket_parts = entity.rocket_parts
   end
 
-  if entity.auto_launch ~= nil then
-    data.auto_launch = entity.auto_launch
+  local send_to_orbit_automatically = GameUtils.safe_get(entity, "send_to_orbit_automatically")
+  if send_to_orbit_automatically ~= nil then
+    data.send_to_orbit_automatically = send_to_orbit_automatically
+  end
+
+  local use_transitional_requests = GameUtils.safe_get(entity, "use_transitional_requests")
+  if use_transitional_requests ~= nil then
+    data.use_transitional_requests = use_transitional_requests
   end
 
   return data
