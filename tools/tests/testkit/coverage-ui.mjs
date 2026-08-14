@@ -317,7 +317,9 @@ function renderPage(model) {
 		}).then(function (response) { return response.json(); }).then(function (result) {
 			if (result.ok) {
 				banner.className = "ok";
-				banner.textContent = "Saved: " + result.entries + " decision(s) in coverage-triage.json";
+				banner.textContent = "Saved: " + result.entries + " decision(s) in coverage-triage.json" +
+					(result.fallbacks ? " (" + result.fallbacks + " with the batch fallback reason — " +
+						"add per-row notes whenever a decision has context worth keeping)" : "");
 				Object.keys(state).forEach(function (k) {
 					var v = state[k];
 					baseline[k] = v.disposition + "\\u0000" + v.reason;
@@ -372,10 +374,17 @@ export async function startTriageUi({ classes = DEFAULT_CLASSES, port = 3199 } =
 				const decisions = Array.isArray(body.decisions) ? body.decisions : [];
 				const scope = new Set(Array.isArray(body.classes) ? body.classes : classes);
 				const kept = readTriageFile().filter(e => !scope.has(e.class));
-				const next = [...kept, ...decisions.map(d => ({
-					class: d.class, attribute: d.attribute, disposition: d.disposition,
-					reason: typeof d.reason === "string" ? d.reason.trim() : d.reason,
-				}))];
+				const fallbackReason = `batch triage in the UI — no per-row note (owner, ${
+					new Date().toISOString().slice(0, 10)})`;
+				let fallbacks = 0;
+				const next = [...kept, ...decisions.map(d => {
+					const typed = typeof d.reason === "string" ? d.reason.trim() : "";
+					if (!typed) fallbacks += 1;
+					return {
+						class: d.class, attribute: d.attribute, disposition: d.disposition,
+						reason: typed || fallbackReason,
+					};
+				})];
 				const { identifiers } = moduleIdentifiers();
 				const problems = validateTriageEntries(next, identifiers);
 				if (problems.length) {
@@ -384,8 +393,9 @@ export async function startTriageUi({ classes = DEFAULT_CLASSES, port = 3199 } =
 					return;
 				}
 				writeTriageFile(next);
+				console.log(`coverage ui: saved ${next.length} entries (${fallbacks} with the batch fallback reason)`);
 				res.writeHead(200, { "content-type": "application/json" });
-				res.end(JSON.stringify({ ok: true, entries: next.length }));
+				res.end(JSON.stringify({ ok: true, entries: next.length, fallbacks }));
 				return;
 			}
 			res.writeHead(404, { "content-type": "text/plain" });
