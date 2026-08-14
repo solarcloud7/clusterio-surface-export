@@ -86,13 +86,15 @@ const ATTRS = [
 	},
 	{
 		key: "send_to_orbit_automatically", attribute: "send_to_orbit_automatically", on: "silo",
-		write: "e.send_to_orbit_automatically = true", read: BOOL_READ("send_to_orbit_automatically"),
-		expect: "true",
+		write: "e.send_to_orbit_automatically = not e.send_to_orbit_automatically",
+		read: BOOL_READ("send_to_orbit_automatically"),
+		dynamicExpect: true,
 	},
 	{
 		key: "use_transitional_requests", attribute: "use_transitional_requests", on: "silo",
-		write: "e.use_transitional_requests = true", read: BOOL_READ("use_transitional_requests"),
-		expect: "true",
+		write: "e.use_transitional_requests = not e.use_transitional_requests",
+		read: BOOL_READ("use_transitional_requests"),
+		dynamicExpect: true,
 	},
 	{
 		key: "name_tag_wall", attribute: "name_tag", on: "wall",
@@ -219,6 +221,8 @@ for _, a in ipairs(attr_specs) do
     row.armed = false
     row.error = 'rig entity ' .. a.on .. ' was not placed'
   else
+    local d_ok, d_val = pcall(function() return readers[a.key](e) end)
+    row.default = d_ok and d_val or nil
     local w_ok, w_err = pcall(function() writers[a.key](e) end)
     local r_ok, r_val = pcall(function() return readers[a.key](e) end)
     row.armed = w_ok and r_ok
@@ -329,14 +333,22 @@ async function main() {
 				fail(`${spec.key}: source arming failed (${row.error ?? "unknown"}) — not exercised`);
 				continue;
 			}
-			if (row.value !== spec.expect) {
+			const effectiveExpect = spec.dynamicExpect ? row.value : spec.expect;
+			if (!spec.dynamicExpect && row.value !== spec.expect) {
 				fail(`${spec.key}: source read back ${JSON.stringify(row.value)} after writing the non-default, `
 					+ `expected ${JSON.stringify(spec.expect)} — the write did not stick, so a matching `
 					+ "destination value would prove nothing");
 				continue;
 			}
-			say(`  armed ${spec.key} on ${row.entity_name}@${row.x},${row.y} = ${JSON.stringify(row.value)}`);
-			exercisable.push({ ...spec, entity_name: row.entity_name, x: row.x, y: row.y });
+			if (row.default === effectiveExpect) {
+				fail(`${spec.key}: the armed value equals the fresh entity's default `
+					+ `(${JSON.stringify(row.default)}) — a matching destination read would prove nothing; `
+					+ "arm the negation of the default instead");
+				continue;
+			}
+			say(`  armed ${spec.key} on ${row.entity_name}@${row.x},${row.y} = ${JSON.stringify(row.value)}`
+				+ ` (fresh default was ${JSON.stringify(row.default)})`);
+			exercisable.push({ ...spec, expect: effectiveExpect, entity_name: row.entity_name, x: row.x, y: row.y });
 		}
 		if (exercisable.length === 0) {
 			fail("no attribute was armed on the source — the transfer below cannot measure anything");

@@ -15,7 +15,7 @@ const handlerInventoryOwners = new Set([
 ]);
 const handlerFluidOwners = new Set([
 	"assembling-machine", "furnace", "fluid-storage", "pipe", "pipe-to-ground", "pump",
-	"mining-drill",
+	"mining-drill", "loader", "valve",
 ]);
 const categories = [
 	"assembling-machine", "furnace", "transport-belt", "underground-belt", "splitter",
@@ -23,7 +23,7 @@ const categories = [
 	"car", "spider-vehicle", "combinator", "turret", "mining-drill", "lab", "roboport",
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
-	"train-stop", "resource", "space-platform-hub",
+	"train-stop", "resource", "space-platform-hub", "loader", "valve",
 ];
 const specializedFluidCapabilities = new Map([
 	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],
@@ -35,6 +35,8 @@ const specializedFluidCapabilities = new Map([
 	["turret", { platformReachable: false, evidence: "flamethrower-turret requires pressure>=10; platform pressure=0" }],
 	["mining-drill", { platformReachable: true, evidence: "big-mining-drill on the omnibus pad: live fluidbox amount 104.40625 measured 2026-07-20" }],
 	["space-platform-hub", { platformReachable: false, evidence: "hub on platform-1 and platform-2: fluids_count=0 and the .fluidbox accessor does not exist on the entity (LuaEntity doesn't contain key fluidbox), measured 2026-08-10 — the pre-handler fallback reached FluidRegistry.capture_entity, which returns nil at fluids_count==0, so the handler captures the same nothing" }],
+	["loader", { platformReachable: false, evidence: "turbo-loader, loader-1x1, fast-loader: 0 fluidbox_prototypes at 2.1.11 (measured 2026-08-14) — the handler's extract_fluidboxes call is a no-op kept for handler symmetry" }],
+	["valve", { platformReachable: true, evidence: "overflow-valve: 1 fluidbox_prototype at 2.1.11 (measured 2026-08-14); placed on a platform clone and survived transfer with its threshold override (config-attrs test)" }],
 ]);
 const ownership = new Map(categories.map(category => [category, {
 	inventories: handlerInventoryOwners.has(category) ? "handler" : "shared-dispatcher",
