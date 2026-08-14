@@ -89,6 +89,18 @@
 			"attribute": "character_health_bonus",
 			"disposition": "ignore",
 			"reason": "character-only state; characters never transfer — evacuated to Nauvis at the sole source-delete chokepoint, Gateway.evacuate_passengers (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaItemStack",
+			"attribute": "spoil_tick",
+			"disposition": "ignore",
+			"reason": "spoil state is carried and restored as spoil_percent (inventory-scanner.lua:44, deserializer.lua:25); spoil_tick is the absolute-engine-tick twin — not portable across instances, and upstream documents that a write below the current tick spoils the item instantly (owner, 2026-08-13)"
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "initial_amount",
+			"disposition": "ignore",
+			"reason": "infinite-resource-only (owner): reads nil on the finite patches platforms carry, and upstream documents that writing it on a finite resource errors — recording it blindly would crash restore (2.1.11 doc, 2026-08-13)"
 		}
 	]
 }
