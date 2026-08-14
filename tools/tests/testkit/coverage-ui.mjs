@@ -182,12 +182,58 @@ function renderPage(model) {
 	var model = window.__MODEL__;
 	var state = {};
 	var baseline = {};
+	var STORAGE_KEY = "testkit-coverage-dirty-v1";
 	var main = document.getElementById("main");
 	var banner = document.getElementById("banner");
 	var saveButton = document.getElementById("save");
 	var filterBox = document.getElementById("filter");
 
 	function key(row) { return row.class + "." + row.attribute; }
+
+	function persistDirty() {
+		try {
+			var dirty = {};
+			var any = false;
+			Object.keys(state).forEach(function (k) {
+				if (isDirty(k)) { dirty[k] = state[k]; any = true; }
+			});
+			if (any) {
+				localStorage.setItem(STORAGE_KEY,
+					JSON.stringify({ pin: model.pin, state: dirty }));
+			} else {
+				localStorage.removeItem(STORAGE_KEY);
+			}
+		} catch (error) {
+			console.warn("coverage ui: could not persist unsaved decisions to localStorage:", error);
+		}
+	}
+
+	function restoreFromStorage() {
+		var restored = 0;
+		var dropped = 0;
+		try {
+			var raw = localStorage.getItem(STORAGE_KEY);
+			if (!raw) return { restored: 0, dropped: 0 };
+			var stored = JSON.parse(raw);
+			if (!stored || stored.pin !== model.pin || !stored.state) {
+				localStorage.removeItem(STORAGE_KEY);
+				return { restored: 0, dropped: 0 };
+			}
+			Object.keys(stored.state).forEach(function (k) {
+				var v = stored.state[k];
+				if (!state[k] || !v || typeof v.disposition !== "string") { dropped += 1; return; }
+				if (baseline[k] === v.disposition + "\u0000" + (v.reason || "")) return;
+				state[k] = { disposition: v.disposition, reason: v.reason || "" };
+				restored += 1;
+			});
+		} catch (error) {
+			console.warn("coverage ui: stored unsaved decisions were unreadable and were discarded:", error);
+			try { localStorage.removeItem(STORAGE_KEY); } catch (removeError) {
+				console.warn("coverage ui: could not clear localStorage:", removeError);
+			}
+		}
+		return { restored: restored, dropped: dropped };
+	}
 	function esc(text) {
 		var div = document.createElement("div");
 		div.textContent = text == null ? "" : String(text);
@@ -266,12 +312,14 @@ function renderPage(model) {
 				state[k].disposition = button.getAttribute("data-d");
 				refreshRow(rowEl);
 				refreshCounts();
+				persistDirty();
 			});
 		});
 		rowEl.querySelector("input").addEventListener("input", function (event) {
 			state[k].reason = event.target.value;
 			refreshRow(rowEl);
 			refreshCounts();
+			persistDirty();
 		});
 	}
 
@@ -324,6 +372,7 @@ function renderPage(model) {
 					var v = state[k];
 					baseline[k] = v.disposition + "\\u0000" + v.reason;
 				});
+				persistDirty();
 				refreshAll();
 			} else {
 				banner.className = "bad";
@@ -337,7 +386,18 @@ function renderPage(model) {
 		});
 	});
 
+	var recovered = restoreFromStorage();
 	render();
+	persistDirty();
+	if (recovered.restored > 0 || recovered.dropped > 0) {
+		banner.className = "ok";
+		banner.textContent = (recovered.restored > 0
+			? "Restored " + recovered.restored + " unsaved decision(s) from this browser — press Save to keep them."
+			: "") +
+			(recovered.dropped > 0
+				? " " + recovered.dropped + " stored decision(s) no longer match any row and were dropped."
+				: "");
+	}
 })();
 </script>
 </body>
