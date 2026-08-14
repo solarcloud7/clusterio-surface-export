@@ -172,8 +172,14 @@ const ATTRS = [
 	},
 	{
 		key: "result_quality", attribute: "result_quality", on: "asm",
-		write: 'e.set_recipe("iron-gear-wheel")\ne.crafting_progress = 0.5\ne.result_quality = "rare"',
+		write: 'e.set_recipe("iron-gear-wheel")\n'
+			+ 'e.get_inventory(defines.inventory.crafter_output).insert{ name = "iron-gear-wheel", count = 100000 }\n'
+			+ "e.crafting_progress = 1.0\n"
+			+ 'e.result_quality = "rare"',
 		read: "return q_name(e.result_quality)", expect: "rare",
+		describe: "result_quality is nil unless a craft is IN PROGRESS, so the rig holds one open by filling "
+			+ "the output — a machine that can eject its product finishes the craft within ~90 ticks of "
+			+ "getting power and the attribute is gone before any transfer can carry it",
 	},
 	{
 		key: "display_panel_icon", attribute: "display_panel_icon", on: "display",
@@ -374,9 +380,9 @@ end
 return { success = true, base = { x = bx, y = by }, placements = placements, armed = armed }`);
 }
 
-function readDestination(targets) {
+function readRig(host, targets) {
 	const targetLua = targets.map(t => `  { key = '${t.key}', name = '${t.entity_name}', x = ${t.x}, y = ${t.y} },`).join("\n");
-	return lua(DEST_HOST, `${platformLua(CLONE)}
+	return lua(host, `${platformLua(CLONE)}
 local readers = {}
 ${readersLua()}
 local targets = {
@@ -497,6 +503,28 @@ async function main() {
 			return;
 		}
 
+		say("\n=== SOURCE: re-read at the moment the export scan will see ===");
+		const preRows = asArray(readRig(SOURCE_HOST, exercisable).rows);
+		const preByKey = new Map(preRows.map(row => [row.key, row]));
+		const surviving = [];
+		for (const spec of exercisable) {
+			const row = preByKey.get(spec.key);
+			if (!row || !row.found) {
+				fail(`${spec.key}: '${spec.entity_name}' vanished from the source rig before the export`);
+			} else if (!matches(spec, row.value, spec.expect)) {
+				fail(`${spec.key}: the source now reads ${JSON.stringify(row.value)}, not the armed `
+					+ `${JSON.stringify(spec.expect)} — the value decayed BEFORE the export scan, so the export `
+					+ "cannot carry it and a destination miss would not be a restore defect");
+			} else {
+				surviving.push(spec);
+			}
+		}
+		if (surviving.length === 0) {
+			fail("no armed value survived to the export scan — the transfer below cannot measure anything");
+			return;
+		}
+		say(`  ${surviving.length}/${exercisable.length} armed values still present on the source`);
+
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
 		const transferOut = execFileSync("pwsh", ["-NoProfile", "-File", "tools/surface-export/transfer-platform.ps1",
 			"-PlatformIndex", String(cloneIndex), "-Direction", `${SOURCE_HOST}to${DEST_HOST}`],
@@ -521,9 +549,9 @@ async function main() {
 		if (!adjudicateGate()) return;
 
 		say("\n=== DESTINATION: physical readback on the arrived entities ===");
-		const destRows = asArray(readDestination(exercisable).rows);
+		const destRows = asArray(readRig(DEST_HOST, surviving).rows);
 		const destByKey = new Map(destRows.map(row => [row.key, row]));
-		for (const spec of exercisable) {
+		for (const spec of surviving) {
 			const row = destByKey.get(spec.key);
 			if (!row) {
 				fail(`${spec.key}: no destination row came back`);
