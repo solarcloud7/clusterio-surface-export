@@ -222,11 +222,11 @@ for _, a in ipairs(attr_specs) do
     row.error = 'rig entity ' .. a.on .. ' was not placed'
   else
     local d_ok, d_val = pcall(function() return readers[a.key](e) end)
-    row.default = d_ok and d_val or nil
+    if d_ok then row.default = d_val end
     local w_ok, w_err = pcall(function() writers[a.key](e) end)
     local r_ok, r_val = pcall(function() return readers[a.key](e) end)
     row.armed = w_ok and r_ok
-    row.value = r_ok and r_val or ('THREW: ' .. tostring(r_val))
+    if r_ok then row.value = r_val else row.value = 'THREW: ' .. tostring(r_val) end
     if not w_ok then row.error = 'write threw: ' .. tostring(w_err) end
     row.entity_name = e.name
     row.x = e.position.x
@@ -255,7 +255,7 @@ for _, t in ipairs(targets) do
   else
     row.found = true
     local ok, v = pcall(function() return readers[t.key](e) end)
-    row.value = ok and v or ('THREW: ' .. tostring(v))
+    if ok then row.value = v else row.value = 'THREW: ' .. tostring(v) end
   end
   rows[#rows + 1] = row
 end

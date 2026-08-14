@@ -288,7 +288,7 @@ EntityHandlers["container"] = function(entity)
     data.bar = bar
   end
 
-  if entity.type == "logistic-container" then
+  if entity.type == "logistic-container" and entity.prototype.logistic_mode == "storage" then
     local storage_filter = GameUtils.safe_get(entity, "storage_filter")
     if storage_filter then
       local filter_name = storage_filter.name
