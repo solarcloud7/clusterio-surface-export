@@ -191,7 +191,72 @@ async function cmdMutation() {
 	process.exit(killed && process.exitCode !== 1 ? 0 : 1);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation };
+async function cmdCoverage() {
+	if (rest[0] === "ui") {
+		const { startTriageUi } = await import("./coverage-ui.mjs");
+		const { DEFAULT_CLASSES } = await import("./coverage.mjs");
+		const classes = valueOf("--class") ? valueOf("--class").split(",").map(s => s.trim()) : DEFAULT_CLASSES;
+		await startTriageUi({ classes, port: Number(valueOf("--port") ?? 3199) });
+		return new Promise(() => {});
+	}
+	if (rest[0] === "mark" || rest[0] === "unmark") {
+		const verb = rest[0];
+		const target = /^(\w+)\.(\w+)$/.exec(rest[1] || "");
+		if (!target) {
+			fail(verb === "mark"
+				? "usage: coverage mark <Class.attribute> <track|derived|ignore> \"<reason>\""
+				: "usage: coverage unmark <Class.attribute>");
+		}
+		const { markTriage, unmarkTriage } = await import("./coverage.mjs");
+		const result = verb === "mark"
+			? markTriage({ class: target[1], attribute: target[2], disposition: rest[2], reason: rest[3] })
+			: unmarkTriage({ class: target[1], attribute: target[2] });
+		console.log(result.message);
+		return;
+	}
+	const VALUE_FLAGS = new Set(["--class", "--per-type", "--host", "--md", "--json"]);
+	const platforms = [];
+	const stray = [];
+	let live = false;
+	for (let i = 0; i < rest.length; i++) {
+		const arg = rest[i];
+		if (arg === "--live") {
+			live = true;
+			while (i + 1 < rest.length && !rest[i + 1].startsWith("--")) platforms.push(rest[++i]);
+		} else if (VALUE_FLAGS.has(arg)) {
+			i++;
+		} else if (!arg.startsWith("--")) {
+			stray.push(arg);
+		}
+	}
+	if (live && platforms.length === 0) fail("--live needs at least one platform name after it");
+	if (stray.length > 0) {
+		fail(`platform names only make sense after --live (offline needs no cluster): ${stray.join(", ")}\n`
+			+ "usage: coverage [--live <platform>...] [--class A,B] [--per-type 2] [--host 1] [--md <path>] [--json <path>]");
+	}
+	const { coverageOffline, enrichLive, renderChecklist, summarize, DEFAULT_CLASSES }
+		= await import("./coverage.mjs");
+	const classes = valueOf("--class") ? valueOf("--class").split(",").map(s => s.trim()) : DEFAULT_CLASSES;
+	let report = coverageOffline({ classes });
+	if (platforms.length > 0) {
+		report = await enrichLive(report, {
+			platforms,
+			host: Number(valueOf("--host") ?? 1),
+			perType: Number(valueOf("--per-type") ?? 2),
+		});
+	}
+	const { writeFileSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const mdPath = valueOf("--md") ?? join(tmpdir(), "testkit-coverage-checklist.md");
+	writeFileSync(mdPath, renderChecklist(report));
+	const jsonPath = valueOf("--json");
+	if (jsonPath) writeFileSync(jsonPath, JSON.stringify(report, null, 2));
+	console.log(summarize(report));
+	console.log(`checklist: ${mdPath}${jsonPath ? `\njson: ${jsonPath}` : ""}`);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation, coverage: cmdCoverage };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }

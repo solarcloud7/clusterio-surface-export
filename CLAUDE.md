@@ -509,7 +509,7 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI. Each guard's full rationale and
+> `npm run lint` runs twelve **correctness** guards, all gated in CI. Each guard's full rationale and
 > incident history lives in [docs/lint-guards.md](docs/lint-guards.md) (relocated from the script
 > headers by the code-comment purge — scripts carry enforcement only). Every `*:allow` escape hatch
 > MUST be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is
@@ -529,6 +529,7 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 > | Catch swallow | `lint:catch-swallow` | no catch (incl. empty promise `.catch`) substitutes a default without surfacing the error binding — plugin `.ts`/`.tsx` AND repo-root `tools/`+`tests/` `.mjs` (NB: eslint ignores `web/**` entirely, so this guard is the web tree's ONLY catch guard); surfacing = log/throw/return/reject or a write/`.push` whose target ROOT is declared OUTSIDE the catch body; a lexer desync fails loud, never mis-scans | `// catch:allow` |
 > | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
+> | Tick portability | `lint:tick-portability` | an absolute-tick attribute (doc-derived from the vendored index: every attribute whose upstream doc opens "The tick"/"The last tick") is touched only on a line with `game.tick` arithmetic — durations cross instances, absolute ticks are another clock (a raw write instant-spoils items and mis-grows plants); the derived list must contain `tick_grown`+`spoil_tick` or the guard refuses (an index without doc fields would silently disarm it) | `-- tick:allow` |
 > | Derived art | `lint:derived-art` | every image in `web/assets` still matches its source art re-derived (the bundled gateway icon is a SECOND copy of mod art, and a stale copy shows last month’s art with no error anywhere); an undeclared image in that dir is refused rather than trusted | — |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
 >
