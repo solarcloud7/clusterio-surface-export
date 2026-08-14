@@ -342,3 +342,28 @@ the near-misses, and whether the name exists on another class. The runtime half 
 `safe_get` itself: a THROW now logs once per property name.
 
 No allow marker — a wrong name has no legitimate use; `testkit api <Class.member>` finds the real one.
+
+## lint:tick-portability — durations cross instances, absolute ticks never do
+
+An absolute engine tick is a reading of one instance's clock. A transferred payload is consumed by
+an instance whose `game.tick` is unrelated, so a raw copy of `spoil_tick`, `tick_grown`, or
+`character_corpse_tick_of_death` lands as a random point in the destination's past or future —
+upstream documents the consequence for spoilage directly: "setting to anything < the current game
+tick will spoil the item instantly." The portable representation is a duration: capture
+`attr - game.tick` at read time, restore as `game.tick + duration`. The serializer already does the
+equivalent for spoilage by carrying the engine's own relative twin, `spoil_percent`; attributes
+without a relative twin get the subtraction by hand (owner ruling 2026-08-14: the invariant is
+universal, so it is linted rather than remembered).
+
+The watched-attribute list is not authored: it derives from the vendored
+`scripts/factorio-api-index.json` — every attribute whose upstream first-sentence doc opens
+"The tick" / "The last tick" (and whose name contains `tick`). The guard carries a control: if the
+derived list stops containing `tick_grown` and `spoil_tick`, it fails rather than passing empty —
+an index regenerated without doc fields would otherwise silently disarm the rule, the same
+matched-nothing failure mode that bit the coverage tool's reference filter twice.
+
+Mechanics: any `module/**/*.lua` line touching a watched attribute must also reference `game.tick`
+(the subtraction on capture, the addition on restore — keep the arithmetic on the same line), or
+carry `-- tick:allow` on that line or the line above, enumerated in the allow manifest like every
+escape hatch. Self-tests live in `test/lint-tick-portability.test.cjs` and are picked up by the
+`npm test` glob.
