@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// config-attrs — ten mechanical config attributes must survive a real host-1 -> host-2 transfer
+// config-attrs — every mechanical config attribute drained from the coverage ledger must survive a
+// real host-1 -> host-2 transfer
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
@@ -38,6 +39,11 @@ function lua(host, body) {
 
 const asArray = v => (Array.isArray(v) ? v : Object.values(v || {}));
 
+function matches(spec, actual, expected) {
+	if (actual === undefined || expected === undefined) return false;
+	return spec.compare ? spec.compare(actual, expected) : actual === expected;
+}
+
 const RIG_ENTITIES = [
 	{ id: "loader", name: "turbo-loader", dx: 1.5, dy: 2, direction: "defines.direction.south" },
 	{ id: "loader1x1", name: "loader-1x1", dx: 4.5, dy: 1.5 },
@@ -46,11 +52,57 @@ const RIG_ENTITIES = [
 	{ id: "inserter", name: "bulk-inserter", dx: 13.5, dy: 1.5 },
 	{ id: "wall", name: "stone-wall", dx: 16.5, dy: 1.5 },
 	{ id: "silo", name: "rocket-silo", dx: 18.5, dy: 8.5 },
+	{ id: "plant", name: "jellystem", dx: 1.5, dy: 16.5 },
+	{ id: "linkedbelt", name: "linked-belt", dx: 4.5, dy: 16.5 },
+	{ id: "linkedchest", name: "linked-chest", dx: 7.5, dy: 16.5 },
+	{ id: "infchest", name: "infinity-chest", dx: 10.5, dy: 16.5 },
+	{ id: "display", name: "display-panel", dx: 13.5, dy: 16.5 },
+	{ id: "speaker", name: "programmable-speaker", dx: 16.5, dy: 16.5 },
+	{ id: "asm", name: "assembling-machine-3", dx: 21.5, dy: 17.5 },
 ];
+
+const TICK_DRIFT_TOLERANCE = 60_000;
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
 const STRING_READ = attr => `return tostring(e.${attr})`;
+
+const READER_HELPERS = `local function q_name(v)
+  if v == nil then return "nil" end
+  if type(v) == "string" then return v end
+  return tostring(v.name)
+end
+local function num(v)
+  if v == nil then return "nil" end
+  return string.format("%.6g", v)
+end
+local function define_name(table_of_defines, value)
+  if value == nil then return "nil" end
+  for k, v in pairs(table_of_defines) do
+    if v == value then return k end
+  end
+  return "unknown:" .. tostring(value)
+end
+local function signal_key(sig)
+  if sig == nil then return "none" end
+  local quality = "normal"
+  if sig.quality ~= nil then quality = q_name(sig.quality) end
+  return string.format("%s:%s:%s", tostring(sig.type or "item"), q_name(sig.name), quality)
+end
+local function sections_key(v)
+  if v == nil then return "nil" end
+  local parts = {}
+  for _, sec in ipairs(v.sections or {}) do
+    local fparts = {}
+    for _, f in ipairs(sec.filters or {}) do
+      local val = f.value or {}
+      fparts[#fparts + 1] = string.format("%s@%s>=%s", q_name(val.name), q_name(val.quality), num(f.min))
+    end
+    parts[#parts + 1] = string.format("[m=%s a=%s {%s}]", num(sec.multiplier), tostring(sec.active),
+      table.concat(fparts, ","))
+  end
+  return string.format("trash=%s %s", tostring(v.trash_not_requested), table.concat(parts, ";"))
+end`;
 
 const ATTRS = [
 	{
@@ -104,6 +156,90 @@ const ATTRS = [
 		key: "name_tag_loader", attribute: "name_tag", on: "loader",
 		write: `e.name_tag = "${CLONE}-loader"`, read: STRING_READ("name_tag"), expect: `${CLONE}-loader`,
 	},
+	{
+		key: "tick_grown", attribute: "tick_grown", on: "plant",
+		write: "e.tick_grown = game.tick + 400000",
+		read: 'return string.format("%d", e.tick_grown - game.tick)',
+		expect: "400000",
+		compare: (actual, expected) => {
+			const a = Number(actual);
+			const b = Number(expected);
+			return Number.isFinite(a) && Number.isFinite(b) && a <= b && b - a <= TICK_DRIFT_TOLERANCE;
+		},
+		describe: `the remaining grow ticks must land within ${TICK_DRIFT_TOLERANCE} ticks below the armed `
+			+ "value — an absolute tick carried raw would arrive as the SOURCE clock, and a fresh plant "
+			+ "would read its own prototype grow time",
+	},
+	{
+		key: "result_quality", attribute: "result_quality", on: "asm",
+		write: 'e.set_recipe("iron-gear-wheel")\ne.crafting_progress = 0.5\ne.result_quality = "rare"',
+		read: "return q_name(e.result_quality)", expect: "rare",
+	},
+	{
+		key: "display_panel_icon", attribute: "display_panel_icon", on: "display",
+		write: 'e.display_panel_icon = { type = "item", name = "iron-plate" }',
+		read: "return signal_key(e.display_panel_icon)", expect: "item:iron-plate:normal",
+	},
+	{
+		key: "alert_parameters", attribute: "alert_parameters", on: "speaker",
+		write: 'e.alert_parameters = { show_alert = true, show_on_map = false, '
+			+ `icon_signal_id = { type = "item", name = "iron-plate" }, alert_message = "${CLONE}-alert" }`,
+		read: 'local a = e.alert_parameters\n'
+			+ 'if a == nil then return "nil" end\n'
+			+ 'return string.format("%s|%s|%s|%s", tostring(a.show_alert), tostring(a.show_on_map),\n'
+			+ '  tostring(a.alert_message), signal_key(a.icon_signal_id))',
+		expect: `true|false|${CLONE}-alert|item:iron-plate:normal`,
+	},
+	{
+		key: "custom_status", attribute: "custom_status", on: "wall",
+		write: 'e.custom_status = { diode = defines.entity_status_diode.yellow, '
+			+ `label = { "", "${CLONE}-status" } }`,
+		read: 'local c = e.custom_status\n'
+			+ 'if c == nil then return "nil" end\n'
+			+ 'local label = c.label\n'
+			+ 'if type(label) == "table" then label = table.concat(label, "/") end\n'
+			+ 'return define_name(defines.entity_status_diode, c.diode) .. "|" .. tostring(label)',
+		expect: `yellow|/${CLONE}-status`,
+	},
+	{
+		key: "override_logistic_mode", attribute: "override_logistic_mode", on: "infchest",
+		write: "e.override_logistic_mode = defines.logistic_mode.buffer",
+		read: "return define_name(defines.logistic_mode, e.override_logistic_mode)", expect: "buffer",
+	},
+	{
+		key: "saved_request_filters", attribute: "saved_request_filters", on: "infchest",
+		write: "e.saved_request_filters = { sections = { { index = 1, filters = { { index = 1, "
+			+ 'value = { type = "item", name = "iron-plate", quality = "normal", comparator = "=" }, '
+			+ "min = 42 } }, multiplier = 2 } }, trash_not_requested = true }",
+		read: "return sections_key(e.saved_request_filters)",
+		expect: "trash=true [m=2 a=true {iron-plate@normal>=42}]",
+	},
+	{
+		key: "saved_storage_filters", attribute: "saved_storage_filters", on: "infchest",
+		write: "e.saved_storage_filters = { sections = { { index = 1, filters = { { index = 1, "
+			+ 'value = { type = "item", name = "copper-plate", quality = "normal", comparator = "=" }, '
+			+ "min = 7 } }, multiplier = 3 } }, trash_not_requested = false }",
+		read: "return sections_key(e.saved_storage_filters)",
+		expect: "trash=false [m=3 a=true {copper-plate@normal>=7}]",
+	},
+	{
+		key: "saved_request_from_buffers", attribute: "saved_request_from_buffers", on: "infchest",
+		write: "e.saved_request_from_buffers = not e.saved_request_from_buffers",
+		read: BOOL_READ("saved_request_from_buffers"), dynamicExpect: true,
+	},
+	{
+		key: "saved_set_requests", attribute: "saved_set_requests", on: "infchest",
+		write: "e.saved_set_requests = not e.saved_set_requests",
+		read: BOOL_READ("saved_set_requests"), dynamicExpect: true,
+	},
+	{
+		key: "linked_belt_type", attribute: "linked_belt_type", on: "linkedbelt",
+		write: 'e.linked_belt_type = "output"', read: STRING_READ("linked_belt_type"), expect: "output",
+	},
+	{
+		key: "link_id", attribute: "link_id", on: "linkedchest",
+		write: "e.link_id = 4242", read: 'return string.format("%d", e.link_id)', expect: "4242",
+	},
 ];
 
 const INERT_CANDIDATES = [
@@ -130,7 +266,8 @@ const INERT_CANDIDATES = [
 ];
 
 function readersLua() {
-	return ATTRS.map(a => `readers["${a.key}"] = function(e)\n${a.read}\nend`).join("\n");
+	return `${READER_HELPERS}\n`
+		+ ATTRS.map(a => `readers["${a.key}"] = function(e)\n${a.read}\nend`).join("\n");
 }
 
 function platformLua(name) {
@@ -181,8 +318,8 @@ if maxx == -math.huge then return { success = false, error = 'clone carries no e
 local bx = math.floor(maxx) + 6
 local by = 0
 local tiles = {}
-for x = bx, bx + 24 do
-  for y = by, by + 15 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
+for x = bx, bx + 28 do
+  for y = by, by + 22 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
 end
 s.set_tiles(tiles)
 
@@ -333,14 +470,19 @@ async function main() {
 				fail(`${spec.key}: source arming failed (${row.error ?? "unknown"}) — not exercised`);
 				continue;
 			}
-			const effectiveExpect = spec.dynamicExpect ? row.value : spec.expect;
-			if (!spec.dynamicExpect && row.value !== spec.expect) {
-				fail(`${spec.key}: source read back ${JSON.stringify(row.value)} after writing the non-default, `
-					+ `expected ${JSON.stringify(spec.expect)} — the write did not stick, so a matching `
-					+ "destination value would prove nothing");
+			if (row.default === undefined) {
+				fail(`${spec.key}: the fresh entity's default could not be read, so the armed value cannot be `
+					+ "shown non-default — a matching destination read would prove nothing");
 				continue;
 			}
-			if (row.default === effectiveExpect) {
+			const effectiveExpect = spec.dynamicExpect ? row.value : spec.expect;
+			if (!spec.dynamicExpect && !matches(spec, row.value, spec.expect)) {
+				fail(`${spec.key}: source read back ${JSON.stringify(row.value)} after writing the non-default, `
+					+ `expected ${JSON.stringify(spec.expect)} — the write did not stick, so a matching `
+					+ `destination value would prove nothing${spec.describe ? ` (${spec.describe})` : ""}`);
+				continue;
+			}
+			if (matches(spec, row.default, effectiveExpect)) {
 				fail(`${spec.key}: the armed value equals the fresh entity's default `
 					+ `(${JSON.stringify(row.default)}) — a matching destination read would prove nothing; `
 					+ "arm the negation of the default instead");
@@ -387,9 +529,10 @@ async function main() {
 				fail(`${spec.key}: no destination row came back`);
 			} else if (!row.found) {
 				fail(`${spec.key}: '${spec.entity_name}' not found on the destination at ${spec.x},${spec.y}`);
-			} else if (row.value !== spec.expect) {
+			} else if (!matches(spec, row.value, spec.expect)) {
 				fail(`${spec.key}: destination reads ${JSON.stringify(row.value)}, expected `
-					+ `${JSON.stringify(spec.expect)} — the attribute did NOT survive the transfer`);
+					+ `${JSON.stringify(spec.expect)} — the attribute did NOT survive the transfer`
+					+ `${spec.describe ? ` (${spec.describe})` : ""}`);
 			} else {
 				pass(`${spec.key} survived: ${spec.entity_name}@${spec.x},${spec.y} reads `
 					+ `${JSON.stringify(row.value)}`);

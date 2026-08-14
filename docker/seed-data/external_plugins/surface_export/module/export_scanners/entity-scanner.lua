@@ -107,6 +107,11 @@ function EntityScanner.serialize_entity(entity)
     entity_data.name_tag = name_tag
   end
 
+  local custom_status = GameUtils.safe_get(entity, "custom_status")
+  if custom_status ~= nil then
+    entity_data.custom_status = custom_status
+  end
+
   local category = Util.get_entity_category(entity)
 
   local specific_data = EntityHandlers.handle_entity(entity, category)
