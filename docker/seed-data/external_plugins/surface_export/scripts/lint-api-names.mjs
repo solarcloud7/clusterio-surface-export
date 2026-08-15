@@ -5,9 +5,8 @@
 // produces: exit 0 with a per-receiver summary, or exit 1 listing each unknown name with file:line,
 //           whether it exists on another class, and the near-misses
 // does not: infer receiver TYPES (a receiver is mapped to a class BY NAME, from module/ convention),
-//           check subclass availability (a real member on the wrong subclass returns nil, not a throw,
-//           so it is invisible here), check write permission, follow past the first hop, or reach the
-//           network — the vendored index is the whole oracle
+//           check subclass availability, check write permission, follow past the first hop, or
+//           reach the network — the vendored index is the whole oracle
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";

@@ -4,19 +4,14 @@
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
-//           before any destination read, a DECLARED-INERT line (with the live prototype
-//           predicate that decided it) for attributes no prototype supports at this pin, the
-//           measured destination roster and clock that two rows take their expectation from,
-//           and a control section: the last_user conditional's present/absent arms (run on the
-//           SOURCE clone pre-export, through test_import_entity -> restore_entity_state, with the
-//           probe entities destroyed before the scan) and a nil-target proxy-container read on
-//           the destination
-// does not: read the export payload — payload presence is not restoration; assert item/fluid
+//           before any destination read, a DECLARED-INERT line (with the live prototype predicate
+//           that decided it) for attributes no prototype supports at this pin, the measured
+//           destination roster and clock, and a control section: the last_user conditional's
+//           present/absent arms and a nil-target proxy-container read on the destination
+// does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
-//           cover last_user against a destination whose roster lacks the armed name — that row
-//           reports UNEXERCISED red rather than expecting nil, which would pass with the capture
-//           deleted, and it is the only coverage of the last_user CAPTURE, since both control arms
-//           build their payloads by hand and never reach EntityScanner
+//           tolerate a destination roster missing the armed last_user name (that row goes
+//           UNEXERCISED red, never expects nil)
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
