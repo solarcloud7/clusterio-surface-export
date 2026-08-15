@@ -8,16 +8,17 @@
 //           predicate that decided it) for attributes no prototype supports at this pin, the
 //           measured destination roster and clock that two rows take their expectation from,
 //           and a control section: the last_user conditional's present/absent arms (run on the
-//           SOURCE clone pre-export, since the conditional belongs to restore_entity_state
-//           rather than to either instance) and a nil-target proxy-container read on the
-//           destination
+//           SOURCE clone pre-export, through test_import_entity -> restore_entity_state, with the
+//           probe entities destroyed before the scan) and a nil-target proxy-container read on
+//           the destination
 // does not: read the export payload — payload presence is not restoration; assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
-//           prove RESTORATION for a row whose destination expectation is the measured DECLINE —
-//           against a destination whose roster lacks the armed player, last_user asserts only
-//           that nothing was mis-attributed, and the control arms carry the restore proof
+//           cover last_user against a destination whose roster lacks the armed name — that row
+//           reports UNEXERCISED red rather than expecting nil, which would pass with the capture
+//           deleted; and it is the ONLY row covering capture, since both control arms build their
+//           payloads by hand and never reach EntityScanner
 
-import { lua as luaRaw, sleep, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
+import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
 
 const SOURCE_HOST = 1;
@@ -79,9 +80,6 @@ const CORPSE_LOOT_COUNT = 123;
 const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
-// Two properties of the DESTINATION that no row may assume, both measured at run start: its clock is
-// an independent per-save clock (a fresh instance is only thousands of ticks old, so a death older
-// than that is not representable there), and its player roster need not contain the source's player.
 const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null };
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
@@ -327,11 +325,12 @@ const ATTRS = [
 		read: "return q_name(e.last_user)", dynamicExpect: true,
 		get destExpect() { return RUNTIME.lastUserDestExpect; },
 		describe: "last_user is captured as the player NAME and restored only when that name resolves to a "
-			+ "player on the DESTINATION, so what this row may expect depends on the destination roster "
-			+ "measured at run start — a cluster whose two instances share a roster proves the restore, and "
-			+ "a destination with no such player proves the decline. Neither arm can tell a name-keyed "
-			+ "restore from an index-keyed one on a shared roster; the present/absent control pair is the "
-			+ "half that can, which is why it runs in every environment",
+			+ "player on the DESTINATION, so this row can only be exercised where the destination roster "
+			+ "holds the armed name; where it does not, the row reports UNEXERCISED rather than expecting "
+			+ "nil, which would pass with the capture deleted. This row is the only assertion that covers "
+			+ "the CAPTURE side at all — both control arms build their payloads by hand and never reach "
+			+ "EntityScanner. Neither this row nor the controls can tell a name-keyed restore from an "
+			+ "index-keyed one on a shared roster",
 	},
 	{
 		key: "corpse_death_cause", attribute: "character_corpse_death_cause", on: "corpse",
@@ -362,10 +361,14 @@ const ATTRS = [
 		read: "return corpse_loot_key(e)",
 		expect: `${CORPSE_INVENTORY_SIZE}:${CORPSE_LOOT_COUNT}`,
 		describe: "a corpse created without the create_entity inventory_size parameter gets a SIZE-ZERO loot "
-			+ "inventory (measured 2026-08-15 at 2.1.11), and a corpse that fails to place at all is charged "
-			+ "to failed_entity_losses and subtracted from the expected item totals before the exact "
-			+ "comparison — so neither shows up as a gate failure, and this row is the only thing that "
-			+ "reports it",
+			+ "inventory (measured 2026-08-15 at 2.1.11). The two ways that loot can go missing land on "
+			+ "opposite sides of the gate. A corpse that fails to PLACE is charged to failed_entity_losses, "
+			+ "and those items are subtracted from the expected totals before the exact comparison "
+			+ "(import-completion.lua:413-423), so the gate stays green and the loss is silent — that path is "
+			+ "what this row exists to report. A corpse that places with a size-zero inventory instead takes "
+			+ "the inventory.insert branch of restore_inventories, which credits nothing to "
+			+ "inventory_overflow_losses (only the set_stack slot branch does), so the destination census "
+			+ "comes up short and the exact gate FAILS and reverts before any read here runs",
 	},
 	{
 		key: "proxy_target", attribute: "proxy_target_entity + proxy_target_inventory", on: "proxy",
@@ -623,13 +626,19 @@ function measureEnvironment() {
 		fail("host " + SOURCE_HOST + " has an EMPTY player roster, so last_user cannot be armed at all — "
 			+ "the row would report 'not exercised' rather than anything about the restore");
 	}
-	RUNTIME.lastUserDestExpect = destNames.includes(RUNTIME.sourcePlayer) ? RUNTIME.sourcePlayer : "nil";
+	const destResolvesSource = destNames.includes(RUNTIME.sourcePlayer);
+	RUNTIME.lastUserDestExpect = destResolvesSource ? RUNTIME.sourcePlayer : null;
 	say(`  source roster: [${sourceNames.join(", ")}] — arming last_user as ${JSON.stringify(RUNTIME.sourcePlayer)}`);
-	say(`  destination roster: [${destNames.join(", ")}] — last_user must therefore `
-		+ (RUNTIME.lastUserDestExpect === "nil"
-			? "DECLINE (that name is not a player there), so the transferred row asserts the decline and the "
-				+ "present/absent control pair below carries the restore proof"
-			: "RESTORE (that name resolves there)"));
+	say(`  destination roster: [${destNames.join(", ")}]`);
+	if (!destResolvesSource) {
+		fail(`the destination roster does not contain ${JSON.stringify(RUNTIME.sourcePlayer)}, so the last_user `
+			+ "row is UNEXERCISED: the restore correctly declines, and an expectation of nil would pass whether "
+			+ "or not the capture in EntityScanner.serialize_entity still exists — deleting it outright would "
+			+ "read identically. Both control arms build their payloads by hand, so neither covers the capture. "
+			+ "This is reported red rather than skipped for the same reason the destination-clock check below "
+			+ "is: a green run must not mean 'a shipped attribute went entirely untested'. On this cluster the "
+			+ "usual cause is a destination instance that failed to start and came up on a blank save");
+	}
 
 	if (!Number.isFinite(destTick) || destTick < CORPSE_DEATH_TICKS_AGO_MIN * 2) {
 		fail(`destination clock is ${destTick} ticks old, under the ${CORPSE_DEATH_TICKS_AGO_MIN * 2} this row `
@@ -673,11 +682,22 @@ return out`);
 	}
 }
 
-// Runs on the SOURCE clone, before the export scan, because the conditional under test is a property of
-// Deserializer.restore_entity_state rather than of either instance, and the present-name arm needs a host
-// whose roster is non-empty — which the destination's need not be. Both probe entities are destroyed in
-// the same call, so neither reaches the payload.
-function checkLastUserConditional(host, base) {
+const DECLINE_LOG_MARKER = "is not a player on this instance";
+const DECLINE_LOG_ATTEMPTS = 6;
+
+async function findDeclineLogLine(host, uniqueName) {
+	const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+	for (let attempt = 1; attempt <= DECLINE_LOG_ATTEMPTS; attempt++) {
+		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
+			`grep -F '${uniqueName}' ${path} || true`]);
+		const line = out.split(/\r?\n/).find(l => l.includes(DECLINE_LOG_MARKER));
+		if (line) return line.trim();
+		if (attempt < DECLINE_LOG_ATTEMPTS) await sleep(1000);
+	}
+	return null;
+}
+
+async function checkLastUserConditional(host, base) {
 	say("\n=== CONTROLS: the last_user conditional, both arms ===");
 	if (RUNTIME.sourcePlayer === null) return;
 	const absentName = `cfgattr-absent-${CLONE}`;
@@ -748,6 +768,16 @@ return out`);
 			pass("last_user negative arm: a captured name absent from the roster leaves the entity "
 				+ "unattributed, with no error");
 		}
+		const declineLine = await findDeclineLogLine(host, absentName);
+		if (declineLine === null) {
+			fail(`last_user absent_name: the restore left the entity unattributed but emitted NO decline line `
+				+ `naming ${JSON.stringify(absentName)} in ${HOSTS[host].instance}'s factorio-current.log. A nil `
+				+ "read alone cannot tell the conditional apart from its own deletion: writing the raw name "
+				+ "unconditionally makes the engine throw Invalid PlayerIdentification, the existing pcall "
+				+ "swallows it, and last_user stays nil either way. The log line is what distinguishes them");
+		} else {
+			pass(`last_user decline is explicit, not incidental: ${JSON.stringify(declineLine.slice(-120))}`);
+		}
 	}
 }
 
@@ -800,7 +830,7 @@ async function main() {
 			}
 		}
 
-		checkLastUserConditional(SOURCE_HOST, built.base);
+		await checkLastUserConditional(SOURCE_HOST, built.base);
 
 		const armedRows = asArray(built.armed);
 		const armedByKey = new Map(armedRows.map(row => [row.key, row]));
@@ -892,7 +922,13 @@ async function main() {
 		const destByKey = new Map(destRows.map(row => [row.key, row]));
 		for (const spec of surviving) {
 			const row = destByKey.get(spec.key);
-			const expected = spec.destExpect ?? spec.expect;
+			const declared = Object.hasOwn(spec, "destExpect");
+			if (declared && spec.destExpect === null) {
+				fail(`${spec.key}: UNEXERCISED on this destination — see the ENVIRONMENT section above; no `
+					+ "destination read can distinguish a working capture and restore from a deleted one here");
+				continue;
+			}
+			const expected = declared ? spec.destExpect : spec.expect;
 			if (!row) {
 				fail(`${spec.key}: no destination row came back`);
 			} else if (!row.found) {
@@ -903,9 +939,7 @@ async function main() {
 					+ `${spec.describe ? ` (${spec.describe})` : ""}`);
 			} else {
 				pass(`${spec.key} survived: ${spec.entity_name}@${spec.x},${spec.y} reads `
-					+ `${JSON.stringify(row.value)}`
-					+ (expected !== spec.expect ? ` (the destination roster cannot hold the armed value, so this `
-						+ `row asserts the measured ${JSON.stringify(expected)} decline)` : ""));
+					+ `${JSON.stringify(row.value)}`);
 			}
 		}
 
