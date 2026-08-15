@@ -58,6 +58,7 @@ const STORED_COUNTER_FIELDS = {
 	belt_state_unmatched: "unmatched",
 	belt_state_failed: "failed",
 	belt_state_merge_discarded: "mergeDiscarded",
+	belt_state_declined: "declined",
 };
 
 const COLOR_READ = expr => `(function() local c = ${expr} `
@@ -452,7 +453,8 @@ function adjudicateStoredCounters(transferId, counters) {
 	}
 	pass(`summary.import carries applied=${stored.belt_state_applied} `
 		+ `unmatched=${stored.belt_state_unmatched} failed=${stored.belt_state_failed} `
-		+ `merge-discarded=${stored.belt_state_merge_discarded}, each agreeing with the destination's log line`);
+		+ `merge-discarded=${stored.belt_state_merge_discarded} declined=${stored.belt_state_declined}, `
+		+ "each agreeing with the destination's log line");
 }
 
 async function readStateCounters(host) {

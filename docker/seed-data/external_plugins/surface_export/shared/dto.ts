@@ -215,6 +215,7 @@ export interface ImportMetrics {
 	belt_state_unmatched?: number;
 	belt_state_failed?: number;
 	belt_state_merge_discarded?: number;
+	belt_state_declined?: number;
 	circuits_connected: number;
 	total_items: number;
 	total_fluids: number;

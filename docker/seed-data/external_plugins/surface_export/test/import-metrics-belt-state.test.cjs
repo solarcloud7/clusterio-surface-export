@@ -12,6 +12,7 @@ const BELT_STATE = {
 	belt_state_unmatched: 3,
 	belt_state_failed: 2,
 	belt_state_merge_discarded: 1,
+	belt_state_declined: 5,
 };
 
 test("the belt item-state counters survive into the metrics the transaction log persists", () => {
@@ -25,7 +26,7 @@ test("the belt item-state counters survive into the metrics the transaction log 
 		assert.equal(metrics[key], value,
 			`${key} reaches the controller's raw event, but only enters summary.import — the store `
 			+ "TransactionLogsTab renders and testkit log answers with — if buildImportMetrics carries it. "
-			+ "The four values are distinct so a counter wired to the wrong source key cannot pass");
+			+ "The five values are distinct so a counter wired to the wrong source key cannot pass");
 	}
 	assert.equal(metrics.not_an_allowlisted_metric, undefined,
 		"buildImportMetrics is an allowlist, not a passthrough: an unlisted key must not ride along");
