@@ -15,8 +15,8 @@
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           cover last_user against a destination whose roster lacks the armed name — that row
 //           reports UNEXERCISED red rather than expecting nil, which would pass with the capture
-//           deleted; and it is the ONLY row covering capture, since both control arms build their
-//           payloads by hand and never reach EntityScanner
+//           deleted, and it is the only coverage of the last_user CAPTURE, since both control arms
+//           build their payloads by hand and never reach EntityScanner
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -72,6 +72,8 @@ const RIG_ENTITIES = [
 	{ id: "boxchest", name: "steel-chest", dx: 25.5, dy: 4.5, stock: { name: "spidertron", count: 1 } },
 	{ id: "proxy", name: "proxy-container", dx: 25.5, dy: 7.5 },
 	{ id: "proxynil", name: "proxy-container", dx: 25.5, dy: 10.5 },
+	{ id: "pswitch", name: "power-switch", dx: 4.5, dy: 20.5 },
+	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
 ];
 
 const TICK_DRIFT_TOLERANCE = 60_000;
@@ -150,6 +152,11 @@ end
 local function color_key(c)
   if c == nil then return "nil" end
   return string.format("%.2f/%.2f/%.2f/%.2f", c.r or 0, c.g or 0, c.b or 0, c.a or 0)
+end
+local function auto_target_key(e)
+  local p = e.vehicle_automatic_targeting_parameters
+  if p == nil then return "nil" end
+  return string.format("%s|%s", tostring(p.auto_target_without_gunner), tostring(p.auto_target_with_gunner))
 end
 local function item_sections_key(v)
   if v == nil then return "nil" end
@@ -400,6 +407,25 @@ const ATTRS = [
 		read: ITEM_READ("tostring(st.entity_request_from_buffers)"), expect: "false",
 		describe: "the fresh default is TRUE, so this row arms the negation — writing true would produce a "
 			+ "destination match that proves nothing",
+	},
+	{
+		key: "power_switch_state", attribute: "power_switch_state", on: "pswitch",
+		write: "e.power_switch_state = not e.power_switch_state",
+		read: BOOL_READ("power_switch_state"), dynamicExpect: true,
+	},
+	{
+		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
+		on: "spider",
+		write: "local p = e.vehicle_automatic_targeting_parameters\n"
+			+ "e.vehicle_automatic_targeting_parameters = { "
+			+ "auto_target_without_gunner = not p.auto_target_without_gunner, "
+			+ "auto_target_with_gunner = not p.auto_target_with_gunner }",
+		read: "return auto_target_key(e)", dynamicExpect: true,
+		describe: "both flags are armed as the NEGATION of the measured fresh defaults, so a destination that "
+			+ "reads the prototype defaults fails this row. The concept's fields are auto_target_without_gunner "
+			+ "and auto_target_with_gunner (measured 2026-08-15 at 2.1.11 by enumerating the keys of the table "
+			+ "the attribute returns); this is a concept table, not a LuaObject, so reading or writing a "
+			+ "sub-key under any other name is a plain table index that yields nil without throwing",
 	},
 	{
 		key: "item_entity_logistic_sections", attribute: "entity_logistic_sections", on: "boxchest",
