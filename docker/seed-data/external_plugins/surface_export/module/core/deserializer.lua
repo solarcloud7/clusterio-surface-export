@@ -91,10 +91,8 @@ local SIMPLE_RESTORE_RULES = {
   { field = "color", safecall = true },
   { field = "always_on", present = true, safecall = true },
   { field = "rocket_parts" },
-  { field = "switch_state", present = true, safecall = true },
   { field = "artillery_auto_targeting", present = true, safecall = true },
   { field = "opened", present = true },
-  { field = "planting_position" },
   { field = "autopilot_destination" },
 }
 
@@ -357,15 +355,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  if data.previous_recipe and entity.previous_recipe ~= nil then
-    safe_call(string.format("previous_recipe for %s", entity.name), function()
-      entity.previous_recipe = {
-        name = data.previous_recipe.name,
-        quality = data.previous_recipe.quality or Util.QUALITY_NORMAL
-      }
-    end)
-  end
-
   if data.grown_ticks_remaining ~= nil then
     safe_call(string.format("plant grow-tick for %s", entity.name),
       function() entity.tick_grown = game.tick + data.grown_ticks_remaining end)
@@ -505,17 +494,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if data.label and entity.type == "spider-vehicle" then
       safe_call(string.format("spidertron label for %s", entity.name),
         function() entity.entity_label = data.label end)
-    end
-    
-    if data.automatic_targeting_parameters and entity.enable_logistics_while_moving ~= nil then
-      safe_call(string.format("auto targeting for %s", entity.name), function()
-        if data.automatic_targeting_parameters.auto_target_with_gunner ~= nil then
-          entity.auto_target_with_gunner = data.automatic_targeting_parameters.auto_target_with_gunner
-        end
-        if data.automatic_targeting_parameters.auto_target_without_gunner ~= nil then
-          entity.auto_target_without_gunner = data.automatic_targeting_parameters.auto_target_without_gunner
-        end
-      end)
     end
   end
 
