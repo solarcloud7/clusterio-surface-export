@@ -1342,7 +1342,10 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
       end
     end
 
-    if target and target.valid then
+    if target and target.valid and target.type ~= "electric-pole" then
+      log(string.format("[Deserializer] power connection %s -> %s (%s) skipped: pole_copper shares its id with power_switch_left_copper, so this wire would land on the target's LEFT side whatever side it was captured on; a non-pole copper target rides circuit_connections, which carries the connector id",
+        entity.name, target.name, target.type))
+    elseif target and target.valid then
       local ok, result = pcall(function()
         local source_connector = entity.get_wire_connector(defines.wire_connector_id.pole_copper, true)
         local target_connector = target.get_wire_connector(defines.wire_connector_id.pole_copper, true)

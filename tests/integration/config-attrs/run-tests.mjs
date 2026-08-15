@@ -433,7 +433,9 @@ const ATTRS = [
 			+ "(entity_creation.lua:106) and the copper wires are re-established in a later phase "
 			+ "(entity_state_restoration.lua:49-65). This row is armed before the wiring row below, so a "
 			+ "state the wiring itself destroys is caught by the pre-export re-read as source decay rather "
-			+ "than reported here as a restore defect",
+			+ "than reported here as a restore defect. Measured 2026-08-15 at 2.1.11 on a clone of "
+			+ "lab-transfer-fixture-v1 wired exactly as above: the state DOES survive the copper pass, so a "
+			+ "red here is a regression rather than an open question",
 	},
 	{
 		key: "power_switch_copper", attribute: "power_switch_left_copper + power_switch_right_copper",
@@ -452,7 +454,9 @@ const ATTRS = [
 			+ "the defines table): a connector id alone does not say which side of a switch a wire landed on, "
 			+ "so a union-keyed comparison would read a wire moved between sides as intact. The two poles "
 			+ "stand 8.0 apart, past a small-electric-pole's 7.5 wire reach (get_max_wire_distance, same "
-			+ "pin), so the only copper on the rig is the pair this row makes",
+			+ "pin), so the only copper on the rig is the pair this row makes. An extra pole on the LEFT "
+			+ "set is the shared-id defect: restore_power_connections reaching a non-pole target "
+			+ "(deserializer.lua:1345-1347)",
 	},
 	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
