@@ -8,8 +8,6 @@ local BeltRestoration = {}
 
 local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 
-BeltRestoration.STATE_FIELDS_WITHOUT_BELT_RESTORE = { export_string = true }
-
 local function add_items(totals, items)
     local total = 0
     for _, item in ipairs(items or {}) do
@@ -126,15 +124,7 @@ local function belt_item_state(stack, cache)
         end
         return nil
     end
-    if not state then return nil end
-    local kept = nil
-    for key, value in pairs(state) do
-        if not BeltRestoration.STATE_FIELDS_WITHOUT_BELT_RESTORE[key] then
-            kept = kept or {}
-            kept[key] = value
-        end
-    end
-    return kept
+    return state
 end
 
 local function collect_side_groups(belt_pairs, cache)
@@ -199,7 +189,46 @@ function BeltRestoration.capture_side_groups(belt_pairs)
     return result
 end
 
-function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_label)
+function BeltRestoration.export_string_keeps_identity(scratch, name, quality, count, export_string)
+    if not (scratch and scratch.inventory and scratch.inventory.valid) then
+        return false, "no scratch inventory"
+    end
+    local slot = scratch.inventory[1]
+    local wanted_quality = quality or QUALITY_NORMAL
+    local set_ok, set_error = pcall(function()
+        slot.clear()
+        slot.set_stack({ name = name, quality = wanted_quality, count = count })
+    end)
+    if not set_ok then return false, tostring(set_error) end
+    if not slot.valid_for_read then return false, "scratch stack did not take" end
+
+    local import_ok, import_error = pcall(function() return slot.import_stack(export_string) end)
+    if not import_ok then
+        Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
+        return false, tostring(import_error)
+    end
+
+    local seen = "empty"
+    local keeps = false
+    if slot.valid_for_read then
+        local seen_quality = (slot.quality and slot.quality.name) or QUALITY_NORMAL
+        seen = string.format("%s (%s) x%d", slot.name, seen_quality, slot.count)
+        keeps = slot.name == name and seen_quality == wanted_quality and slot.count == count
+    end
+    Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
+    return keeps, seen
+end
+
+local function needs_scratch(side_groups)
+    for _, g in ipairs(side_groups or {}) do
+        for _, slot in ipairs((type(g) == "table" and g.slots) or {}) do
+            if type(slot) == "table" and slot.st and slot.st.export_string then return true end
+        end
+    end
+    return false
+end
+
+local function run_side_restore(side_groups, entity_map, platform_label, scratch)
     local label = tostring(platform_label or "unnamed")
     local function item_key(name, quality)
         return name .. "\0" .. (quality or QUALITY_NORMAL)
@@ -229,14 +258,14 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_l
         end
         return result
     end
-    local state_stats = { applied = 0, unmatched = 0, failed = 0, merge_discarded = 0 }
+    local state_stats = { applied = 0, unmatched = 0, failed = 0, merge_discarded = 0, declined = 0 }
     local state_logged = 0
     local function line_ids(line)
         local ids = {}
         for _, item in ipairs(line.get_detailed_contents()) do ids[item.unique_id] = true end
         return ids
     end
-    local function apply_state(line, before_ids, st, count)
+    local function apply_state(line, before_ids, st, stack_def, count)
         local landed_stack, arrivals = nil, 0
         for _, item in ipairs(line.get_detailed_contents()) do
             if not before_ids[item.unique_id] then
@@ -256,22 +285,62 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_l
             end
             return
         end
-        local ok, err = pcall(Deserializer.restore_item_properties, landed_stack, st)
-        if ok then
-            state_stats.applied = state_stats.applied + 1
-        else
-            state_stats.failed = state_stats.failed + 1
-            state_logged = state_logged + 1
-            if state_logged <= 10 then
-                log(string.format("[BeltRestoration] STATE WRITE FAILED for %s: %s",
-                    landed_stack.valid_for_read and landed_stack.name or "?", tostring(err)))
+        local scalars = st
+        local wrote, refused = false, false
+        if st.export_string then
+            scalars = {}
+            for key, value in pairs(st) do
+                if key ~= "export_string" then scalars[key] = value end
             end
+            local keeps, seen = BeltRestoration.export_string_keeps_identity(scratch, stack_def.name,
+                stack_def.quality, count, st.export_string)
+            if keeps then
+                local ok, err = pcall(function() return landed_stack.import_stack(st.export_string) end)
+                if ok then
+                    wrote = true
+                else
+                    refused = true
+                    state_logged = state_logged + 1
+                    if state_logged <= 10 then
+                        log(string.format("[BeltRestoration] STATE export_string WRITE FAILED for %s: %s",
+                            tostring(stack_def.name), tostring(err)))
+                    end
+                end
+            else
+                state_stats.declined = state_stats.declined + 1
+                state_logged = state_logged + 1
+                if state_logged <= 10 then
+                    log(string.format(
+                        "[BeltRestoration] STATE DECLINED export_string for %s (%s) x%d: the scratch preflight read "
+                        .. "%s — the live stack was not written",
+                        tostring(stack_def.name), tostring(stack_def.quality or QUALITY_NORMAL), count,
+                        tostring(seen)))
+                end
+            end
+        end
+        if next(scalars) ~= nil then
+            local ok, err = pcall(Deserializer.restore_item_properties, landed_stack, scalars)
+            if ok then
+                wrote = true
+            else
+                refused = true
+                state_logged = state_logged + 1
+                if state_logged <= 10 then
+                    log(string.format("[BeltRestoration] STATE WRITE FAILED for %s: %s",
+                        landed_stack.valid_for_read and landed_stack.name or "?", tostring(err)))
+                end
+            end
+        end
+        if refused then
+            state_stats.failed = state_stats.failed + 1
+        elseif wrote then
+            state_stats.applied = state_stats.applied + 1
         end
     end
     local function insert_with_state(line, k, stack_def, count, st)
         local before_ids = st and line_ids(line) or nil
         if not VersionCompat.belt_insert_at(line, k / 256, stack_def, count) then return false end
-        if before_ids then apply_state(line, before_ids, st, count) end
+        if before_ids then apply_state(line, before_ids, st, stack_def, count) end
         return true
     end
     local side_before = {}
@@ -591,12 +660,35 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_l
             stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
             #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))
     end
-    if state_stats.applied + state_stats.unmatched + state_stats.failed + state_stats.merge_discarded > 0 then
+    if state_stats.applied + state_stats.unmatched + state_stats.failed + state_stats.merge_discarded
+        + state_stats.declined > 0 then
         log(string.format(
-            "[BeltRestoration] ITEM STATE %s: applied %d | unmatched %d | failed %d | merge-discarded %d",
-            label, state_stats.applied, state_stats.unmatched, state_stats.failed, state_stats.merge_discarded))
+            "[BeltRestoration] ITEM STATE %s: applied %d | unmatched %d | failed %d | merge-discarded %d "
+            .. "| declined %d",
+            label, state_stats.applied, state_stats.unmatched, state_stats.failed, state_stats.merge_discarded,
+            state_stats.declined))
     end
     return placed, unplaced, anomalies, physical_delta, state_stats
+end
+
+function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_label)
+    local scratch = nil
+    if needs_scratch(side_groups) then
+        local scratch_ok, created = pcall(InventoryScanner.new_item_state_cache)
+        if scratch_ok then
+            scratch = created
+        else
+            log(string.format("[BeltRestoration] item-state scratch unavailable (%s) — every export_string is "
+                .. "declined; placement itself is unaffected", tostring(created)))
+        end
+    end
+    local ok, placed, unplaced, anomalies, delta, stats = pcall(run_side_restore, side_groups,
+        entity_map, platform_label, scratch)
+    Util.pcall_warn("[BeltRestoration] item-state scratch release", function()
+        InventoryScanner.release_item_state_cache(scratch)
+    end)
+    if not ok then error(placed, 0) end
+    return placed, unplaced, anomalies, delta, stats
 end
 
 return BeltRestoration

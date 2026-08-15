@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// belt-item-state — item-level scalar state on a stack riding a BELT must survive a real
+// belt-item-state — item-level state on a stack riding a BELT must survive a real
 // host-1 -> host-2 transfer
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-row SOURCE arming with the fresh default measured first, a pre-export re-read,
 //           the gate verdict read before any destination read (bound to this clone by name), a
-//           DESTINATION physical readback taken off the arrived belt stack itself, a PAIR row of
-//           two same-item stacks with different state on ONE line, the destination's own
-//           applied/unmatched/failed counters read back from its log, bound to this clone by name,
-//           and those same counters re-read from the persisted summary.import by transferId
+//           DESTINATION physical readback taken off the arrived belt stack itself, blueprint
+//           CONTENT decoded off that stack (entity count, names, positions), a PAIR row of two
+//           same-item stacks with different state on ONE line, the destination's own
+//           applied/unmatched/failed/declined counters read back from its log, bound to this clone
+//           by name, and those same counters re-read from the persisted summary.import by transferId
 // does not: read the export payload (payload presence is not restoration); assert item or fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
-//           cover blueprint CONTENT (export_string has no belt restore path); cover the
-//           over-compression merge path
+//           exercise the export_string DECLINE path (driven in the belt_side_restore selftest);
+//           cover the over-compression merge path
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -62,6 +63,16 @@ const STORED_COUNTER_FIELDS = {
 const COLOR_READ = expr => `(function() local c = ${expr} `
 	+ `return c and string.format("%.2f/%.2f/%.2f", c.r, c.g, c.b) or "nil" end)()`;
 
+const BP_ENTITIES = [
+	{ name: "transport-belt", x: 0.5, y: 0.5 },
+	{ name: "fast-inserter", x: 1.5, y: 0.5 },
+	{ name: "wooden-chest", x: 2.5, y: 0.5 },
+];
+const BP_WRITE = `{ ${BP_ENTITIES.map((e, i) => `{ entity_number = ${i + 1}, name = "${e.name}", `
+	+ `position = { x = ${e.x}, y = ${e.y} } }`).join(", ")} }`;
+const BP_EXPECT = `n=${BP_ENTITIES.length} `
+	+ BP_ENTITIES.map(e => `${e.name}@${e.x.toFixed(2)},${e.y.toFixed(2)}`).sort().join(",");
+
 const SECTIONS = [{ index: 1, multiplier: 3 }, { index: 2, multiplier: 7 }];
 const SECTIONS_WRITE = `{ sections = { ${SECTIONS.map(s => `{ index = ${s.index}, multiplier = ${s.multiplier} }`)
 	.join(", ")} } }`;
@@ -78,6 +89,15 @@ local function item_sections_key(v)
     parts[#parts + 1] = string.format("%s:%s", tostring(sec.index), num(sec.multiplier))
   end
   return string.format("n=%d %s", #parts, table.concat(parts, ","))
+end
+local function blueprint_key(stack)
+  if not stack.is_blueprint then return "not-a-blueprint" end
+  local parts = {}
+  for _, e in ipairs(stack.get_blueprint_entities() or {}) do
+    parts[#parts + 1] = string.format("%s@%.2f,%.2f", e.name, e.position.x, e.position.y)
+  end
+  table.sort(parts)
+  return string.format("n=%d %s", stack.get_blueprint_entity_count(), table.concat(parts, ","))
 end`;
 
 const ROWS = [
@@ -117,11 +137,18 @@ const ROWS = [
 		expect: "77.0000",
 	},
 	{
-		key: "label",
+		key: "blueprint_content",
 		item: "blueprint",
-		write: 'st.label = LABEL_TEXT st.label_color = { r = 0.25, g = 0.5, b = 0.75, a = 1 }',
-		read: `tostring(st.label) .. "|" .. ${COLOR_READ("st.label_color")}`,
-		expect: `${CLONE}-bp|0.25/0.50/0.75`,
+		write: `st.set_blueprint_entities(${BP_WRITE}) st.label = LABEL_TEXT `
+			+ "st.label_color = { r = 0.25, g = 0.5, b = 0.75, a = 1 }",
+		read: `tostring(st.label) .. "|" .. ${COLOR_READ("st.label_color")} .. "|" .. blueprint_key(st)`,
+		expect: `${CLONE}-bp|0.25/0.50/0.75|${BP_EXPECT}`,
+		describe: "the label rides in st as its own field and the entities ride as export_string, which reaches "
+			+ "the live stack only after the scratch preflight proves import_stack keeps (name, quality, count). "
+			+ "The comparator decodes the arrived blueprint rather than comparing export strings: measured "
+			+ "2026-08-15 on this cluster, the same blueprint built on host-1 and host-2 exports byte-identical "
+			+ "strings and keeps its entity positions, so decoding costs nothing and does not pin the test to an "
+			+ "engine build both instances happen to share. A fresh blueprint reads n=0 with no label",
 	},
 	{
 		key: "entity_data",
@@ -437,10 +464,11 @@ async function readStateCounters(host) {
 			`grep -aF '${STATE_LOG_MARKER}' ${path} | tail -1 || true`]);
 		const hit = out.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop();
 		if (hit) {
-			const nums = hit.match(/applied (\d+) \| unmatched (\d+) \| failed (\d+) \| merge-discarded (\d+)/);
+			const nums = hit.match(
+				/applied (\d+) \| unmatched (\d+) \| failed (\d+) \| merge-discarded (\d+) \| declined (\d+)/);
 			if (nums) {
 				return { line: hit, applied: Number(nums[1]), unmatched: Number(nums[2]),
-					failed: Number(nums[3]), mergeDiscarded: Number(nums[4]) };
+					failed: Number(nums[3]), mergeDiscarded: Number(nums[4]), declined: Number(nums[5]) };
 			}
 		}
 		if (attempt < STATE_LOG_ATTEMPTS) await sleep(1000);
@@ -626,12 +654,14 @@ async function main() {
 				+ "those. The marker carries the platform name because the log file is persistent and shared: "
 				+ "an unbound read would find a PREVIOUS run's line and pass in exactly the total-regression "
 				+ "case this assertion exists for (the line is emitted only when some counter is non-zero)");
-		} else if (counters.unmatched !== 0 || counters.failed !== 0) {
-			fail(`the destination declined or failed item-state writes (unmatched=${counters.unmatched}, `
-				+ `failed=${counters.failed}). Those losses never reach the verdict by design, so this assertion `
-				+ `is the only thing that reports them: ${counters.line.slice(-140)}`);
+		} else if (counters.unmatched !== 0 || counters.failed !== 0 || counters.declined !== 0) {
+			fail(`the destination refused item-state writes (unmatched=${counters.unmatched}, `
+				+ `failed=${counters.failed}, declined=${counters.declined}). Those losses never reach the verdict `
+				+ `by design, so this assertion is the only thing that reports them. A non-zero declined means an `
+				+ `export_string this run captured off its own stack failed the scratch preflight, which no honest `
+				+ `capture should be able to do: ${counters.line.slice(-160)}`);
 		} else {
-			pass(`item state applied ${counters.applied}x with 0 unmatched, 0 failed, `
+			pass(`item state applied ${counters.applied}x with 0 unmatched, 0 failed, 0 declined, `
 				+ `${counters.mergeDiscarded} merge-discarded`);
 		}
 

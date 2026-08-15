@@ -1,4 +1,5 @@
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 
 local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
 
@@ -489,7 +490,8 @@ local function belt_side_restore_selftest(opts)
       for _, item in ipairs(line.contents) do
         out[#out + 1] = {
           unique_id = item.id,
-          stack = { name = item.name, quality = { name = item.quality }, count = item.count },
+          stack = { name = item.name, quality = { name = item.quality }, count = item.count,
+            valid_for_read = true },
         }
       end
       return out
@@ -621,6 +623,50 @@ local function belt_side_restore_selftest(opts)
     string.format("a declined merge must put the partner back and stay bracket-silent; placed=%d unplaced=%d anomalies=%d stacks=%d count=%s",
       dplaced, dunplaced, danomalies, #decline_line.contents,
       decline_line.contents[1] and tostring(decline_line.contents[1].count) or "none"))
+
+  local bp_inv = game.create_inventory(2)
+  bp_inv[1].set_stack({ name = "blueprint", count = 1 })
+  bp_inv[1].set_blueprint_entities({ { entity_number = 1, name = "wooden-chest", position = { x = 0.5, y = 0.5 } } })
+  local same_type_string = bp_inv[1].export_stack()
+  bp_inv[2].set_stack({ name = "blueprint-book", count = 1 })
+  local cross_type_string = bp_inv[2].export_stack()
+  bp_inv.destroy()
+
+  local preflight_scratch = InventoryScanner.new_item_state_cache()
+  local same_ok, same_seen = BeltRestoration.export_string_keeps_identity(
+    preflight_scratch, "blueprint", "normal", 1, same_type_string)
+  local cross_ok, cross_seen = BeltRestoration.export_string_keeps_identity(
+    preflight_scratch, "blueprint", "normal", 1, cross_type_string)
+  InventoryScanner.release_item_state_cache(preflight_scratch)
+  check("preflight_passes_a_same_type_export_string", same_ok == true,
+    string.format("a blueprint's own export string must preflight clean; got %s (%s)",
+      tostring(same_ok), tostring(same_seen)))
+  check("preflight_refuses_a_type_changing_export_string",
+    cross_ok == false and type(cross_seen) == "string" and string.find(cross_seen, "blueprint%-book") ~= nil,
+    string.format("a blueprint-book string imported into a blueprint stack changes the item name and "
+      .. "import_stack still returns 0, so only a measured identity comparison can refuse it; got %s (%s)",
+      tostring(cross_ok), tostring(cross_seen)))
+
+  local decline_state_line = make_line()
+  local decline_state_map = {
+    [15] = { valid = true, prototype = prototype, get_transport_line = function() return decline_state_line end },
+  }
+  local decline_state_groups = {
+    { members = { { id = 15, li = 1 } },
+      slots = { { n = "blueprint", q = "normal", ct = 1, st = { export_string = cross_type_string } } },
+      item_source_positions = { 15, 1, 200 } },
+  }
+  local zplaced, zunplaced, zanomalies, _, zstate =
+    BeltRestoration.restore_side_groups(decline_state_groups, decline_state_map)
+  check("declined_export_string_never_reaches_the_stack",
+    zstate ~= nil and zstate.declined == 1 and zstate.applied == 0 and zstate.failed == 0
+      and zplaced == 1 and zunplaced == 0 and zanomalies == 0
+      and #decline_state_line.contents == 1 and decline_state_line.contents[1].name == "blueprint",
+    string.format("a type-changing export_string must be declined and counted while the stack stays placed and "
+      .. "a blueprint; declined=%s applied=%s failed=%s placed=%d unplaced=%d anomalies=%d stacks=%d name=%s",
+      tostring(zstate and zstate.declined), tostring(zstate and zstate.applied), tostring(zstate and zstate.failed),
+      zplaced, zunplaced, zanomalies, #decline_state_line.contents,
+      decline_state_line.contents[1] and tostring(decline_state_line.contents[1].name) or "none"))
 
   local v1 = BeltRestoration.validate_side_groups({ {} })
   check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")

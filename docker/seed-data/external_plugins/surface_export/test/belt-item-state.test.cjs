@@ -27,13 +27,14 @@ test("belt item state is captured against a MEASURED fresh default, not an assum
 		"belt capture must reuse the inventory path's serializer, not a second hand-copied field list");
 });
 
-test("belt slots carry item state sparsely, and only fields the belt restore can write", () => {
+test("belt slots carry item state sparsely, and every captured field has a belt restore path", () => {
 	const restoration = read("import_phases", "belt_restoration.lua");
-	assert.match(restoration, /BeltRestoration\.STATE_FIELDS_WITHOUT_BELT_RESTORE = \{ export_string = true \}/,
-		"export_string has no belt restore path (import_stack replaces the whole stack and can change the item "
-		+ "name, which the census forbids) — carrying it would be payload weight that restores nothing");
-	assert.match(restoration, /local function belt_item_state\(stack, cache\)[\s\S]{0,900}?STATE_FIELDS_WITHOUT_BELT_RESTORE\[key\]/,
-		"the excluded fields must be stripped from every captured belt slot");
+	assert.doesNotMatch(restoration, /STATE_FIELDS_WITHOUT_BELT_RESTORE/,
+		"export_string is the field this exclusion existed for and it now has a preflighted restore path; an "
+		+ "empty exclusion set that still strips is a mechanism nothing can reach");
+	assert.match(restoration, /local function belt_item_state\(stack, cache\)[\s\S]{0,600}?\n    return state\nend/,
+		"capture returns the shared serializer's sparse record whole — a second field list here is how a "
+		+ "captured field goes silently unshipped");
 	assert.match(restoration, /st = belt_item_state\(it\.stack, cache\)/,
 		"the slot's state field must come from the shared capture, so a plain stack keeps the compact form");
 	assert.match(restoration, /Util\.pcall_warn\("\[BeltRestoration\] item-state cache release"[\s\S]{0,200}?InventoryScanner\.release_item_state_cache\(cache\)[\s\S]{0,200}?if not ok then error\(result, 0\) end/,
@@ -56,12 +57,15 @@ test("a failure in the state machinery degrades to stateless capture, never to a
 
 test("the belt-side state write is guarded on the on_tick import path", () => {
 	const restoration = read("import_phases", "belt_restoration.lua");
-	assert.match(restoration, /pcall\(Deserializer\.restore_item_properties, landed_stack, st\)/,
+	assert.match(restoration, /pcall\(Deserializer\.restore_item_properties, landed_stack, scalars\)/,
 		"the state write must be pcall-wrapped: belt restore runs on the on_tick import path and the "
 		+ "upload-import ingress accepts arbitrary JSON, so an st field naming a property this item does not "
 		+ "have (durability on an iron plate) would otherwise throw and stop the instance");
-	assert.match(restoration, /state_stats\.failed = state_stats\.failed \+ 1[\s\S]{0,300}?STATE WRITE FAILED/,
+	assert.match(restoration, /refused = true[\s\S]{0,300}?STATE WRITE FAILED/,
 		"a refused write must be counted and named, never swallowed");
+	assert.match(restoration, /if refused then\s*\n\s*state_stats\.failed = state_stats\.failed \+ 1\s*\n\s*elseif wrote then\s*\n\s*state_stats\.applied = state_stats\.applied \+ 1/,
+		"one stack is one tally: a stack whose export_string and scalars are both written counts once, and a "
+		+ "stack where either write threw counts as failed rather than applied");
 	assert.match(restoration, /if arrivals ~= 1 or not readable or landed_stack\.count ~= count then/,
 		"the landed stack is identified by unique_id difference across the write; anything but exactly one "
 		+ "arrival is ambiguous, and an arrival whose count is not the count just written is a stack the "
@@ -78,6 +82,45 @@ test("a payload without per-stack state stays importable, and a malformed one is
 	assert.match(compat, /VersionCompat\.PAYLOAD_SCHEMA_VERSION = "2\.0\.0"/,
 		"per-stack belt state is an additive optional field: bumping the schema constant would refuse every "
 		+ "payload in flight, which is the opposite of backward compatibility");
+});
+
+test("export_string reaches the live belt stack only after a scratch stack proved identity survives", () => {
+	const restoration = read("import_phases", "belt_restoration.lua");
+	assert.match(restoration, /function BeltRestoration\.export_string_keeps_identity\(scratch, name, quality, count, export_string\)/,
+		"the preflight is a named module member so a test can drive it with a real cross-type string");
+	assert.match(restoration, /slot\.set_stack\(\{ name = name, quality = wanted_quality, count = count \}\)[\s\S]{0,400}?slot\.import_stack\(export_string\)/,
+		"the dry run must happen on a scratch stack of the SAME name, quality and count — that is what makes it "
+		+ "an oracle for the write about to hit the belt");
+	assert.match(restoration, /keeps = slot\.name == name and seen_quality == wanted_quality and slot\.count == count/,
+		"the verdict is a MEASURED identity comparison; import_stack returns 0 for a type change and 1 for an "
+		+ "unparseable string, so its return code cannot gate this");
+	assert.match(restoration, /if keeps then[\s\S]{0,300}?pcall\(function\(\) return landed_stack\.import_stack\(st\.export_string\) end\)/,
+		"the live write is reachable only from the true branch of the preflight");
+	assert.match(restoration, /else\s*\n\s*state_stats\.declined = state_stats\.declined \+ 1[\s\S]{0,600}?STATE DECLINED export_string/,
+		"a failed preflight must count and name the decline, never fall through to the write");
+	assert.match(restoration, /if not \(scratch and scratch\.inventory and scratch\.inventory\.valid\) then\s*\n\s*return false, "no scratch inventory"/,
+		"a missing scratch inventory declines — an absent oracle must never be read as a pass");
+	assert.match(restoration, /local function needs_scratch\(side_groups\)[\s\S]{0,300}?slot\.st and slot\.st\.export_string/,
+		"the scratch inventory is created only when a payload actually carries an export_string");
+	assert.match(restoration, /Util\.pcall_warn\("\[BeltRestoration\] item-state scratch release"[\s\S]{0,200}?release_item_state_cache\(scratch\)[\s\S]{0,120}?if not ok then error\(placed, 0\) end/,
+		"restore owns the scratch inventory's lifetime the way capture does: release BEFORE the re-raise, and "
+		+ "the release itself guarded");
+});
+
+test("the declined counter reaches the log line and the import-complete metrics", () => {
+	const restoration = read("import_phases", "belt_restoration.lua");
+	assert.match(restoration, /local state_stats = \{ applied = 0, unmatched = 0, failed = 0, merge_discarded = 0, declined = 0 \}/,
+		"declined joins the run-bound counter family, not a private variable");
+	assert.match(restoration, /ITEM STATE %s: applied %d \| unmatched %d \| failed %d \| merge-discarded %d "\s*\n\s*\.\. "\| declined %d/,
+		"declined is APPENDED to the ITEM STATE line: readers key off the existing four fields by position");
+	assert.match(restoration, /state_stats\.merge_discarded\s*\n\s*\+ state_stats\.declined > 0 then/,
+		"a run whose only item-state event is a decline must still emit the line — the emit condition is the "
+		+ "only reason the line exists");
+	const completion = read("core", "import-completion.lua");
+	assert.match(completion, /job\.metrics\.belt_state_declined = r_state\.declined/,
+		"the restore's declined count must reach job.metrics");
+	assert.match(completion, /belt_state_declined = job\.metrics\.belt_state_declined or 0,/,
+		"and the import-complete event's metrics whitelist, or nothing off-instance can see a decline");
 });
 
 test("the over-compression merge declares which of two merged states survives", () => {
