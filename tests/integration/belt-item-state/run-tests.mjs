@@ -4,15 +4,18 @@
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-row SOURCE arming with the fresh default measured first, a pre-export re-read,
-//           the gate verdict read before any destination read, and a DESTINATION physical
-//           readback taken off the arrived belt stack itself
+//           the gate verdict read before any destination read (bound to this clone by name), a
+//           DESTINATION physical readback taken off the arrived belt stack itself, a PAIR row of
+//           two same-item stacks with different state on ONE line (the only row where the restore's
+//           arrival diff has a non-empty baseline to get wrong), and the destination's own
+//           applied/unmatched/failed counters read back from its log
 // does not: read the export payload (payload presence is not restoration); assert item or fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           cover blueprint CONTENT (export_string has no belt restore path and is excluded from
 //           the captured state); cover the over-compression merge path, which discards one of two
 //           merged states by construction
 
-import { lua as luaRaw, sleep, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
+import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
 
 const SOURCE_HOST = 1;
@@ -45,6 +48,11 @@ const asArray = v => (Array.isArray(v) ? v : Object.values(v || {}));
 
 const ARMED_SPOIL = 0.35;
 const SPOIL_BAND = 0.2;
+const PAIR_ITEM = "pistol";
+const PAIR_HEALTHS = [0.25, 0.75];
+const PAIR_EXPECT = PAIR_HEALTHS.map(h => h.toFixed(4)).sort();
+const STATE_LOG_MARKER = "[BeltRestoration] ITEM STATE:";
+const STATE_LOG_ATTEMPTS = 10;
 
 const COLOR_READ = expr => `(function() local c = ${expr} `
 	+ `return c and string.format("%.2f/%.2f/%.2f", c.r, c.g, c.b) or "nil" end)()`;
@@ -253,22 +261,113 @@ for _, spec in ipairs(row_specs) do
   rows[#rows + 1] = row
 end
 
+local pair = { item = '${PAIR_ITEM}' }
+if not prototypes.item[pair.item] then
+  pair.error = 'no such item prototype at this pin'
+else
+  local py = #row_specs * 3
+  local belts = {}
+  for i = 0, 1 do
+    belts[#belts + 1] = s.create_entity{ name = 'transport-belt', position = { bx + 1.5 + i, py + 0.5 },
+      force = 'player', direction = defines.direction.east, raise_built = false }
+  end
+  if not (belts[1] and belts[1].valid and belts[2] and belts[2].valid) then
+    pair.error = 'pair belts did not place'
+  else
+    local line = belts[1].get_transport_line(1)
+    pair.one_line = line.line_equals(belts[2].get_transport_line(1))
+    pair.at = string.format("%.1f, %.1f", belts[1].position.x, belts[1].position.y)
+    local wanted = { ${PAIR_HEALTHS.join(", ")} }
+    for i, _ in ipairs(wanted) do line.insert_at(0.9 - (i - 1) * 0.45, { name = pair.item, count = 1 }) end
+    local stacks = {}
+    for _, it in ipairs(line.get_detailed_contents()) do
+      if it.stack.valid_for_read and it.stack.name == pair.item then stacks[#stacks + 1] = it.stack end
+    end
+    pair.placed = #stacks
+    pair.default = #stacks > 0 and string.format("%.4f", stacks[1].health) or nil
+    local armed = {}
+    for i, st in ipairs(stacks) do
+      if wanted[i] then
+        st.health = wanted[i]
+        armed[#armed + 1] = string.format("%.4f", st.health)
+      end
+    end
+    table.sort(armed)
+    pair.armed = armed
+  end
+end
+
 local proto = prototypes.item['bioflux']
 local spoil_ticks = proto and proto.get_spoil_ticks and proto.get_spoil_ticks() or 0
-return { success = true, rows = rows, bx = bx, spoil_ticks = spoil_ticks }`);
+return { success = true, rows = rows, pair = pair, bx = bx, spoil_ticks = spoil_ticks }`);
+}
+
+function readPair(host) {
+	return lua(host, `${platformLua(CLONE)}
+local BELT = { ["transport-belt"] = true, ["underground-belt"] = true, ["splitter"] = true,
+  ["lane-splitter"] = true, ["linked-belt"] = true, ["loader"] = true, ["loader-1x1"] = true }
+local healths = {}
+local seen = {}
+local lines = {}
+for _, e in pairs(s.find_entities_filtered{}) do
+  if e.valid and BELT[e.type] then
+    for li = 1, e.get_max_transport_line_index() do
+      local line = e.get_transport_line(li)
+      if line and line.valid then
+        for _, it in ipairs(line.get_detailed_contents()) do
+          local uid = tostring(it.unique_id)
+          if it.stack.valid_for_read and it.stack.name == '${PAIR_ITEM}' and not seen[uid] then
+            seen[uid] = true
+            healths[#healths + 1] = string.format("%.4f", it.stack.health)
+            local shared = false
+            for _, known in ipairs(lines) do if line.line_equals(known) then shared = true end end
+            if not shared then lines[#lines + 1] = line end
+          end
+        end
+      end
+    end
+  end
+end
+table.sort(healths)
+return { success = true, healths = healths, lines_seen = #lines }`);
 }
 
 function adjudicateGate() {
 	const summary = execFileSync("node", ["tools/tests/testkit/cli.mjs", "log", "latest", "--field", "summary"],
 		{ encoding: "utf8", timeout: 120_000, cwd: REPO_ROOT }).trim();
+	const named = summary.match(/"name": "([^"]+)"/);
+	if (named === null || named[1] !== CLONE) {
+		fail(`the newest transaction log record names ${JSON.stringify(named ? named[1] : null)}, not `
+			+ `'${CLONE}' — on a shared cluster that verdict belongs to someone else's transfer and cannot `
+			+ "adjudicate this one");
+		return false;
+	}
 	const result = summary.match(/"result": "(\w+)"/);
 	const validation_success = result !== null && result[1] === "SUCCESS";
-	say(`  gate verdict: ${result ? result[1] : "UNPARSEABLE"}`);
+	say(`  gate verdict for '${CLONE}': ${result ? result[1] : "UNPARSEABLE"}`);
 	if (!validation_success) {
 		fail("the transfer did not pass the gate — destination reads below would describe a rolled-back "
 			+ `or partial import, not a restoration (summary: ${summary.slice(0, 400)})`);
 	}
 	return validation_success;
+}
+
+async function readStateCounters(host) {
+	const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+	for (let attempt = 1; attempt <= STATE_LOG_ATTEMPTS; attempt++) {
+		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
+			`grep -aF '${STATE_LOG_MARKER}' ${path} | tail -1 || true`]);
+		const hit = out.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop();
+		if (hit) {
+			const nums = hit.match(/applied (\d+) \| unmatched (\d+) \| failed (\d+) \| merge-discarded (\d+)/);
+			if (nums) {
+				return { line: hit, applied: Number(nums[1]), unmatched: Number(nums[2]),
+					failed: Number(nums[3]), mergeDiscarded: Number(nums[4]) };
+			}
+		}
+		if (attempt < STATE_LOG_ATTEMPTS) await sleep(1000);
+	}
+	return null;
 }
 
 async function main() {
@@ -294,6 +393,27 @@ async function main() {
 				+ `spoilage, under the ${SPOIL_HEADROOM_TICKS}-tick headroom this run needs. A stack that spoils `
 				+ "mid-transfer changes its own item name, which fails the census gate for a reason that has "
 				+ "nothing to do with state restoration — refusing rather than asserting thinly");
+		}
+
+		const pair = built.pair || {};
+		const pairArmed = asArray(pair.armed);
+		let pairExercisable = false;
+		if (pair.error) {
+			fail(`pair: ${pair.error}`);
+		} else if (pair.one_line !== true || pair.placed !== PAIR_HEALTHS.length) {
+			fail(`pair: needed ${PAIR_HEALTHS.length} '${PAIR_ITEM}' stacks on ONE shared line, got `
+				+ `${pair.placed} stacks and line_equals=${pair.one_line}. This is the only row whose restore has a `
+				+ "non-empty baseline of pre-existing items to identify the landed stack against — without it the "
+				+ "arrival diff is never asked a question it could get wrong");
+		} else if (pairArmed.join(",") !== PAIR_EXPECT.join(",")) {
+			fail(`pair: armed ${JSON.stringify(pairArmed)}, expected ${JSON.stringify(PAIR_EXPECT)}`);
+		} else if (PAIR_EXPECT.includes(pair.default)) {
+			fail(`pair: an armed health equals the fresh stack's default (${JSON.stringify(pair.default)}) — `
+				+ "a matching destination read would prove nothing");
+		} else {
+			say(`  armed pair on 2 '${PAIR_ITEM}' stacks sharing one line @${pair.at} = `
+				+ `${JSON.stringify(pairArmed)} (fresh default was ${JSON.stringify(pair.default)})`);
+			pairExercisable = true;
 		}
 
 		const exercisable = [];
@@ -399,6 +519,37 @@ async function main() {
 			} else {
 				pass(`${spec.key} survived on a belt: ${spec.item}@${row.at} reads ${JSON.stringify(row.value)}`);
 			}
+		}
+
+		if (pairExercisable) {
+			const destPair = readPair(DEST_HOST);
+			const got = asArray(destPair.healths);
+			if (destPair.lines_seen !== 1 || got.length !== PAIR_HEALTHS.length) {
+				fail(`pair: the destination carries ${got.length} '${PAIR_ITEM}' stack(s) across `
+					+ `${destPair.lines_seen} line(s), expected ${PAIR_HEALTHS.length} on 1`);
+			} else if (got.join(",") !== PAIR_EXPECT.join(",")) {
+				fail(`pair: destination healths ${JSON.stringify(got)}, expected ${JSON.stringify(PAIR_EXPECT)} — `
+					+ "two same-item stacks restored onto one line each kept their OWN state only if the restore "
+					+ "identified the stack its write actually landed; a duplicated value here is one state written "
+					+ "twice onto the wrong stacks");
+			} else {
+				pass(`pair survived on one shared line: two '${PAIR_ITEM}' stacks read ${JSON.stringify(got)}, `
+					+ "each keeping its own health");
+			}
+		}
+
+		say("\n=== DESTINATION: the restore's own item-state counters ===");
+		const counters = await readStateCounters(DEST_HOST);
+		if (counters === null) {
+			fail(`the destination emitted no "${STATE_LOG_MARKER}" line — the belt restore either never applied `
+				+ "any item state or never reported it, and the rows above cannot distinguish those");
+		} else if (counters.unmatched !== 0 || counters.failed !== 0) {
+			fail(`the destination declined or failed item-state writes (unmatched=${counters.unmatched}, `
+				+ `failed=${counters.failed}). Those losses never reach the verdict by design, so this assertion `
+				+ `is the only thing that reports them: ${counters.line.slice(-140)}`);
+		} else {
+			pass(`item state applied ${counters.applied}x with 0 unmatched, 0 failed, `
+				+ `${counters.mergeDiscarded} merge-discarded`);
 		}
 	} finally {
 		say("\n=== SWEEP ===");

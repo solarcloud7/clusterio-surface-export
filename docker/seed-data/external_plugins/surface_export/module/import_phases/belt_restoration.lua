@@ -193,7 +193,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
     end
     local ok, result = pcall(collect_side_groups, belt_pairs, cache)
     InventoryScanner.release_item_state_cache(cache)
-    if not ok then error(result) end
+    if not ok then error(result, 0) end
     return result
 end
 
