@@ -80,7 +80,7 @@ const CORPSE_LOOT_COUNT = 123;
 const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
-const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null };
+const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null };
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -160,10 +160,11 @@ local function copper_side_key(e, connector_id)
   local c = e.get_wire_connector(connector_id, false)
   if c == nil then return "nil" end
   local parts = {}
-  for _, conn in ipairs(c.connections) do
+  for _, conn in ipairs(c.real_connections) do
     local owner = conn.target and conn.target.owner
     if owner and owner.valid then
-      parts[#parts + 1] = string.format("%s@%.2f,%.2f", owner.name, owner.position.x, owner.position.y)
+      parts[#parts + 1] = string.format("%s@%.2f,%.2f", owner.name,
+        owner.position.x - e.position.x, owner.position.y - e.position.y)
     end
   end
   table.sort(parts)
@@ -446,9 +447,15 @@ const ATTRS = [
 			+ "right.disconnect_all()\n"
 			+ "left.connect_to(ents.poleleft.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)\n"
 			+ "right.connect_to(ents.poleright.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)",
-		read: "return switch_copper_key(e)", dynamicExpect: true,
-		describe: "each side is compared as the set of target NAMES and POSITIONS — the destination entities "
-			+ "are different engine objects, so unit_number cannot key the comparison. The sides are read "
+		read: "return switch_copper_key(e)",
+		get expect() { return RUNTIME.copperExpect; },
+		describe: "each side is compared as the set of target NAMES and OFFSETS from the switch — the "
+			+ "destination entities are different engine objects, so unit_number cannot key the comparison. "
+			+ "The expectation is built from the MEASURED rig placements rather than the requested dx/dy "
+			+ "(a 2x2 power-switch snaps off the half-tile it is asked for) and it is fixed before the "
+			+ "source is read, so a half-made rig — one connect_to landing, the other not — fails at arming "
+			+ "instead of quietly becoming the value the destination has to reproduce. Only real_connections "
+			+ "is read, so a ghost wire cannot stand in for copper. The sides are read "
 			+ "separately because defines.wire_connector_id.pole_copper and power_switch_left_copper are both "
 			+ "5 at this pin, with power_switch_right_copper 6 (measured 2026-08-15 at 2.1.11 by enumerating "
 			+ "the defines table): a connector id alone does not say which side of a switch a wire landed on, "
@@ -724,6 +731,20 @@ function measureEnvironment() {
 		+ "(half the destination's age, capped), which the destination can represent without clamping");
 }
 
+function armCopperExpect(placementById) {
+	const anchor = placementById.get("pswitch");
+	const left = placementById.get("poleleft");
+	const right = placementById.get("poleright");
+	if (!(anchor && anchor.placed && left && left.placed && right && right.placed)) {
+		fail("the power switch or one of its two poles did not place, so the copper row has no measured "
+			+ "expectation and cannot report on the connection pass");
+		return;
+	}
+	const side = pole => `${pole.name}@${(pole.x - anchor.x).toFixed(2)},${(pole.y - anchor.y).toFixed(2)}`;
+	RUNTIME.copperExpect = `L=[${side(left)}] R=[${side(right)}]`;
+	say(`  copper expectation from the measured rig: ${RUNTIME.copperExpect}`);
+}
+
 function checkProxyNilControl(host, placementById) {
 	const nilProxy = placementById.get("proxynil");
 	if (!nilProxy || !nilProxy.placed) {
@@ -900,6 +921,8 @@ async function main() {
 					+ "every item-side attribute row reads that stack, so a short insert leaves them unexercised");
 			}
 		}
+
+		armCopperExpect(placementById);
 
 		await checkLastUserConditional(SOURCE_HOST, built.base);
 
