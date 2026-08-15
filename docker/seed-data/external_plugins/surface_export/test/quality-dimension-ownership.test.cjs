@@ -82,12 +82,6 @@ const domains = [
 		consumer: ["core/deserializer.lua", /entity\.set_recipe\(entity_data\.specific_data\.recipe, entity_data\.specific_data\.recipe_quality\)/],
 	},
 	{
-		id: "previous-recipe",
-		status: "static-owned",
-		producer: ["export_scanners/entity-handlers.lua", /previous_recipe\s*=\s*\{[\s\S]*quality\s*=\s*entity\.previous_recipe\.quality/],
-		consumer: ["core/deserializer.lua", /entity\.previous_recipe\s*=\s*\{[\s\S]*quality\s*=\s*data\.previous_recipe\.quality/],
-	},
-	{
 		id: "inserter-loader-wagon-filter",
 		status: "live-pending",
 		producer: ["export_scanners/connection-scanner.lua", /extract_entity_filters[\s\S]*quality\s*=\s*filter\.quality and filter\.quality\.name/],
@@ -130,7 +124,7 @@ test("the quality ownership matrix independently covers every approved item-doma
 	assert.deepEqual(domains.map(row => row.id), [
 		"entity-prototype", "inventory-stack", "nested-inventory-stack", "belt-stack",
 		"inserter-held-stack", "equipment-grid", "entity-burner-current-fuel",
-		"equipment-burner-current-fuel", "ground-item", "recipe-selection", "previous-recipe",
+		"equipment-burner-current-fuel", "ground-item", "recipe-selection",
 		"inserter-loader-wagon-filter", "constant-combinator-slot", "logistic-request-slot",
 		"infinity-filter", "splitter-filter", "ghost-and-proxy-requests",
 	]);

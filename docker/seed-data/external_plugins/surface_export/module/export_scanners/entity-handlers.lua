@@ -164,13 +164,6 @@ EntityHandlers["furnace"] = function(entity)
     end
   end
 
-  if entity.previous_recipe then
-    data.previous_recipe = {
-      name = entity.previous_recipe.name,
-      quality = entity.previous_recipe.quality and entity.previous_recipe.quality.name or GameUtils.QUALITY_NORMAL
-    }
-  end
-
   if entity.crafting_progress then
     data.crafting_progress = entity.crafting_progress
   end
@@ -742,11 +735,7 @@ EntityHandlers["agricultural-tower"] = function(entity)
   local data = {
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
-  
-  if entity.planting_position then
-    data.planting_position = entity.planting_position
-  end
-  
+
   return data
 end
 
