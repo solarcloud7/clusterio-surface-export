@@ -81,11 +81,8 @@ export async function awaitSeeding({
 	log(`Waiting for ${SEED_MARKER} on ${CONTROLLER} (up to ${(timeoutMs / 1000).toFixed(0)}s)...`);
 	for (;;) {
 		const decision = decideSeedWait({ probe: probe(), elapsedMs: now() - startedAt, timeoutMs });
-		if (decision.status !== "waiting") {
-			log(`  ${decision.detail}`);
-			return decision;
-		}
 		log(`  ${decision.detail}`);
+		if (decision.status !== "waiting") return decision;
 		await sleep(pollIntervalMs);
 	}
 }

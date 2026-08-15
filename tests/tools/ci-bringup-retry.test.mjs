@@ -63,6 +63,13 @@ test("the retry is bounded at one and re-waits for the controller before re-chec
 		"a second failure must say it is not a flake");
 });
 
+test("the controller health predicate matches healthy exactly, not as a substring of unhealthy", () => {
+	const step = bringUpStep();
+	assert.match(step, /grep -qx healthy/);
+	assert.doesNotMatch(step, /grep -q healthy/,
+		"`grep -q healthy` accepts the literal status 'unhealthy'");
+});
+
 test("nothing in the step touches the readiness gate or the suite", () => {
 	const step = bringUpStep();
 	assert.doesNotMatch(step, /run-integration-tests|cluster-readiness|continue-on-error/,
