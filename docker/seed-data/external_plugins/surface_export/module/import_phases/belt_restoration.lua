@@ -1,10 +1,14 @@
+local Deserializer = require("modules/surface_export/core/deserializer")
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local Util = require("modules/surface_export/utils/util")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 
 local BeltRestoration = {}
 
 local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
+
+BeltRestoration.STATE_FIELDS_WITHOUT_BELT_RESTORE = { export_string = true }
 
 local function add_items(totals, items)
     local total = 0
@@ -93,7 +97,8 @@ function BeltRestoration.validate_side_groups(side_groups)
         for si, slot in ipairs(g.slots) do
             if type(slot) ~= "table" or type(slot.n) ~= "string"
                 or type(slot.ct) ~= "number" or slot.ct <= 0
-                or (slot.q ~= nil and type(slot.q) ~= "string") then
+                or (slot.q ~= nil and type(slot.q) ~= "string")
+                or (slot.st ~= nil and type(slot.st) ~= "table") then
                 return false, string.format("group %d slot %d malformed", gi, si)
             end
         end
@@ -110,8 +115,20 @@ function BeltRestoration.validate_side_groups(side_groups)
     return true
 end
 
-function BeltRestoration.capture_side_groups(belt_pairs)
-    if not belt_pairs or #belt_pairs == 0 then return nil end
+local function belt_item_state(stack, cache)
+    local state = InventoryScanner.capture_item_state(stack, cache)
+    if not state then return nil end
+    local kept = nil
+    for key, value in pairs(state) do
+        if not BeltRestoration.STATE_FIELDS_WITHOUT_BELT_RESTORE[key] then
+            kept = kept or {}
+            kept[key] = value
+        end
+    end
+    return kept
+end
+
+local function collect_side_groups(belt_pairs, cache)
     local groups = {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
@@ -134,6 +151,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
                         n = it.stack.name,
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
+                        st = belt_item_state(it.stack, cache),
                     }
                     local s = g.item_source_positions
                     s[#s + 1] = bp.id
@@ -144,10 +162,25 @@ function BeltRestoration.capture_side_groups(belt_pairs)
         end
     end
     local out = {}
+    local stateful = 0
     for _, g in ipairs(groups) do
+        for _, slot in ipairs(g.slots) do
+            if slot.st then stateful = stateful + 1 end
+        end
         out[#out + 1] = { members = g.members, slots = g.slots, item_source_positions = g.item_source_positions }
     end
+    log(string.format("[BeltRestoration] Captured %d side group(s); %d slot(s) carry non-default item state",
+        #out, stateful))
     return out
+end
+
+function BeltRestoration.capture_side_groups(belt_pairs)
+    if not belt_pairs or #belt_pairs == 0 then return nil end
+    local cache = InventoryScanner.new_item_state_cache()
+    local ok, result = pcall(collect_side_groups, belt_pairs, cache)
+    InventoryScanner.release_item_state_cache(cache)
+    if not ok then error(result) end
+    return result
 end
 
 function BeltRestoration.restore_side_groups(side_groups, entity_map)
@@ -178,6 +211,49 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             end
         end
         return result
+    end
+    local state_stats = { applied = 0, unmatched = 0, failed = 0, merge_discarded = 0 }
+    local state_logged = 0
+    local function line_ids(line)
+        local ids = {}
+        for _, item in ipairs(line.get_detailed_contents()) do ids[item.unique_id] = true end
+        return ids
+    end
+    local function apply_state(line, before_ids, st)
+        local landed_stack, arrivals = nil, 0
+        for _, item in ipairs(line.get_detailed_contents()) do
+            if not before_ids[item.unique_id] then
+                arrivals = arrivals + 1
+                landed_stack = item.stack
+            end
+        end
+        if arrivals ~= 1 or not (landed_stack and landed_stack.valid_for_read) then
+            state_stats.unmatched = state_stats.unmatched + 1
+            state_logged = state_logged + 1
+            if state_logged <= 10 then
+                log(string.format(
+                    "[BeltRestoration] STATE UNMATCHED: %d new stack(s) after the write — item state not applied",
+                    arrivals))
+            end
+            return
+        end
+        local ok, err = pcall(Deserializer.restore_item_properties, landed_stack, st)
+        if ok then
+            state_stats.applied = state_stats.applied + 1
+        else
+            state_stats.failed = state_stats.failed + 1
+            state_logged = state_logged + 1
+            if state_logged <= 10 then
+                log(string.format("[BeltRestoration] STATE WRITE FAILED for %s: %s",
+                    landed_stack.valid_for_read and landed_stack.name or "?", tostring(err)))
+            end
+        end
+    end
+    local function insert_with_state(line, k, stack_def, count, st)
+        local before_ids = st and line_ids(line) or nil
+        if not VersionCompat.belt_insert_at(line, k / 256, stack_def, count) then return false end
+        if before_ids then apply_state(line, before_ids, st) end
+        return true
     end
     local side_before = {}
     local preexisting_ids = {}
@@ -211,7 +287,8 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         expected_by_side[gi] = exp
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
             if not line.can_insert_at(k / 256) then return nil end
-            local landed = VersionCompat.belt_insert_at(line, k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+            local landed = insert_with_state(line, k,
+                { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct, slot.st)
             if landed then
                 placed = placed + slot.ct
                 exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
@@ -267,46 +344,54 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 end
             end
             if partner then
-                local function scan_place(count)
+                local function scan_place(count, st)
                     local mline = se.get_transport_line(slot.src.li)
                     local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
                     local mtop = math.floor(mline.line_length * 256 + 0.5)
                     for k = math.min(partner.k, mtop - mkmin), mkmin, -1 do
                         if mline.can_insert_at(k / 256)
-                            and VersionCompat.belt_insert_at(mline, k / 256,
-                                { name = slot.n, quality = slot.q, count = count }, count) then
+                            and insert_with_state(mline, k,
+                                { name = slot.n, quality = slot.q, count = count }, count, st) then
                             return k
                         end
                     end
                     for k = partner.k + 1, mtop - mkmin do
                         if mline.can_insert_at(k / 256)
-                            and VersionCompat.belt_insert_at(mline, k / 256,
-                                { name = slot.n, quality = slot.q, count = count }, count) then
+                            and insert_with_state(mline, k,
+                                { name = slot.n, quality = slot.q, count = count }, count, st) then
                             return k
                         end
                     end
                 end
                 local merged_ct = partner.slot.ct + slot.ct
+                local merged_st = partner.slot.st
                 local removed = se.get_transport_line(slot.src.li).remove_item(
                     { name = slot.n, quality = slot.q, count = partner.slot.ct })
                 local landed_k = nil
                 if removed == partner.slot.ct then
-                    landed_k = scan_place(merged_ct)
+                    landed_k = scan_place(merged_ct, merged_st)
                 end
                 if landed_k then
                     placed = placed + slot.ct
                     local exp = expected_by_side[gi]
                     exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
-                    partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src }
+                    partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src, st = merged_st }
                     partner.k = landed_k
                     log(string.format(
                         "[BeltRestoration] OVER-COMPRESSION MERGE: %s x%d joined the stack near entity %s line %d (now x%d) — engine packed tighter than insert_at can recreate",
                         slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))
+                    if slot.st then
+                        state_stats.merge_discarded = state_stats.merge_discarded + 1
+                        log(string.format(
+                            "[BeltRestoration] MERGE DISCARDED item state for %s x%d — one physical stack "
+                            .. "carries one state, the partner's is kept",
+                            slot.n, slot.ct))
+                    end
                     done = true
                 else
                     local putback_k = nil
                     if removed > 0 then
-                        putback_k = scan_place(removed)
+                        putback_k = scan_place(removed, merged_st)
                     end
                     if putback_k and removed == partner.slot.ct then
                         partner.k = putback_k
@@ -487,7 +572,12 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
             #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))
     end
-    return placed, unplaced, anomalies, physical_delta
+    if state_stats.applied + state_stats.unmatched + state_stats.failed + state_stats.merge_discarded > 0 then
+        log(string.format(
+            "[BeltRestoration] ITEM STATE: applied %d | unmatched %d | failed %d | merge-discarded %d",
+            state_stats.applied, state_stats.unmatched, state_stats.failed, state_stats.merge_discarded))
+    end
+    return placed, unplaced, anomalies, physical_delta, state_stats
 end
 
 return BeltRestoration

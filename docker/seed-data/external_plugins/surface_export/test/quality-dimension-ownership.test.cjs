@@ -43,7 +43,7 @@ const domains = [
 		status: "static-owned",
 		producer: ["export_scanners/inventory-scanner.lua", /extract_belt_items[\s\S]*quality\s*=\s*stack\.quality and stack\.quality\.name/],
 		consumer: ["import_phases/belt_restoration.lua",
-			/belt_insert_at\([\s\S]{0,80}name\s*=\s*slot\.n,\s*quality\s*=\s*slot\.q,\s*count\s*=\s*slot\.ct/],
+			/insert_with_state\([\s\S]{0,120}name\s*=\s*slot\.n,\s*quality\s*=\s*slot\.q,\s*count\s*=\s*slot\.ct/],
 	},
 	{
 		id: "inserter-held-stack",

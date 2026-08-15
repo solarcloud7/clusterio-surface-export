@@ -227,7 +227,7 @@ function ImportCompletion.run_phase1(job)
 			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		else
 			local restore_fn = BeltRestoration.restore_side_groups
-			local ok_restore, r_placed, r_unplaced, r_anomalies, r_delta = pcall(restore_fn, side_groups, entity_map)
+			local ok_restore, r_placed, r_unplaced, r_anomalies, r_delta, r_state = pcall(restore_fn, side_groups, entity_map)
 			if not ok_restore then
 				log(string.format("[Import] belt side-restore THREW (routed to verdict, never error()): %s",
 					tostring(r_placed)))
@@ -236,6 +236,12 @@ function ImportCompletion.run_phase1(job)
 				PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 			else
 				placed, unplaced, anomalies = r_placed, r_unplaced, r_anomalies
+				if r_state then
+					job.metrics.belt_state_applied = r_state.applied
+					job.metrics.belt_state_unmatched = r_state.unmatched
+					job.metrics.belt_state_failed = r_state.failed
+					job.metrics.belt_state_merge_discarded = r_state.merge_discarded
+				end
 				PhaseCensus.record_external(job, "belts", PhaseCensus.SUBJECT_BELTS,
 					belt_delta_to_census_keys(r_delta), "side-group member lines")
 			end
