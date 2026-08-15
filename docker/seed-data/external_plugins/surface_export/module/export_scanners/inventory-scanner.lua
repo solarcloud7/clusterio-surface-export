@@ -46,12 +46,6 @@ local function extract_item_properties(stack)
     item_entry.spoil_percent = spoil_percent
   end
 
-  -- intentional probe; failure expected, no log
-  local result_success, spoil_result = pcall(function() return stack.spoil_result end)
-  if result_success and spoil_result and spoil_result.name then
-    item_entry.spoil_result = spoil_result.name
-  end
-
   if stack.is_item_with_label then
     local label_success, label_data = pcall(function()
       return {
