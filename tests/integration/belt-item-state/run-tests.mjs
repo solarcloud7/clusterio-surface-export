@@ -63,11 +63,15 @@ const SECTIONS_WRITE = `{ sections = { ${SECTIONS.map(s => `{ index = ${s.index}
 	.join(", ")} } }`;
 const SECTIONS_EXPECT = `n=${SECTIONS.length} ${SECTIONS.map(s => `${s.index}:${s.multiplier}`).join(",")}`;
 
-const READER_HELPERS = `local function item_sections_key(v)
+const READER_HELPERS = `local function num(v)
+  if v == nil then return "nil" end
+  return string.format("%.6g", v)
+end
+local function item_sections_key(v)
   if v == nil then return "nil" end
   local parts = {}
   for _, sec in ipairs(v.sections or {}) do
-    parts[#parts + 1] = string.format("%s:%s", tostring(sec.index), string.format("%.6g", sec.multiplier))
+    parts[#parts + 1] = string.format("%s:%s", tostring(sec.index), num(sec.multiplier))
   end
   return string.format("n=%d %s", #parts, table.concat(parts, ","))
 end`;
@@ -123,11 +127,11 @@ const ROWS = [
 		read: `${COLOR_READ("st.entity_color")} .. "|" .. tostring(st.entity_logistics_enabled) `
 			+ '.. "|" .. item_sections_key(st.entity_logistic_sections)',
 		expect: `0.90/0.10/0.20|false|${SECTIONS_EXPECT}`,
-		describe: "entity_logistic_sections is the one entity_data member whose read could return a LuaObject "
-			+ "rather than a plain table, which the payload's JSON encoder cannot encode. The inventory path "
-			+ "carries it (config-attrs item_entity_logistic_sections); this row is the belt path's own "
-			+ "measurement of the same read, and it is armed away from the fresh default so a destination "
-			+ "match means the sections made the round trip rather than never having left",
+		describe: "the sections value must survive capture, the payload's JSON encode, the restore write and "
+			+ "a destination read — the belt path's own measurement of the read the inventory path already "
+			+ "carries (config-attrs item_entity_logistic_sections). It is armed away from the fresh default, "
+			+ "whose sections carry no multiplier, so a destination match cannot come from an item that was "
+			+ "never armed. The section key formatter is nil-tolerant for exactly that reason",
 	},
 ];
 
