@@ -5,6 +5,8 @@ import { readdirSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runReadinessGate } from "./cluster-readiness.mjs";
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const integrationDir = join(repoRoot, "tests", "integration");
 
@@ -65,6 +67,14 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 	console.error("  Linux:   https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux");
 	console.error("  Windows: winget install Microsoft.PowerShell");
 	process.exit(2);
+}
+
+const readiness = runReadinessGate();
+if (!readiness.ok) {
+	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
+		+ "blank-booted or unreachable cluster. Every check above is measured live; re-seed with "
+		+ "`./tools/clusterio/deploy.ps1 -Scope cluster` (or reload the golden saves) before re-running.");
+	process.exit(3);
 }
 
 console.log(`Running ${tests.length} integration test(s) sequentially (shared cluster — not parallelizable)...`);
