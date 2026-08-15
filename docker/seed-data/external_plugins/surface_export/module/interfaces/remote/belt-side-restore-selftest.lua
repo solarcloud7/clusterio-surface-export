@@ -665,25 +665,37 @@ local function belt_side_restore_selftest(opts)
       .. "import_stack returns -1, so identity alone cannot refuse it; got %s (%s)",
       tostring(partial_ok), tostring(partial_seen)))
 
-  local function real_belt_restore(export_string)
+  local function real_belt_restore(export_string, item_name, state)
     local surface = game.surfaces["nauvis"]
     local spot = surface.find_non_colliding_position("transport-belt", { x = 0, y = 0 }, 400, 1)
     local belt = spot and surface.create_entity({ name = "transport-belt", position = spot, force = "player",
       direction = defines.direction.east, raise_built = false })
     if not (belt and belt.valid) then return { built = false } end
+    local st = { export_string = export_string }
+    for key, value in pairs(state or {}) do st[key] = value end
     local groups = {
       { members = { { id = 1, li = 1 } },
-        slots = { { n = "blueprint", q = "normal", ct = 1, st = { export_string = export_string } } },
+        slots = { { n = item_name or "blueprint", q = "normal", ct = 1, st = st } },
         item_source_positions = { 1, 1, 128 } },
     }
     local placed, unplaced, anomalies, _, stats = BeltRestoration.restore_side_groups(groups, { [1] = belt })
     local result = { built = true, placed = placed, unplaced = unplaced, anomalies = anomalies, stats = stats,
-      stacks = 0, name = "none", entities = -1 }
+      stacks = 0, name = "none", entities = -1, book_slots = -1, book_filled = -1 }
     for _, it in ipairs(belt.get_transport_line(1).get_detailed_contents()) do
       if it.stack and it.stack.valid_for_read then
         result.stacks = result.stacks + 1
         result.name = it.stack.name
         result.entities = it.stack.is_blueprint and it.stack.get_blueprint_entity_count() or -1
+        if it.stack.is_item_with_inventory then
+          local inner = it.stack.get_inventory(defines.inventory.item_main)
+          if inner and inner.valid then
+            result.book_slots = #inner
+            result.book_filled = 0
+            for i = 1, #inner do
+              if inner[i].valid_for_read then result.book_filled = result.book_filled + 1 end
+            end
+          end
+        end
       end
     end
     belt.destroy()
@@ -716,6 +728,36 @@ local function belt_side_restore_selftest(opts)
     "a string the engine can only import PARTIALLY must be declined whole, not written stripped: the stack "
       .. "stays placed and keeps its identity, and the loss is counted rather than shipped as a blueprint "
       .. "quietly missing entities; " .. belt_report("partial", partial_belt))
+
+  local book_inv = game.create_inventory(1)
+  book_inv[1].set_stack({ name = "blueprint-book", count = 1 })
+  local book_inner = book_inv[1].get_inventory(defines.inventory.item_main)
+  for _, inner_label in ipairs({ "book-page-one", "book-page-two" }) do
+    book_inner.insert({ name = "blueprint", count = 1 })
+    for i = 1, #book_inner do
+      if book_inner[i].valid_for_read and book_inner[i].label == nil then
+        book_inner[i].set_blueprint_entities({
+          { entity_number = 1, name = "wooden-chest", position = { x = 0.5, y = 0.5 } },
+        })
+        book_inner[i].label = inner_label
+        break
+      end
+    end
+  end
+  local book_string = book_inv[1].export_stack()
+  local book_state = InventoryScanner.extract_item_properties(book_inv[1])
+  book_inv.destroy()
+
+  local book_belt = real_belt_restore(book_string, "blueprint-book",
+    { nested_inventory = book_state.nested_inventory })
+  check("real_belt_book_keeps_its_pages_through_the_nested_inventory_restore",
+    book_belt.built and book_belt.stats ~= nil and book_belt.stats.applied == 1
+      and book_belt.stats.declined == 0 and book_belt.stats.failed == 0
+      and book_belt.name == "blueprint-book" and book_belt.book_slots == 2 and book_belt.book_filled == 2,
+    string.format("a book restored from its export string arrives full, and the nested_inventory the same "
+      .. "capture also carries must not then empty it: restore_nested_inventory clears the inventory, which "
+      .. "SHRINKS a book to size 0, after which its free-slot scan has no slots; %s slots=%d filled=%d",
+      belt_report("book", book_belt), book_belt.book_slots, book_belt.book_filled))
 
   local cross_belt = real_belt_restore(cross_type_string)
   check("real_belt_declines_a_type_changing_export_string",
