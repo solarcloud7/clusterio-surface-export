@@ -192,12 +192,15 @@ function BeltRestoration.capture_side_groups(belt_pairs)
         cache = nil
     end
     local ok, result = pcall(collect_side_groups, belt_pairs, cache)
-    InventoryScanner.release_item_state_cache(cache)
+    Util.pcall_warn("[BeltRestoration] item-state cache release", function()
+        InventoryScanner.release_item_state_cache(cache)
+    end)
     if not ok then error(result, 0) end
     return result
 end
 
-function BeltRestoration.restore_side_groups(side_groups, entity_map)
+function BeltRestoration.restore_side_groups(side_groups, entity_map, platform_label)
+    local label = tostring(platform_label or "unnamed")
     local function item_key(name, quality)
         return name .. "\0" .. (quality or QUALITY_NORMAL)
     end
@@ -590,8 +593,8 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     end
     if state_stats.applied + state_stats.unmatched + state_stats.failed + state_stats.merge_discarded > 0 then
         log(string.format(
-            "[BeltRestoration] ITEM STATE: applied %d | unmatched %d | failed %d | merge-discarded %d",
-            state_stats.applied, state_stats.unmatched, state_stats.failed, state_stats.merge_discarded))
+            "[BeltRestoration] ITEM STATE %s: applied %d | unmatched %d | failed %d | merge-discarded %d",
+            label, state_stats.applied, state_stats.unmatched, state_stats.failed, state_stats.merge_discarded))
     end
     return placed, unplaced, anomalies, physical_delta, state_stats
 end

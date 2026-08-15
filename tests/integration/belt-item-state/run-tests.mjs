@@ -8,7 +8,8 @@
 //           DESTINATION physical readback taken off the arrived belt stack itself, a PAIR row of
 //           two same-item stacks with different state on ONE line (the only row where the restore's
 //           arrival diff has a non-empty baseline to get wrong), and the destination's own
-//           applied/unmatched/failed counters read back from its log
+//           applied/unmatched/failed counters read back from its log, bound to this clone by the
+//           platform name the restore emits in that line
 // does not: read the export payload (payload presence is not restoration); assert item or fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           cover blueprint CONTENT (export_string has no belt restore path and is excluded from
@@ -51,11 +52,25 @@ const SPOIL_BAND = 0.2;
 const PAIR_ITEM = "pistol";
 const PAIR_HEALTHS = [0.25, 0.75];
 const PAIR_EXPECT = PAIR_HEALTHS.map(h => h.toFixed(4)).sort();
-const STATE_LOG_MARKER = "[BeltRestoration] ITEM STATE:";
+const STATE_LOG_MARKER = `[BeltRestoration] ITEM STATE ${CLONE}:`;
 const STATE_LOG_ATTEMPTS = 10;
 
 const COLOR_READ = expr => `(function() local c = ${expr} `
 	+ `return c and string.format("%.2f/%.2f/%.2f", c.r, c.g, c.b) or "nil" end)()`;
+
+const SECTIONS = [{ index: 1, multiplier: 3 }, { index: 2, multiplier: 7 }];
+const SECTIONS_WRITE = `{ sections = { ${SECTIONS.map(s => `{ index = ${s.index}, multiplier = ${s.multiplier} }`)
+	.join(", ")} } }`;
+const SECTIONS_EXPECT = `n=${SECTIONS.length} ${SECTIONS.map(s => `${s.index}:${s.multiplier}`).join(",")}`;
+
+const READER_HELPERS = `local function item_sections_key(v)
+  if v == nil then return "nil" end
+  local parts = {}
+  for _, sec in ipairs(v.sections or {}) do
+    parts[#parts + 1] = string.format("%s:%s", tostring(sec.index), string.format("%.6g", sec.multiplier))
+  end
+  return string.format("n=%d %s", #parts, table.concat(parts, ","))
+end`;
 
 const ROWS = [
 	{
@@ -103,9 +118,16 @@ const ROWS = [
 	{
 		key: "entity_data",
 		item: "spidertron",
-		write: "st.entity_color = { r = 0.9, g = 0.1, b = 0.2, a = 1 } st.entity_logistics_enabled = false",
-		read: `${COLOR_READ("st.entity_color")} .. "|" .. tostring(st.entity_logistics_enabled)`,
-		expect: "0.90/0.10/0.20|false",
+		write: "st.entity_color = { r = 0.9, g = 0.1, b = 0.2, a = 1 } st.entity_logistics_enabled = false "
+			+ `st.entity_logistic_sections = ${SECTIONS_WRITE}`,
+		read: `${COLOR_READ("st.entity_color")} .. "|" .. tostring(st.entity_logistics_enabled) `
+			+ '.. "|" .. item_sections_key(st.entity_logistic_sections)',
+		expect: `0.90/0.10/0.20|false|${SECTIONS_EXPECT}`,
+		describe: "entity_logistic_sections is the one entity_data member whose read could return a LuaObject "
+			+ "rather than a plain table, which the payload's JSON encoder cannot encode. The inventory path "
+			+ "carries it (config-attrs item_entity_logistic_sections); this row is the belt path's own "
+			+ "measurement of the same read, and it is armed away from the fresh default so a destination "
+			+ "match means the sections made the round trip rather than never having left",
 	},
 ];
 
@@ -134,7 +156,8 @@ function findPlatformIndex(host, name) {
 	return typeof r.index === "number" ? r.index : null;
 }
 
-const readersLua = ROWS.map(row => `readers["${row.key}"] = function(st) return ${row.read} end`).join("\n");
+const readersLua = `${READER_HELPERS}\n`
+	+ ROWS.map(row => `readers["${row.key}"] = function(st) return ${row.read} end`).join("\n");
 const rowSpecsLua = ROWS.map(row => `  { key = '${row.key}', item = '${row.item}' },`).join("\n");
 
 const SCAN_LUA = `local readers = {}
@@ -542,8 +565,11 @@ async function main() {
 		say("\n=== DESTINATION: the restore's own item-state counters ===");
 		const counters = await readStateCounters(DEST_HOST);
 		if (counters === null) {
-			fail(`the destination emitted no "${STATE_LOG_MARKER}" line — the belt restore either never applied `
-				+ "any item state or never reported it, and the rows above cannot distinguish those");
+			fail(`the destination emitted no "${STATE_LOG_MARKER}" line for THIS clone — the belt restore either `
+				+ "never applied any item state or never reported it, and the rows above cannot distinguish "
+				+ "those. The marker carries the platform name because the log file is persistent and shared: "
+				+ "an unbound read would find a PREVIOUS run's line and pass in exactly the total-regression "
+				+ "case this assertion exists for (the line is emitted only when some counter is non-zero)");
 		} else if (counters.unmatched !== 0 || counters.failed !== 0) {
 			fail(`the destination declined or failed item-state writes (unmatched=${counters.unmatched}, `
 				+ `failed=${counters.failed}). Those losses never reach the verdict by design, so this assertion `

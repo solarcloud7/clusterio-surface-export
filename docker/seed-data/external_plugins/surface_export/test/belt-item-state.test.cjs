@@ -36,8 +36,11 @@ test("belt slots carry item state sparsely, and only fields the belt restore can
 		"the excluded fields must be stripped from every captured belt slot");
 	assert.match(restoration, /st = belt_item_state\(it\.stack, cache\)/,
 		"the slot's state field must come from the shared capture, so a plain stack keeps the compact form");
-	assert.match(restoration, /InventoryScanner\.release_item_state_cache\(cache\)/,
-		"capture_side_groups owns the scratch inventory's lifetime, including when the scan throws");
+	assert.match(restoration, /Util\.pcall_warn\("\[BeltRestoration\] item-state cache release"[\s\S]{0,200}?InventoryScanner\.release_item_state_cache\(cache\)[\s\S]{0,200}?if not ok then error\(result, 0\) end/,
+		"capture_side_groups owns the scratch inventory's lifetime, including when the scan throws: the release "
+		+ "runs BEFORE the re-raise, and is itself guarded and logged — an unguarded throw out of destroy() would "
+		+ "escape to export-pipeline's pcall, leave belt_side_groups nil, and make the import REFUSE a "
+		+ "belt-bearing payload, the same outcome the cache-create guard exists to prevent");
 });
 
 test("a failure in the state machinery degrades to stateless capture, never to a refused platform", () => {
