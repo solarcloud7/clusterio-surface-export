@@ -71,6 +71,13 @@ function EntityHandlers.extract_common_state(entity, data)
   if bp_ok and bonus_progress and bonus_progress > 0 then
     data.bonus_progress = bonus_progress
   end
+
+  if entity.type == "character-corpse" then
+    data.character_corpse_death_cause = entity.character_corpse_death_cause
+    data.corpse_death_ticks_ago = game.tick - entity.character_corpse_tick_of_death
+    local loot = entity.get_inventory(defines.inventory.character_corpse)
+    data.corpse_inventory_size = loot and #loot or 0
+  end
 end
 
 function EntityHandlers.handle_entity(entity, category)
@@ -370,6 +377,14 @@ EntityHandlers["container"] = function(entity)
     local link_id = GameUtils.safe_get(entity, "link_id")
     if link_id ~= nil and link_id ~= 0 then
       data.link_id = link_id
+    end
+  end
+
+  if entity.type == "proxy-container" then
+    local target = entity.proxy_target_entity
+    if target and target.valid then
+      data.proxy_target_id = target.unit_number or GameUtils.make_stable_id(target)
+      data.proxy_target_inventory = entity.proxy_target_inventory
     end
   end
 

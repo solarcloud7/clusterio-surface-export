@@ -282,6 +282,7 @@ function ImportCompletion.run_phase1(job)
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
 	PhaseRecorder.stop(job, "state")
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
+	job.metrics.proxies_linked = state_result and state_result.proxies_linked or 0
 	job.created_logistic_groups = state_result and state_result.created_logistic_groups or nil
 
 	job.pending_beacon_tick = game.tick + 1

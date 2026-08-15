@@ -4,12 +4,21 @@
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
-//           before any destination read, and a DECLARED-INERT line (with the live prototype
-//           predicate that decided it) for attributes no prototype supports at this pin
+//           before any destination read, a DECLARED-INERT line (with the live prototype
+//           predicate that decided it) for attributes no prototype supports at this pin, the
+//           measured destination roster and clock that two rows take their expectation from,
+//           and a control section: the last_user conditional's present/absent arms (run on the
+//           SOURCE clone pre-export, through test_import_entity -> restore_entity_state, with the
+//           probe entities destroyed before the scan) and a nil-target proxy-container read on
+//           the destination
 // does not: read the export payload — payload presence is not restoration; assert item/fluid
-//           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE)
+//           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
+//           cover last_user against a destination whose roster lacks the armed name — that row
+//           reports UNEXERCISED red rather than expecting nil, which would pass with the capture
+//           deleted; and it is the ONLY row covering capture, since both control arms build their
+//           payloads by hand and never reach EntityScanner
 
-import { lua as luaRaw, sleep, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
+import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
 
 const SOURCE_HOST = 1;
@@ -59,9 +68,19 @@ const RIG_ENTITIES = [
 	{ id: "display", name: "display-panel", dx: 13.5, dy: 16.5 },
 	{ id: "speaker", name: "programmable-speaker", dx: 16.5, dy: 16.5 },
 	{ id: "asm", name: "assembling-machine-3", dx: 21.5, dy: 17.5 },
+	{ id: "corpse", name: "character-corpse", dx: 25.5, dy: 1.5, inventorySize: 25 },
+	{ id: "boxchest", name: "steel-chest", dx: 25.5, dy: 4.5, stock: { name: "spidertron", count: 1 } },
+	{ id: "proxy", name: "proxy-container", dx: 25.5, dy: 7.5 },
+	{ id: "proxynil", name: "proxy-container", dx: 25.5, dy: 10.5 },
 ];
 
 const TICK_DRIFT_TOLERANCE = 60_000;
+const CORPSE_INVENTORY_SIZE = 25;
+const CORPSE_LOOT_COUNT = 123;
+const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
+const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
+
+const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null };
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -102,7 +121,48 @@ local function sections_key(v)
       num(sec.multiplier), tostring(sec.active), table.concat(fparts, ","))
   end
   return string.format("trash=%s %s", tostring(v.trash_not_requested), table.concat(parts, ";"))
+end
+local function localised_key(v)
+  if v == nil then return "nil" end
+  if type(v) == "table" then return table.concat(v, "|") end
+  return tostring(v)
+end
+local function corpse_loot_key(e)
+  local iv = e.get_inventory(defines.inventory.character_corpse)
+  if iv == nil then return "nil" end
+  local total = 0
+  for i = 1, #iv do
+    local st = iv[i]
+    if st.valid_for_read then total = total + st.count end
+  end
+  return string.format("%d:%d", #iv, total)
+end
+local function proxy_key(e)
+  local t = e.proxy_target_entity
+  if t == nil then return "nil" end
+  return string.format("%s@%.2f,%.2f#%s", t.name, t.position.x, t.position.y, tostring(e.proxy_target_inventory))
+end
+local function spider_stack(e)
+  local iv = e.get_inventory(defines.inventory.chest)
+  if not (iv and iv.valid) then return nil end
+  return iv.find_item_stack("spidertron")
+end
+local function color_key(c)
+  if c == nil then return "nil" end
+  return string.format("%.2f/%.2f/%.2f/%.2f", c.r or 0, c.g or 0, c.b or 0, c.a or 0)
+end
+local function item_sections_key(v)
+  if v == nil then return "nil" end
+  local parts = {}
+  for _, sec in ipairs(v.sections or {}) do
+    parts[#parts + 1] = string.format("%s:%s", tostring(sec.index), num(sec.multiplier))
+  end
+  return string.format("n=%d %s", #parts, table.concat(parts, ","))
 end`;
+
+const ITEM_READ = expression => 'local st = spider_stack(e)\n'
+	+ 'if st == nil then return "no-stack" end\n'
+	+ `return ${expression}`;
 
 const ATTRS = [
 	{
@@ -259,6 +319,99 @@ const ATTRS = [
 		key: "link_id", attribute: "link_id", on: "linkedchest",
 		write: "e.link_id = 4242", read: 'return string.format("%d", e.link_id)', expect: "4242",
 	},
+	{
+		key: "last_user", attribute: "last_user", on: "chest",
+		write: "e.last_user = game.players[1]",
+		read: "return q_name(e.last_user)", dynamicExpect: true,
+		get destExpect() { return RUNTIME.lastUserDestExpect; },
+		describe: "last_user is captured as the player NAME and restored only when that name resolves to a "
+			+ "player on the DESTINATION, so this row can only be exercised where the destination roster "
+			+ "holds the armed name; where it does not, the row reports UNEXERCISED rather than expecting "
+			+ "nil, which would pass with the capture deleted. This row is the only assertion that covers "
+			+ "the CAPTURE side at all — both control arms build their payloads by hand and never reach "
+			+ "EntityScanner. Neither this row nor the controls can tell a name-keyed restore from an "
+			+ "index-keyed one on a shared roster",
+	},
+	{
+		key: "corpse_death_cause", attribute: "character_corpse_death_cause", on: "corpse",
+		write: `e.character_corpse_death_cause = { "", "${CLONE}-death" }`,
+		read: "return localised_key(e.character_corpse_death_cause)",
+		expect: `|${CLONE}-death`,
+	},
+	{
+		key: "corpse_tick_of_death", attribute: "character_corpse_tick_of_death", on: "corpse",
+		get write() { return `e.character_corpse_tick_of_death = game.tick - ${RUNTIME.deathTicksAgo}`; },
+		read: 'return string.format("%d", game.tick - e.character_corpse_tick_of_death)',
+		get expect() { return String(RUNTIME.deathTicksAgo); },
+		compare: (actual, expected) => {
+			const a = Number(actual);
+			const b = Number(expected);
+			return Number.isFinite(a) && Number.isFinite(b) && a >= b && a - b <= TICK_DRIFT_TOLERANCE;
+		},
+		describe: "the elapsed ticks SINCE death must land at or above the armed duration — a corpse "
+			+ "recreated without it reads its own creation tick (the ticks the import itself took, ~1000), "
+			+ "and an absolute tick carried raw arrives as the SOURCE clock, which on an independent "
+			+ "destination clock reads as a large NEGATIVE elapsed time. The armed duration is measured "
+			+ "against the destination clock at run start rather than pinned, because a duration older than "
+			+ "the destination world clamps to tick 0 and stops being distinguishable from either failure",
+	},
+	{
+		key: "corpse_loot", attribute: "defines.inventory.character_corpse", on: "corpse",
+		write: `e.get_inventory(defines.inventory.character_corpse).insert{ name = "iron-plate", count = ${CORPSE_LOOT_COUNT} }`,
+		read: "return corpse_loot_key(e)",
+		expect: `${CORPSE_INVENTORY_SIZE}:${CORPSE_LOOT_COUNT}`,
+		describe: "a corpse created without the create_entity inventory_size parameter gets a SIZE-ZERO loot "
+			+ "inventory (measured 2026-08-15 at 2.1.11). The two ways that loot can go missing land on "
+			+ "opposite sides of the gate. A corpse that fails to PLACE is charged to failed_entity_losses, "
+			+ "and those items are subtracted from the expected totals before the exact comparison "
+			+ "(import-completion.lua:413-423), so the gate stays green and the loss is silent — that path is "
+			+ "what this row exists to report. A corpse that places with a size-zero inventory instead takes "
+			+ "the inventory.insert branch of restore_inventories, which credits nothing to "
+			+ "inventory_overflow_losses (only the set_stack slot branch does), so the destination census "
+			+ "comes up short and the exact gate FAILS and reverts before any read here runs",
+	},
+	{
+		key: "proxy_target", attribute: "proxy_target_entity + proxy_target_inventory", on: "proxy",
+		write: "e.proxy_target_entity = ents.boxchest\ne.proxy_target_inventory = defines.inventory.chest",
+		read: "return proxy_key(e)", dynamicExpect: true,
+		describe: "the link is compared by the target's NAME and POSITION, never by unit_number — the "
+			+ "destination entity is a different engine object, and the restore resolves the reference "
+			+ "through the source-unit_number entity_map the circuit pass already uses",
+	},
+	{
+		key: "item_entity_color", attribute: "entity_color", on: "boxchest",
+		write: "spider_stack(e).entity_color = { r = 1, g = 0, b = 0.5, a = 1 }",
+		read: ITEM_READ("color_key(st.entity_color)"), expect: "1.00/0.00/0.50/1.00",
+	},
+	{
+		key: "item_entity_enable_logistics_while_moving", attribute: "entity_enable_logistics_while_moving",
+		on: "boxchest",
+		write: "spider_stack(e).entity_enable_logistics_while_moving = false",
+		read: ITEM_READ("tostring(st.entity_enable_logistics_while_moving)"), expect: "false",
+	},
+	{
+		key: "item_entity_logistics_enabled", attribute: "entity_logistics_enabled", on: "boxchest",
+		write: "spider_stack(e).entity_logistics_enabled = false",
+		read: ITEM_READ("tostring(st.entity_logistics_enabled)"), expect: "false",
+	},
+	{
+		key: "item_entity_request_from_buffers", attribute: "entity_request_from_buffers", on: "boxchest",
+		write: "spider_stack(e).entity_request_from_buffers = false",
+		read: ITEM_READ("tostring(st.entity_request_from_buffers)"), expect: "false",
+		describe: "the fresh default is TRUE, so this row arms the negation — writing true would produce a "
+			+ "destination match that proves nothing",
+	},
+	{
+		key: "item_entity_logistic_sections", attribute: "entity_logistic_sections", on: "boxchest",
+		write: "spider_stack(e).entity_logistic_sections = "
+			+ "{ sections = { { index = 1, multiplier = 3 }, { index = 2, multiplier = 7 } } }",
+		read: ITEM_READ("item_sections_key(st.entity_logistic_sections)"), expect: "n=2 1:3,2:7",
+		describe: "section COUNT and multiplier are what the item-side read exposes; filters written into an "
+			+ "item's sections are accepted and then dropped (measured 2026-08-15 at 2.1.11: writing a "
+			+ "filter and placing the entity from that item yields a section with the multiplier intact and "
+			+ "zero filters), so a filter-keyed comparison here would assert an engine behaviour that does "
+			+ "not exist",
+	},
 ];
 
 const INERT_CANDIDATES = [
@@ -282,11 +435,23 @@ const INERT_CANDIDATES = [
 			+ 'end\n'
 			+ 'return n',
 	},
+	{
+		attribute: "pickup_position / drop_position (inserter vector restore)",
+		predicate: "an inserter prototype with allow_custom_vectors = true",
+		count: 'local n = 0\n'
+			+ 'for _, proto in pairs(prototypes.entity) do\n'
+			+ '  if proto.type == "inserter" and proto.allow_custom_vectors then n = n + 1 end\n'
+			+ 'end\n'
+			+ 'return n',
+	},
 ];
 
+function readerAssignments() {
+	return ATTRS.map(a => `readers["${a.key}"] = function(e)\n${a.read}\nend`).join("\n");
+}
+
 function readersLua() {
-	return `${READER_HELPERS}\n`
-		+ ATTRS.map(a => `readers["${a.key}"] = function(e)\n${a.read}\nend`).join("\n");
+	return `${READER_HELPERS}\n${readerAssignments()}`;
 }
 
 function platformLua(name) {
@@ -326,7 +491,10 @@ async function cloneFixture(sourceIndex) {
 function buildAndArm() {
 	const entitySpecs = RIG_ENTITIES.map(entity => `  { id = '${entity.id}', name = '${entity.name}', `
 		+ `dx = ${entity.dx}, dy = ${entity.dy}`
-		+ (entity.direction ? `, direction = ${entity.direction}` : "") + " },").join("\n");
+		+ (entity.direction ? `, direction = ${entity.direction}` : "")
+		+ (entity.inventorySize ? `, inventory_size = ${entity.inventorySize}` : "")
+		+ (entity.stock ? `, stock = { name = '${entity.stock.name}', count = ${entity.stock.count} }` : "")
+		+ " },").join("\n");
 	const writers = ATTRS.map(a => `writers["${a.key}"] = function(e)\n${a.write}\nend`).join("\n");
 	const attrSpecs = ATTRS.map(a => `  { key = '${a.key}', on = '${a.on}' },`).join("\n");
 
@@ -350,21 +518,28 @@ local placements = {}
 for _, sp in ipairs(entity_specs) do
   local params = { name = sp.name, position = { bx + sp.dx, by + sp.dy }, force = 'player', raise_built = false }
   if sp.direction then params.direction = sp.direction end
+  if sp.inventory_size then params.inventory_size = sp.inventory_size end
   local ok, e = pcall(function() return s.create_entity(params) end)
   if ok and e and e.valid then
     ents[sp.id] = e
+    local stocked
+    if sp.stock then
+      local inv = e.get_inventory(defines.inventory.chest)
+      stocked = inv and inv.insert{ name = sp.stock.name, count = sp.stock.count } or 0
+    end
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = true,
-      x = e.position.x, y = e.position.y, etype = e.type }
+      x = e.position.x, y = e.position.y, etype = e.type, stocked = stocked }
   else
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = false,
       error = ok and 'create_entity returned nil' or tostring(e) }
   end
 end
 
+${READER_HELPERS}
 local writers = {}
 ${writers}
 local readers = {}
-${readersLua()}
+${readerAssignments()}
 
 local attr_specs = {
 ${attrSpecs}
@@ -436,6 +611,176 @@ function checkInert() {
 	}
 }
 
+function measureEnvironment() {
+	say("\n=== ENVIRONMENT: the two destination properties no row may assume ===");
+	const survey = host => lua(host, "local names = {}\n"
+		+ "for _, p in pairs(game.players) do names[#names + 1] = p.name end\n"
+		+ "return { success = true, names = names, tick = game.tick }");
+	const sourceNames = asArray(survey(SOURCE_HOST).names ?? []);
+	const destAnswer = survey(DEST_HOST);
+	const destNames = asArray(destAnswer.names ?? []);
+	const destTick = Number(destAnswer.tick);
+
+	RUNTIME.sourcePlayer = sourceNames[0] ?? null;
+	if (RUNTIME.sourcePlayer === null) {
+		fail("host " + SOURCE_HOST + " has an EMPTY player roster, so last_user cannot be armed at all — "
+			+ "the row would report 'not exercised' rather than anything about the restore");
+	}
+	const destResolvesSource = destNames.includes(RUNTIME.sourcePlayer);
+	RUNTIME.lastUserDestExpect = destResolvesSource ? RUNTIME.sourcePlayer : null;
+	say(`  source roster: [${sourceNames.join(", ")}] — arming last_user as ${JSON.stringify(RUNTIME.sourcePlayer)}`);
+	say(`  destination roster: [${destNames.join(", ")}]`);
+	if (!destResolvesSource) {
+		fail(`the destination roster does not contain ${JSON.stringify(RUNTIME.sourcePlayer)}, so the last_user `
+			+ "row is UNEXERCISED: the restore correctly declines, and an expectation of nil would pass whether "
+			+ "or not the capture in EntityScanner.serialize_entity still exists — deleting it outright would "
+			+ "read identically. Both control arms build their payloads by hand, so neither covers the capture. "
+			+ "This is reported red rather than skipped for the same reason the destination-clock check below "
+			+ "is: a green run must not mean 'a shipped attribute went entirely untested'. On this cluster the "
+			+ "usual cause is a destination instance that failed to start and came up on a blank save");
+	}
+
+	if (!Number.isFinite(destTick) || destTick < CORPSE_DEATH_TICKS_AGO_MIN * 2) {
+		fail(`destination clock is ${destTick} ticks old, under the ${CORPSE_DEATH_TICKS_AGO_MIN * 2} this row `
+			+ "needs: a death older than the destination world clamps to tick 0, and a duration under the "
+			+ "~1000 ticks an import itself takes cannot be told apart from a corpse that was never restored");
+		RUNTIME.deathTicksAgo = CORPSE_DEATH_TICKS_AGO_MIN;
+		return;
+	}
+	RUNTIME.deathTicksAgo = Math.max(CORPSE_DEATH_TICKS_AGO_MIN,
+		Math.min(CORPSE_DEATH_TICKS_AGO_MAX, Math.floor(destTick / 2)));
+	say(`  destination clock: ${destTick} ticks — arming the corpse death at ${RUNTIME.deathTicksAgo} ticks ago `
+		+ "(half the destination's age, capped), which the destination can represent without clamping");
+}
+
+function checkProxyNilControl(host, placementById) {
+	const nilProxy = placementById.get("proxynil");
+	if (!nilProxy || !nilProxy.placed) {
+		fail("the nil-target proxy-container never placed on the source, so the control that proves the "
+			+ "relink pass does not FABRICATE a reference did not run");
+		return;
+	}
+	const answer = lua(host, `${platformLua(CLONE)}
+local out = { success = true }
+local found = s.find_entities_filtered{ name = 'proxy-container', position = { ${nilProxy.x}, ${nilProxy.y} }, radius = 0.3 }
+local e = found and found[1]
+out.nil_proxy_found = e ~= nil and e.valid
+if e and e.valid then
+  out.nil_proxy_target = e.proxy_target_entity and e.proxy_target_entity.name or 'nil'
+end
+return out`);
+
+	if (answer.nil_proxy_found !== true) {
+		fail("the nil-target proxy-container did not arrive on the destination — the fabrication control "
+			+ "cannot be read");
+	} else if (answer.nil_proxy_target !== "nil") {
+		fail(`nil-target control: the arrived proxy-container reads proxy_target_entity = `
+			+ `${JSON.stringify(answer.nil_proxy_target)} — the relink pass INVENTED a reference the source `
+			+ "never had");
+	} else {
+		pass("nil-target control: a proxy-container exported with no target arrives with no target");
+	}
+}
+
+const DECLINE_LOG_MARKER = "is not a player on this instance";
+const DECLINE_LOG_ATTEMPTS = 6;
+
+async function findDeclineLogLine(host, uniqueName) {
+	const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+	for (let attempt = 1; attempt <= DECLINE_LOG_ATTEMPTS; attempt++) {
+		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
+			`grep -F '${uniqueName}' ${path} || true`]);
+		const line = out.split(/\r?\n/).find(l => l.includes(DECLINE_LOG_MARKER));
+		if (line) return line.trim();
+		if (attempt < DECLINE_LOG_ATTEMPTS) await sleep(1000);
+	}
+	return null;
+}
+
+async function checkLastUserConditional(host, base) {
+	say("\n=== CONTROLS: the last_user conditional, both arms ===");
+	if (RUNTIME.sourcePlayer === null) return;
+	const absentName = `cfgattr-absent-${CLONE}`;
+	const answer = lua(host, `${platformLua(CLONE)}
+local out = { success = true }
+local probes = {}
+local function probe(label, user, x, y)
+  local payload = { name = 'stone-wall', type = 'wall', position = { x = x, y = y },
+    direction = 0, force = 'player', last_user = user }
+  local ok, res = pcall(function()
+    return remote.call('surface_export', 'test_import_entity', payload, s.index)
+  end)
+  local row = { label = label, call_ok = ok, armed_name = user }
+  if ok then
+    row.errors = #(res.errors or {})
+    row.first_error = (res.errors or {})[1]
+    local placed = res.entity
+    row.created = placed ~= nil and placed.valid
+    if placed and placed.valid then
+      row.last_user = placed.last_user and placed.last_user.name or 'nil'
+      row.removed = placed.destroy()
+    end
+  else
+    row.call_error = tostring(res)
+  end
+  probes[#probes + 1] = row
+end
+probe('roster_name', '${RUNTIME.sourcePlayer}', ${base.x} + 27.5, ${base.y} + 1.5)
+probe('absent_name', '${absentName}', ${base.x} + 27.5, ${base.y} + 4.5)
+out.probes = probes
+out.walls_left = #s.find_entities_filtered{ name = 'stone-wall', area = { { ${base.x} + 27, ${base.y} + 1 }, { ${base.x} + 28, ${base.y} + 5 } } }
+return out`);
+
+	if (answer.walls_left !== 0) {
+		fail(`${answer.walls_left} control probe entit(ies) survived their own cleanup and will ride the `
+			+ "export — the payload under test is no longer the rig the rest of this run describes");
+	}
+	const probes = new Map(asArray(answer.probes).map(row => [row.label, row]));
+	const roster = probes.get("roster_name");
+	const absent = probes.get("absent_name");
+	if (!roster || !absent) {
+		fail("the last_user conditional probes did not both report — the negative arm is unproven");
+		return;
+	}
+	for (const [label, row] of [["roster_name", roster], ["absent_name", absent]]) {
+		if (row.call_ok !== true) {
+			fail(`last_user ${label}: the restore path THREW (${row.call_error}) — a captured name must never `
+				+ "kill the import");
+		} else if (row.created !== true) {
+			fail(`last_user ${label}: the probe entity did not place (${row.first_error ?? "no error"}), so `
+				+ "the conditional was never exercised");
+		}
+	}
+	if (roster.call_ok && roster.created && roster.last_user !== roster.armed_name) {
+		fail(`last_user roster_name: restored ${JSON.stringify(roster.last_user)} for a name that DOES exist `
+			+ `on this instance (${JSON.stringify(roster.armed_name)}) — with the positive arm dead, the `
+			+ "absent-name arm below proves nothing");
+	} else if (roster.call_ok && roster.created) {
+		pass(`last_user positive arm: a captured name present in this instance's roster restores `
+			+ `(${JSON.stringify(roster.last_user)})`);
+	}
+	if (absent.call_ok && absent.created) {
+		if (absent.last_user !== "nil") {
+			fail(`last_user absent_name: the restore attributed ${JSON.stringify(absent.last_user)} to an `
+				+ `entity whose captured name (${JSON.stringify(absentName)}) is NOT a player here — a wrong `
+				+ "person is worse than nobody");
+		} else {
+			pass("last_user negative arm: a captured name absent from the roster leaves the entity "
+				+ "unattributed, with no error");
+		}
+		const declineLine = await findDeclineLogLine(host, absentName);
+		if (declineLine === null) {
+			fail(`last_user absent_name: the restore left the entity unattributed but emitted NO decline line `
+				+ `naming ${JSON.stringify(absentName)} in ${HOSTS[host].instance}'s factorio-current.log. A nil `
+				+ "read alone cannot tell the conditional apart from its own deletion: writing the raw name "
+				+ "unconditionally makes the engine throw Invalid PlayerIdentification, the existing pcall "
+				+ "swallows it, and last_user stays nil either way. The log line is what distinguishes them");
+		} else {
+			pass(`last_user decline is explicit, not incidental: ${JSON.stringify(declineLine.slice(-120))}`);
+		}
+	}
+}
+
 function adjudicateGate() {
 	const summary = execFileSync("node", ["tools/tests/testkit/cli.mjs", "log", "latest", "--field", "summary"],
 		{ encoding: "utf8", timeout: 120_000, cwd: REPO_ROOT }).trim();
@@ -458,6 +803,7 @@ async function main() {
 	}
 	say(`fixture '${FIXTURE}' resolved to index ${fixtureIndex} on host ${SOURCE_HOST}`);
 
+	measureEnvironment();
 	checkInert();
 
 	try {
@@ -467,14 +813,24 @@ async function main() {
 		say("\n=== SOURCE: build rig, write non-default values, read back ===");
 		const built = buildAndArm();
 		say(`  rig base at (${built.base.x}, ${built.base.y})`);
+		const placementById = new Map();
+		const stockById = new Map(RIG_ENTITIES.filter(entity => entity.stock).map(entity => [entity.id, entity.stock]));
 		for (const placement of asArray(built.placements)) {
-			if (placement.placed) {
-				say(`  built ${placement.name} (${placement.etype}) at ${placement.x},${placement.y}`);
-			} else {
+			placementById.set(placement.id, placement);
+			if (!placement.placed) {
 				fail(`rig entity '${placement.name}' did NOT place (${placement.error}) — every attribute on it `
 					+ "is UNEXERCISED, which is a hole in this test, not a pass");
+				continue;
+			}
+			say(`  built ${placement.name} (${placement.etype}) at ${placement.x},${placement.y}`);
+			const stock = stockById.get(placement.id);
+			if (stock && placement.stocked !== stock.count) {
+				fail(`rig entity '${placement.name}' took ${placement.stocked} of ${stock.count} ${stock.name} — `
+					+ "every item-side attribute row reads that stack, so a short insert leaves them unexercised");
 			}
 		}
+
+		await checkLastUserConditional(SOURCE_HOST, built.base);
 
 		const armedRows = asArray(built.armed);
 		const armedByKey = new Map(armedRows.map(row => [row.key, row]));
@@ -566,19 +922,28 @@ async function main() {
 		const destByKey = new Map(destRows.map(row => [row.key, row]));
 		for (const spec of surviving) {
 			const row = destByKey.get(spec.key);
+			const declared = Object.hasOwn(spec, "destExpect");
+			if (declared && spec.destExpect === null) {
+				fail(`${spec.key}: UNEXERCISED on this destination — see the ENVIRONMENT section above; no `
+					+ "destination read can distinguish a working capture and restore from a deleted one here");
+				continue;
+			}
+			const expected = declared ? spec.destExpect : spec.expect;
 			if (!row) {
 				fail(`${spec.key}: no destination row came back`);
 			} else if (!row.found) {
 				fail(`${spec.key}: '${spec.entity_name}' not found on the destination at ${spec.x},${spec.y}`);
-			} else if (!matches(spec, row.value, spec.expect)) {
+			} else if (!matches(spec, row.value, expected)) {
 				fail(`${spec.key}: destination reads ${JSON.stringify(row.value)}, expected `
-					+ `${JSON.stringify(spec.expect)} — the attribute did NOT survive the transfer`
+					+ `${JSON.stringify(expected)} — the attribute did NOT survive the transfer`
 					+ `${spec.describe ? ` (${spec.describe})` : ""}`);
 			} else {
 				pass(`${spec.key} survived: ${spec.entity_name}@${spec.x},${spec.y} reads `
 					+ `${JSON.stringify(row.value)}`);
 			}
 		}
+
+		checkProxyNilControl(DEST_HOST, placementById);
 	} finally {
 		say("\n=== SWEEP ===");
 		for (const host of [SOURCE_HOST, DEST_HOST]) {

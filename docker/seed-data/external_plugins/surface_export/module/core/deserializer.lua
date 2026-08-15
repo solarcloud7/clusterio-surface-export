@@ -37,6 +37,24 @@ local function restore_item_scalar_properties(stack, item_data)
   if item_data.custom_description and stack.custom_description then
     stack.custom_description = item_data.custom_description
   end
+  if item_data.entity_data and stack.prototype.type == "item-with-entity-data" then
+    local values = item_data.entity_data
+    safe_call(string.format("item entity-data for %s", stack.name), function()
+      if values.entity_color ~= nil then stack.entity_color = values.entity_color end
+      if values.entity_enable_logistics_while_moving ~= nil then
+        stack.entity_enable_logistics_while_moving = values.entity_enable_logistics_while_moving
+      end
+      if values.entity_logistics_enabled ~= nil then
+        stack.entity_logistics_enabled = values.entity_logistics_enabled
+      end
+      if values.entity_request_from_buffers ~= nil then
+        stack.entity_request_from_buffers = values.entity_request_from_buffers
+      end
+      if values.entity_logistic_sections ~= nil then
+        stack.entity_logistic_sections = values.entity_logistic_sections
+      end
+    end)
+  end
 end
 
 local function restore_item_properties(stack, item_data)
@@ -58,6 +76,7 @@ end
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
   { field = "result_quality", safecall = true, types = { ["assembling-machine"] = true } },
+  { field = "character_corpse_death_cause", safecall = true, types = { ["character-corpse"] = true } },
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "combinator_description", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
@@ -207,6 +226,11 @@ function Deserializer.create_entity(surface, entity_data)
     end
   end
 
+  if entity_data.type == "character-corpse" and entity_data.specific_data
+      and entity_data.specific_data.corpse_inventory_size then
+    params.inventory_size = entity_data.specific_data.corpse_inventory_size
+  end
+
   if entity_data.type == "entity-ghost" and entity_data.specific_data then
     params.inner_name = entity_data.specific_data.ghost_name
     if entity_data.specific_data.ghost_quality then
@@ -290,6 +314,17 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if not ok then log("[Deserializer] custom_status restore failed for " .. entity.name .. ": " .. tostring(err)) end
   end
 
+  if type(entity_data.last_user) == "string" then
+    local player = game.get_player(entity_data.last_user)
+    if player then
+      local ok, err = pcall(function() entity.last_user = player end)
+      if not ok then log("[Deserializer] last_user restore failed for " .. entity.name .. ": " .. tostring(err)) end
+    else
+      log(string.format("[Deserializer] last_user '%s' is not a player on this instance — %s left unattributed",
+        tostring(entity_data.last_user), entity.name))
+    end
+  end
+
   if not entity_data.specific_data then
     return
   end
@@ -371,7 +406,23 @@ function Deserializer.restore_entity_state(entity, entity_data)
       function() entity.tick_grown = game.tick + data.grown_ticks_remaining end)
   end
 
+  if data.corpse_death_ticks_ago ~= nil then
+    safe_call(string.format("corpse death-tick for %s", entity.name),
+      function() entity.character_corpse_tick_of_death = math.max(0, game.tick - data.corpse_death_ticks_ago) end)
+  end
+
   apply_simple_restore_rules(entity, data)
+
+  if entity.type == "inserter" and entity.prototype.allow_custom_vectors then
+    if data.pickup_position ~= nil then
+      safe_call(string.format("pickup_position for %s", entity.name),
+        function() entity.pickup_position = data.pickup_position end)
+    end
+    if data.drop_position ~= nil then
+      safe_call(string.format("drop_position for %s", entity.name),
+        function() entity.drop_position = data.drop_position end)
+    end
+  end
 
   if entity.type == "linked-belt" and entity_data.direction ~= nil then
     safe_call(string.format("linked-belt direction for %s", entity.name),
@@ -1250,6 +1301,31 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
   end
 
   return connected_count
+end
+
+function Deserializer.restore_proxy_targets(entity, entity_data, entity_map)
+  if not entity.valid or entity.type ~= "proxy-container" then
+    return 0
+  end
+
+  local data = entity_data.specific_data
+  if not data or data.proxy_target_id == nil or data.proxy_target_inventory == nil then
+    return 0
+  end
+
+  local target = entity_map[data.proxy_target_id]
+  if not (target and target.valid) then
+    log(string.format("[Deserializer] proxy-container at (%.1f, %.1f): target %s absent from entity_map — link dropped",
+      entity.position.x, entity.position.y, tostring(data.proxy_target_id)))
+    return 0
+  end
+
+  local linked = safe_call(string.format("proxy target for %s", entity.name), function()
+    entity.proxy_target_entity = target
+    entity.proxy_target_inventory = data.proxy_target_inventory
+  end)
+
+  return linked and 1 or 0
 end
 
 function Deserializer.restore_power_connections(entity, entity_data, entity_map)
