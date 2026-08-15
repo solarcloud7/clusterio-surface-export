@@ -461,8 +461,10 @@ test("belt forensic census survives the legacy purge; recovery machinery is gone
 		"the forensic total must come from the completed physical census, not insert return values");
 	assert.match(restoration, /OVER-COMPRESSION MERGE/,
 		"the restored over-compression merge must stay PRESENT - deleting it re-opens the 2026-07-27 incident (a purge must account for this class)");
-	assert.match(restoration, /local function scan_place[\s\S]{0,900}?can_insert_at\(k \/ 256\)[\s\S]{0,160}?and VersionCompat\.belt_insert_at\(/,
+	assert.match(restoration, /local function scan_place[\s\S]{0,900}?can_insert_at\(k \/ 256\)[\s\S]{0,160}?and insert_with_state\(/,
 		"the merge's scan must gate every landing on the engine's insert return - a can_insert_at-only scan reports landings that never happened (review 2026-08-09)");
+	assert.match(restoration, /local function insert_with_state\([\s\S]{0,240}?if not VersionCompat\.belt_insert_at\([^\n]*then return false end/,
+		"insert_with_state is the single belt write: it must report the engine's own refusal, or every caller's landing gate (try_insert and scan_place alike) becomes a lie");
 	assert.doesNotMatch(restoration, /recover_deficits_to_hub|function BeltRestoration\.restore\s*\(|line_needs_consolidation|MIN_SPACING/,
 		"the legacy consolidation restore and hub-deficit recovery must stay deleted (owner order 2026-07-27)");
 });

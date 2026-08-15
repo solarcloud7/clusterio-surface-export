@@ -5,6 +5,8 @@ local InventoryScanner = {}
 
 InventoryScanner.fluid_registry = nil
 
+local IDENTITY_FIELDS = { name = true, count = true, quality = true }
+
 local function extract_item_properties(stack)
   local item_entry = {
     name = stack.name,
@@ -98,6 +100,71 @@ local function extract_item_properties(stack)
   end
 
   return item_entry
+end
+
+InventoryScanner.extract_item_properties = extract_item_properties
+
+local function values_equal(a, b)
+  if a == b then return true end
+  if type(a) ~= "table" or type(b) ~= "table" then return false end
+  for key, value in pairs(a) do
+    if not values_equal(value, b[key]) then return false end
+  end
+  for key in pairs(b) do
+    if a[key] == nil then return false end
+  end
+  return true
+end
+
+function InventoryScanner.new_item_state_cache()
+  return { inventory = game.create_inventory(1), defaults = {} }
+end
+
+function InventoryScanner.release_item_state_cache(cache)
+  if cache and cache.inventory and cache.inventory.valid then
+    cache.inventory.destroy()
+  end
+end
+
+local function default_properties(cache, name, quality)
+  local key = name .. "\0" .. quality
+  local cached = cache.defaults[key]
+  if cached ~= nil then
+    return cached or nil
+  end
+
+  local slot = cache.inventory[1]
+  local set_success, set_error = pcall(function()
+    slot.set_stack({ name = name, quality = quality, count = 1 })
+  end)
+  if not set_success then
+    log(string.format(
+      "[inventory-scanner] fresh-default stack for %s (%s) failed: %s — every property of that item is captured",
+      name, quality, tostring(set_error)))
+  end
+
+  local defaults = false
+  if set_success and slot.valid_for_read then
+    defaults = extract_item_properties(slot)
+    slot.clear()
+  end
+  cache.defaults[key] = defaults
+  return defaults or nil
+end
+
+function InventoryScanner.capture_item_state(stack, cache)
+  local quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
+  local defaults = default_properties(cache, stack.name, quality)
+  local actual = extract_item_properties(stack)
+
+  local state = nil
+  for key, value in pairs(actual) do
+    if not IDENTITY_FIELDS[key] and not values_equal(value, defaults and defaults[key]) then
+      state = state or {}
+      state[key] = value
+    end
+  end
+  return state
 end
 
 function InventoryScanner.extract_all_inventories(entity)

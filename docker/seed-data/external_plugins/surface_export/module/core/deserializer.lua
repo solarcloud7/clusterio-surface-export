@@ -73,6 +73,8 @@ local function restore_item_properties(stack, item_data)
   end
 end
 
+Deserializer.restore_item_properties = restore_item_properties
+
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
   { field = "result_quality", safecall = true, types = { ["assembling-machine"] = true } },
