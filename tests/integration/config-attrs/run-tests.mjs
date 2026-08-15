@@ -6,8 +6,9 @@
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
 //           before any destination read, a DECLARED-INERT line (with the live prototype predicate
 //           that decided it) for attributes no prototype supports at this pin, the measured
-//           destination roster and clock, and a control section: the last_user conditional's
-//           present/absent arms and a nil-target proxy-container read on the destination
+//           destination roster and clock, a per-side copper readback on the wired power switch,
+//           and a control section: the last_user conditional's present/absent arms and a
+//           nil-target proxy-container read on the destination
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
@@ -68,6 +69,8 @@ const RIG_ENTITIES = [
 	{ id: "proxy", name: "proxy-container", dx: 25.5, dy: 7.5 },
 	{ id: "proxynil", name: "proxy-container", dx: 25.5, dy: 10.5 },
 	{ id: "pswitch", name: "power-switch", dx: 4.5, dy: 20.5 },
+	{ id: "poleleft", name: "small-electric-pole", dx: 2.5, dy: 22.5 },
+	{ id: "poleright", name: "small-electric-pole", dx: 10.5, dy: 22.5 },
 	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
 ];
 
@@ -77,7 +80,7 @@ const CORPSE_LOOT_COUNT = 123;
 const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
-const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null };
+const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null };
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -152,6 +155,25 @@ local function auto_target_key(e)
   local p = e.vehicle_automatic_targeting_parameters
   if p == nil then return "nil" end
   return string.format("%s|%s", tostring(p.auto_target_without_gunner), tostring(p.auto_target_with_gunner))
+end
+local function copper_side_key(e, connector_id)
+  local c = e.get_wire_connector(connector_id, false)
+  if c == nil then return "nil" end
+  local parts = {}
+  for _, conn in ipairs(c.real_connections) do
+    local owner = conn.target and conn.target.owner
+    if owner and owner.valid then
+      parts[#parts + 1] = string.format("%s@%.2f,%.2f", owner.name,
+        owner.position.x - e.position.x, owner.position.y - e.position.y)
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, "+")
+end
+local function switch_copper_key(e)
+  return string.format("L=[%s] R=[%s]",
+    copper_side_key(e, defines.wire_connector_id.power_switch_left_copper),
+    copper_side_key(e, defines.wire_connector_id.power_switch_right_copper))
 end
 local function item_sections_key(v)
   if v == nil then return "nil" end
@@ -407,6 +429,41 @@ const ATTRS = [
 		key: "power_switch_state", attribute: "power_switch_state", on: "pswitch",
 		write: "e.power_switch_state = not e.power_switch_state",
 		read: BOOL_READ("power_switch_state"), dynamicExpect: true,
+		describe: "the switch carries a pole on each copper side, so this row reads the state AFTER the "
+			+ "connection pass: restore_entity_state writes power_switch_state while the entity is created "
+			+ "(entity_creation.lua:106) and the copper wires are re-established in a later phase "
+			+ "(entity_state_restoration.lua:49-65). This row is armed before the wiring row below, so a "
+			+ "state the wiring itself destroys is caught by the pre-export re-read as source decay rather "
+			+ "than reported here as a restore defect. Measured 2026-08-15 at 2.1.11 on a clone of "
+			+ "lab-transfer-fixture-v1 wired exactly as above: the state DOES survive the copper pass, so a "
+			+ "red here is a regression rather than an open question",
+	},
+	{
+		key: "power_switch_copper", attribute: "power_switch_left_copper + power_switch_right_copper",
+		on: "pswitch",
+		write: "local left = e.get_wire_connector(defines.wire_connector_id.power_switch_left_copper, true)\n"
+			+ "local right = e.get_wire_connector(defines.wire_connector_id.power_switch_right_copper, true)\n"
+			+ "left.disconnect_all()\n"
+			+ "right.disconnect_all()\n"
+			+ "left.connect_to(ents.poleleft.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)\n"
+			+ "right.connect_to(ents.poleright.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)",
+		read: "return switch_copper_key(e)",
+		get expect() { return RUNTIME.copperExpect; },
+		describe: "each side is compared as the set of target NAMES and OFFSETS from the switch — the "
+			+ "destination entities are different engine objects, so unit_number cannot key the comparison. "
+			+ "The expectation is built from the MEASURED rig placements rather than the requested dx/dy "
+			+ "(a 2x2 power-switch snaps off the half-tile it is asked for) and it is fixed before the "
+			+ "source is read, so a half-made rig — one connect_to landing, the other not — fails at arming "
+			+ "instead of quietly becoming the value the destination has to reproduce. Only real_connections "
+			+ "is read, so a ghost wire cannot stand in for copper. The sides are read "
+			+ "separately because defines.wire_connector_id.pole_copper and power_switch_left_copper are both "
+			+ "5 at this pin, with power_switch_right_copper 6 (measured 2026-08-15 at 2.1.11 by enumerating "
+			+ "the defines table): a connector id alone does not say which side of a switch a wire landed on, "
+			+ "so a union-keyed comparison would read a wire moved between sides as intact. The two poles "
+			+ "stand 8.0 apart, past a small-electric-pole's 7.5 wire reach (get_max_wire_distance, same "
+			+ "pin), so the only copper on the rig is the pair this row makes. An extra pole on the LEFT "
+			+ "set is the shared-id defect: restore_power_connections reaching a non-pole target "
+			+ "(deserializer.lua:1345-1347)",
 	},
 	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
@@ -674,6 +731,20 @@ function measureEnvironment() {
 		+ "(half the destination's age, capped), which the destination can represent without clamping");
 }
 
+function armCopperExpect(placementById) {
+	const anchor = placementById.get("pswitch");
+	const left = placementById.get("poleleft");
+	const right = placementById.get("poleright");
+	if (!(anchor && anchor.placed && left && left.placed && right && right.placed)) {
+		fail("the power switch or one of its two poles did not place, so the copper row has no measured "
+			+ "expectation and cannot report on the connection pass");
+		return;
+	}
+	const side = pole => `${pole.name}@${(pole.x - anchor.x).toFixed(2)},${(pole.y - anchor.y).toFixed(2)}`;
+	RUNTIME.copperExpect = `L=[${side(left)}] R=[${side(right)}]`;
+	say(`  copper expectation from the measured rig: ${RUNTIME.copperExpect}`);
+}
+
 function checkProxyNilControl(host, placementById) {
 	const nilProxy = placementById.get("proxynil");
 	if (!nilProxy || !nilProxy.placed) {
@@ -850,6 +921,8 @@ async function main() {
 					+ "every item-side attribute row reads that stack, so a short insert leaves them unexercised");
 			}
 		}
+
+		armCopperExpect(placementById);
 
 		await checkLastUserConditional(SOURCE_HOST, built.base);
 
