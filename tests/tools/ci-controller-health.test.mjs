@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+const HEALTH_INSPECT = /docker inspect --format="\{\{\.State\.Health\.Status\}\}"/g;
 const HEALTH_WAIT = /docker inspect --format="\{\{\.State\.Health\.Status\}\}"[^\n|]*\|\s*(grep[^;\n]*);/g;
 
 function resolveGrep() {
@@ -20,9 +21,12 @@ function resolveGrep() {
 
 const GREP = resolveGrep();
 
+function workflow() {
+	return readFileSync(join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
+}
+
 function healthPredicates() {
-	const workflow = readFileSync(join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
-	return [...workflow.matchAll(HEALTH_WAIT)].map(match => match[1].trim().split(/\s+/));
+	return [...workflow().matchAll(HEALTH_WAIT)].map(match => match[1].trim().split(/\s+/));
 }
 
 function accepts(argv, input) {
@@ -34,10 +38,14 @@ function accepts(argv, input) {
 	return result.status === 0;
 }
 
-test("every controller health wait in ci.yml is extracted, so the runs below are not vacuous", () => {
+test("every health status ci.yml inspects yields a predicate, so the runs below are complete", () => {
 	const predicates = healthPredicates();
+	const inspected = [...workflow().matchAll(HEALTH_INSPECT)].length;
 	assert.ok(predicates.length >= 2,
 		`ci.yml has ${predicates.length} extractable controller health waits; the assertions below would test nothing`);
+	assert.equal(predicates.length, inspected,
+		`ci.yml reads the health status ${inspected} times but only ${predicates.length} predicates are reachable — `
+		+ "one is shaped differently and nothing below checks it");
 	for (const argv of predicates) {
 		assert.equal(argv[0], "grep", `unrecognised health predicate: ${argv.join(" ")}`);
 	}
