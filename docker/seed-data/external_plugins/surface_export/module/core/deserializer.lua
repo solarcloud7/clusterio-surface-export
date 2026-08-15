@@ -314,7 +314,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if not ok then log("[Deserializer] custom_status restore failed for " .. entity.name .. ": " .. tostring(err)) end
   end
 
-  if entity_data.last_user ~= nil then
+  if type(entity_data.last_user) == "string" then
     local player = game.get_player(entity_data.last_user)
     if player then
       local ok, err = pcall(function() entity.last_user = player end)
@@ -408,7 +408,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
 
   if data.corpse_death_ticks_ago ~= nil then
     safe_call(string.format("corpse death-tick for %s", entity.name),
-      function() entity.character_corpse_tick_of_death = game.tick - data.corpse_death_ticks_ago end)
+      function() entity.character_corpse_tick_of_death = math.max(0, game.tick - data.corpse_death_ticks_ago) end)
   end
 
   apply_simple_restore_rules(entity, data)
