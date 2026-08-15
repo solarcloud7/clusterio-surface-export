@@ -64,8 +64,10 @@ test("the belt-side state write is guarded on the on_tick import path", () => {
 	assert.match(restoration, /refused = true[\s\S]{0,300}?STATE WRITE FAILED/,
 		"a refused write must be counted and named, never swallowed");
 	assert.match(restoration, /if refused then\s*\n\s*state_stats\.failed = state_stats\.failed \+ 1\s*\n\s*elseif wrote then\s*\n\s*state_stats\.applied = state_stats\.applied \+ 1/,
-		"one stack is one tally: a stack whose export_string and scalars are both written counts once, and a "
-		+ "stack where either write threw counts as failed rather than applied");
+		"applied and failed are one tally per STACK and mutually exclusive — a stack whose export_string and "
+		+ "scalars both land counts applied once, and a stack where either write refused counts failed, not "
+		+ "applied. declined is a separate per-FIELD count on the same stack, so a stack whose export_string "
+		+ "declined and whose scalars applied appears in both");
 	assert.match(restoration, /if arrivals ~= 1 or not readable or landed_stack\.count ~= count then/,
 		"the landed stack is identified by unique_id difference across the write; anything but exactly one "
 		+ "arrival is ambiguous, and an arrival whose count is not the count just written is a stack the "
@@ -91,11 +93,14 @@ test("export_string reaches the live belt stack only after a scratch stack prove
 	assert.match(restoration, /slot\.set_stack\(\{ name = name, quality = wanted_quality, count = count \}\)[\s\S]{0,400}?slot\.import_stack\(export_string\)/,
 		"the dry run must happen on a scratch stack of the SAME name, quality and count — that is what makes it "
 		+ "an oracle for the write about to hit the belt");
-	assert.match(restoration, /keeps = slot\.name == name and seen_quality == wanted_quality and slot\.count == count/,
-		"the verdict is a MEASURED identity comparison; import_stack returns 0 for a type change and 1 for an "
-		+ "unparseable string, so its return code cannot gate this");
-	assert.match(restoration, /if keeps then[\s\S]{0,300}?pcall\(function\(\) return landed_stack\.import_stack\(st\.export_string\) end\)/,
-		"the live write is reachable only from the true branch of the preflight");
+	assert.match(restoration, /keeps = import_result == 0\s*\n\s*and slot\.name == name and seen_quality == wanted_quality and slot\.count == count/,
+		"the verdict needs BOTH halves and neither implies the other, measured at 2.1.11: import_stack returns 0 "
+		+ "while silently changing the item name (a blueprint-book string into a blueprint stack), so the return "
+		+ "code cannot police IDENTITY; and it returns -1 while leaving identity untouched and silently dropping "
+		+ "entities the install lacks, so identity cannot police whether the CONTENT landed");
+	assert.match(restoration, /if keeps then[\s\S]{0,300}?pcall\(function\(\) return landed_stack\.import_stack\(st\.export_string\) end\)\s*\n\s*if ok and result == 0 then/,
+		"the live write is reachable only from the true branch of the preflight, and its own return code is "
+		+ "checked too — a nonzero there is a partial write, not a success");
 	assert.match(restoration, /else\s*\n\s*state_stats\.declined = state_stats\.declined \+ 1[\s\S]{0,600}?STATE DECLINED export_string/,
 		"a failed preflight must count and name the decline, never fall through to the write");
 	assert.match(restoration, /if not \(scratch and scratch\.inventory and scratch\.inventory\.valid\) then\s*\n\s*return false, "no scratch inventory"/,
@@ -105,6 +110,22 @@ test("export_string reaches the live belt stack only after a scratch stack prove
 	assert.match(restoration, /Util\.pcall_warn\("\[BeltRestoration\] item-state scratch release"[\s\S]{0,200}?release_item_state_cache\(scratch\)[\s\S]{0,120}?if not ok then error\(placed, 0\) end/,
 		"restore owns the scratch inventory's lifetime the way capture does: release BEFORE the re-raise, and "
 		+ "the release itself guarded");
+});
+
+test("a blueprint book restored from its export string is not then emptied by the nested-inventory restore", () => {
+	const restoration = read("import_phases", "belt_restoration.lua");
+	assert.match(restoration, /local FIELDS_CARRIED_BY_EXPORT_STRING = \{ nested_inventory = true \}/,
+		"the export string IS the book's content; nested_inventory is a second copy of it");
+	assert.match(restoration, /if key ~= "export_string" and not FIELDS_CARRIED_BY_EXPORT_STRING\[key\] then/,
+		"measured at 2.1.11: import_stack restores a book's blueprints in full, and the nested-inventory restore "
+		+ "that used to run next clears the book's inventory, which SHRINKS a book to size 0, after which its "
+		+ "free-slot scan has no slots to fill and the book arrives empty. Dropping the redundant field is the "
+		+ "fix that measured intact; reordering scalars before the string is NOT — import_stack replaces the "
+		+ "whole stack, so a label written first is overwritten by the string's own");
+	const deserializer = read("core", "deserializer.lua");
+	assert.match(deserializer, /function Deserializer\.restore_nested_inventory\(inventory, items_data\)[\s\S]{0,200}?inventory\.clear\(\)/,
+		"pinning the clear() this drop exists to route around — if the inventory path's half of the book bug is "
+		+ "ever fixed there, this belt-side drop should be revisited rather than silently kept");
 });
 
 test("the declined counter reaches the log line and the import-complete metrics", () => {

@@ -8,6 +8,8 @@ local BeltRestoration = {}
 
 local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 
+local FIELDS_CARRIED_BY_EXPORT_STRING = { nested_inventory = true }
+
 local function add_items(totals, items)
     local total = 0
     for _, item in ipairs(items or {}) do
@@ -202,18 +204,20 @@ function BeltRestoration.export_string_keeps_identity(scratch, name, quality, co
     if not set_ok then return false, tostring(set_error) end
     if not slot.valid_for_read then return false, "scratch stack did not take" end
 
-    local import_ok, import_error = pcall(function() return slot.import_stack(export_string) end)
+    local import_ok, import_result = pcall(function() return slot.import_stack(export_string) end)
     if not import_ok then
         Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
-        return false, tostring(import_error)
+        return false, tostring(import_result)
     end
 
     local seen = "empty"
     local keeps = false
     if slot.valid_for_read then
         local seen_quality = (slot.quality and slot.quality.name) or QUALITY_NORMAL
-        seen = string.format("%s (%s) x%d", slot.name, seen_quality, slot.count)
-        keeps = slot.name == name and seen_quality == wanted_quality and slot.count == count
+        seen = string.format("%s (%s) x%d, import_stack returned %s", slot.name, seen_quality, slot.count,
+            tostring(import_result))
+        keeps = import_result == 0
+            and slot.name == name and seen_quality == wanted_quality and slot.count == count
     end
     Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
     return keeps, seen
@@ -290,20 +294,23 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
         if st.export_string then
             scalars = {}
             for key, value in pairs(st) do
-                if key ~= "export_string" then scalars[key] = value end
+                if key ~= "export_string" and not FIELDS_CARRIED_BY_EXPORT_STRING[key] then
+                    scalars[key] = value
+                end
             end
             local keeps, seen = BeltRestoration.export_string_keeps_identity(scratch, stack_def.name,
                 stack_def.quality, count, st.export_string)
             if keeps then
-                local ok, err = pcall(function() return landed_stack.import_stack(st.export_string) end)
-                if ok then
+                local ok, result = pcall(function() return landed_stack.import_stack(st.export_string) end)
+                if ok and result == 0 then
                     wrote = true
                 else
                     refused = true
                     state_logged = state_logged + 1
                     if state_logged <= 10 then
                         log(string.format("[BeltRestoration] STATE export_string WRITE FAILED for %s: %s",
-                            tostring(stack_def.name), tostring(err)))
+                            tostring(stack_def.name), ok and ("import_stack returned " .. tostring(result))
+                            or tostring(result)))
                     end
                 end
             else
