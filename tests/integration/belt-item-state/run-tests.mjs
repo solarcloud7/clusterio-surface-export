@@ -145,10 +145,8 @@ const ROWS = [
 		expect: `${CLONE}-bp|0.25/0.50/0.75|${BP_EXPECT}`,
 		describe: "the label rides in st as its own field and the entities ride as export_string, which reaches "
 			+ "the live stack only after the scratch preflight proves import_stack keeps (name, quality, count). "
-			+ "The comparator decodes the arrived blueprint rather than comparing export strings: measured "
-			+ "2026-08-15 on this cluster, the same blueprint built on host-1 and host-2 exports byte-identical "
-			+ "strings and keeps its entity positions, so decoding costs nothing and does not pin the test to an "
-			+ "engine build both instances happen to share. A fresh blueprint reads n=0 with no label",
+			+ "The comparator decodes the arrived blueprint instead of comparing export strings, so a label-only "
+			+ "restore reads n=0 here rather than matching. A fresh blueprint reads n=0 with no label",
 	},
 	{
 		key: "entity_data",
