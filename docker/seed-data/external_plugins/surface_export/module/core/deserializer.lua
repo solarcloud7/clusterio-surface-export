@@ -57,6 +57,7 @@ end
 
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
+  { field = "result_quality", safecall = true, types = { ["assembling-machine"] = true } },
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "combinator_description", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
@@ -64,7 +65,8 @@ local SIMPLE_RESTORE_RULES = {
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
   { field = "spoil_priority", prop = "inserter_spoil_priority", safecall = true },
-  { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
+  { field = "filter", prop = "splitter_filter", safecall = true,
+    types = { ["splitter"] = true, ["lane-splitter"] = true } },
   { field = "pickup_from_left_lane", present = true, safecall = true, types = { ["inserter"] = true } },
   { field = "pickup_from_right_lane", present = true, safecall = true, types = { ["inserter"] = true } },
   { field = "loader_filter_mode", safecall = true, types = { ["loader"] = true, ["loader-1x1"] = true } },
@@ -75,6 +77,15 @@ local SIMPLE_RESTORE_RULES = {
   { field = "valve_threshold_override", safecall = true, types = { ["valve"] = true } },
   { field = "send_to_orbit_automatically", present = true, safecall = true, types = { ["rocket-silo"] = true } },
   { field = "use_transitional_requests", present = true, safecall = true, types = { ["rocket-silo"] = true } },
+  { field = "alert_parameters", safecall = true, types = { ["programmable-speaker"] = true } },
+  { field = "linked_belt_type", safecall = true, types = { ["linked-belt"] = true } },
+  { field = "link_id", safecall = true, types = { ["linked-container"] = true } },
+  { field = "override_logistic_mode", safecall = true, types = { ["infinity-container"] = true } },
+  { field = "saved_request_filters", safecall = true, types = { ["infinity-container"] = true } },
+  { field = "saved_storage_filters", safecall = true, types = { ["infinity-container"] = true } },
+  { field = "saved_request_from_buffers", present = true, safecall = true,
+    types = { ["infinity-container"] = true } },
+  { field = "saved_set_requests", present = true, safecall = true, types = { ["infinity-container"] = true } },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
   { field = "color", safecall = true },
@@ -274,6 +285,11 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if not ok then log("[Deserializer] name_tag restore failed for " .. entity.name .. ": " .. tostring(err)) end
   end
 
+  if entity_data.custom_status ~= nil then
+    local ok, err = pcall(function() entity.custom_status = entity_data.custom_status end)
+    if not ok then log("[Deserializer] custom_status restore failed for " .. entity.name .. ": " .. tostring(err)) end
+  end
+
   if not entity_data.specific_data then
     return
   end
@@ -298,6 +314,10 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if data.display_panel_text ~= nil then entity.display_panel_text = data.display_panel_text end
     if data.display_panel_always_show ~= nil then entity.display_panel_always_show = data.display_panel_always_show end
     if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
+    if data.display_panel_icon ~= nil then
+      safe_call(string.format("display_panel_icon for %s", entity.name),
+        function() entity.display_panel_icon = data.display_panel_icon end)
+    end
     if data.display_panel_messages then
       safe_call(string.format("display-panel messages for %s", entity.name), function()
         entity.get_or_create_control_behavior().records = data.display_panel_messages
@@ -346,7 +366,17 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end)
   end
 
+  if data.grown_ticks_remaining ~= nil then
+    safe_call(string.format("plant grow-tick for %s", entity.name),
+      function() entity.tick_grown = game.tick + data.grown_ticks_remaining end)
+  end
+
   apply_simple_restore_rules(entity, data)
+
+  if entity.type == "linked-belt" and entity_data.direction ~= nil then
+    safe_call(string.format("linked-belt direction for %s", entity.name),
+      function() entity.direction = entity_data.direction end)
+  end
 
   if data.schedule and entity.train then
     entity.train.schedule = data.schedule

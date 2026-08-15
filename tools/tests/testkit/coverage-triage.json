@@ -104,12 +104,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "custom_status",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "driving",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -332,18 +326,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "result_quality",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "display_panel_icon",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "electric_interface_mode",
 			"disposition": "derived",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -392,36 +374,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "override_logistic_mode",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "saved_request_filters",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "saved_request_from_buffers",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "saved_set_requests",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "saved_storage_filters",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "pickup_target",
 			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -436,30 +388,6 @@
 			"class": "LuaEntity",
 			"attribute": "removal_plan",
 			"disposition": "derived",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "linked_belt_type",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "link_id",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "tick_grown",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "alert_parameters",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{

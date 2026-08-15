@@ -126,6 +126,11 @@ EntityHandlers["assembling-machine"] = function(entity)
     data.crafting_progress = entity.crafting_progress
   end
 
+  local result_quality = GameUtils.safe_get(entity, "result_quality")
+  if result_quality ~= nil then
+    data.result_quality = type(result_quality) == "string" and result_quality or result_quality.name
+  end
+
   return data
 end
 
@@ -226,6 +231,35 @@ end
 
 EntityHandlers["loader-1x1"] = EntityHandlers["loader"]
 
+EntityHandlers["linked-belt"] = function(entity)
+  local data = {
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
+  }
+
+  local linked_belt_type = GameUtils.safe_get(entity, "linked_belt_type")
+  if linked_belt_type ~= nil then
+    data.linked_belt_type = linked_belt_type
+  end
+
+  return data
+end
+
+EntityHandlers["plant"] = function(entity)
+  local data = {
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
+  }
+
+  local grown_ok, grown_ticks_remaining = pcall(function() return entity.tick_grown - game.tick end)
+  if grown_ok then
+    data.grown_ticks_remaining = grown_ticks_remaining
+  else
+    log(string.format("[entity-handlers] plant grow-tick read failed on %s: %s",
+      entity.name, tostring(grown_ticks_remaining)))
+  end
+
+  return data
+end
+
 EntityHandlers["valve"] = function(entity)
   local data = {
     fluidboxes = InventoryScanner.extract_fluidboxes(entity)
@@ -288,7 +322,7 @@ EntityHandlers["container"] = function(entity)
     data.bar = bar
   end
 
-  if entity.type == "logistic-container" then
+  if entity.type == "logistic-container" and entity.prototype.logistic_mode == "storage" then
     local storage_filter = GameUtils.safe_get(entity, "storage_filter")
     if storage_filter then
       local filter_name = storage_filter.name
@@ -302,6 +336,40 @@ EntityHandlers["container"] = function(entity)
       if filter_name then
         data.storage_filter = { name = filter_name, quality = quality or GameUtils.QUALITY_NORMAL }
       end
+    end
+  end
+
+  if entity.type == "infinity-container" then
+    local override_logistic_mode = GameUtils.safe_get(entity, "override_logistic_mode")
+    if override_logistic_mode ~= nil then
+      data.override_logistic_mode = override_logistic_mode
+    end
+
+    local saved_request_filters = GameUtils.safe_get(entity, "saved_request_filters")
+    if saved_request_filters ~= nil then
+      data.saved_request_filters = saved_request_filters
+    end
+
+    local saved_storage_filters = GameUtils.safe_get(entity, "saved_storage_filters")
+    if saved_storage_filters ~= nil then
+      data.saved_storage_filters = saved_storage_filters
+    end
+
+    local saved_request_from_buffers = GameUtils.safe_get(entity, "saved_request_from_buffers")
+    if saved_request_from_buffers ~= nil then
+      data.saved_request_from_buffers = saved_request_from_buffers
+    end
+
+    local saved_set_requests = GameUtils.safe_get(entity, "saved_set_requests")
+    if saved_set_requests ~= nil then
+      data.saved_set_requests = saved_set_requests
+    end
+  end
+
+  if entity.type == "linked-container" then
+    local link_id = GameUtils.safe_get(entity, "link_id")
+    if link_id ~= nil and link_id ~= 0 then
+      data.link_id = link_id
     end
   end
 
@@ -669,8 +737,12 @@ end
 
 EntityHandlers["programmable-speaker"] = function(entity)
   local data = {}
-  
-  
+
+  local alert_parameters = GameUtils.safe_get(entity, "alert_parameters")
+  if alert_parameters ~= nil then
+    data.alert_parameters = alert_parameters
+  end
+
   return next(data) and data or nil
 end
 
@@ -759,6 +831,10 @@ EntityHandlers["display-panel"] = function(entity)
   data.display_panel_text = entity.display_panel_text
   data.display_panel_always_show = entity.display_panel_always_show
   data.display_panel_show_in_chart = entity.display_panel_show_in_chart
+  local display_panel_icon = GameUtils.safe_get(entity, "display_panel_icon")
+  if display_panel_icon ~= nil then
+    data.display_panel_icon = display_panel_icon
+  end
   local behavior = entity.get_control_behavior()
   if behavior and behavior.records and #behavior.records > 0 then
     data.display_panel_messages = behavior.records
