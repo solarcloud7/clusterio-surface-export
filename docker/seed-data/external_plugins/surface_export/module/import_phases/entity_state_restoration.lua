@@ -4,7 +4,8 @@ local EntityStateRestoration = {}
 function EntityStateRestoration.restore_all(entities_to_create, entity_map)
     local circuits_connected = 0
     local power_connected = 0
-    
+    local proxies_linked = 0
+
     log("[Import] Restoring control behavior...")
     for _, entity_data in ipairs(entities_to_create) do
       local entity = entity_map[entity_data.entity_id]
@@ -63,9 +64,18 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
     
+    log("[Import] Restoring proxy-container targets...")
+    for _, entity_data in ipairs(entities_to_create) do
+      local entity = entity_map[entity_data.entity_id]
+      if entity and entity.valid then
+        proxies_linked = proxies_linked + Deserializer.restore_proxy_targets(entity, entity_data, entity_map)
+      end
+    end
+
     return {
       circuits_connected = circuits_connected,
       power_connected = power_connected,
+      proxies_linked = proxies_linked,
       created_logistic_groups = created_logistic_groups,
     }
 end

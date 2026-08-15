@@ -85,6 +85,24 @@ local function extract_item_properties(stack)
     end
   end
 
+  if stack.prototype.type == "item-with-entity-data" then
+    local entity_data_ok, entity_data_values = pcall(function()
+      return {
+        entity_color = stack.entity_color,
+        entity_enable_logistics_while_moving = stack.entity_enable_logistics_while_moving,
+        entity_logistic_sections = stack.entity_logistic_sections,
+        entity_logistics_enabled = stack.entity_logistics_enabled,
+        entity_request_from_buffers = stack.entity_request_from_buffers,
+      }
+    end)
+    if entity_data_ok then
+      item_entry.entity_data = entity_data_values
+    else
+      log(string.format("[inventory-scanner] item entity-data read failed on %s: %s",
+        stack.name, tostring(entity_data_values)))
+    end
+  end
+
   return item_entry
 end
 

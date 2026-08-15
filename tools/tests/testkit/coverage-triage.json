@@ -176,12 +176,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "repair_state",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "riding_state",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -284,32 +278,8 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "character_corpse_death_cause",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "character_corpse_player_index",
 			"disposition": "ignore",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "character_corpse_tick_of_death",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "combat_robot_owner",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "corpse_expires",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
@@ -356,12 +326,6 @@
 		},
 		{
 			"class": "LuaEntity",
-			"attribute": "last_user",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
 			"attribute": "highlight_box_blink_interval",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
@@ -370,12 +334,6 @@
 			"class": "LuaEntity",
 			"attribute": "highlight_box_type",
 			"disposition": "ignore",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "pickup_target",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
@@ -400,18 +358,6 @@
 			"class": "LuaEntity",
 			"attribute": "bonus_damage_modifiers",
 			"disposition": "derived",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "proxy_target_entity",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaEntity",
-			"attribute": "proxy_target_inventory",
-			"disposition": "track",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
@@ -584,51 +530,45 @@
 		},
 		{
 			"class": "LuaItemStack",
-			"attribute": "entity_color",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaItemStack",
 			"attribute": "entity_driver_is_gunner",
 			"disposition": "ignore",
 			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
 		},
 		{
-			"class": "LuaItemStack",
-			"attribute": "entity_enable_logistics_while_moving",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+			"class": "LuaEntity",
+			"attribute": "repair_state",
+			"disposition": "ignore",
+			"reason": "owner ruling 2026-08-14: character-only live mid-action state {repairing, position}, documented on the LuaControl base shared by LuaPlayer and character entities (https://lua-api.factorio.com/2.1.11/classes/LuaControl.html#repair_state). Characters never transfer - EntityScanner.is_exportable_entity rejects type == \"character\" and Gateway.evacuate_passengers teleports them to Nauvis at the sole source-delete chokepoint - so the carrier is structurally absent from every payload. Measured 2.1.11: the read throws \"Entity is not character.\" on all 39 entity types present on both standing fixtures."
 		},
 		{
-			"class": "LuaItemStack",
-			"attribute": "entity_logistic_sections",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+			"class": "LuaEntity",
+			"attribute": "corpse_expires",
+			"disposition": "ignore",
+			"reason": "CorpsePrototype.expires defaults true, time_before_removed defaults 120 s and remove_on_entity_placement defaults true (https://lua-api.factorio.com/2.1.11/prototypes/CorpsePrototype.html) - a corpse is a self-deleting decorative remnant by documented default, not built state. Its subclass gate is its own (\"Entity is not corpse.\", distinct from \"Entity is not character-corpse.\" measured at 2.1.11), so the shipped character-corpse pair does not cover it, and zero corpse entities exist on either standing fixture."
 		},
 		{
-			"class": "LuaItemStack",
-			"attribute": "entity_logistics_enabled",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
-		},
-		{
-			"class": "LuaItemStack",
-			"attribute": "entity_request_from_buffers",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+			"class": "LuaEntity",
+			"attribute": "combat_robot_owner",
+			"disposition": "ignore",
+			"reason": "CombatRobotPrototype.time_to_live is a mandatory field (https://lua-api.factorio.com/2.1.11/prototypes/CombatRobotPrototype.html#time_to_live) - the robot is temporary by design - and combat_robot_owner is optional with nil legal (https://lua-api.factorio.com/2.1.11/classes/LuaEntity.html#combat_robot_owner). The referent is a character, which never enters a payload (export scan excludes it, the source-delete chokepoint evacuates it), so the reference is unresolvable by construction and the only reachable destination value is nil."
 		},
 		{
 			"class": "LuaTrain",
 			"attribute": "manual_mode",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+			"disposition": "ignore",
+			"reason": "No rail or rolling stock is placeable on a space platform at 2.1.11: measured on host-1, locomotive and cargo-wagon carry surface_conditions gravity >= 1 and straight-rail carries gravity >= 1 plus pressure <= 300000, while a platform has neither. Measured on both standing fixtures, entity.train reads nil on every one of the 39 entity types present. The existing train handler and its schedule restore are dormant on this surface class, so the flag has no subject to exercise it."
+		},
+		{
+			"class": "LuaEntity",
+			"attribute": "pickup_target",
+			"disposition": "derived",
+			"reason": "Documented as a tie-breaker among entities at the same point (https://lua-api.factorio.com/2.1.11/classes/LuaEntity.html#pickup_target) - the destination re-derives it from pickup_position, which is itself derived from the direction create_entity already restores. Measured over all 187 inserters on lab-transfer-fixture-v1 at 2.1.11: 175 have a pickup_target whose bounding box covers that inserter own pickup_position, 12 read nil, 0 disagree; and no module code ever assigns it."
 		},
 		{
 			"class": "LuaSpacePlatform",
 			"attribute": "space_connection",
-			"disposition": "track",
-			"reason": "batch triage in the UI, restored from the failed-save recovery (owner, 2026-08-13)"
+			"disposition": "derived",
+			"reason": "Destination travel state is set by the import, not the payload: import-pipeline.lua:222 writes space_location = park_target at platform creation and import-completion.lua re-parks and verifies. Measured 2.1.11: both live platforms read space_connection = nil, speed = 0 while parked, which is the only state a transfer starts from. distance, speed and space_location are all RW and a space_connection write resets distance to 0.5 (https://lua-api.factorio.com/2.1.11/classes/LuaSpacePlatform.html#space_connection), so resume-in-transit stays feasible later as a feature, needing those three together rather than this attribute alone."
 		}
 	]
 }

@@ -112,6 +112,11 @@ function EntityScanner.serialize_entity(entity)
     entity_data.custom_status = custom_status
   end
 
+  local last_user = GameUtils.safe_get(entity, "last_user")
+  if last_user ~= nil and last_user.valid then
+    entity_data.last_user = last_user.name
+  end
+
   local category = Util.get_entity_category(entity)
 
   local specific_data = EntityHandlers.handle_entity(entity, category)
