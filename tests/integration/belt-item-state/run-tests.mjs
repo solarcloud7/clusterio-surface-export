@@ -1,20 +1,17 @@
 #!/usr/bin/env node
 // belt-item-state — item-level scalar state on a stack riding a BELT must survive a real
-// host-1 -> host-2 transfer, the same way the inventory path already carries it
+// host-1 -> host-2 transfer
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-row SOURCE arming with the fresh default measured first, a pre-export re-read,
 //           the gate verdict read before any destination read (bound to this clone by name), a
 //           DESTINATION physical readback taken off the arrived belt stack itself, a PAIR row of
-//           two same-item stacks with different state on ONE line (the only row where the restore's
-//           arrival diff has a non-empty baseline to get wrong), and the destination's own
-//           applied/unmatched/failed counters read back from its log, bound to this clone by the
-//           platform name the restore emits in that line
+//           two same-item stacks with different state on ONE line, and the destination's own
+//           applied/unmatched/failed counters read back from its log, bound to this clone by name
 // does not: read the export payload (payload presence is not restoration); assert item or fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
-//           cover blueprint CONTENT (export_string has no belt restore path and is excluded from
-//           the captured state); cover the over-compression merge path, which discards one of two
-//           merged states by construction
+//           cover blueprint CONTENT (export_string has no belt restore path); cover the
+//           over-compression merge path
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
