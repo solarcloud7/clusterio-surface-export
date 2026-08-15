@@ -69,9 +69,7 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 	process.exit(2);
 }
 
-if (isCI) console.log("::group::cluster readiness preflight");
 const readiness = runReadinessGate();
-if (isCI) console.log("::endgroup::");
 if (!readiness.ok) {
 	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
 		+ "blank-booted or unreachable cluster. Every check above is measured live; re-seed with "
