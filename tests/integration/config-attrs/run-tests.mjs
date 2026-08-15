@@ -424,8 +424,8 @@ const ATTRS = [
 		describe: "both flags are armed as the NEGATION of the measured fresh defaults, so a destination that "
 			+ "reads the prototype defaults fails this row. The concept's fields are auto_target_without_gunner "
 			+ "and auto_target_with_gunner (measured 2026-08-15 at 2.1.11 by enumerating the keys of the table "
-			+ "the attribute returns); reading it under any other name yields nil without throwing, which is "
-			+ "how an empty automatic_targeting_parameters table rode every spidertron export",
+			+ "the attribute returns); this is a concept table, not a LuaObject, so reading or writing a "
+			+ "sub-key under any other name is a plain table index that yields nil without throwing",
 	},
 	{
 		key: "item_entity_logistic_sections", attribute: "entity_logistic_sections", on: "boxchest",
