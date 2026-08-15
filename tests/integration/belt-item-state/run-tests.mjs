@@ -266,24 +266,25 @@ if not prototypes.item[pair.item] then
   pair.error = 'no such item prototype at this pin'
 else
   local py = #row_specs * 3
-  local belts = {}
-  for i = 0, 1 do
-    belts[#belts + 1] = s.create_entity{ name = 'transport-belt', position = { bx + 1.5 + i, py + 0.5 },
-      force = 'player', direction = defines.direction.east, raise_built = false }
-  end
-  if not (belts[1] and belts[1].valid and belts[2] and belts[2].valid) then
-    pair.error = 'pair belts did not place'
+  local belt = s.create_entity{ name = 'transport-belt', position = { bx + 1.5, py + 0.5 },
+    force = 'player', direction = defines.direction.east, raise_built = false }
+  if not (belt and belt.valid) then
+    pair.error = 'pair belt did not place'
   else
-    local line = belts[1].get_transport_line(1)
-    pair.one_line = line.line_equals(belts[2].get_transport_line(1))
-    pair.at = string.format("%.1f, %.1f", belts[1].position.x, belts[1].position.y)
+    local line = belt.get_transport_line(1)
+    pair.at = string.format("%.1f, %.1f", belt.position.x, belt.position.y)
     local wanted = { ${PAIR_HEALTHS.join(", ")} }
     for i, _ in ipairs(wanted) do line.insert_at(0.9 - (i - 1) * 0.45, { name = pair.item, count = 1 }) end
     local stacks = {}
+    local uids = {}
     for _, it in ipairs(line.get_detailed_contents()) do
-      if it.stack.valid_for_read and it.stack.name == pair.item then stacks[#stacks + 1] = it.stack end
+      if it.stack.valid_for_read and it.stack.name == pair.item then
+        stacks[#stacks + 1] = it.stack
+        uids[#uids + 1] = it.unique_id
+      end
     end
     pair.placed = #stacks
+    pair.one_line = #stacks == #wanted and uids[1] ~= uids[2]
     pair.default = #stacks > 0 and string.format("%.4f", stacks[1].health) or nil
     local armed = {}
     for i, st in ipairs(stacks) do
@@ -401,10 +402,10 @@ async function main() {
 		if (pair.error) {
 			fail(`pair: ${pair.error}`);
 		} else if (pair.one_line !== true || pair.placed !== PAIR_HEALTHS.length) {
-			fail(`pair: needed ${PAIR_HEALTHS.length} '${PAIR_ITEM}' stacks on ONE shared line, got `
-				+ `${pair.placed} stacks and line_equals=${pair.one_line}. This is the only row whose restore has a `
-				+ "non-empty baseline of pre-existing items to identify the landed stack against — without it the "
-				+ "arrival diff is never asked a question it could get wrong");
+			fail(`pair: needed ${PAIR_HEALTHS.length} distinct '${PAIR_ITEM}' stacks on ONE line, got `
+				+ `${pair.placed} (distinct=${pair.one_line}). This is the only row whose restore has a non-empty `
+				+ "baseline of pre-existing items to identify the landed stack against — without it the arrival "
+				+ "diff is never asked a question it could get wrong");
 		} else if (pairArmed.join(",") !== PAIR_EXPECT.join(",")) {
 			fail(`pair: armed ${JSON.stringify(pairArmed)}, expected ${JSON.stringify(PAIR_EXPECT)}`);
 		} else if (PAIR_EXPECT.includes(pair.default)) {
