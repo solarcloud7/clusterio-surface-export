@@ -4,10 +4,18 @@
 //
 // requires: the cluster up, lab-transfer-fixture-v1 on host-1, host-2 able to receive
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
-//           before any destination read, and a DECLARED-INERT line (with the live prototype
-//           predicate that decided it) for attributes no prototype supports at this pin
+//           before any destination read, a DECLARED-INERT line (with the live prototype
+//           predicate that decided it) for attributes no prototype supports at this pin, the
+//           measured destination roster and clock that two rows take their expectation from,
+//           and a control section: the last_user conditional's present/absent arms (run on the
+//           SOURCE clone pre-export, since the conditional belongs to restore_entity_state
+//           rather than to either instance) and a nil-target proxy-container read on the
+//           destination
 // does not: read the export payload — payload presence is not restoration; assert item/fluid
-//           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE)
+//           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
+//           prove RESTORATION for a row whose destination expectation is the measured DECLINE —
+//           against a destination whose roster lacks the armed player, last_user asserts only
+//           that nothing was mis-attributed, and the control arms carry the restore proof
 
 import { lua as luaRaw, sleep, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
