@@ -184,6 +184,70 @@ jobs:
           '
           echo "Controller is healthy"
 
+      # The seed/start race this closes, measured in run 31893741832 (PR #219) and run
+      # 31903406947 attempt 1 (PR #224) — same signature both times:
+      #   1. host-2's clusteriohost dies on `Host.handleInstanceAssignInternalRequest` with an
+      #      unhandled `TypeError: The "path" argument must be of type string. Received null`
+      #      (@clusterio/host alpha.27, FactorioServer.dataPath with no Factorio installed yet).
+      #   2. The container restarts; the controller disconnects the dead duplicate session, so every
+      #      request pending on it rejects with `Error: Session Closed` — including this job's
+      #      `instance start-all`. The start is still DELIVERED (State: stopped -> starting).
+      #   3. That start beat the seed's `instance save upload` by 0.6s, so the saves dir was empty
+      #      and Clusterio generated `world.zip`. host-2 booted a blank world at tick 2188.
+      # The enabling condition is ours: Phase 1 below only requires both instances to be NAMED in
+      # `instance list`, which the seed satisfies at `instance create` — before assign, config and
+      # save upload. Waiting for the controller's own `.seed-complete` marker orders the seed's
+      # upload ahead of any start we drive, which is what actually removes the race.
+      #
+      # NOT the compose healthcheck: the base image's own healthcheck does require this marker, but
+      # compose must override it to the bare curl, because the hosts `depends_on: service_healthy`
+      # while seeding waits for those same hosts to connect — requiring the marker there deadlocks
+      # bring-up. The base image's reference compose makes the identical override.
+      - name: Wait for seeding, and verify both instances booted their seeded save
+        run: |
+          await_seeded_cluster() {
+            node tools/clusterio/ci-await-seeding.mjs || return $?
+            node tools/clusterio/ci-verify-seeded-boot.mjs || return $?
+            return 0
+          }
+          # -qx, not -q: `{{.State.Health.Status}}` is one of starting/healthy/unhealthy, and a
+          # substring match accepts "unhealthy" as healthy.
+          wait_for_controller() {
+            timeout 120 bash -c '
+              until docker inspect --format="{{.State.Health.Status}}" surface-export-controller 2>/dev/null | grep -qx healthy; do
+                sleep 5
+                echo "  Waiting for controller..."
+              done
+            '
+          }
+          rc=0
+          await_seeded_cluster || rc=$?
+          if [ "$rc" -eq 0 ]; then exit 0; fi
+          # ONE retry, and only for the two bring-up signatures: 4 = seeding never finished,
+          # 40 = an instance booted a save docker/seed-data never shipped. Both are decided before
+          # the readiness gate and before any suite, and neither can be produced by the code under
+          # test — so this retry is structurally incapable of masking a regression. Any other exit
+          # is a real failure and goes red immediately.
+          if [ "$rc" -ne 4 ] && [ "$rc" -ne 40 ]; then
+            echo "::error::cluster seeding preflight failed with exit $rc — not a bring-up race; see the lines above"
+            exit "$rc"
+          fi
+          echo "::warning::cluster bring-up hit the seed/start race (exit $rc) — rebuilding the cluster once."
+          # down -v, never restart: on a restart the controller re-seeds, but seed-instances.sh's
+          # idempotency check sees the instances already exist and returns before uploading any save.
+          docker compose down -v
+          docker compose up -d
+          if ! wait_for_controller; then
+            echo "::error::controller never became healthy on the bring-up retry"
+            exit 1
+          fi
+          rc=0
+          await_seeded_cluster || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::the seed/start race reproduced on the retry (exit $rc) — this is not a flake"
+            exit "$rc"
+          fi
+
       - name: Wait for instances to start
         run: |
           CTL="docker exec surface-export-controller npx clusterioctl --config=/clusterio/tokens/config-control.json"
