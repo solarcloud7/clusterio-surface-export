@@ -2,12 +2,12 @@ local Util = require("modules/surface_export/utils/util")
 
 local Verification = {}
 
-function Verification.count_all_items(entity_data)
+function Verification.count_all_items(entities)
   local item_totals = {}
 
-  for _, entity in ipairs(entity_data) do
-    if entity.specific_data and entity.specific_data.inventories then
-      for _, inventory in ipairs(entity.specific_data.inventories) do
+  for _, entity_data in ipairs(entities) do
+    if entity_data.specific_data and entity_data.specific_data.inventories then
+      for _, inventory in ipairs(entity_data.specific_data.inventories) do
         if inventory.items then
           for _, item in ipairs(inventory.items) do
             local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
@@ -17,8 +17,8 @@ function Verification.count_all_items(entity_data)
       end
     end
 
-    if entity.specific_data and entity.specific_data.items then
-      for _, line_data in ipairs(entity.specific_data.items) do
+    if entity_data.specific_data and entity_data.specific_data.items then
+      for _, line_data in ipairs(entity_data.specific_data.items) do
         if line_data.items then
           for _, item in ipairs(line_data.items) do
             local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
@@ -28,15 +28,15 @@ function Verification.count_all_items(entity_data)
       end
     end
 
-    if entity.specific_data and entity.specific_data.held_item then
-      local held = entity.specific_data.held_item
+    if entity_data.specific_data and entity_data.specific_data.held_item then
+      local held = entity_data.specific_data.held_item
       local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
       item_totals[key] = (item_totals[key] or 0) + held.count
     end
 
-    if entity.type == "item-on-ground" then
-      local key = Util.make_quality_key(entity.name, entity.quality or Util.QUALITY_NORMAL)
-      item_totals[key] = (item_totals[key] or 0) + entity.count
+    if entity_data.type == "item-on-ground" then
+      local key = Util.make_quality_key(entity_data.name, entity_data.quality or Util.QUALITY_NORMAL)
+      item_totals[key] = (item_totals[key] or 0) + entity_data.count
     end
   end
 

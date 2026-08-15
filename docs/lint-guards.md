@@ -321,27 +321,92 @@ lifecycle firing during `npm ci`, which this guard can now legitimately skip.
 
 ## lint:api-names (`scripts/lint-api-names.mjs`)
 
-Every Factorio API member name written as a string literal or probe must exist at the pin, checked
-against the vendored `scripts/factorio-api-index.json` (regenerated from Wube's
+Every Factorio API member name read, written, probed, or named as a string literal must exist at the
+pin, checked against the vendored `scripts/factorio-api-index.json` (regenerated from Wube's
 `runtime-api.json` by `scripts/extract-factorio-api-index.mjs` at repin time; the index flattens the
 inheritance chain — the first draft dropped parents and false-flagged `get_inventory`, which is
 `LuaControl`'s).
 
-The incident class: `LuaEntity` throws on unknown keys, but `GameUtils.safe_get` and the
-`-- intentional probe` pcall pattern swallow the throw, so a wrong name is indistinguishable from a
-legitimately-nil value. `safe_get(entity, "driver_is_main_gunner")` — a key that has never existed —
-shipped silent for months on both car and spider-vehicle. The lint's own first run found four more in
-the live tree: `entity.label` (spider labels, real name `entity_label`), `entity.entity_description`
-(combinator descriptions, real name `combinator_description`, whose restore rule also wrote the wrong
-member), `entity.priority` (train-stop priority, real name `train_stop_priority`, wrong at both ends),
-and `entity.mirrored` (real name `mirroring`, restore missing entirely).
+Two different runtime behaviors motivate the guard, measured together with a control on the live
+cluster [empirical, 2.1.11, RCON probe on a `transport-belt` receiver, 2026-08-15]:
 
-Scope: `safe_get(entity, "…")` literals and `pcall(function() return entity.NAME` probes in
-`module/`, checked against `LuaEntity` (all receivers are entities today). A miss names the file:line,
-the near-misses, and whether the name exists on another class. The runtime half of the fix lives in
-`safe_get` itself: a THROW now logs once per property name.
+| shape | result |
+|---|---|
+| `entity.name` (real member) | `transport-belt` |
+| `entity.auto_launch` (absent member) | RAISES `LuaEntity doesn't contain key auto_launch.` |
+| `entity.planting_position` (absent member) | RAISES `LuaEntity doesn't contain key planting_position.` |
+| `entity.driver_is_gunner` (real member, wrong subclass) | `nil`, no raise |
+
+So a **bare** read of a misspelled member throws, and the throw is fatal wherever nothing catches it;
+the **same name behind `safe_get` or a pcall probe** is swallowed and reads as nil forever. The guard
+covers both halves. `LuaEntity`'s own subclass rule — row four — is *not* covered and cannot be:
+a real member on the wrong subclass returns nil, so it is invisible to a name check.
+
+Four measured incidents, one per shape:
+
+- `driver_is_main_gunner` — the founding incident. `safe_get(entity, …)` on a name that has never
+  existed, silent for months on both car and spider-vehicle.
+- `auto_launch` — a bare read of a member removed in 2.0; killed an instance on the first silo export.
+- `planting_position` — a bare read of a member that never existed; the throw escapes uncaught through
+  the export pipeline's re-raise to `on_tick`, killing the instance. Removed in #221.
+- `auto_targeting_with/without_gunner` — misnamed fields on a plain CONCEPT table, producing an
+  always-empty capture. **Out of scope** (see below).
+
+Scope — three arms over `module/**/*.lua`, parsed with the vendored `scripts/vendor/luaparse.cjs`
+rather than matched with regexes, so comments and string literals cannot fire:
+
+1. **bare reads and writes** — `RECEIVER.member` anywhere, for the receivers below;
+2. **`safe_get(RECEIVER, "NAME")`** — both the bare and the `GameUtils.`-qualified call shape, and
+   only the two-argument form (`connection-scanner.lua` defines a *local one-argument* `safe_get`
+   closure over a control behavior; reading its argument as a member name would invent 28 false
+   positives);
+3. **`pcall(function() return RECEIVER.NAME end)`** probes.
+
+Receivers are mapped to classes **by name**, from `module/` convention — there is no type inference.
+A receiver earns the bare-read arm only if a sweep of every binding of that name in `module/`
+(parameters, locals, loop variables, assignments) finds it bound exclusively to that engine class:
+
+| receiver | class | arms |
+|---|---|---|
+| `entity` | `LuaEntity` | all three |
+| `platform` | `LuaSpacePlatform` | all three |
+| `surface` | `LuaSurface` | all three |
+| `player` | `LuaPlayer` | all three |
+| `force` | `LuaForce` | all three |
+| `stack` | `LuaItemStack` | `safe_get` + probe only |
+| `inventory` | `LuaInventory` | `safe_get` + probe only |
+
+`stack` and `inventory` are held back from the bare arm because the binding sweep disproves the
+assumption: `core/json.lua` binds `stack` to a recursion-guard table and `utils/version-compat.lua`
+to a plain `{name=, count=}` item table. That every `stack.` read happens to resolve today is luck —
+`.name` and `.count` exist on both shapes. Inside a `safe_get` or a pcall probe the receiver is an
+engine object by construction (there is nothing to catch when reading a plain table), so those two
+arms are safe for them — and arm 3 is what caught `stack.spoil_result`, a live misname whose real
+home is `LuaItemPrototype`.
+
+Receivers deliberately left out: `item`, `entity_data`, `data`, `job`, `result`, `rec` and friends
+are payload tables, not engine objects. `e` (121 reads) is a genuine coverage hole rather than an
+oversight — `control.lua` uses it as a `defines.events` alias while other files use it for records
+and for entities, so no single class maps to it.
+
+**Concept fields are out of scope**, which is why the `auto_targeting_*` class is not covered here.
+Two independent reasons: the extractor fills only `index.classes`, so the vendored oracle contains
+**no concept definitions at all**; and even with them, knowing that a plain table came from a
+concept-typed attribute needs the receiver type inference this guard deliberately does not do.
+Linting that class at zero false positives is not currently possible, so it is named rather than
+guessed at.
+
+Controls — the guard fails loudly rather than passing vacuously if it is disarmed: a mapped class
+missing from the index, fewer than 800 member reads found in `module/`, any configured receiver
+contributing zero reads, or any `.lua` file failing to parse (an unparsed file is an unchecked file).
+
+A miss names the file:line, the arm that saw it, whether the name exists on another class, and the
+near-misses. The runtime half of the fix lives in `safe_get` itself: a THROW logs once per property
+name. Self-tests live in `test/lint-api-names.test.cjs` and are picked up by the `npm test` glob.
 
 No allow marker — a wrong name has no legitimate use; `testkit api <Class.member>` finds the real one.
+If a receiver name is ever legitimately bound to a plain table, rename the variable (that is what
+`validators/verification.lua` needed) or drop the receiver from the map; do not annotate around it.
 
 ## lint:tick-portability — durations cross instances, absolute ticks never do
 
