@@ -491,8 +491,8 @@ EntityHandlers["spider-vehicle"] = function(entity)
   local targeting_success, auto_targeting = pcall(function() return entity.vehicle_automatic_targeting_parameters end)
   if targeting_success and auto_targeting then
     data.automatic_targeting_parameters = {
-      auto_targeting_without_gunner = auto_targeting.auto_targeting_without_gunner,
-      auto_targeting_with_gunner = auto_targeting.auto_targeting_with_gunner
+      auto_target_without_gunner = auto_targeting.auto_target_without_gunner,
+      auto_target_with_gunner = auto_targeting.auto_target_with_gunner
     }
   end
   

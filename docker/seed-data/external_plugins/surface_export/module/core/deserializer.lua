@@ -113,6 +113,10 @@ local SIMPLE_RESTORE_RULES = {
   { field = "artillery_auto_targeting", present = true, safecall = true },
   { field = "opened", present = true },
   { field = "autopilot_destination" },
+  { field = "switch_state", prop = "power_switch_state", present = true, safecall = true,
+    types = { ["power-switch"] = true } },
+  { field = "automatic_targeting_parameters", prop = "vehicle_automatic_targeting_parameters",
+    present = true, safecall = true, types = { ["spider-vehicle"] = true } },
 }
 
 local function apply_simple_restore_rules(entity, data)
