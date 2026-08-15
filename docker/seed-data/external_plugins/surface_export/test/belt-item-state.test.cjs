@@ -32,12 +32,23 @@ test("belt slots carry item state sparsely, and only fields the belt restore can
 	assert.match(restoration, /BeltRestoration\.STATE_FIELDS_WITHOUT_BELT_RESTORE = \{ export_string = true \}/,
 		"export_string has no belt restore path (import_stack replaces the whole stack and can change the item "
 		+ "name, which the census forbids) — carrying it would be payload weight that restores nothing");
-	assert.match(restoration, /local function belt_item_state\(stack, cache\)[\s\S]{0,400}?STATE_FIELDS_WITHOUT_BELT_RESTORE\[key\]/,
+	assert.match(restoration, /local function belt_item_state\(stack, cache\)[\s\S]{0,900}?STATE_FIELDS_WITHOUT_BELT_RESTORE\[key\]/,
 		"the excluded fields must be stripped from every captured belt slot");
 	assert.match(restoration, /st = belt_item_state\(it\.stack, cache\)/,
 		"the slot's state field must come from the shared capture, so a plain stack keeps the compact form");
 	assert.match(restoration, /InventoryScanner\.release_item_state_cache\(cache\)/,
 		"capture_side_groups owns the scratch inventory's lifetime, including when the scan throws");
+});
+
+test("a failure in the state machinery degrades to stateless capture, never to a refused platform", () => {
+	const restoration = read("import_phases", "belt_restoration.lua");
+	assert.match(restoration, /local cache_ok, cache = pcall\(InventoryScanner\.new_item_state_cache\)[\s\S]{0,400}?cache = nil/,
+		"a throw here would reach export-pipeline's pcall, leave belt_side_groups nil, and make the import "
+		+ "REFUSE a belt-bearing payload outright — the state feature must never cost a platform its transfer");
+	assert.match(restoration, /local function belt_item_state\(stack, cache\)\s*\n\s*if not cache then return nil end/,
+		"a missing cache means stateless capture, which is exactly today's behaviour");
+	assert.match(restoration, /local capture_ok, state = pcall\(InventoryScanner\.capture_item_state, stack, cache\)[\s\S]{0,400}?ships stateless/,
+		"one unreadable stack must cost that stack its state, not the whole scan");
 });
 
 test("the belt-side state write is guarded on the on_tick import path", () => {
@@ -48,9 +59,10 @@ test("the belt-side state write is guarded on the on_tick import path", () => {
 		+ "have (durability on an iron plate) would otherwise throw and stop the instance");
 	assert.match(restoration, /state_stats\.failed = state_stats\.failed \+ 1[\s\S]{0,300}?STATE WRITE FAILED/,
 		"a refused write must be counted and named, never swallowed");
-	assert.match(restoration, /if arrivals ~= 1 or not \(landed_stack and landed_stack\.valid_for_read\)/,
+	assert.match(restoration, /if arrivals ~= 1 or not readable or landed_stack\.count ~= count then/,
 		"the landed stack is identified by unique_id difference across the write; anything but exactly one "
-		+ "arrival is ambiguous and must decline rather than write state onto a guessed stack");
+		+ "arrival is ambiguous, and an arrival whose count is not the count just written is a stack the "
+		+ "insert coalesced into — both must decline rather than write state onto a guessed or shared stack");
 	assert.match(restoration, /local before_ids = st and line_ids\(line\) or nil/,
 		"the id snapshot must be skipped for stateless slots — belt items are the payload bulk");
 });

@@ -116,7 +116,16 @@ function BeltRestoration.validate_side_groups(side_groups)
 end
 
 local function belt_item_state(stack, cache)
-    local state = InventoryScanner.capture_item_state(stack, cache)
+    if not cache then return nil end
+    local capture_ok, state = pcall(InventoryScanner.capture_item_state, stack, cache)
+    if not capture_ok then
+        cache.failures = (cache.failures or 0) + 1
+        if cache.failures <= 5 then
+            log(string.format("[BeltRestoration] item-state capture failed for %s: %s — that stack ships stateless",
+                stack.name, tostring(state)))
+        end
+        return nil
+    end
     if not state then return nil end
     local kept = nil
     for key, value in pairs(state) do
@@ -176,7 +185,12 @@ end
 
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
-    local cache = InventoryScanner.new_item_state_cache()
+    local cache_ok, cache = pcall(InventoryScanner.new_item_state_cache)
+    if not cache_ok then
+        log(string.format("[BeltRestoration] item-state cache unavailable (%s) — every slot ships stateless; "
+            .. "the side partition itself is unaffected", tostring(cache)))
+        cache = nil
+    end
     local ok, result = pcall(collect_side_groups, belt_pairs, cache)
     InventoryScanner.release_item_state_cache(cache)
     if not ok then error(result) end
@@ -219,7 +233,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         for _, item in ipairs(line.get_detailed_contents()) do ids[item.unique_id] = true end
         return ids
     end
-    local function apply_state(line, before_ids, st)
+    local function apply_state(line, before_ids, st, count)
         local landed_stack, arrivals = nil, 0
         for _, item in ipairs(line.get_detailed_contents()) do
             if not before_ids[item.unique_id] then
@@ -227,13 +241,15 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 landed_stack = item.stack
             end
         end
-        if arrivals ~= 1 or not (landed_stack and landed_stack.valid_for_read) then
+        local readable = landed_stack and landed_stack.valid_for_read
+        if arrivals ~= 1 or not readable or landed_stack.count ~= count then
             state_stats.unmatched = state_stats.unmatched + 1
             state_logged = state_logged + 1
             if state_logged <= 10 then
                 log(string.format(
-                    "[BeltRestoration] STATE UNMATCHED: %d new stack(s) after the write — item state not applied",
-                    arrivals))
+                    "[BeltRestoration] STATE UNMATCHED: %d new stack(s) after the write, count %s vs %d written "
+                    .. "— item state not applied",
+                    arrivals, readable and tostring(landed_stack.count) or "nil", count))
             end
             return
         end
@@ -252,7 +268,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     local function insert_with_state(line, k, stack_def, count, st)
         local before_ids = st and line_ids(line) or nil
         if not VersionCompat.belt_insert_at(line, k / 256, stack_def, count) then return false end
-        if before_ids then apply_state(line, before_ids, st) end
+        if before_ids then apply_state(line, before_ids, st, count) end
         return true
     end
     local side_before = {}
