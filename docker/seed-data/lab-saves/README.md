@@ -7,9 +7,9 @@ source of truth for what each artifact contains; this file documents how to *cha
 
 | Artifact | Role | Pinned in manifest? |
 |---|---|---|
-| `lab-gallery-source-of-truth.zip` | Golden **source** — the pad grid (`lab-omnibus-state-v1`) and the transfer fixture (`lab-transfer-fixture-v1`) | yes, `saves.source.sha256` |
+| `lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip` | Golden **source** — the pad grid (`lab-omnibus-state-v1`) and the transfer fixture (`lab-transfer-fixture-v1`); the manifest's `saves.source.artifact` | yes, `saves.source.sha256` |
 | `lab-gallery-destination-surface-export-2.1.11.zip` | Golden **destination** — the matching empty world | yes, `saves.destination.sha256` |
-| `lab-gallery-snapshot-2026-07-25.zip` | Dated **restore point**, taken from the live gallery before an in-game audit | **no — deliberately unpinned insurance** |
+| Other `lab-gallery-snapshot-*.zip`, and `lab-gallery-source-of-truth.zip` (the golden until the 2026-07-28 re-bank) | Dated **restore points** from the live gallery | **no — deliberately unpinned insurance** |
 
 The two goldens are also the cluster's seed saves — byte-identical copies, verified:
 
