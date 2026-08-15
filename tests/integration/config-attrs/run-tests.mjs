@@ -68,7 +68,13 @@ const RIG_ENTITIES = [
 const TICK_DRIFT_TOLERANCE = 60_000;
 const CORPSE_INVENTORY_SIZE = 25;
 const CORPSE_LOOT_COUNT = 123;
-const CORPSE_DEATH_TICKS_AGO = 300_000;
+const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
+const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
+
+// Two properties of the DESTINATION that no row may assume, both measured at run start: its clock is
+// an independent per-save clock (a fresh instance is only thousands of ticks old, so a death older
+// than that is not representable there), and its player roster need not contain the source's player.
+const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null };
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -311,10 +317,13 @@ const ATTRS = [
 		key: "last_user", attribute: "last_user", on: "chest",
 		write: "e.last_user = game.players[1]",
 		read: "return q_name(e.last_user)", dynamicExpect: true,
+		get destExpect() { return RUNTIME.lastUserDestExpect; },
 		describe: "last_user is captured as the player NAME and restored only when that name resolves to a "
-			+ "player on the destination — both instances of this cluster carry the identical single-player "
-			+ "roster, so this row alone cannot tell a name-keyed restore from an index-keyed one; the "
-			+ "absent-name control below is the half that can",
+			+ "player on the DESTINATION, so what this row may expect depends on the destination roster "
+			+ "measured at run start — a cluster whose two instances share a roster proves the restore, and "
+			+ "a destination with no such player proves the decline. Neither arm can tell a name-keyed "
+			+ "restore from an index-keyed one on a shared roster; the present/absent control pair is the "
+			+ "half that can, which is why it runs in every environment",
 	},
 	{
 		key: "corpse_death_cause", attribute: "character_corpse_death_cause", on: "corpse",
@@ -324,18 +333,20 @@ const ATTRS = [
 	},
 	{
 		key: "corpse_tick_of_death", attribute: "character_corpse_tick_of_death", on: "corpse",
-		write: `e.character_corpse_tick_of_death = game.tick - ${CORPSE_DEATH_TICKS_AGO}`,
+		get write() { return `e.character_corpse_tick_of_death = game.tick - ${RUNTIME.deathTicksAgo}`; },
 		read: 'return string.format("%d", game.tick - e.character_corpse_tick_of_death)',
-		expect: String(CORPSE_DEATH_TICKS_AGO),
+		get expect() { return String(RUNTIME.deathTicksAgo); },
 		compare: (actual, expected) => {
 			const a = Number(actual);
 			const b = Number(expected);
 			return Number.isFinite(a) && Number.isFinite(b) && a >= b && a - b <= TICK_DRIFT_TOLERANCE;
 		},
-		describe: "the elapsed ticks SINCE death must land within "
-			+ `${TICK_DRIFT_TOLERANCE} ticks above the armed value — an absolute tick carried raw would `
-			+ "arrive as the SOURCE clock (the two instances differ by tens of millions of ticks), and a "
-			+ "corpse recreated without the carried duration reads its own creation tick, i.e. near zero",
+		describe: "the elapsed ticks SINCE death must land at or above the armed duration — a corpse "
+			+ "recreated without it reads its own creation tick (the ticks the import itself took, ~1000), "
+			+ "and an absolute tick carried raw arrives as the SOURCE clock, which on an independent "
+			+ "destination clock reads as a large NEGATIVE elapsed time. The armed duration is measured "
+			+ "against the destination clock at run start rather than pinned, because a duration older than "
+			+ "the destination world clamps to tick 0 and stops being distinguishable from either failure",
 	},
 	{
 		key: "corpse_loot", attribute: "defines.inventory.character_corpse", on: "corpse",
@@ -589,15 +600,49 @@ function checkInert() {
 	}
 }
 
-function checkDestinationControls(host, base, placementById) {
-	say("\n=== DESTINATION CONTROLS: the negative arms ===");
+function measureEnvironment() {
+	say("\n=== ENVIRONMENT: the two destination properties no row may assume ===");
+	const survey = host => lua(host, "local names = {}\n"
+		+ "for _, p in pairs(game.players) do names[#names + 1] = p.name end\n"
+		+ "return { success = true, names = names, tick = game.tick }");
+	const sourceNames = asArray(survey(SOURCE_HOST).names ?? []);
+	const destAnswer = survey(DEST_HOST);
+	const destNames = asArray(destAnswer.names ?? []);
+	const destTick = Number(destAnswer.tick);
+
+	RUNTIME.sourcePlayer = sourceNames[0] ?? null;
+	if (RUNTIME.sourcePlayer === null) {
+		fail("host " + SOURCE_HOST + " has an EMPTY player roster, so last_user cannot be armed at all — "
+			+ "the row would report 'not exercised' rather than anything about the restore");
+	}
+	RUNTIME.lastUserDestExpect = destNames.includes(RUNTIME.sourcePlayer) ? RUNTIME.sourcePlayer : "nil";
+	say(`  source roster: [${sourceNames.join(", ")}] — arming last_user as ${JSON.stringify(RUNTIME.sourcePlayer)}`);
+	say(`  destination roster: [${destNames.join(", ")}] — last_user must therefore `
+		+ (RUNTIME.lastUserDestExpect === "nil"
+			? "DECLINE (that name is not a player there), so the transferred row asserts the decline and the "
+				+ "present/absent control pair below carries the restore proof"
+			: "RESTORE (that name resolves there)"));
+
+	if (!Number.isFinite(destTick) || destTick < CORPSE_DEATH_TICKS_AGO_MIN * 2) {
+		fail(`destination clock is ${destTick} ticks old, under the ${CORPSE_DEATH_TICKS_AGO_MIN * 2} this row `
+			+ "needs: a death older than the destination world clamps to tick 0, and a duration under the "
+			+ "~1000 ticks an import itself takes cannot be told apart from a corpse that was never restored");
+		RUNTIME.deathTicksAgo = CORPSE_DEATH_TICKS_AGO_MIN;
+		return;
+	}
+	RUNTIME.deathTicksAgo = Math.max(CORPSE_DEATH_TICKS_AGO_MIN,
+		Math.min(CORPSE_DEATH_TICKS_AGO_MAX, Math.floor(destTick / 2)));
+	say(`  destination clock: ${destTick} ticks — arming the corpse death at ${RUNTIME.deathTicksAgo} ticks ago `
+		+ "(half the destination's age, capped), which the destination can represent without clamping");
+}
+
+function checkProxyNilControl(host, placementById) {
 	const nilProxy = placementById.get("proxynil");
 	if (!nilProxy || !nilProxy.placed) {
 		fail("the nil-target proxy-container never placed on the source, so the control that proves the "
 			+ "relink pass does not FABRICATE a reference did not run");
 		return;
 	}
-	const absentName = `cfgattr-absent-${CLONE}`;
 	const answer = lua(host, `${platformLua(CLONE)}
 local out = { success = true }
 local found = s.find_entities_filtered{ name = 'proxy-container', position = { ${nilProxy.x}, ${nilProxy.y} }, radius = 0.3 }
@@ -606,6 +651,30 @@ out.nil_proxy_found = e ~= nil and e.valid
 if e and e.valid then
   out.nil_proxy_target = e.proxy_target_entity and e.proxy_target_entity.name or 'nil'
 end
+return out`);
+
+	if (answer.nil_proxy_found !== true) {
+		fail("the nil-target proxy-container did not arrive on the destination — the fabrication control "
+			+ "cannot be read");
+	} else if (answer.nil_proxy_target !== "nil") {
+		fail(`nil-target control: the arrived proxy-container reads proxy_target_entity = `
+			+ `${JSON.stringify(answer.nil_proxy_target)} — the relink pass INVENTED a reference the source `
+			+ "never had");
+	} else {
+		pass("nil-target control: a proxy-container exported with no target arrives with no target");
+	}
+}
+
+// Runs on the SOURCE clone, before the export scan, because the conditional under test is a property of
+// Deserializer.restore_entity_state rather than of either instance, and the present-name arm needs a host
+// whose roster is non-empty — which the destination's need not be. Both probe entities are destroyed in
+// the same call, so neither reaches the payload.
+function checkLastUserConditional(host, base) {
+	say("\n=== CONTROLS: the last_user conditional, both arms ===");
+	if (RUNTIME.sourcePlayer === null) return;
+	const absentName = `cfgattr-absent-${CLONE}`;
+	const answer = lua(host, `${platformLua(CLONE)}
+local out = { success = true }
 local probes = {}
 local function probe(label, user, x, y)
   local payload = { name = 'stone-wall', type = 'wall', position = { x = x, y = y },
@@ -621,29 +690,23 @@ local function probe(label, user, x, y)
     row.created = placed ~= nil and placed.valid
     if placed and placed.valid then
       row.last_user = placed.last_user and placed.last_user.name or 'nil'
-      placed.destroy()
+      row.removed = placed.destroy()
     end
   else
     row.call_error = tostring(res)
   end
   probes[#probes + 1] = row
 end
-probe('roster_name', game.players[1].name, ${base.x} + 27.5, ${base.y} + 1.5)
+probe('roster_name', '${RUNTIME.sourcePlayer}', ${base.x} + 27.5, ${base.y} + 1.5)
 probe('absent_name', '${absentName}', ${base.x} + 27.5, ${base.y} + 4.5)
 out.probes = probes
+out.walls_left = #s.find_entities_filtered{ name = 'stone-wall', area = { { ${base.x} + 27, ${base.y} + 1 }, { ${base.x} + 28, ${base.y} + 5 } } }
 return out`);
 
-	if (answer.nil_proxy_found !== true) {
-		fail("the nil-target proxy-container did not arrive on the destination — the fabrication control "
-			+ "cannot be read");
-	} else if (answer.nil_proxy_target !== "nil") {
-		fail(`nil-target control: the arrived proxy-container reads proxy_target_entity = `
-			+ `${JSON.stringify(answer.nil_proxy_target)} — the relink pass INVENTED a reference the source `
-			+ "never had");
-	} else {
-		pass("nil-target control: a proxy-container exported with no target arrives with no target");
+	if (answer.walls_left !== 0) {
+		fail(`${answer.walls_left} control probe entit(ies) survived their own cleanup and will ride the `
+			+ "export — the payload under test is no longer the rig the rest of this run describes");
 	}
-
 	const probes = new Map(asArray(answer.probes).map(row => [row.label, row]));
 	const roster = probes.get("roster_name");
 	const absent = probes.get("absent_name");
@@ -665,17 +728,17 @@ return out`);
 			+ `on this instance (${JSON.stringify(roster.armed_name)}) — with the positive arm dead, the `
 			+ "absent-name arm below proves nothing");
 	} else if (roster.call_ok && roster.created) {
-		pass(`last_user positive arm: a captured name present on the destination restores `
+		pass(`last_user positive arm: a captured name present in this instance's roster restores `
 			+ `(${JSON.stringify(roster.last_user)})`);
 	}
 	if (absent.call_ok && absent.created) {
 		if (absent.last_user !== "nil") {
-			fail(`last_user absent_name: the destination attributed ${JSON.stringify(absent.last_user)} to an `
+			fail(`last_user absent_name: the restore attributed ${JSON.stringify(absent.last_user)} to an `
 				+ `entity whose captured name (${JSON.stringify(absentName)}) is NOT a player here — a wrong `
 				+ "person is worse than nobody");
 		} else {
-			pass("last_user negative arm: a captured name absent from the destination roster leaves the "
-				+ "entity unattributed, with no error");
+			pass("last_user negative arm: a captured name absent from the roster leaves the entity "
+				+ "unattributed, with no error");
 		}
 	}
 }
@@ -702,6 +765,7 @@ async function main() {
 	}
 	say(`fixture '${FIXTURE}' resolved to index ${fixtureIndex} on host ${SOURCE_HOST}`);
 
+	measureEnvironment();
 	checkInert();
 
 	try {
@@ -727,6 +791,8 @@ async function main() {
 					+ "every item-side attribute row reads that stack, so a short insert leaves them unexercised");
 			}
 		}
+
+		checkLastUserConditional(SOURCE_HOST, built.base);
 
 		const armedRows = asArray(built.armed);
 		const armedByKey = new Map(armedRows.map(row => [row.key, row]));
@@ -818,21 +884,24 @@ async function main() {
 		const destByKey = new Map(destRows.map(row => [row.key, row]));
 		for (const spec of surviving) {
 			const row = destByKey.get(spec.key);
+			const expected = spec.destExpect ?? spec.expect;
 			if (!row) {
 				fail(`${spec.key}: no destination row came back`);
 			} else if (!row.found) {
 				fail(`${spec.key}: '${spec.entity_name}' not found on the destination at ${spec.x},${spec.y}`);
-			} else if (!matches(spec, row.value, spec.expect)) {
+			} else if (!matches(spec, row.value, expected)) {
 				fail(`${spec.key}: destination reads ${JSON.stringify(row.value)}, expected `
-					+ `${JSON.stringify(spec.expect)} — the attribute did NOT survive the transfer`
+					+ `${JSON.stringify(expected)} — the attribute did NOT survive the transfer`
 					+ `${spec.describe ? ` (${spec.describe})` : ""}`);
 			} else {
 				pass(`${spec.key} survived: ${spec.entity_name}@${spec.x},${spec.y} reads `
-					+ `${JSON.stringify(row.value)}`);
+					+ `${JSON.stringify(row.value)}`
+					+ (expected !== spec.expect ? ` (the destination roster cannot hold the armed value, so this `
+						+ `row asserts the measured ${JSON.stringify(expected)} decline)` : ""));
 			}
 		}
 
-		checkDestinationControls(DEST_HOST, built.base, placementById);
+		checkProxyNilControl(DEST_HOST, placementById);
 	} finally {
 		say("\n=== SWEEP ===");
 		for (const host of [SOURCE_HOST, DEST_HOST]) {
