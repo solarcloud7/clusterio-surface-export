@@ -4,11 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-  # No branch filter on pull_request, DELIBERATELY: with `branches: [main]` a STACKED PR (base = another
-  # feature branch) ran no CI at all — the cleanup-contract PR sat with zero checks while its base PR was
-  # open, and nothing said so. Every PR now runs the suite regardless of base; the merge-into-main gate is
-  # unchanged (the push run on main is still the authoritative post-merge check), and publishing is
-  # separately gated on v* tags, so a PR run can never publish.
+  # No branch filter, deliberately: a stacked PR (base = another feature branch) must still run CI.
   pull_request:
   workflow_dispatch:
 
@@ -22,9 +18,7 @@ env:
 
 jobs:
   # ===========================================================================
-  # Fast checks — lint + both unit-test packages, in PARALLEL with the cluster
-  # job so a broken lint or unit test reports in under a minute instead of
-  # after the ~4-minute cluster cycle (2026-08-04 audit item).
+  # Fast checks — lint + both unit-test packages, parallel to the cluster job.
   # ===========================================================================
   fast-checks:
     name: Fast checks (lint + unit)
@@ -42,9 +36,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
 
-      # --ignore-scripts: this job's OWN install must not fire the `prepare` lifecycle — `npm test`
-      # below runs its explicit build:node anyway, so letting prepare build too was the known
-      # double-build. (npm ci stall handling mirrors the integration job's, same 2026-07-19 incident.)
+      # --ignore-scripts: `npm test` runs its own build:node, so the prepare lifecycle would build twice.
       - name: Install (plugin, no lifecycle scripts)
         working-directory: ${{ env.PLUGIN_DIR }}
         timeout-minutes: 10
@@ -56,11 +48,8 @@ jobs:
         working-directory: ${{ env.PLUGIN_DIR }}
         run: npm run lint
 
-      # TWO DIFFERENT PACKAGES, deliberately both here (the trap this split had to not fall into):
-      # the plugin dir's npm test (builds dist/node, runs test/*.test.cjs) and the REPO ROOT's
-      # npm test (tests/**/*.test.mjs — lab-gallery manifest/meters/pins + testkit; pure node
-      # builtins, no install). The root glob is deliberate: `node --test tests/` would also execute
-      # tests/lab-gallery/test-foundation.mjs — a captured-layout DATA module, not a test.
+      # Two separate packages: the plugin's test/*.test.cjs and the repo root's tests/**/*.test.mjs.
+      # The root glob is required — `node --test tests/` would also run non-test data modules.
       - name: Test (plugin unit — message round-trip + wire contract)
         working-directory: ${{ env.PLUGIN_DIR }}
         run: npm test
@@ -89,16 +78,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
 
-      # Lint + unit moved to the parallel fast-checks job; this job builds because the CLUSTER
-      # mounts the plugin and must find a fresh dist/ (the container's prepare guard then skips).
+      # The cluster bind-mounts the plugin and must find a fresh dist/.
       - name: Build plugin
         working-directory: ${{ env.PLUGIN_DIR }}
-        # npm ci stalled twice on 2026-07-19 (registry metadata hangs) and, with no step timeout,
-        # each stall ate the full job budget before cancellation. Fail the step fast instead, give
-        # npm aggressive fetch retries, and allow one whole-command retry before going red.
-        # --ignore-scripts here too (review finding): on a clean runner the prepare lifecycle sees
-        # no dist/ and builds, then the explicit `npm run build` builds AGAIN — the known double
-        # build. The explicit build is the one this job means.
+        # Step timeout + fetch retries + one whole-command retry: an npm ci registry stall must fail
+        # fast rather than eat the job budget. --ignore-scripts so prepare does not build twice.
         timeout-minutes: 10
         run: |
           NPM_FLAGS="--ignore-scripts --fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
@@ -112,11 +96,8 @@ jobs:
           sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
       - name: Verify Clusterio image tag is pinned
-        # A GUARD, not a resolver. .env (from .env.example, one step above) is the single source for
-        # which base images this cluster runs, and compose interpolates it directly — nothing here
-        # needs the value. This step used to export it for the Factorio-bake build-arg; that consumer
-        # is gone, so only the assertion remains: fail early and clearly rather than let compose fail
-        # later with a bare interpolation error.
+        # A guard, not a resolver: compose interpolates .env directly. Fail here rather than let
+        # compose fail later with a bare interpolation error.
         run: |
           v=$(grep -E '^CLUSTERIO_IMAGE_TAG=' .env | head -1 | cut -d= -f2-)
           test -n "$v" || { echo "::error::CLUSTERIO_IMAGE_TAG missing from .env (.env.example)"; exit 1; }
@@ -124,19 +105,14 @@ jobs:
 
       - name: Verify both instances pin the same Factorio version
         run: |
-          # A GUARD, not a resolver. Nothing consumes the version any more — it used to feed the
-          # bake's FACTORIO_HEADLESS_TAG build-arg. What still matters is that host-1 and host-2
-          # AGREE: Clusterio downloads each instance's pinned version at runtime, so a mismatch
-          # silently makes the hosts fetch two different engines instead of failing.
+          # A guard, not a resolver: Clusterio downloads each instance's pinned version at runtime,
+          # so a host-1/host-2 mismatch silently fetches two different engines instead of failing.
           read_ver() {
             grep -oE '"factorio\.version"[^"]*"[0-9]+\.[0-9]+\.[0-9]+"' "$1" \
               | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
           }
           H1=docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json
           H2=docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/instance.json
-          # The Dockerfile leg of this guard went with the bake (there is no baked version to agree
-          # with any more). host-1 vs host-2 is still asserted — they must agree, or the two
-          # instances want different engines and Clusterio downloads two.
           v=$(read_ver "$H1")  || true
           v2=$(read_ver "$H2") || true
           test -n "$v"   || { echo "::error::could not resolve factorio.version from $H1"; exit 1; }
@@ -147,24 +123,12 @@ jobs:
           fi
           echo "Pinned Factorio version (host-1 == host-2): $v — Clusterio downloads it at runtime"
 
-      # No buildx, no Factorio bake. Clusterio downloads the mod-pack's target headless version at
-      # runtime into /opt/factorio (a multi-version parent) — the base image's DESIGNED path, not a
-      # workaround. Measured 2026-07-25: the download costs ~14s more than a pre-baked image, while
-      # the bake itself cost 86s per run with the cache warm. See docs/CI_CD.md.
-
-      # (The "Build ApiVersions-patched controller image" step is gone. It existed solely to sed
-      # Factorio "2.1" into alpha.25's @clusterio/lib ApiVersions so the seed-time upload of the
-      # 2.1-flagged surfexp_gateways mod would be accepted. alpha.27 ships "2.1" in the list, so the
-      # controller now runs the published image directly — no local tag, no override, one fewer
-      # image build per CI run.)
+      # No Factorio bake: Clusterio downloads the headless version at runtime. Measured 2026-07-25,
+      # the download costs ~14s while the bake cost 86s per run with the cache warm. See docs/CI_CD.md.
 
       - name: Create external factorio-client volume
         run: |
-          # docker-compose declares `factorio-client-2111` as an external volume (renamed in the
-          # Factorio 2.1.11 migration; the old shared `factorio-client` volume is the 2.0.77 client
-          # and belongs to a different project on the dev machine). CI has no Factorio credentials,
-          # so host-1 falls back to headless mode (auto-downloads the headless server) — but compose
-          # still mounts the volume, so it must exist or `up` fails with "external volume not found".
+          # compose declares this volume `external`, so `up` fails unless it already exists.
           docker volume create factorio-client-2111
 
       - name: Pull Docker images
@@ -175,34 +139,18 @@ jobs:
         run: |
           docker compose up -d
           echo "Waiting for cluster to be healthy..."
-          # Wait for controller health check (up to 120s)
+          # -qx: exact match. A substring match accepts the literal status "unhealthy".
           timeout 120 bash -c '
-            until docker inspect --format="{{.State.Health.Status}}" surface-export-controller 2>/dev/null | grep -q healthy; do
+            until docker inspect --format="{{.State.Health.Status}}" surface-export-controller 2>/dev/null | grep -qx healthy; do
               sleep 5
               echo "  Waiting for controller..."
             done
           '
           echo "Controller is healthy"
 
-      # The seed/start race this closes, measured in run 31893741832 (PR #219) and run
-      # 31903406947 attempt 1 (PR #224) — same signature both times:
-      #   1. host-2's clusteriohost dies on `Host.handleInstanceAssignInternalRequest` with an
-      #      unhandled `TypeError: The "path" argument must be of type string. Received null`
-      #      (@clusterio/host alpha.27, FactorioServer.dataPath with no Factorio installed yet).
-      #   2. The container restarts; the controller disconnects the dead duplicate session, so every
-      #      request pending on it rejects with `Error: Session Closed` — including this job's
-      #      `instance start-all`. The start is still DELIVERED (State: stopped -> starting).
-      #   3. That start beat the seed's `instance save upload` by 0.6s, so the saves dir was empty
-      #      and Clusterio generated `world.zip`. host-2 booted a blank world at tick 2188.
-      # The enabling condition is ours: Phase 1 below only requires both instances to be NAMED in
-      # `instance list`, which the seed satisfies at `instance create` — before assign, config and
-      # save upload. Waiting for the controller's own `.seed-complete` marker orders the seed's
-      # upload ahead of any start we drive, which is what actually removes the race.
-      #
-      # NOT the compose healthcheck: the base image's own healthcheck does require this marker, but
-      # compose must override it to the bare curl, because the hosts `depends_on: service_healthy`
-      # while seeding waits for those same hosts to connect — requiring the marker there deadlocks
-      # bring-up. The base image's reference compose makes the identical override.
+      # Orders the seed's save upload ahead of the `instance start-all` below, by waiting for the
+      # controller's `.seed-complete` marker. Not in the compose healthcheck: the hosts
+      # `depends_on: service_healthy` while seeding waits for those hosts, which would deadlock.
       - name: Wait for seeding, and verify both instances booted their seeded save
         run: |
           await_seeded_cluster() {
@@ -210,8 +158,7 @@ jobs:
             node tools/clusterio/ci-verify-seeded-boot.mjs || return $?
             return 0
           }
-          # -qx, not -q: `{{.State.Health.Status}}` is one of starting/healthy/unhealthy, and a
-          # substring match accepts "unhealthy" as healthy.
+          # -qx: exact match. A substring match accepts the literal status "unhealthy".
           wait_for_controller() {
             timeout 120 bash -c '
               until docker inspect --format="{{.State.Health.Status}}" surface-export-controller 2>/dev/null | grep -qx healthy; do
@@ -223,18 +170,14 @@ jobs:
           rc=0
           await_seeded_cluster || rc=$?
           if [ "$rc" -eq 0 ]; then exit 0; fi
-          # ONE retry, and only for the two bring-up signatures: 4 = seeding never finished,
-          # 40 = an instance booted a save docker/seed-data never shipped. Both are decided before
-          # the readiness gate and before any suite, and neither can be produced by the code under
-          # test — so this retry is structurally incapable of masking a regression. Any other exit
-          # is a real failure and goes red immediately.
+          # Retry only the two bring-up signatures: 4 = seeding never finished, 40 = an instance
+          # booted a save docker/seed-data never shipped. Any other exit goes red immediately.
           if [ "$rc" -ne 4 ] && [ "$rc" -ne 40 ]; then
             echo "::error::cluster seeding preflight failed with exit $rc — not a bring-up race; see the lines above"
             exit "$rc"
           fi
           echo "::warning::cluster bring-up hit the seed/start race (exit $rc) — rebuilding the cluster once."
-          # down -v, never restart: on a restart the controller re-seeds, but seed-instances.sh's
-          # idempotency check sees the instances already exist and returns before uploading any save.
+          # down -v, never restart: seed-instances.sh is idempotent and would skip the save upload.
           docker compose down -v
           docker compose up -d
           if ! wait_for_controller; then
@@ -252,15 +195,10 @@ jobs:
         run: |
           CTL="docker exec surface-export-controller npx clusterioctl --config=/clusterio/tokens/config-control.json"
 
-          # Phase 1: wait until BOTH instances are created & assigned. Seeding runs inside the
-          # controller entrypoint and can still be in flight after the controller health check
-          # passes, so the instances may not be in `instance list` yet. Waiting here decouples us
-          # from the seed script's own (racy) per-instance start.
+          # Phase 1: wait until BOTH instances are created & assigned — seeding runs in the
+          # controller entrypoint and can still be in flight after its health check passes.
           echo "Waiting for both instances to be created & assigned..."
-          # 60 -> 120. PRE-EXISTING tightness, NOT caused by removing the bake: this phase is
-          # controller-side seeding and never touched Factorio. It surfaced only because the bake
-          # measurement put a timer on the step — run 30180479602 spent ~52.5s here against the
-          # 60s limit, i.e. ~7s of headroom. Raised on the measurement, not on a hunch.
+          # 120s, not 60: run 30180479602 spent ~52.5s here, ~7s of headroom against the old 60s limit.
           if ! timeout 120 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
@@ -277,19 +215,12 @@ jobs:
           fi
           echo "Both instances are present."
 
-          # Phase 2: explicitly start them, retrying until both report running. The base image's
-          # seed fires `instance start` right after `instance assign`, before the host has created
-          # the instance dir, and swallows the failure with `|| true` — so an instance can silently
-          # stay `stopped`. `instance start-all` is the reliable, retryable equivalent: it (re)starts
-          # every `stopped` instance and is a no-op for running ones, so looping it converges. With
-          # no baked image, this phase includes Factorio's download — measured ~34s (see the TIMER
-          # lines below), not the sub-second start a pre-baked image gave.
+          # Phase 2: loop `instance start-all` until both report running — it (re)starts stopped
+          # instances and no-ops for running ones, so the seed's own racy start cannot leave one down.
           echo "Driving 'instance start-all' until both instances report running..."
           echo "TIMER instances-running START $(date -u +%H:%M:%S)"
-          # 90 -> 180. Instances DOWNLOAD Factorio here (no bake), which was measured at ~34s on a
-          # clean runner — well inside the old 90s. Doubled anyway because this phase now depends on
-          # factorio.com throughput, which we do not control. The TIMER lines bracket the phase so
-          # every run reports the real number instead of us guessing at it again.
+          # 180s, not 90: instances download Factorio here, measured ~34s on a clean runner, and the
+          # phase depends on factorio.com throughput. The TIMER lines bracket it so every run reports it.
           if ! timeout 180 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
@@ -346,14 +277,9 @@ jobs:
           echo "Both instances are RCON/plugin ready"
           $CTL instance list
 
-      # The REPO-ROOT dependencies, which the plugin's own `npm ci` above does not cover — they are a
-      # separate package.json (tools/tests territory, never bind-mounted into a container). Only the
-      # browser-driving canvas test needs them today, and it needs a real browser: every canvas bug
-      # that has bitten is geometry, and jsdom returns zeros from getBoundingClientRect, so a fake DOM
-      # would go green on exactly the class of bug this is here to catch.
-      #
-      # `--with-deps` pulls the OS libraries Chromium needs on a bare runner. Chromium only — nothing
-      # here is cross-browser, and the other two would triple the download for no assertion.
+      # The repo-root package.json, which the plugin's `npm ci` above does not cover. The canvas test
+      # needs a REAL browser — jsdom returns zeros from getBoundingClientRect, which is the geometry
+      # this test asserts on. Chromium only; `--with-deps` pulls its OS libraries on a bare runner.
       - name: Install repo-root test dependencies and browser
         timeout-minutes: 10
         run: |
@@ -361,23 +287,16 @@ jobs:
           npm ci $NPM_FLAGS || { echo "::warning::root npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
           npx playwright install --with-deps chromium
 
-      # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs} — the dir set is the single
-      # source of truth, so adding a test dir auto-wires it here (no per-test step to maintain; this replaced
-      # ~13 hand-listed steps that had already drifted — version-dispatch/name-collision-delete were missing).
-      # Node spawns pwsh for the .ps1 tests (ubuntu-latest ships both); each test's output folds under
-      # ::group:: in the log. Runs everything, then fails the job if any test failed.
+      # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs}: the dir set is the
+      # single source of truth, so adding a test dir wires it in here with no step to maintain.
       - name: Run integration suite
         run: node tools/tests/run-integration-tests.mjs
 
       - name: Collect logs on failure
         if: failure()
         run: |
-          # Surface the start-failure reason first. The most common opaque failure is the host
-          # rejecting an instance before Factorio launches (e.g. Clusterio's findVersion()
-          # throwing "Unable to find Factorio version X" when the downloaded/installed version does
-          # not match the instance's pinned factorio.version) — that throw lands in the HOST
-          # log, NOT factorio-current.log (which stays empty). Earlier runs truncated it with
-          # `--tail 100`; we now grep the FULL host logs for it and dump instance status.
+          # Instance status and the FULL host logs come first: a host that rejects an instance before
+          # Factorio launches logs the reason here, not in factorio-current.log (which stays empty).
           echo "=== Instance status (look for 'errored'/'stopped' + the reason) ==="
           docker exec surface-export-controller \
             npx clusterioctl --config=/clusterio/tokens/config-control.json instance list 2>&1 || true
@@ -408,10 +327,8 @@ jobs:
       - name: Capture failing repro (payload + save) for local debugging
         if: failure()
         run: |
-          # The busy held-item loss only reproduces in CI's platform state. Capture the re-importable payload
-          # (debug_source_platform_*.json = the serialized clone the transfer imports) and the host-2 save
-          # (failed dest left deactivated on gate failure) so we can repro + interrogate the failing inserters
-          # locally instead of guessing via 4-minute CI pushes. See plan / tests/inserter-lab/NOTEBOOK.md.
+          # Capture the re-importable payload and the host-2 save so a CI-only failure can be
+          # reproduced locally instead of through repeated CI pushes.
           mkdir -p ci-artifacts/host1-script-output ci-artifacts/host2-script-output ci-artifacts/host2-saves
           docker cp surface-export-host-1:/clusterio/data/instances/clusterio-host-1-instance-1/script-output/. ci-artifacts/host1-script-output/ 2>/dev/null || true
           docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/script-output/. ci-artifacts/host2-script-output/ 2>/dev/null || true
