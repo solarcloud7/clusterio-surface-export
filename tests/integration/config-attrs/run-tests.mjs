@@ -6,8 +6,9 @@
 // produces: per-attribute SOURCE arming and DESTINATION physical readback, a gate verdict read
 //           before any destination read, a DECLARED-INERT line (with the live prototype predicate
 //           that decided it) for attributes no prototype supports at this pin, the measured
-//           destination roster and clock, and a control section: the last_user conditional's
-//           present/absent arms and a nil-target proxy-container read on the destination
+//           destination roster and clock, a per-side copper readback on the wired power switch,
+//           and a control section: the last_user conditional's present/absent arms and a
+//           nil-target proxy-container read on the destination
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
@@ -68,6 +69,8 @@ const RIG_ENTITIES = [
 	{ id: "proxy", name: "proxy-container", dx: 25.5, dy: 7.5 },
 	{ id: "proxynil", name: "proxy-container", dx: 25.5, dy: 10.5 },
 	{ id: "pswitch", name: "power-switch", dx: 4.5, dy: 20.5 },
+	{ id: "poleleft", name: "small-electric-pole", dx: 2.5, dy: 22.5 },
+	{ id: "poleright", name: "small-electric-pole", dx: 10.5, dy: 22.5 },
 	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
 ];
 
@@ -152,6 +155,24 @@ local function auto_target_key(e)
   local p = e.vehicle_automatic_targeting_parameters
   if p == nil then return "nil" end
   return string.format("%s|%s", tostring(p.auto_target_without_gunner), tostring(p.auto_target_with_gunner))
+end
+local function copper_side_key(e, connector_id)
+  local c = e.get_wire_connector(connector_id, false)
+  if c == nil then return "nil" end
+  local parts = {}
+  for _, conn in ipairs(c.connections) do
+    local owner = conn.target and conn.target.owner
+    if owner and owner.valid then
+      parts[#parts + 1] = string.format("%s@%.2f,%.2f", owner.name, owner.position.x, owner.position.y)
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, "+")
+end
+local function switch_copper_key(e)
+  return string.format("L=[%s] R=[%s]",
+    copper_side_key(e, defines.wire_connector_id.power_switch_left_copper),
+    copper_side_key(e, defines.wire_connector_id.power_switch_right_copper))
 end
 local function item_sections_key(v)
   if v == nil then return "nil" end
@@ -407,6 +428,31 @@ const ATTRS = [
 		key: "power_switch_state", attribute: "power_switch_state", on: "pswitch",
 		write: "e.power_switch_state = not e.power_switch_state",
 		read: BOOL_READ("power_switch_state"), dynamicExpect: true,
+		describe: "the switch carries a pole on each copper side, so this row reads the state AFTER the "
+			+ "connection pass: restore_entity_state writes power_switch_state while the entity is created "
+			+ "(entity_creation.lua:106) and the copper wires are re-established in a later phase "
+			+ "(entity_state_restoration.lua:49-65). This row is armed before the wiring row below, so a "
+			+ "state the wiring itself destroys is caught by the pre-export re-read as source decay rather "
+			+ "than reported here as a restore defect",
+	},
+	{
+		key: "power_switch_copper", attribute: "power_switch_left_copper + power_switch_right_copper",
+		on: "pswitch",
+		write: "local left = e.get_wire_connector(defines.wire_connector_id.power_switch_left_copper, true)\n"
+			+ "local right = e.get_wire_connector(defines.wire_connector_id.power_switch_right_copper, true)\n"
+			+ "left.disconnect_all()\n"
+			+ "right.disconnect_all()\n"
+			+ "left.connect_to(ents.poleleft.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)\n"
+			+ "right.connect_to(ents.poleright.get_wire_connector(defines.wire_connector_id.pole_copper, true), false)",
+		read: "return switch_copper_key(e)", dynamicExpect: true,
+		describe: "each side is compared as the set of target NAMES and POSITIONS — the destination entities "
+			+ "are different engine objects, so unit_number cannot key the comparison. The sides are read "
+			+ "separately because defines.wire_connector_id.pole_copper and power_switch_left_copper are both "
+			+ "5 at this pin, with power_switch_right_copper 6 (measured 2026-08-15 at 2.1.11 by enumerating "
+			+ "the defines table): a connector id alone does not say which side of a switch a wire landed on, "
+			+ "so a union-keyed comparison would read a wire moved between sides as intact. The two poles "
+			+ "stand 8.0 apart, past a small-electric-pole's 7.5 wire reach (get_max_wire_distance, same "
+			+ "pin), so the only copper on the rig is the pair this row makes",
 	},
 	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
