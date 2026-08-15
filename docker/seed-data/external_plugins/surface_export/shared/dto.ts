@@ -211,6 +211,10 @@ export interface ImportMetrics {
 	entities_mapped?: number;
 	fluids_restored: number;
 	belt_items_restored: number;
+	belt_state_applied?: number;
+	belt_state_unmatched?: number;
+	belt_state_failed?: number;
+	belt_state_merge_discarded?: number;
 	circuits_connected: number;
 	total_items: number;
 	total_fluids: number;

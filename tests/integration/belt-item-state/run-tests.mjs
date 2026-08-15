@@ -6,8 +6,9 @@
 // produces: per-row SOURCE arming with the fresh default measured first, a pre-export re-read,
 //           the gate verdict read before any destination read (bound to this clone by name), a
 //           DESTINATION physical readback taken off the arrived belt stack itself, a PAIR row of
-//           two same-item stacks with different state on ONE line, and the destination's own
-//           applied/unmatched/failed counters read back from its log, bound to this clone by name
+//           two same-item stacks with different state on ONE line, the destination's own
+//           applied/unmatched/failed counters read back from its log, bound to this clone by name,
+//           and those same counters re-read from the persisted summary.import by transferId
 // does not: read the export payload (payload presence is not restoration); assert item or fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           cover blueprint CONTENT (export_string has no belt restore path); cover the
@@ -51,6 +52,12 @@ const PAIR_HEALTHS = [0.25, 0.75];
 const PAIR_EXPECT = PAIR_HEALTHS.map(h => h.toFixed(4)).sort();
 const STATE_LOG_MARKER = `[BeltRestoration] ITEM STATE ${CLONE}:`;
 const STATE_LOG_ATTEMPTS = 10;
+const STORED_COUNTER_FIELDS = {
+	belt_state_applied: "applied",
+	belt_state_unmatched: "unmatched",
+	belt_state_failed: "failed",
+	belt_state_merge_discarded: "mergeDiscarded",
+};
 
 const COLOR_READ = expr => `(function() local c = ${expr} `
 	+ `return c and string.format("%.2f/%.2f/%.2f", c.r, c.g, c.b) or "nil" end)()`;
@@ -365,7 +372,7 @@ function adjudicateGate() {
 		fail(`the newest transaction log record names ${JSON.stringify(named ? named[1] : null)}, not `
 			+ `'${CLONE}' — on a shared cluster that verdict belongs to someone else's transfer and cannot `
 			+ "adjudicate this one");
-		return false;
+		return null;
 	}
 	const result = summary.match(/"result": "(\w+)"/);
 	const validation_success = result !== null && result[1] === "SUCCESS";
@@ -373,8 +380,54 @@ function adjudicateGate() {
 	if (!validation_success) {
 		fail("the transfer did not pass the gate — destination reads below would describe a rolled-back "
 			+ `or partial import, not a restoration (summary: ${summary.slice(0, 400)})`);
+		return null;
 	}
-	return validation_success;
+	const identified = summary.match(/"transferId": "([^"]+)"/);
+	if (identified === null) {
+		fail(`the verdict for '${CLONE}' carries no transferId — every read below would have to say 'latest', `
+			+ "which on a shared cluster moves to whatever transfer lands next");
+		return null;
+	}
+	return identified[1];
+}
+
+function storedField(transferId, field) {
+	const out = execFileSync("node",
+		["tools/tests/testkit/cli.mjs", "log", transferId, "--field", field, "--json"],
+		{ encoding: "utf8", timeout: 120_000, cwd: REPO_ROOT });
+	return JSON.parse(out).value;
+}
+
+function adjudicateStoredCounters(transferId, counters) {
+	let stored;
+	let applied;
+	try {
+		stored = storedField(transferId, "summary.import");
+		applied = storedField(transferId, "summary.import.belt_state_applied");
+	} catch (error) {
+		console.error(error && error.stack ? error.stack : error);
+		fail(`reading the persisted counters of ${transferId} failed: ${error.message} `
+			+ `${String(error.stderr || "").trim().slice(-300)} — the counters reach the controller's raw `
+			+ "event, but only enter summary.import if buildImportMetrics carries them, and summary.import "
+			+ "is what an operator and testkit log actually read");
+		return;
+	}
+	for (const [field, prop] of Object.entries(STORED_COUNTER_FIELDS)) {
+		if (stored[field] !== counters[prop]) {
+			fail(`summary.import.${field} reads ${JSON.stringify(stored[field])}, the destination's own log `
+				+ `line says ${counters[prop]} — the store is the only copy that outlives the instance log, `
+				+ "so a disagreement here is the number every later reader gets");
+			return;
+		}
+	}
+	if (applied !== counters.applied) {
+		fail(`the dotted query path summary.import.belt_state_applied answers ${JSON.stringify(applied)}, `
+			+ `not the ${counters.applied} the destination reported`);
+		return;
+	}
+	pass(`summary.import carries applied=${stored.belt_state_applied} `
+		+ `unmatched=${stored.belt_state_unmatched} failed=${stored.belt_state_failed} `
+		+ `merge-discarded=${stored.belt_state_merge_discarded}, each agreeing with the destination's log line`);
 }
 
 async function readStateCounters(host) {
@@ -523,7 +576,9 @@ async function main() {
 		}
 		say(`  arrived on host ${DEST_HOST} at index ${arrived}, source copy gone`);
 
-		if (!adjudicateGate()) return;
+		const transferId = adjudicateGate();
+		if (transferId === null) return;
+		say(`  transaction log record: ${transferId}`);
 
 		say("\n=== DESTINATION: physical readback off the arrived belt stack ===");
 		const destByKey = new Map(asArray(readRows(DEST_HOST, CLONE).rows).map(row => [row.key, row]));
@@ -578,6 +633,11 @@ async function main() {
 		} else {
 			pass(`item state applied ${counters.applied}x with 0 unmatched, 0 failed, `
 				+ `${counters.mergeDiscarded} merge-discarded`);
+		}
+
+		if (counters !== null) {
+			say("\n=== STORE: the same counters through the testkit query path ===");
+			adjudicateStoredCounters(transferId, counters);
 		}
 	} finally {
 		say("\n=== SWEEP ===");
