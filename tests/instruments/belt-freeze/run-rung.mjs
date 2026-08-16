@@ -2,25 +2,36 @@
 // belt-freeze — what actually stops a transport belt at this engine pin?
 //
 // requires: a running surface-export cluster with a platform whose transport belts carry MOVING items
-// produces: per-arm moved/still belt counts on a throwaway clone, and a REPRODUCED / DIVERGED verdict
-//           for each of: paused-platform advance, disabled_by_script on a belt, circuit enable/disable
+// produces: per-arm moved/still belt counts on a throwaway clone, a REPRODUCED / DIVERGED verdict
+//           for each of: paused-platform advance, disabled_by_script on a belt, circuit enable/disable,
+//           and a counted, logged retry of the circuit arm (arm-selection.mjs decides; the verdict
+//           itself is never retried)
 // does not: measure belt RESTORATION fidelity, exercise the import path's freeze window, assert
 //           anything about item conservation, or touch a protected fixture (it clones and sweeps).
 //           The wired arm's platform-wide "still moving" count is NOT a control arm: a saturated
 //           loop jams behind a stopped belt, so that number goes to zero for a lawful reason.
 
 import { createBatchLifecycle } from "../../lab-gallery/batch-lifecycle.mjs";
+import { ARM_ATTEMPT_LIMIT, buildCandidatePool, planNextAttempt } from "./arm-selection.mjs";
 
 const L = createBatchLifecycle({
 	goldenSourceSave: "unused.zip", goldenDestSave: "unused.zip", markerPrefix: "beltfreeze",
 });
 const HOST = 1;
-const CLONE = `beltfreeze-${Date.now().toString(36)}`;
+const CLONE_STAMP = Date.now().toString(36);
 const WINDOW_MS = 4000;
 const MIN_WINDOW_TICKS = 60;
 const WIRE_PAIRS = 6;
+const MOVED_UNITS_CAP = 500;
 const CLONE_WAIT_MS = 180_000;
 const EXPECTED_FACTS = 3;
+
+const clones = [];
+function nextCloneName() {
+	const name = clones.length === 0 ? `beltfreeze-${CLONE_STAMP}` : `beltfreeze-${CLONE_STAMP}r${clones.length + 1}`;
+	clones.push(name);
+	return name;
+}
 
 const say = (...a) => console.log(...a);
 const problems = [];
@@ -104,7 +115,7 @@ for _, e in pairs(belts()) do
     local sig = line_sig(e)
     if sig ~= prev then
       moved = moved + 1
-      if #moved_units < 200 then moved_units[#moved_units + 1] = e.unit_number end
+      if #moved_units < ${MOVED_UNITS_CAP} then moved_units[#moved_units + 1] = e.unit_number end
       if frozen[e.unit_number] then frozen_moved = frozen_moved + 1
       elseif not partners[e.unit_number] then control_moved = control_moved + 1 end
     else
@@ -180,6 +191,39 @@ return { success = true, selected = #wire_pairs, candidates = #units,
   rejected_wired = rejected_wired, rejected_status = rejected_status, wire_pairs = wire_pairs }
 `;
 
+const ARM_SELECTED = PRE + `
+local m = by_unit()
+local armed = 0
+for u in pairs(st.frozen or {}) do
+  local e = m[u]
+  if e then
+    local cb = e.get_or_create_control_behavior()
+    cb.circuit_enable_disable = true
+    cb.circuit_condition = { comparator = '<',
+      first_signal = { type = 'virtual', name = 'signal-A' }, constant = 0 }
+    armed = armed + 1
+  end
+end
+return { success = true, armed = armed }
+`;
+
+const DISARM = PRE + `
+local m = by_unit()
+local cleared, missing = 0, 0
+for _, pr in ipairs(st.wire_pairs or {}) do
+  local e = m[pr.belt]
+  if e then
+    e.get_or_create_control_behavior().circuit_enable_disable = false
+    cleared = cleared + 1
+  else missing = missing + 1 end
+end
+st.frozen = nil
+st.partners = nil
+st.wire_pairs = nil
+st.last_movers = nil
+return { success = true, cleared = cleared, missing = missing }
+`;
+
 const NARROW_TO_MOVERS = PRE + `
 local movers = {}
 for _, u in ipairs(st.last_movers or {}) do movers[u] = true end
@@ -231,19 +275,78 @@ async function snapshotAndMeasure(label) {
 }
 
 async function cloneFixture(sourceIndex, sourceName) {
-	const queued = lua(`local r = remote.call('surface_export', 'clone_platform', ${sourceIndex}, '${CLONE}')
+	const clone = nextCloneName();
+	const queued = lua(`local r = remote.call('surface_export', 'clone_platform', ${sourceIndex}, '${clone}')
 		if not r or r.success ~= true then return { success = false, error = tostring(r and r.error or 'no answer') } end
 		return { success = true, job_id = r.job_id, entity_count = r.entity_count }`);
-	say(`clone of '${sourceName}' [${sourceIndex}] -> ${CLONE}: job=${queued.job_id} entities=${queued.entity_count}`);
+	say(`clone of '${sourceName}' [${sourceIndex}] -> ${clone}: job=${queued.job_id} entities=${queued.entity_count}`);
 	const deadline = Date.now() + CLONE_WAIT_MS;
 	while (Date.now() < deadline) {
 		const state = lua(`local idx
-			for _, pl in pairs(game.forces.player.platforms) do if pl.name == '${CLONE}' then idx = pl.index end end
+			for _, pl in pairs(game.forces.player.platforms) do if pl.name == '${clone}' then idx = pl.index end end
 			return { success = true, jobs = table_size(storage.async_jobs or {}), index = idx or -1 }`);
-		if (state.index > 0 && state.jobs === 0) return state.index;
+		if (state.index > 0 && state.jobs === 0) {
+			lua(`storage.__belt_freeze_rung.platform = ${state.index}
+				storage.__belt_freeze_rung.snap = nil
+				storage.__belt_freeze_rung.frozen = nil
+				storage.__belt_freeze_rung.partners = nil
+				storage.__belt_freeze_rung.wire_pairs = nil
+				storage.__belt_freeze_rung.last_movers = nil
+				return { success = true }`);
+			return state.index;
+		}
 		await L.sleep(3000);
 	}
-	throw new Error(`clone '${CLONE}' did not materialize within ${CLONE_WAIT_MS} ms`);
+	throw new Error(`clone '${clone}' did not materialize within ${CLONE_WAIT_MS} ms`);
+}
+
+function dropClone(name) {
+	const dropped = L.lua(HOST, `local removed = 0
+		for _, pl in pairs(game.forces.player.platforms) do
+		  if pl.valid and pl.name == '${name}' then
+		    if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end
+		    removed = removed + 1
+		  end
+		end
+		return { success = true, removed = removed }`);
+	say(`  discarded the jammed clone ${name}: ${JSON.stringify(dropped)}`);
+}
+
+async function runCircuitArm(attempt, pool, priorControl) {
+	lua(`storage.__belt_freeze_rung.moved_units = {${pool.join(",")}}
+		return { success = true }`);
+	const selection = nums(lua(SELECT_WIRE_SET),
+		["selected", "candidates", "rejected_wired", "rejected_status"]);
+	say(`  wire set (attempt ${attempt}/${ARM_ATTEMPT_LIMIT}): ${selection.selected} belt(s) chosen from ` +
+		`${selection.candidates} that MEASURED MOVING (rejected ${selection.rejected_wired} already-wired, ` +
+		`${selection.rejected_status} not status=working)`);
+	if (selection.selected === 0) {
+		return { ok: false, failure: "no-selection", control: priorControl,
+			message: "ARM D/E INVALID: no moving, unwired belt had a moving-range unwired belt neighbour, so the " +
+				"wire variable cannot be flipped. The circuit fact is NOT measured this run." };
+	}
+	const armedStatus = nums(lua(ARM_SELECTED), ["armed"]);
+	await L.sleep(1000);
+	const statusNoWire = lua(FROZEN_STATUS);
+	say(`  armed=${armedStatus.armed} status(no wire)=${JSON.stringify(statusNoWire.statuses)}`);
+	if (statusNoWire.statuses?.working !== selection.selected) {
+		return { ok: false, terminal: true,
+			message: `ARM D INVALID: ${selection.selected} armed belts should all read status=working before any ` +
+				`wire exists; got ${JSON.stringify(statusNoWire.statuses)}. The wire variable is not isolated — ` +
+				"a candidate carries a circuit connection this selection failed to exclude." };
+	}
+	const armD = await snapshotAndMeasure(`ARM D armed, no wire (attempt ${attempt})`);
+	lua(`storage.__belt_freeze_rung.last_movers = {${(armD.moved_units ?? []).join(",")}}
+		return { success = true }`);
+	const narrowed = nums(lua(NARROW_TO_MOVERS), ["kept", "dropped"]);
+	say(`  measured set narrowed to the ${narrowed.kept} armed belt(s) that MOVED in ARM D ` +
+		`(${narrowed.dropped} dropped)`);
+	const control = { moved: armD.control_moved, tracked: armD.control_moved + armD.control_still };
+	if (narrowed.kept === 0) {
+		return { ok: false, failure: "armed-set-still", control, armD,
+			message: "ARM E INVALID: no armed belt moved in ARM D, so a later stillness proves nothing about the wire." };
+	}
+	return { ok: true, selection, statusNoWire, armD, narrowed };
 }
 
 let baseline = null;
@@ -256,7 +359,6 @@ function verdict(id, claim, status, evidence) {
 }
 
 async function main() {
-	let cloneIndex = null;
 	try {
 		baseline = lua(`return { success = true,
 			jobs = table_size(storage.async_jobs or {}),
@@ -288,12 +390,7 @@ async function main() {
 		say(`  fixture selected: [${source.index}] ${source.name}`);
 
 		say("\n=== clone ===");
-		cloneIndex = await cloneFixture(source.index, source.name);
-		lua(`storage.__belt_freeze_rung.platform = ${cloneIndex}
-			storage.__belt_freeze_rung.snap = nil
-			storage.__belt_freeze_rung.frozen = nil
-			storage.__belt_freeze_rung.partners = nil
-			return { success = true }`);
+		await cloneFixture(source.index, source.name);
 
 		say("\n=== ARM A (control): clone UNPAUSED — can the instrument see motion at all? ===");
 		const unpaused = lua(PRE + "p.paused = false return { success = true, paused = p.paused }");
@@ -355,52 +452,58 @@ async function main() {
 		if (!Array.isArray(armA.moved_units) || armA.moved_units.length === 0) {
 			throw new Error(`ARM A returned no moved-belt list to draw a wire set from: ${JSON.stringify(armA.moved_units)}`);
 		}
-		lua(`storage.__belt_freeze_rung.moved_units = {${armA.moved_units.join(",")}}
-			return { success = true }`);
-		const selection = nums(lua(SELECT_WIRE_SET),
-			["selected", "candidates", "rejected_wired", "rejected_status"]);
-		say(`  wire set: ${selection.selected} belt(s) chosen from ${selection.candidates} that MEASURED MOVING ` +
-			`(rejected ${selection.rejected_wired} already-wired, ${selection.rejected_status} not status=working)`);
-		if (selection.selected === 0) {
-			fail("ARM D/E INVALID: no moving, unwired belt had a moving-range unwired belt neighbour, so the " +
-				"wire variable cannot be flipped. The circuit fact is NOT measured this run.");
-			return;
+		let priorMovers = armA.moved_units;
+		let freshMovers = armC.moved_units ?? [];
+		let control = { moved: armC.control_moved, tracked: armC.control_moved + armC.control_still };
+		let attempt = 1;
+		let retries = 0;
+		let arm = null;
+		while (arm === null) {
+			const candidates = buildCandidatePool({ priorMovers, freshMovers });
+			say(`  candidate pool: ${candidates.pool.length} belt(s) — ${candidates.persisted} moved in BOTH of ` +
+				`the last two windows, ${candidates.freshOnly} in the freshest window only, ` +
+				`${candidates.staleDropped} stale mover(s) dropped`);
+			const outcome = candidates.pool.length === 0
+				? { ok: false, failure: "no-selection", control,
+					message: "ARM D/E INVALID: not one belt moved in the window before arming, so there is no " +
+						"candidate to arm. The circuit fact is NOT measured this run." }
+				: await runCircuitArm(attempt, candidates.pool, control);
+			if (outcome.ok) { arm = outcome; break; }
+			if (outcome.terminal) { fail(outcome.message); return; }
+			const plan = planNextAttempt({ attempt, failure: outcome.failure, control: outcome.control });
+			say(`  !! ARM D/E attempt ${attempt} of ${ARM_ATTEMPT_LIMIT} INVALID (${outcome.failure}) -> ` +
+				`${plan.action}: ${plan.reason}`);
+			if (plan.action === "invalid") {
+				fail(`${outcome.message} [attempt ${attempt} of ${ARM_ATTEMPT_LIMIT}, ${retries} retry(ies) spent; ` +
+					`${plan.reason}]`);
+				return;
+			}
+			retries += 1;
+			attempt += 1;
+			if (plan.action === "reclone") {
+				const jammed = clones.at(-1);
+				await cloneFixture(source.index, source.name);
+				dropClone(jammed);
+				const rerun = lua(PRE + "p.paused = false return { success = true, paused = p.paused }");
+				if (rerun.paused !== false) throw new Error("retry clone did not unpause; the arm cannot be read");
+				await L.sleep(2000);
+				const qualified = await snapshotAndMeasure(`retry clone qualification (attempt ${attempt})`);
+				priorMovers = [];
+				freshMovers = qualified.moved_units ?? [];
+				control = { moved: qualified.control_moved,
+					tracked: qualified.control_moved + qualified.control_still };
+			} else {
+				const disarmed = nums(lua(DISARM), ["cleared", "missing"]);
+				say(`  disarmed the previous set before re-selecting: ${JSON.stringify(disarmed)}`);
+				priorMovers = freshMovers;
+				freshMovers = outcome.armD.moved_units ?? [];
+				control = outcome.control;
+			}
 		}
-		const armedStatus = nums(lua(PRE + `
-			local m = by_unit()
-			local armed = 0
-			for u in pairs(st.frozen) do
-			  local e = m[u]
-			  if e then
-			    local cb = e.get_or_create_control_behavior()
-			    cb.circuit_enable_disable = true
-			    cb.circuit_condition = { comparator = '<',
-			      first_signal = { type = 'virtual', name = 'signal-A' }, constant = 0 }
-			    armed = armed + 1
-			  end
-			end
-			return { success = true, armed = armed }`), ["armed"]);
-		await L.sleep(1000);
-		const statusNoWire = lua(FROZEN_STATUS);
-		say(`  armed=${armedStatus.armed} status(no wire)=${JSON.stringify(statusNoWire.statuses)}`);
-		if (statusNoWire.statuses?.working !== selection.selected) {
-			fail(`ARM D INVALID: ${selection.selected} armed belts should all read status=working before any ` +
-				`wire exists; got ${JSON.stringify(statusNoWire.statuses)}. The wire variable is not isolated — ` +
-				"a candidate carries a circuit connection this selection failed to exclude.");
-			return;
-		}
-		const armD = await snapshotAndMeasure("ARM D armed, no wire");
+		const { selection, statusNoWire, armD, narrowed } = arm;
+		say(`  ARM D read on attempt ${attempt} of ${ARM_ATTEMPT_LIMIT} (${retries} retry(ies) spent)`);
 
 		say("\n=== ARM E: the same belts, now with a REAL red wire ===");
-		lua(`storage.__belt_freeze_rung.last_movers = {${(armD.moved_units ?? []).join(",")}}
-			return { success = true }`);
-		const narrowed = nums(lua(NARROW_TO_MOVERS), ["kept", "dropped"]);
-		say(`  measured set narrowed to the ${narrowed.kept} armed belt(s) that MOVED in ARM D ` +
-			`(${narrowed.dropped} dropped)`);
-		if (narrowed.kept === 0) {
-			fail("ARM E INVALID: no armed belt moved in ARM D, so a later stillness proves nothing about the wire.");
-			return;
-		}
 		const wired = nums(lua(PRE + `
 			local m = by_unit()
 			local connected, failed = 0, 0
@@ -422,6 +525,7 @@ async function main() {
 			&& armE.frozen_moved === 0 && wired.failed === 0;
 		verdict("F3", "the one measured belt freeze is circuit enable/disable, and it needs a REAL wire",
 			(noWireIgnored && wireFroze) ? "REPRODUCED" : "DIVERGED",
+			`arm attempt ${attempt} of ${ARM_ATTEMPT_LIMIT}, ${retries} retry(ies) spent. ` +
 			`no wire: status=${JSON.stringify(statusNoWire.statuses)}, ` +
 			`${armD.frozen_moved}/${armD.frozen_moved + armD.frozen_still} armed belts moved over ` +
 			`${armD.window_ticks} ticks. wired (${wired.connected} red pair(s), ${wired.failed} failed): ` +
@@ -437,10 +541,11 @@ async function main() {
 		let swept = null;
 		try {
 			const deleted = L.lua(HOST, `
+				local ours = { ${clones.map(name => `['${name}'] = true`).join(", ")} }
 				local removed, strays = 0, 0
 				for _, pl in pairs(game.forces.player.platforms) do
 				  if pl.valid and pl.name:sub(1, 11) == 'beltfreeze-' then
-				    if pl.name == '${CLONE}' then
+				    if ours[pl.name] then
 				      if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end
 				      removed = removed + 1
 				    else strays = strays + 1 end
@@ -455,9 +560,10 @@ async function main() {
 			}
 			await L.sleep(5000);
 			swept = L.lua(HOST, `
+				local ours = { ${clones.map(name => `['${name}'] = true`).join(", ")} }
 				local leftover = 0
 				for _, pl in pairs(game.forces.player.platforms) do
-				  if pl.valid and pl.name == '${CLONE}' then leftover = leftover + 1 end
+				  if pl.valid and ours[pl.name] then leftover = leftover + 1 end
 				end
 				return { success = true, leftover = leftover,
 				  storage_cleared = storage.__belt_freeze_rung == nil,
@@ -467,13 +573,16 @@ async function main() {
 				  tick_paused = game.tick_paused == true }`);
 		} catch (error) {
 			console.error(error.stack || error.message);
-			fail(`cleanup RCON failed — ${CLONE} may still be on the cluster; ` +
+			fail(`cleanup RCON failed — ${clones.join(", ")} may still be on the cluster; ` +
 				"sweep with tools/tests/cleanup-test-surfaces.ps1");
 		}
 		say(`\ncleanup: ${JSON.stringify(swept)}`);
 		if (swept === null || swept.success !== true) fail(`cleanup did not answer: ${JSON.stringify(swept)}`);
 		else {
-			if (swept.leftover !== 0) fail(`${CLONE} is still on the cluster after delete_surface`);
+			if (swept.leftover !== 0) {
+				fail(`${swept.leftover} of this run's clone(s) (${clones.join(", ")}) are still on the cluster ` +
+					"after delete_surface");
+			}
 			if (swept.storage_cleared !== true) fail("storage.__belt_freeze_rung was not cleared");
 			for (const key of ["jobs", "locks", "holds"]) {
 				const before = baseline ? baseline[key] : 0;
