@@ -406,9 +406,6 @@ function Deserializer.restore_segmented_unit_state(entity, wanted)
       function() unit.activity_mode = wanted.activity_mode end)
   end
 
-  safe_call(string.format("speed for %s", entity.name),
-    function() unit.speed = 0 end)
-
   return true
 end
 
