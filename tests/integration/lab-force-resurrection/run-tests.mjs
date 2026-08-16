@@ -85,21 +85,26 @@ try {
 				.. (ok and tostring(e ~= nil and e.valid) or ('RAISED ' .. tostring(e)))
 			return ok and e or nil
 		end
-		local function belt_at(x, y, items, count)
-			local b = put{ name = 'transport-belt', position = { x, y }, direction = defines.direction.east, force = force }
-			if b then
-				for _ = 1, count do b.get_transport_line(1).insert_at_back({ name = items }) end
+		local function belt_at(x, y, direction)
+			return put{ name = 'transport-belt', position = { x, y }, direction = direction, force = force }
+		end
+		local function fill_line(entity, item, slots)
+			local placed = 0
+			if not entity then return 0 end
+			local line = entity.get_transport_line(1)
+			for i = 1, slots do
+				if line.insert_at(i * 0.25, { name = item }) then placed = placed + 1 end
 			end
-			return b
+			return placed
 		end
 		put{ name = 'wooden-chest', position = { 6.5, 2.5 }, force = force }
 		put{ name = 'wooden-chest', position = { 8.5, 2.5 }, force = force }
-		belt_at(14.5, 2.5, 'copper-plate', 3)
+		local filled_a = fill_line(belt_at(14.5, 2.5, defines.direction.east), 'copper-plate', 3)
 		local ca = put{ name = 'wooden-chest', position = { 16.5, 2.5 }, force = force }
 		if ca then ca.insert{ name = 'iron-plate', count = 7 } end
 		put{ name = 'wooden-chest', position = { 6.5, 8.5 }, force = force }
 		put{ name = 'wooden-chest', position = { 8.5, 8.5 }, force = force }
-		belt_at(14.5, 8.5, 'copper-plate', 3)
+		local filled_b = fill_line(belt_at(14.5, 8.5, defines.direction.east), 'copper-plate', 3)
 		local cb = put{ name = 'wooden-chest', position = { 16.5, 8.5 }, force = force }
 		if cb then cb.insert{ name = 'iron-plate', count = 9 } end
 		put{ name = 'wooden-chest', position = { 6.5, 14.5 }, force = force }
@@ -120,13 +125,17 @@ try {
 		put{ name = 'wooden-chest', position = { 6.5, 38.5 }, force = force }
 		put{ name = 'entity-ghost', inner_name = 'wooden-chest', position = { 14.5, 38.5 }, force = force }
 		put{ name = 'wooden-chest', position = { 6.5, 44.5 }, force = force }
-		belt_at(14.5, 44.5, 'iron-plate', 8)
-		belt_at(15.5, 44.5, 'iron-plate', 8)
-		belt_at(16.5, 44.5, 'iron-plate', 8)
+		local run_head = belt_at(14.5, 44.5, defines.direction.east)
+		belt_at(15.5, 44.5, defines.direction.east)
+		belt_at(16.5, 44.5, defines.direction.east)
+		local filled_run = fill_line(run_head, 'iron-plate', 11)
+		local run_length = run_head and run_head.get_transport_line(1).line_length or -1
 		local pl = game.get_player(${LAB_PLAYER})
 		local ghost = s.find_entities_filtered{ area = { { 14, 38 }, { 15, 39 } }, name = 'entity-ghost' }[1]
 		local proxy = s.find_entities_filtered{ area = { { 6, 32 }, { 7, 33 } }, name = 'item-request-proxy' }[1]
 		return { ok = true, surface = s.name, made = made,
+			filled = string.format('arm1=%d arm2=%d run=%d (run line_length %s)', filled_a, filled_b,
+				filled_run, tostring(run_length)),
 			player = (pl ~= nil and pl.valid), player_force = (pl and pl.force.name) or '',
 			ghost_unit_number = (ghost and ghost.unit_number) or -1,
 			proxy_unit_number = (proxy and proxy.unit_number) or -1,
@@ -136,6 +145,7 @@ try {
 	if (setup.ok !== true) throw new Error(`probe setup refused: ${setup.err}`);
 	const SURF = setup.surface;
 	note(`fixtures: ${asArray(setup.made).join(" ")}`);
+	note(`belt fill (items actually seated by insert_at): ${setup.filled}`);
 	if (setup.player !== true) {
 		throw new Error(`no player record at index ${LAB_PLAYER} on ${INSTANCE} — force_execute dereferences `
 			+ "player.force before it reaches any blocker branch, so every arm below would be unexercised");
@@ -311,9 +321,12 @@ try {
 		+ `undo_raised=${undo3.raised} | fluid before=${pipe3Before.amount} `
 		+ `after undo present=${pipe3After.present} amount=${pipe3After.amount}`);
 	check(force3.raised !== true && force3.outcome === "force_pasted" && pipe3After.present === true,
-		"arm 3 setup: the isolated pipe blocker was replaced and is back after undo (its fluid amount "
-		+ "is reported above, not asserted here)",
+		"arm 3 setup: the isolated pipe blocker was replaced and is back after undo",
 		`force=${force3.outcome || "(none)"} pipe_back=${pipe3After.present}`);
+	check(Math.abs(pipe3After.amount - pipe3Before.amount) < 1e-6,
+		"ARM 3 FLUID: an ISOLATED fluid blocker comes back with its fluid — the blocker snapshot's "
+		+ "fluid-segment registry is captured at destroy time and written on resurrection",
+		`before=${pipe3Before.amount} after=${pipe3After.amount}`);
 
 	// ---------------------------------------------------------------------------------------------
 	// Arm 4 — fluid, blocker connected to a pipe OUTSIDE the replaced set.
@@ -331,9 +344,13 @@ try {
 		+ `after undo=${pipe4aAfter.amount} | neighbour before=${pipe4bBefore.amount} `
 		+ `after force=${pipe4bMid.amount} after undo=${pipe4bAfter.amount}`);
 	check(force4.raised !== true && force4.outcome === "force_pasted" && pipe4aAfter.present === true,
-		"arm 4 setup: the connected pipe blocker was replaced and is back after undo (the fluid amounts "
-		+ "are reported above, not asserted here)",
+		"arm 4 setup: the connected pipe blocker was replaced and is back after undo",
 		`force=${force4.outcome || "(none)"} pipe_back=${pipe4aAfter.present}`);
+	check(pipe4aAfter.amount + pipe4bAfter.amount <= pipe4bMid.amount + 1e-6,
+		"ARM 4 FLUID: resurrecting a blocker whose fluid system rejoins the LIVE network creates no "
+		+ "fluid — run_restores skips the segment write whenever a restored fluidbox has a neighbour "
+		+ "outside the batch, so the pair holds what survived the force and not a written copy on top",
+		`survived the force=${pipe4bMid.amount} after undo=${pipe4aAfter.amount}+${pipe4bAfter.amount}`);
 
 	// ---------------------------------------------------------------------------------------------
 	// Arm 5 — a GUARDED blocker (foreign force). force skips the destroy; script placement does not
