@@ -1335,6 +1335,38 @@ local function restored_unit_numbers(entity_map)
   return restored
 end
 
+local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label)
+  local peers = payload_copper_peers(entity_data, entity_map, copper)
+  local connector = entity.get_wire_connector(copper, false)
+  if not connector then
+    return 0
+  end
+
+  local foreign = {}
+  for _, conn in ipairs(connector.real_connections) do
+    local peer_connector = conn.target
+    local peer = peer_connector and peer_connector.owner
+    if peer and peer.valid and peer.type == "electric-pole" and peer.unit_number
+      and restored[peer.unit_number] and not peers[peer.unit_number] then
+      foreign[#foreign + 1] = {
+        connector = peer_connector,
+        label = string.format("%s (%.1f, %.1f)", peer.name, peer.position.x, peer.position.y),
+      }
+    end
+  end
+
+  local removed_count = 0
+  for _, target in ipairs(foreign) do
+    if connector.disconnect_from(target.connector) then
+      removed_count = removed_count + 1
+    else
+      log(string.format("[Deserializer] pole copper prune DECLINED %s -> %s", label, target.label))
+    end
+  end
+
+  return removed_count
+end
+
 function Deserializer.prune_pole_copper(entities_to_create, entity_map)
   local copper = defines.wire_connector_id.pole_copper
   local restored = restored_unit_numbers(entity_map)
@@ -1343,35 +1375,13 @@ function Deserializer.prune_pole_copper(entities_to_create, entity_map)
   for _, entity_data in ipairs(entities_to_create) do
     local entity = entity_map[entity_data.entity_id]
     if entity and entity.valid and entity.type == "electric-pole" then
-      local peers = payload_copper_peers(entity_data, entity_map, copper)
-      local connector = entity.get_wire_connector(copper, false)
-      local foreign = {}
-
-      if connector then
-        for _, conn in ipairs(connector.real_connections) do
-          local peer_connector = conn.target
-          local peer = peer_connector and peer_connector.owner
-          if peer and peer.valid and peer.type == "electric-pole" and peer.unit_number
-            and restored[peer.unit_number] and not peers[peer.unit_number] then
-            foreign[#foreign + 1] = {
-              connector = peer_connector,
-              name = peer.name,
-              x = peer.position.x,
-              y = peer.position.y,
-            }
-          end
-        end
-      end
-
-      for _, target in ipairs(foreign) do
-        local ok, removed = pcall(function() return connector.disconnect_from(target.connector) end)
-        if ok and removed then
-          pruned = pruned + 1
-        else
-          log(string.format("[Deserializer] pole copper prune FAILED %s (%.1f, %.1f) -> %s (%.1f, %.1f): %s",
-            entity.name, entity.position.x, entity.position.y, target.name, target.x, target.y,
-            ok and "disconnect_from declined" or tostring(removed)))
-        end
+      local label = string.format("%s (%.1f, %.1f)", entity.name, entity.position.x, entity.position.y)
+      local ok, result = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label)
+      if ok then
+        pruned = pruned + result
+      else
+        log(string.format("[Deserializer] pole copper prune THREW for %s: %s — pole keeps its copper, import continues",
+          label, tostring(result)))
       end
     end
   end
