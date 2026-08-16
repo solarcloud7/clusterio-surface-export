@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [int[]]$Hosts = @(1, 2),
-    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe', 'hub-req-sections-', 'gwpark-probe', 'deleteprobe-', 'latchlive-', 'loaderfreeze-', 'beltfreeze-', 'cfgattr-', 'beltstate-'),
+    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe', 'hub-req-sections-', 'gwpark-probe', 'deleteprobe-', 'latchlive-', 'loaderfreeze-', 'beltfreeze-', 'cfgattr-', 'beltstate-', 'no-tick-sync-lab-', 'belt-r14-scratch', 'belt-r15-scratch', 'belt-iso-scratch', 'latch-rung-', 'else-rung-'),
     [switch]$IncludeUnknown,
     [switch]$DryRun
 )
@@ -58,6 +58,32 @@ foreach ($h in $Hosts) {
     Write-Host ("    {0} {1}: {2}" -f $verb, $res.names.Count, ($res.names -join ", ")) -ForegroundColor Green
 }
 
+$surfacesRemovedTotal = 0
+foreach ($h in $Hosts) {
+    $instance = "clusterio-host-$h-instance-1"
+    $prefixLua = ($Prefixes | ForEach-Object { "'" + ($_ -replace "'", "\'") + "'" }) -join ","
+    $protectedLua = ($protected | ForEach-Object { "['" + ($_ -replace "'", "\'") + "']=true" }) -join ", "
+    $deleteLua = if ($DryRun) { "" } else { "for _, s in ipairs(doomed) do game.delete_surface(s) end " }
+    $code = "local prefixes={$prefixLua} local protected={$protectedLua} local doomed, names = {}, {} " +
+        "for _, s in pairs(game.surfaces) do " +
+        "if s.valid and s.platform == nil and s.deletable and not protected[s.name] then " +
+        "for _, prefix in ipairs(prefixes) do " +
+        "if s.name:sub(1, #prefix) == prefix then doomed[#doomed+1]=s names[#names+1]=s.name break end end end end " +
+        $deleteLua +
+        "rcon.print(helpers.table_to_json({count=#names, names=names}))"
+    $raw = (Invoke-Lua -Instance $instance -Code $code) -join " "
+    $jsonMatch = [regex]::Match($raw, '\{.*\}')
+    if (-not $jsonMatch.Success) { throw "plain-surface sweep on host-$h returned no JSON: $raw" }
+    $surfaces = $jsonMatch.Value | ConvertFrom-Json
+    if ($surfaces.count -gt 0) {
+        $names = @($surfaces.names)
+        if (-not $DryRun) { Step-Tick -Instance $instance -Ticks 5 | Out-Null }
+        $verb = if ($DryRun) { "would remove" } else { "removed" }
+        $surfacesRemovedTotal += $surfaces.count
+        Write-Host ("  host-{0} plain surfaces: {1} {2}: {3}" -f $h, $verb, $surfaces.count, ($names -join ", ")) -ForegroundColor Green
+    }
+}
+
 $groupsRemovedTotal = 0
 foreach ($h in $Hosts) {
     $instance = "clusterio-host-$h-instance-1"
@@ -83,7 +109,7 @@ foreach ($h in $Hosts) {
 
 Write-Host ""
 $verb = if ($DryRun) { "Would remove" } else { "Removed" }
-Write-Host ("  {0} {1} platform(s) and {2} logistic group(s) across host(s) {3}." -f $verb, $removedTotal, $groupsRemovedTotal, ($Hosts -join ', ')) -ForegroundColor Cyan
+Write-Host ("  {0} {1} platform(s), {2} plain surface(s) and {3} logistic group(s) across host(s) {4}." -f $verb, $removedTotal, $surfacesRemovedTotal, $groupsRemovedTotal, ($Hosts -join ', ')) -ForegroundColor Cyan
 if ($unknownTotal -and -not $IncludeUnknown) {
     Write-Host ("  {0} UNKNOWN platform(s) left alone — re-run with -IncludeUnknown to sweep them." -f $unknownTotal) -ForegroundColor Red
 }

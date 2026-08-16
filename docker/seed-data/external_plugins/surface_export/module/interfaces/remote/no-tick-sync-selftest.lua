@@ -68,15 +68,55 @@ local function measure_baked_pair(opts)
 	}
 end
 
-local function no_tick_sync_selftest(opts)
-	if type(opts) == "table" and opts.mode == "measure_baked" then
-		return measure_baked_pair(opts)
+local function lab_surfaces()
+	local out = {}
+	for _, surface in pairs(game.surfaces) do
+		if surface.valid and surface.platform == nil and string.sub(surface.name, 1, #LAB_PREFIX) == LAB_PREFIX then
+			out[#out + 1] = surface
+		end
 	end
-	storage.no_tick_sync_lab = { started_tick = game.tick }
+	return out
+end
 
+local function sweep_stale_labs()
+	local record = storage.no_tick_sync_lab
+	local excused = nil
+	if type(record) == "table" and record.cleanup_queued == true then
+		excused = record.surface_name
+	end
+
+	local leaked, pending, seen = {}, {}, {}
+	for _, surface in ipairs(lab_surfaces()) do
+		local name = surface.name
+		seen[name] = true
+		if name == excused then
+			pending[#pending + 1] = name
+		else
+			leaked[#leaked + 1] = name
+		end
+		if surface.deletable then game.delete_surface(surface) end
+	end
+	return { leaked = leaked, pending = pending, seen = seen }
+end
+
+local function delete_scratch(surface, surface_name, seen)
+	local queued = surface.valid and surface.deletable and game.delete_surface(surface) == true
+	local record = storage.no_tick_sync_lab
+	if type(record) == "table" then
+		record.surface_name = surface_name
+		record.cleanup_queued = queued
+		record.cleanup_tick = game.tick
+	end
+
+	local strays = {}
+	for _, other in ipairs(lab_surfaces()) do
+		if other.name ~= surface_name and not seen[other.name] then strays[#strays + 1] = other.name end
+	end
+	return { queued = queued, strays = strays }
+end
+
+local function run_lab(surface)
 	local force = game.forces.player
-	local surface_name = LAB_PREFIX .. tostring(game.tick)
-	local surface = game.create_surface(surface_name, { width = 64, height = 64 })
 	surface.request_to_generate_chunks({0, 0}, 2)
 	surface.force_generate_chunk_requests()
 
@@ -160,6 +200,53 @@ local function no_tick_sync_selftest(opts)
 		validation_message = validation and (validation.mismatchDetails or validation.message) or nil,
 		validation = validation,
 	}
+end
+
+local function no_tick_sync_selftest(opts)
+	if type(opts) == "table" and opts.mode == "measure_baked" then
+		return measure_baked_pair(opts)
+	end
+
+	local entry = sweep_stale_labs()
+	local surface_name = LAB_PREFIX .. tostring(game.tick)
+	storage.no_tick_sync_lab = { started_tick = game.tick, surface_name = surface_name, cleanup_queued = false }
+	local surface = game.create_surface(surface_name, { width = 64, height = 64 })
+
+	local ok, result = pcall(run_lab, surface)
+	local cleanup = delete_scratch(surface, surface_name, entry.seen)
+	if not ok then
+		return {
+			status = "error",
+			reason = tostring(result),
+			surface = surface_name,
+			cleanup_queued = cleanup.queued,
+			leaked_surfaces = entry.leaked,
+			pending_surfaces = entry.pending,
+			stray_surfaces = cleanup.strays,
+		}
+	end
+
+	result.cleanup_queued = cleanup.queued
+	result.leaked_surfaces = entry.leaked
+	result.pending_surfaces = entry.pending
+	result.stray_surfaces = cleanup.strays
+
+	local leaks = {}
+	if not cleanup.queued then
+		leaks[#leaks + 1] = "scratch surface " .. surface_name .. " was not queued for deletion"
+	end
+	for _, name in ipairs(entry.leaked) do
+		leaks[#leaks + 1] = "surface left by an earlier run: " .. name
+	end
+	for _, name in ipairs(cleanup.strays) do
+		leaks[#leaks + 1] = "surface left by this run: " .. name
+	end
+	if #leaks > 0 and result.status == "passed" then
+		result.status = "leaked"
+		result.reason = table.concat(leaks, "; ")
+	end
+
+	return result
 end
 
 return no_tick_sync_selftest
