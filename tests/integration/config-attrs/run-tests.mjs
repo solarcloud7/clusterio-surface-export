@@ -8,6 +8,9 @@
 //           that decided it) for attributes no prototype supports at this pin, the measured
 //           destination roster and clock, a per-side copper readback on the wired power switch,
 //           copper readbacks on one out-of-reach WIRED pole pair and one in-reach UNWIRED pole pair,
+//           an out-of-reach pole pair wired at the SCRIPT origin whose destination row is read with
+//           the holding origin attached (source ':script' -> destination ':player'), which states
+//           the capture-side boundary as an expectation: the wire survives, its origin does not,
 //           the same two-arm dichotomy on GHOST poles (ghost-to-ghost and ghost-to-real, each read
 //           as all-wires vs real-wires-only), a GHOST WIRE FACTS section reporting each new pole's
 //           unit_number and the copper set create_entity alone produced, a REAL-PAIR GHOST WIRE
@@ -26,6 +29,9 @@
 //           UNEXERCISED red, never expects nil); read an IN-reach WIRED pair (create_entity
 //           auto-connects one, so it could not go red on loss); assert the pruned count itself
 //           (summary.import.copper_pruned reports it; these rows measure the resulting topology);
+//           exercise the prune against a FOREIGN script-origin wire — no producer of one exists on
+//           the destination with this mod-set, so that arm is measured by the pole-copper-prune
+//           instrument calling prune_pole_copper directly, not here;
 //           grade the prune log lines it prints (they are a discriminator for reading a red ghost
 //           row, not a verdict — the instance log spans earlier imports too); transfer the
 //           real-pair probe arms as assertions — those arms are a SOURCE-side engine measurement of
@@ -116,6 +122,8 @@ const RIG_ENTITIES = [
 	{ id: "rvctl2", name: "entity-ghost", innerName: "small-electric-pole", dx: 11.5, dy: 58.5 },
 	{ id: "rvnear1", name: "entity-ghost", innerName: "small-electric-pole", dx: 1.5, dy: 67.5 },
 	{ id: "rvnear2", name: "entity-ghost", innerName: "small-electric-pole", dx: 5.5, dy: 67.5 },
+	{ id: "polescript1", name: "small-electric-pole", dx: 1.5, dy: 76.5 },
+	{ id: "polescript2", name: "small-electric-pole", dx: 11.5, dy: 76.5 },
 ];
 
 const POLE = "small-electric-pole";
@@ -160,7 +168,8 @@ const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
 const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null,
-	poleCopperExpect: null, ghostCopperExpect: null, ghostRealCopperExpect: null };
+	poleCopperExpect: null, ghostCopperExpect: null, ghostRealCopperExpect: null,
+	scriptCopperExpect: null, scriptCopperDestExpect: null };
 
 const NO_COPPER = "";
 const asNoCopper = value => (value === "nil" ? NO_COPPER : value);
@@ -276,6 +285,26 @@ local function copper_wire_key(e, connector_id)
   local c = e.get_wire_connector(connector_id, false)
   if c == nil then return "nil" end
   return string.format("all=[%s] real=[%s]", wire_set_key(e, c.connections), wire_set_key(e, c.real_connections))
+end
+local copper_origin_names = { "player", "script" }
+local function copper_origin_key(e, connector_id)
+  local c = e.get_wire_connector(connector_id, false)
+  if c == nil then return "nil" end
+  local parts = {}
+  for _, conn in ipairs(c.real_connections) do
+    local owner = conn.target and conn.target.owner
+    if owner and owner.valid then
+      local held = {}
+      for _, name in ipairs(copper_origin_names) do
+        if c.is_connected_to(conn.target, defines.wire_origin[name]) then held[#held + 1] = name end
+      end
+      parts[#parts + 1] = string.format("%s@%.2f,%.2f:%s", owner.name,
+        owner.position.x - e.position.x, owner.position.y - e.position.y,
+        #held > 0 and table.concat(held, "+") or "none")
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, "+")
 end
 local function switch_copper_key(e)
   return string.format("L=[%s] R=[%s]",
@@ -707,6 +736,29 @@ const ATTRS = [
 			+ "the default and the harness fails this row as unexercised rather than passing it vacuously",
 	},
 	{
+		key: "pole_copper_script_origin", attribute: "pole_copper (wire present, SCRIPT origin)", on: "polescript1",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "local near = e.get_wire_connector(copper, true)\n"
+			+ "local far = ents.polescript2.get_wire_connector(copper, true)\n"
+			+ "near.disconnect_all()\n"
+			+ "far.disconnect_all()\n"
+			+ "near.connect_to(far, false, defines.wire_origin.script)",
+		read: "return copper_origin_key(e, defines.wire_connector_id.pole_copper)",
+		get expect() { return RUNTIME.scriptCopperExpect; },
+		get destExpect() { return RUNTIME.scriptCopperDestExpect; },
+		describe: "this row is the CAPTURE-side boundary of the copper prune, stated as an expectation rather "
+			+ "than left implicit: the wire survives the transfer and its ORIGIN does not. polescript1 and "
+			+ "polescript2 stand 10.0 apart, past the 7.5 wire reach, so no auto-connect can supply this wire "
+			+ "and the payload is the only thing that can put it on the destination. The source arms it at "
+			+ "defines.wire_origin.script; the destination is expected to read the same wire at the PLAYER "
+			+ "origin, because extract_circuit_connections records source_circuit_id / target_entity_id / "
+			+ "target_circuit_id and no origin field (measured in CI run 31959478373 at 2.1.11 by calling the "
+			+ "scanner on a script-wired pole: 1 row naming the peer, no origin key), and "
+			+ "restore_circuit_connections replays it through connect_to, whose origin argument defaults to "
+			+ "player. A destination reading ':script' here would mean origin-faithful restoration landed and "
+			+ "this expectation is stale; an empty set would mean a script-origin wire does not survive at all",
+	},
+	{
 		key: "ghost_pole_copper", attribute: "pole_copper on a GHOST pair (wire present)", on: "gwire1",
 		write: "local copper = defines.wire_connector_id.pole_copper\n"
 			+ "local near = e.get_wire_connector(copper, true)\n"
@@ -903,7 +955,7 @@ local bx = math.floor(maxx) + 6
 local by = 0
 local tiles = {}
 for x = bx, bx + 28 do
-  for y = by, by + 70 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
+  for y = by, by + 80 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
 end
 s.set_tiles(tiles)
 
@@ -1145,6 +1197,20 @@ function armPoleCopperExpect(placementById) {
 	}
 	RUNTIME.poleCopperExpect = offsetKey(wire2, wire1);
 	say(`  pole copper expectation from the measured rig: ${RUNTIME.poleCopperExpect}`);
+}
+
+function armScriptCopperExpect(placementById) {
+	const near = placementById.get("polescript1");
+	const far = placementById.get("polescript2");
+	if (!(near?.placed && far?.placed)) {
+		fail("the script-origin pole pair did not place in full, so the capture-origin row has no measured "
+			+ "expectation and cannot report on what a wire's origin does across a transfer");
+		return;
+	}
+	RUNTIME.scriptCopperExpect = `${offsetKey(far, near)}:script`;
+	RUNTIME.scriptCopperDestExpect = `${offsetKey(far, near)}:player`;
+	say(`  script-origin copper expectation from the measured rig: source ${RUNTIME.scriptCopperExpect} `
+		+ `-> destination ${RUNTIME.scriptCopperDestExpect}`);
 }
 
 const GHOST_WIRED_EXPECTS = [
@@ -1674,6 +1740,7 @@ async function main() {
 
 		armCopperExpect(placementById);
 		armPoleCopperExpect(placementById);
+		armScriptCopperExpect(placementById);
 		armGhostCopperExpect(placementById);
 		checkPoleGeometry(placementById, Number(built.pole_wire_reach));
 		reportGhostWireFacts(asArray(built.wire_facts));

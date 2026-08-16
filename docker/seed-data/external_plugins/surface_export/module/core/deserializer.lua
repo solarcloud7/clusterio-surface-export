@@ -1447,7 +1447,39 @@ local function is_pole_like(entity)
   return entity.type == "entity-ghost" and entity.ghost_type == "electric-pole"
 end
 
-local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label, tally)
+local SCRIPT_REACHABLE_WIRE_ORIGINS = { "player", "script" }
+
+local function resolve_prune_origins()
+  local origins = {}
+  local names = {}
+  for _, name in ipairs(SCRIPT_REACHABLE_WIRE_ORIGINS) do
+    local value = defines.wire_origin[name]
+    if value == nil then
+      log(string.format("[Deserializer] pole copper prune: defines.wire_origin.%s is absent at this engine — "
+        .. "copper held at that origin cannot be removed", name))
+    else
+      origins[#origins + 1] = value
+      names[#names + 1] = name
+    end
+  end
+  return origins, table.concat(names, "+")
+end
+
+local function disconnect_at_every_origin(connector, target, origins, origin_names, kind, label, tally)
+  local removed = 0
+  for _, origin in ipairs(origins) do
+    if connector.disconnect_from(target.connector, origin) then
+      removed = removed + 1
+    end
+  end
+  if removed == 0 then
+    log(string.format("[Deserializer] %s copper prune REMOVED NOTHING %s -> %s at origins %s — that wire is "
+      .. "held at an origin no script can reach, import continues", kind, label, target.label, origin_names))
+  end
+  tally.pruned = tally.pruned + removed
+end
+
+local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label, tally, origins, origin_names)
   local peers = payload_copper_peers(entity_data, entity_map, copper)
   local connector = entity.get_wire_connector(copper, false)
   if not connector then
@@ -1455,11 +1487,13 @@ local function prune_one_pole(entity, entity_data, entity_map, restored, copper,
   end
 
   local foreign = {}
+  local seen = {}
   for _, conn in ipairs(connector.real_connections) do
     local peer_connector = conn.target
     local peer = peer_connector and peer_connector.owner
     if peer and peer.valid and peer.type == "electric-pole" and peer.unit_number
-      and restored[peer.unit_number] and not peers[peer.unit_number] then
+      and restored[peer.unit_number] and not peers[peer.unit_number] and not seen[peer.unit_number] then
+      seen[peer.unit_number] = true
       foreign[#foreign + 1] = {
         connector = peer_connector,
         label = string.format("%s (%.1f, %.1f)", peer.name, peer.position.x, peer.position.y),
@@ -1468,15 +1502,12 @@ local function prune_one_pole(entity, entity_data, entity_map, restored, copper,
   end
 
   for _, target in ipairs(foreign) do
-    if connector.disconnect_from(target.connector) then
-      tally.pruned = tally.pruned + 1
-    else
-      log(string.format("[Deserializer] pole copper prune DECLINED %s -> %s", label, target.label))
-    end
+    disconnect_at_every_origin(connector, target, origins, origin_names, "pole", label, tally)
   end
 end
 
-local function prune_one_pole_ghost_wires(entity, entity_data, entity_map, restored, copper, label, tally)
+local function prune_one_pole_ghost_wires(entity, entity_data, entity_map, restored, copper, label, tally,
+  origins, origin_names)
   local peers = payload_copper_peers(entity_data, entity_map, copper)
   local connector = entity.get_wire_connector(copper, false)
   if not connector then
@@ -1484,12 +1515,14 @@ local function prune_one_pole_ghost_wires(entity, entity_data, entity_map, resto
   end
 
   local foreign = {}
+  local seen = {}
   for _, conn in ipairs(connector.connections) do
     local peer_connector = conn.target
     local peer = peer_connector and peer_connector.owner
     if peer and peer.valid and (connector.is_ghost or peer_connector.is_ghost)
       and is_pole_like(peer) and peer.unit_number
-      and restored[peer.unit_number] and not peers[peer.unit_number] then
+      and restored[peer.unit_number] and not peers[peer.unit_number] and not seen[peer.unit_number] then
+      seen[peer.unit_number] = true
       foreign[#foreign + 1] = {
         connector = peer_connector,
         label = string.format("%s (%.1f, %.1f)", peer.name, peer.position.x, peer.position.y),
@@ -1498,11 +1531,7 @@ local function prune_one_pole_ghost_wires(entity, entity_data, entity_map, resto
   end
 
   for _, target in ipairs(foreign) do
-    if connector.disconnect_from(target.connector) then
-      tally.pruned = tally.pruned + 1
-    else
-      log(string.format("[Deserializer] ghost pole copper prune DECLINED %s -> %s", label, target.label))
-    end
+    disconnect_at_every_origin(connector, target, origins, origin_names, "ghost pole", label, tally)
   end
 end
 
@@ -1510,6 +1539,7 @@ function Deserializer.prune_pole_copper(entities_to_create, entity_map)
   local copper = defines.wire_connector_id.pole_copper
   local restored = restored_unit_numbers(entity_map)
   local tally = { pruned = 0 }
+  local origins, origin_names = resolve_prune_origins()
 
   for _, entity_data in ipairs(entities_to_create) do
     local entity = entity_map[entity_data.entity_id]
@@ -1517,7 +1547,8 @@ function Deserializer.prune_pole_copper(entities_to_create, entity_map)
       local label = string.format("%s (%.1f, %.1f)", entity.name, entity.position.x, entity.position.y)
 
       if entity.type == "electric-pole" then
-        local ok, err = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label, tally)
+        local ok, err = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label, tally,
+          origins, origin_names)
         if not ok then
           log(string.format("[Deserializer] pole copper prune THREW for %s: %s — that pole may keep copper the "
             .. "payload does not carry, import continues", label, tostring(err)))
@@ -1525,7 +1556,7 @@ function Deserializer.prune_pole_copper(entities_to_create, entity_map)
       end
 
       local ghost_ok, ghost_err = pcall(prune_one_pole_ghost_wires, entity, entity_data, entity_map, restored,
-        copper, label, tally)
+        copper, label, tally, origins, origin_names)
       if not ghost_ok then
         log(string.format("[Deserializer] ghost pole copper prune THREW for %s: %s — that pole may keep a "
           .. "planned wire the payload does not carry, import continues", label, tostring(ghost_err)))

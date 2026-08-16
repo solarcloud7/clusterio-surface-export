@@ -287,6 +287,7 @@ local function exp_prune(surface, force, band, origin_name, carried, ghost)
 	local cb = connector(b, true)
 	local armed = ca.connect_to(cb, false, defines.wire_origin[origin_name])
 	local before = linked(a, b, false)
+	local real_before = linked(a, b, true)
 	local origins_before = origins_text(a, b)
 	local entities_to_create, entity_map = payload_for(a, b, carried)
 	local pruned = Deserializer.prune_pole_copper(entities_to_create, entity_map)
@@ -294,11 +295,11 @@ local function exp_prune(surface, force, band, origin_name, carried, ghost)
 	local want_pruned = carried and 0 or 1
 	return {
 		ok = armed == true and before == true and after == carried and pruned == want_pruned,
-		detail = string.format("%s %s-origin wire the payload %s: armed=%s present=%s origins=[%s]; "
-			.. "prune_pole_copper returned %d (want %d) and the wire is %s afterwards (want %s)",
+		detail = string.format("%s %s-origin wire the payload %s: armed=%s present=%s in_real_connections=%s "
+			.. "origins=[%s]; prune_pole_copper returned %d (want %d) and the wire is %s afterwards (want %s)",
 			ghost and "ghost-pair" or "real-pair", origin_name,
 			carried and "DOES carry" or "does NOT carry",
-			tostring(armed), tostring(before), origins_before, pruned, want_pruned,
+			tostring(armed), tostring(before), tostring(real_before), origins_before, pruned, want_pruned,
 			after and "still there" or "gone", carried and "still there" or "gone"),
 	}
 end
