@@ -2576,6 +2576,38 @@
 				"forbidden": "Do not re-pin this to a TOTAL inactive count - most entities are natively inactive and the signal disappears. Do not narrow the restore pass to a type list; two different lists have already drifted (ACTIVATABLE left spidertrons dead, beacon/radar/proxy left a beacon dead)."
 			},
 			"note": "Companion to the fix in surface-lock.lua (capture wider than freeze) and active_state_restoration.lua (restore with NO type filter)."
+		},
+		{
+			"id": "oneofeach-type-coverage",
+			"padKind": "platform",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "One-of-each type coverage platform",
+			"purpose": "Name oneofeach-fixture-v1 in the manifest so the readiness gate's fixture-platform check demands that platform by name.",
+			"category": "type-coverage",
+			"owningRunner": null,
+			"owningRunnerWaiver": "No standing runner meters this platform. Its presence in the source golden is checked by the fixture-platform check in tools/tests/cluster-readiness.mjs, which tools/tests/run-integration-tests.mjs runs as the preflight for every integration suite.",
+			"saveRole": "source",
+			"platformName": "oneofeach-fixture-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.6.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "The source golden carries a platform named oneofeach-fixture-v1. Without this entry the only readiness signal for the fixture is the engine-assigned surface string platform-3 in saves.source.expectedCensus.surfaces, which any third platform satisfies.",
+			"independentOracleRequired": true,
+			"fingerprint": {},
+			"runnerExcluded": "REGISTRATION-ONLY, not an engine-bump instrument: /test-run has no meter for this id (no DISPATCH entry in module/interfaces/commands/run-tests.lua, no dest-end lifecycle read), so the board records skipped at run-tests.lua:550-553 and tests/integration/gallery-suite/run-tests.mjs:59-61 expects skipped for a runnerExcluded fixture. Per-type fidelity is not measured by a pad meter.",
+			"note": "Banked into the source golden by #251 as docker/seed-data/lab-saves/lab-gallery-snapshot-2026-08-16-oneofeach-banked.zip."
 		}
 	]
 }

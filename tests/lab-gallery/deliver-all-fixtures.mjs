@@ -15,7 +15,7 @@ const HOST1_CONTAINER = "surface-export-host-1";
 const HOST1_SAVES = `/clusterio/data/instances/${HOST1_INSTANCE}/saves`;
 const DELIVER_SAVE = "lab-gallery-deliver-all.zip";
 const RESTORE_SAVE = "lab-gallery-source.zip";
-const GOLDEN_SOURCE = "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip";
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const MANIFEST = "tests/lab-gallery/manifest.json";
 
 const PER_PLATFORM_TIMEOUT_MS = 300_000;
@@ -101,9 +101,11 @@ async function waitHost1Ready(timeoutMs = 180_000) {
 	throw new Error(`host-1 did not become RCON-ready: ${lastError?.message}`);
 }
 
-function manifestCensusMap() {
-	const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-	const manifest = JSON.parse(readFileSync(`${repoRoot}${MANIFEST}`, "utf8"));
+function loadManifest() {
+	return JSON.parse(readFileSync(`${REPO_ROOT}${MANIFEST}`, "utf8"));
+}
+
+function manifestCensusMap(manifest) {
 	const map = {};
 	for (const s of manifest.saves.source.expectedCensus.surfaces) {
 		if (s.platform) map[s.platform] = s.entityCount;
@@ -171,7 +173,10 @@ async function deliverOne(name, expectedEntities) {
 
 async function main() {
 	const summary = { started: new Date().toISOString(), deliveries: [] };
-	const manifestMap = manifestCensusMap();
+	const manifest = loadManifest();
+	const manifestMap = manifestCensusMap(manifest);
+	const goldenSource = manifest.saves.source.artifact;
+	summary.goldenSource = goldenSource;
 
 	const alreadyOnGallery = new Set(galleryPlatformNames());
 	summary.galleryBefore = [...alreadyOnGallery];
@@ -180,8 +185,7 @@ async function main() {
 	try {
 		ctl("instance", "stop", HOST1_INSTANCE);
 		displaced = true;
-		const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-		docker(["cp", `${repoRoot}${GOLDEN_SOURCE}`, `${HOST1_CONTAINER}:${HOST1_SAVES}/${DELIVER_SAVE}`],
+		docker(["cp", `${REPO_ROOT}${goldenSource}`, `${HOST1_CONTAINER}:${HOST1_SAVES}/${DELIVER_SAVE}`],
 			{ timeout: 180_000 });
 		ctl("instance", "start", HOST1_INSTANCE, "--save", DELIVER_SAVE);
 		await waitHost1Ready();

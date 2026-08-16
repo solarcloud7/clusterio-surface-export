@@ -61,7 +61,8 @@ test("the expectation set is grounded in the gallery manifest and is not empty",
 
 	assert.equal(source.role, "source");
 	assert.equal(destination.role, "destination");
-	assert.deepEqual(source.requiredPlatforms, ["lab-omnibus-state-v1", "lab-transfer-fixture-v1"]);
+	assert.deepEqual(source.requiredPlatforms,
+		["lab-omnibus-state-v1", "lab-transfer-fixture-v1", "oneofeach-fixture-v1"]);
 	assert.ok(source.requiredSurfaces.includes("platform-1"));
 	assert.ok(destination.requiredSurfaces.includes("lab-gallery-index-v2"),
 		"the destination golden's discriminating surface must stay in the manifest, or the incident is undetectable");
@@ -138,6 +139,25 @@ test("host-1 missing a fixture platform fails only the fixture-platform check", 
 	assert.deepEqual(failuresOf(decision), [`${HOST1}/${CHECK_PLATFORMS}`]);
 	const platforms = decision.results.find(r => r.checkId === CHECK_PLATFORMS);
 	assert.match(platforms.detail, /lab-transfer-fixture-v1/);
+});
+
+test("the banked one-of-each fixture is required by NAME, not by the surface string the engine gave it", () => {
+	const decision = evaluateReadiness(expectations, {
+		[HOST1]: probeReply({
+			surfaces: ["nauvis", "platform-1", "platform-2", "platform-3"],
+			platforms: ["lab-transfer-fixture-v1", "lab-omnibus-state-v1"],
+			players: ["solarcloud7"],
+		}),
+		[HOST2]: healthyHost2(),
+	});
+	assert.deepEqual(failuresOf(decision), [`${HOST1}/${CHECK_PLATFORMS}`],
+		"a re-bank that drops oneofeach-fixture-v1 but leaves any third platform must still fail");
+
+	const platforms = decision.results.find(r => r.checkId === CHECK_PLATFORMS);
+	assert.match(platforms.detail, /oneofeach-fixture-v1/);
+	const surfaces = decision.results.find(r => r.instance === HOST1 && r.checkId === CHECK_SURFACES);
+	assert.equal(surfaces.ok, true,
+		"platform-3 is the engine's surface string, not the fixture — it cannot be the fixture's only witness");
 });
 
 test("a missing surface_export interface fails only the interface check", () => {
