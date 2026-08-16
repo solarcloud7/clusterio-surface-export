@@ -26,7 +26,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
 		platformStorage: {
 			get: () => ({
-				exportData: { platform: { index: 3, force: "player" } },
+				exportData: { platform: { force: "player" } },
 				exportMetrics: null,
 				platformName: "test-platform",
 				platformIndex: 3,

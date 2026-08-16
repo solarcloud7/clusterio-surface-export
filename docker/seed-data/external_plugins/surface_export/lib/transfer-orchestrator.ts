@@ -113,15 +113,13 @@ export class TransferOrchestrator {
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
 			? innerData.platform
-			: {}) as { index?: number; force?: string };
+			: {}) as { force?: string };
 		const mergedExportMetrics = mergeExportMetrics(exportData.exportMetrics, exportMetrics);
 
 		const topLevelIndex = exportData.platformIndex;
-		const payloadIndex = Number(platformInfo.index);
-		const sourcePlatformIndex = Number.isInteger(topLevelIndex) ? (topLevelIndex as number)
-			: (Number.isInteger(payloadIndex) ? payloadIndex : null);
+		const sourcePlatformIndex = Number.isInteger(topLevelIndex) ? (topLevelIndex as number) : null;
 		if (sourcePlatformIndex === null || sourcePlatformIndex < 1) {
-			return { success: false, safeToUnlockSource: true, error: `Transfer aborted: source platform index unavailable (top-level=${String(topLevelIndex)}, payload=${String(platformInfo.index)})` };
+			return { success: false, safeToUnlockSource: true, error: `Transfer aborted: source platform index unavailable (top-level=${String(topLevelIndex)})` };
 		}
 
 		const operation = createOperationRecord("transfer", {
