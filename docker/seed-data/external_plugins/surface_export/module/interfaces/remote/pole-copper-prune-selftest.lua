@@ -304,6 +304,31 @@ local function exp_prune(surface, force, band, origin_name, carried, ghost)
 	}
 end
 
+local function exp_prune_counts_wires_not_peers(surface, force, band)
+	local a, b, err = armed_pair(surface, force, band, PAIR_FAR, false)
+	if err then return { ok = false, detail = err } end
+	local ca = connector(a, true)
+	local cb = connector(b, true)
+	local armed_player = ca.connect_to(cb, false, defines.wire_origin.player)
+	local armed_script = ca.connect_to(cb, false, defines.wire_origin.script)
+	local before_count = ca.connection_count
+	local origins_before = origins_text(a, b)
+	local entities_to_create, entity_map = payload_for(a, b, false)
+	local pruned = Deserializer.prune_pole_copper(entities_to_create, entity_map)
+	local ca_after = connector(a, false)
+	local after_count = ca_after and ca_after.connection_count or 0
+	return {
+		ok = armed_player == true and armed_script == true and before_count >= 1
+			and pruned == before_count and after_count == 0 and linked(a, b, false) == false,
+		detail = string.format("one pair armed at BOTH origins: connect_to(player)=%s connect_to(script)=%s "
+			.. "left connection_count=%d origins=[%s]; the pair is ONE deduped foreign peer, and "
+			.. "prune_pole_copper returned %d against an observed drop of %d (want equal — the tally counts "
+			.. "WIRES removed, not peers visited) leaving connection_count=%d",
+			tostring(armed_player), tostring(armed_script), before_count, origins_before,
+			pruned, before_count - after_count, after_count),
+	}
+end
+
 local function run_row(name, fn)
 	local ok, result = pcall(fn)
 	if not ok then
@@ -315,7 +340,7 @@ local function run_row(name, fn)
 	return result
 end
 
-local BANDS = 13
+local BANDS = 14
 
 local function pole_copper_prune_selftest()
 	if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
@@ -335,9 +360,22 @@ local function pole_copper_prune_selftest()
 	end
 	platform.apply_starter_pack()
 	platform.paused = true
+
+	local function teardown()
+		local ok, err = pcall(function()
+			if platform.valid and platform.surface and platform.surface.valid then
+				game.delete_surface(platform.surface)
+			end
+		end)
+		if not ok then
+			log("[pole-copper-prune-selftest] teardown error: " .. tostring(err))
+		end
+		return ok
+	end
+
 	local surface = platform.surface
 	if not surface then
-		return { ok = false, err = "no surface after apply_starter_pack", rows = {}, teardown_clean = false }
+		return { ok = false, err = "no surface after apply_starter_pack", rows = {}, teardown_clean = teardown() }
 	end
 
 	local tiles = {}
@@ -398,15 +436,11 @@ local function pole_copper_prune_selftest()
 	rows[#rows + 1] = run_row("ghost prune keeps a payload-carried script-origin wire", function()
 		return exp_prune(surface, force, 12, "script", true, true)
 	end)
-
-	local teardown_ok, teardown_err = pcall(function()
-		if platform.valid and platform.surface and platform.surface.valid then
-			game.delete_surface(platform.surface)
-		end
+	rows[#rows + 1] = run_row("the prune tally counts wires removed, not peers visited", function()
+		return exp_prune_counts_wires_not_peers(surface, force, 13)
 	end)
-	if not teardown_ok then
-		log("[pole-copper-prune-selftest] teardown error: " .. tostring(teardown_err))
-	end
+
+	local teardown_ok = teardown()
 
 	local all_ok = true
 	local pass_n, fail_n = 0, 0

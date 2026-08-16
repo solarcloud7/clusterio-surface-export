@@ -1470,13 +1470,13 @@ local function disconnect_at_every_origin(connector, target, origins, origin_nam
   for _, origin in ipairs(origins) do
     if connector.disconnect_from(target.connector, origin) then
       removed = removed + 1
+      tally.pruned = tally.pruned + 1
     end
   end
   if removed == 0 then
-    log(string.format("[Deserializer] %s copper prune REMOVED NOTHING %s -> %s at origins %s — that wire is "
-      .. "held at an origin no script can reach, import continues", kind, label, target.label, origin_names))
+    log(string.format("[Deserializer] %s copper prune REMOVED NOTHING %s -> %s: no wire was held at any of "
+      .. "the origins tried (%s), import continues", kind, label, target.label, origin_names))
   end
-  tally.pruned = tally.pruned + removed
 end
 
 local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label, tally, origins, origin_names)

@@ -1370,7 +1370,7 @@ function reportRealPairProbes(probes) {
 		if (after.ghostConnector) {
 			fail(`${arm.id}: both ends read as ${POLE_TYPE} yet a copper connector still reports `
 				+ "is_ghost=true — the prune's ghost pass selects wires on exactly that flag "
-				+ "(deserializer.lua:1490), so this pin does not mean by is_ghost what both passes assume");
+				+ "(deserializer.lua:1522), so this pin does not mean by is_ghost what both passes assume");
 		}
 		const outcome = after.ghostWire ? "ghost" : after.realWired ? "real" : "none";
 		say(`     MEASURED: ${OUTCOME_TEXT[outcome]}`);
