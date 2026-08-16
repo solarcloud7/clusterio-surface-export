@@ -481,8 +481,9 @@ async function main() {
 			retries += 1;
 			attempt += 1;
 			if (plan.action === "reclone") {
-				dropClone(clones.at(-1));
+				const jammed = clones.at(-1);
 				await cloneFixture(source.index, source.name);
+				dropClone(jammed);
 				const rerun = lua(PRE + "p.paused = false return { success = true, paused = p.paused }");
 				if (rerun.paused !== false) throw new Error("retry clone did not unpause; the arm cannot be read");
 				await L.sleep(2000);
