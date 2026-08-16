@@ -853,6 +853,12 @@ function ImportCompletion.run_phase2(job)
 			}
 		}
 		event_payload.success = validation_result and validation_result.success == true
+		if validation_result and validation_result.success ~= true then
+			event_payload.failed_stage = validation_result.failedStage
+			event_payload.error = validation_result.mismatchDetails
+				or validation_result.message
+				or "the destination refused the import"
+		end
 
 		if job.transfer_id then
 			event_payload.transfer_id = job.transfer_id

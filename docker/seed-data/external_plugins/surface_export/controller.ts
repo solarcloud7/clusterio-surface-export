@@ -522,6 +522,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.status = "failed";
 			operation.error = error;
 			operation.failedAt = Date.now();
+			if (event.failedStage === "items" || event.failedStage === "fluids"
+				|| event.failedStage === "belts" || event.failedStage === "test_hook") {
+				operation.failedStage = event.failedStage;
+			}
 			this.txLogger.logTransactionEvent(operation.transferId, "import_failed",
 				`Import failed: ${error}`, {
 					error,
