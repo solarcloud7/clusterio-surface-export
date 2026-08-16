@@ -11,6 +11,7 @@ const remoteInterface = path.join(repoRoot, "docker", "seed-data", "external_plu
 
 const DEDICATED_RUNNERS = {
 	fluid_segment_law: path.join(repoRoot, "tests", "instruments", "fluid-segment-law", "run-tests.mjs"),
+	pole_copper_prune: path.join(repoRoot, "tests", "instruments", "pole-copper-prune", "run-tests.mjs"),
 };
 
 function registeredSelftests() {
