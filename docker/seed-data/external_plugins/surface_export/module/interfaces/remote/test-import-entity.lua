@@ -230,20 +230,15 @@ return function(entity_json, surface_index, position_override)
       for _, line_data in ipairs(entity_data.specific_data.items) do
         local line = created_entity.get_transport_line(line_data.line)
         if line and line.valid and line_data.items then
-          table.sort(line_data.items, function(a, b) return (a.position or 0) < (b.position or 0) end)
+          log("[test_import_entity] belt items restored append-at-back; this debug remote does not "
+            .. "reproduce on-belt order or position")
           for _, item in ipairs(line_data.items) do
             local stack = {
               name = item.name,
               count = item.count,
               quality = item.quality or GameUtils.QUALITY_NORMAL
             }
-            local success = false
-            if item.position then
-              success = VersionCompat.belt_insert_at(line, item.position, stack, item.count)
-            end
-            if not success then
-              success = VersionCompat.belt_insert_at_back(line, stack, item.count)
-            end
+            local success = VersionCompat.belt_insert_at_back(line, stack, item.count)
             if success then
               belt_items_placed = belt_items_placed + item.count
             else

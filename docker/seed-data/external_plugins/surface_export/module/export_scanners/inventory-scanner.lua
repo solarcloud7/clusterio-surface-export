@@ -286,8 +286,6 @@ function InventoryScanner.extract_equipment_grid(grid)
   end
 
   return {
-    width = grid.width,
-    height = grid.height,
     equipment = equipment
   }
 end
@@ -328,7 +326,6 @@ function InventoryScanner.extract_belt_items(entity)
         if stack and stack.valid_for_read then
           table.insert(items, {
             name = stack.name,
-            position = item_data.position,
             count = stack.count,
             quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL
           })

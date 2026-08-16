@@ -64,7 +64,7 @@ test("controller stores source exports by canonical sourceInstanceId:sourceExpor
 		platformName: "test",
 		platformIndex: 3,
 		instanceId: 1,
-		exportData: { platform: { index: 3, force: "player" } },
+		exportData: { platform: { force: "player" } },
 		timestamp: 1000,
 		exportMetrics: null,
 	});
@@ -73,7 +73,7 @@ test("controller stores source exports by canonical sourceInstanceId:sourceExpor
 		platformName: "test",
 		platformIndex: 4,
 		instanceId: 2,
-		exportData: { platform: { index: 4, force: "player" } },
+		exportData: { platform: { force: "player" } },
 		timestamp: 1001,
 		exportMetrics: null,
 	});
@@ -109,7 +109,7 @@ function makeTransferHarness() {
 	const stored = {
 		exportId: "1:001_test",
 		sourceExportId: "001_test",
-		exportData: { platform: { index: 3, force: "player" } },
+		exportData: { platform: { force: "player" } },
 		exportMetrics: null,
 		platformName: "test-platform",
 		platformIndex: 3,

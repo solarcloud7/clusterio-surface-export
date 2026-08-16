@@ -15,7 +15,6 @@ local function add_record(registry, source_segment_id, fluid)
 		fluid = fluid and fluid.name or nil,
 		total = fluid and fluid.amount or 0,
 		temperature = fluid and fluid.temperature or nil,
-		measured = source_segment_id and "segment" or "storage",
 	}
 	registry.segments[rec.id] = rec
 	if source_segment_id then
