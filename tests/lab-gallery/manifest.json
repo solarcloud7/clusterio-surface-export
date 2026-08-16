@@ -19,11 +19,11 @@
 		"source": {
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
-			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip",
-			"sha256": "60444EF200E5C52A7DD02F49F710AE0CF09878852E44123A38333686EE00B27B",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-08-16-oneofeach-banked.zip",
+			"sha256": "F3ED9C1AFCB692E33C7FE922344B2B3C7D6F0F65623A0CDF902EB016B6B61702",
 			"expectedCensus": {
-				"totalEntities": 2118,
-				"totalGeneratedChunks": 6893,
+				"totalEntities": 2297,
+				"totalGeneratedChunks": 7241,
 				"surfaces": [
 					{
 						"name": "nauvis"
@@ -33,6 +33,9 @@
 					},
 					{
 						"name": "platform-2"
+					},
+					{
+						"name": "platform-3"
 					}
 				]
 			},
@@ -49,7 +52,7 @@
 				"surfexp_gateways": "0.6.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "SNAPSHOT OF LIVE (re-banked 2026-07-28, UNFROZEN doctrine): the gallery runs live - all 34 formerly disabled entities re-enabled, stillness pins re-pinned to live invariants, roster baked in storage, leaked lab surface swept before banking. Never a scripted-bake product. Re-bank: server_save, docker cp, SHA re-pin, one commit."
+			"note": "SNAPSHOT OF LIVE (re-banked 2026-08-16, UNFROZEN doctrine): carries the 2026-07-28 rig plus oneofeach-fixture-v1 on platform-3 - the one-of-each coverage fixture, 85 placed cells over 81 types, hostiles frozen and measured quiescent over 10571 ticks. The prior pin is kept unpinned at lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip. totalEntities was RE-MEASURED, not carried: the 2026-07-28 pin said 2118 while three consecutive measurements of that same save read 2165, so the old entity count was wrong by 47 - totalGeneratedChunks matched exactly. Re-bank: server_save, docker cp x2, SHA re-pin, census re-measure, one commit."
 		},
 		"destination": {
 			"role": "destination",

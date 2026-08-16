@@ -29,8 +29,8 @@ function probeReply({ surfaces, platforms, players, tick = 1, iface = true }) {
 }
 
 const healthyHost1 = () => probeReply({
-	surfaces: ["nauvis", "platform-1", "platform-2"],
-	platforms: ["lab-transfer-fixture-v1", "lab-omnibus-state-v1"],
+	surfaces: ["nauvis", "platform-1", "platform-2", "platform-3"],
+	platforms: ["lab-transfer-fixture-v1", "lab-omnibus-state-v1", "oneofeach-fixture-v1"],
 	players: ["solarcloud7"],
 	tick: 32220740,
 });
@@ -129,7 +129,7 @@ test("host-2 with only an empty roster fails only the roster check", () => {
 test("host-1 missing a fixture platform fails only the fixture-platform check", () => {
 	const decision = evaluateReadiness(expectations, {
 		[HOST1]: probeReply({
-			surfaces: ["nauvis", "platform-1", "platform-2"],
+			surfaces: ["nauvis", "platform-1", "platform-2", "platform-3"],
 			platforms: ["lab-omnibus-state-v1"],
 			players: ["solarcloud7"],
 		}),
