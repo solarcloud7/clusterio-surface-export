@@ -60,6 +60,12 @@ function lua(host, body) {
 	return r;
 }
 
+function luaList(value) {
+	if (Array.isArray(value)) return value;
+	if (value === null || value === undefined) return [];
+	return Object.values(value);
+}
+
 function platformLua(name) {
 	return `local p\n`
 		+ `for _, pl in pairs(game.forces.player.platforms) do\n`
@@ -297,7 +303,7 @@ async function main() {
 
 		say("\n=== PAYLOAD: the head's engine-owned segments must never have been exported ===");
 		const losses = result.validation_result && result.validation_result.failedEntityLosses;
-		const failedRows = (losses && losses.entities) || [];
+		const failedRows = luaList(losses && losses.entities);
 		const segmentRows = failedRows.filter(row => row.type === "segment");
 		say(`  payload carried ${result.total_entities} entities; the destination refused `
 			+ `${losses ? losses.entity_count : 0} of them and detailed ${failedRows.length} `
