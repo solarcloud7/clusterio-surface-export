@@ -75,7 +75,6 @@ function putFileInController(containerPath, contents) {
 	});
 }
 
-// The physical destination read: did the platform arrive, is it alive, and what did it actually get?
 function readArrival(host, name) {
 	return lua(host, "local target\n"
 		+ "for _, pl in pairs(game.forces.player.platforms) do\n"
@@ -358,8 +357,6 @@ try {
 		docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
 			`rm -f ${instancePath(DEST_HOST, `script-output/failure_black_box_${PREFIX}*`)}`]);
 
-		// Source-only, and through the production unlock: the export takes a lock keyed by PLATFORM
-		// INDEX, and that index means a different platform on the other host.
 		if (probeIndex !== null) {
 			const unlocked = lua(SOURCE_HOST,
 				`local ok, err = pcall(remote.call, 'surface_export', 'unlock_platform', ${probeIndex})\n`
@@ -391,8 +388,6 @@ try {
 		}
 		await sleep(3000);
 
-		// Substring, not prefix: a platform's SURFACE name is not required to equal the platform name,
-		// and a prefix test that silently matches nothing is not a leftover check.
 		const residue = (host) => lua(host, "local surfaces = {}\n"
 			+ "for name in pairs(game.surfaces) do\n"
 			+ `  if type(name) == 'string' and string.find(name, '${PREFIX}', 1, true) then\n`
