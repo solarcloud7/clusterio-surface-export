@@ -6,6 +6,10 @@
 		"direct_writes": [
 			"module/core/deserializer.lua",
 			"module/import_phases/*.lua"
+		],
+		"receiver_writes": [
+			"module/core/deserializer.lua",
+			"module/import_phases/*.lua"
 		]
 	},
 	"restore_rules": [
@@ -332,12 +336,15 @@
 		},
 		{
 			"category": "agricultural-tower",
-			"fields": []
+			"fields": [
+				"inventories"
+			]
 		},
 		{
 			"category": "artillery-turret",
 			"fields": [
-				"artillery_auto_targeting"
+				"artillery_auto_targeting",
+				"inventories"
 			]
 		},
 		{
@@ -345,6 +352,7 @@
 			"fields": [
 				"crafting_progress",
 				"fluidboxes",
+				"inventories",
 				"recipe",
 				"recipe_quality",
 				"result_quality"
@@ -357,6 +365,7 @@
 				"driver_is_gunner",
 				"enable_logistics_while_moving",
 				"equipment_grid",
+				"inventories",
 				"orientation",
 				"selected_gun_index"
 			]
@@ -373,6 +382,7 @@
 			"category": "container",
 			"fields": [
 				"bar",
+				"inventories",
 				"link_id",
 				"override_logistic_mode",
 				"proxy_target_id",
@@ -397,19 +407,23 @@
 		{
 			"category": "entity-ghost",
 			"fields": [
+				"ghost_name",
 				"ghost_quality",
 				"insert_plan"
 			]
 		},
 		{
 			"category": "fluid-storage",
-			"fields": []
+			"fields": [
+				"fluidboxes"
+			]
 		},
 		{
 			"category": "furnace",
 			"fields": [
 				"crafting_progress",
 				"fluidboxes",
+				"inventories",
 				"recipe",
 				"recipe_quality"
 			]
@@ -442,7 +456,9 @@
 		},
 		{
 			"category": "lab",
-			"fields": []
+			"fields": [
+				"inventories"
+			]
 		},
 		{
 			"category": "lamp",
@@ -454,12 +470,14 @@
 		{
 			"category": "linked-belt",
 			"fields": [
+				"fluidboxes",
 				"linked_belt_type"
 			]
 		},
 		{
 			"category": "loader",
 			"fields": [
+				"fluidboxes",
 				"loader_belt_stack_size_override",
 				"loader_filter_mode"
 			]
@@ -467,6 +485,7 @@
 		{
 			"category": "loader-1x1",
 			"fields": [
+				"fluidboxes",
 				"loader_belt_stack_size_override",
 				"loader_filter_mode"
 			]
@@ -476,21 +495,28 @@
 			"fields": [
 				"bonus_mining_progress",
 				"filter",
+				"fluidboxes",
+				"inventories",
 				"mining_drill_filter_mode",
 				"mining_progress"
 			]
 		},
 		{
 			"category": "pipe",
-			"fields": []
+			"fields": [
+				"fluidboxes"
+			]
 		},
 		{
 			"category": "pipe-to-ground",
-			"fields": []
+			"fields": [
+				"fluidboxes"
+			]
 		},
 		{
 			"category": "plant",
 			"fields": [
+				"fluidboxes",
 				"grown_ticks_remaining"
 			]
 		},
@@ -509,20 +535,26 @@
 		{
 			"category": "pump",
 			"fields": [
-				"fluid_filter"
+				"fluid_filter",
+				"fluidboxes"
 			]
 		},
 		{
 			"category": "resource",
-			"fields": []
+			"fields": [
+				"amount"
+			]
 		},
 		{
 			"category": "roboport",
-			"fields": []
+			"fields": [
+				"inventories"
+			]
 		},
 		{
 			"category": "rocket-silo",
 			"fields": [
+				"inventories",
 				"recipe",
 				"recipe_quality",
 				"rocket_parts",
@@ -540,6 +572,7 @@
 		{
 			"category": "space-platform-hub",
 			"fields": [
+				"inventories",
 				"providing_to_other_platforms",
 				"request_from_buffers",
 				"request_missing_construction_materials"
@@ -554,6 +587,7 @@
 				"driver_is_gunner",
 				"enable_logistics_while_moving",
 				"equipment_grid",
+				"inventories",
 				"label",
 				"selected_gun_index"
 			]
@@ -563,12 +597,15 @@
 			"fields": [
 				"filter",
 				"input_priority",
+				"items",
 				"output_priority"
 			]
 		},
 		{
 			"category": "tile-ghost",
-			"fields": []
+			"fields": [
+				"ghost_name"
+			]
 		},
 		{
 			"category": "train",
@@ -577,6 +614,7 @@
 				"copy_color_from_train_stop",
 				"enable_logistics_while_moving",
 				"equipment_grid",
+				"inventories",
 				"orientation",
 				"schedule"
 			]
@@ -591,13 +629,16 @@
 		},
 		{
 			"category": "transport-belt",
-			"fields": []
+			"fields": [
+				"items"
+			]
 		},
 		{
 			"category": "turret",
 			"fields": [
 				"ignore_unlisted_targets_condition",
 				"ignore_unprioritised_targets",
+				"inventories",
 				"priority_targets",
 				"read_ammo",
 				"set_ignore_unlisted_targets",
@@ -606,11 +647,15 @@
 		},
 		{
 			"category": "underground-belt",
-			"fields": []
+			"fields": [
+				"belt_to_ground_type",
+				"items"
+			]
 		},
 		{
 			"category": "valve",
 			"fields": [
+				"fluidboxes",
 				"valve_threshold_override"
 			]
 		}
@@ -620,6 +665,12 @@
 			"property": "backer_name",
 			"files": [
 				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "bonus_mining_progress",
+			"files": [
+				"import_phases/active_state_restoration.lua"
 			]
 		},
 		{
@@ -750,6 +801,12 @@
 			]
 		},
 		{
+			"property": "mining_progress",
+			"files": [
+				"import_phases/active_state_restoration.lua"
+			]
+		},
+		{
 			"property": "mirroring",
 			"files": [
 				"core/deserializer.lua"
@@ -774,6 +831,12 @@
 			]
 		},
 		{
+			"property": "providing_to_other_platforms",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
 			"property": "proxy_target_entity",
 			"files": [
 				"core/deserializer.lua"
@@ -787,6 +850,18 @@
 		},
 		{
 			"property": "remove_unfiltered_items",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "request_from_buffers",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "request_missing_construction_materials",
 			"files": [
 				"core/deserializer.lua"
 			]
@@ -828,6 +903,50 @@
 			]
 		}
 	],
+	"receiver_writes": [
+		{
+			"receiver": "entity.burner",
+			"property": "currently_burning",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"receiver": "entity.burner",
+			"property": "remaining_burning_fuel",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"receiver": "entity.get_control_behavior()",
+			"property": "parameters",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"receiver": "entity.segmented_unit",
+			"property": "activity_mode",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"receiver": "entity.segmented_unit",
+			"property": "minimum_activity_mode",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"receiver": "entity.train",
+			"property": "schedule",
+			"files": [
+				"core/deserializer.lua"
+			]
+		}
+	],
 	"we_set": [
 		{
 			"property": "alert_parameters",
@@ -861,6 +980,13 @@
 		},
 		{
 			"property": "backer_name",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "bonus_mining_progress",
 			"types": null,
 			"origins": [
 				"direct_write"
@@ -1114,6 +1240,13 @@
 			]
 		},
 		{
+			"property": "mining_progress",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
 			"property": "mirroring",
 			"types": null,
 			"origins": [
@@ -1178,6 +1311,13 @@
 			]
 		},
 		{
+			"property": "providing_to_other_platforms",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
 			"property": "proxy_target_entity",
 			"types": null,
 			"origins": [
@@ -1193,6 +1333,20 @@
 		},
 		{
 			"property": "remove_unfiltered_items",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "request_from_buffers",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "request_missing_construction_materials",
 			"types": null,
 			"origins": [
 				"direct_write"
@@ -1373,8 +1527,9 @@
 		"restore_rules": 37,
 		"types_gated_rules": 22,
 		"handler_categories": 40,
-		"handler_fields": 86,
-		"direct_writes": 35,
-		"we_set": 70
+		"handler_fields": 91,
+		"direct_writes": 40,
+		"receiver_writes": 6,
+		"we_set": 75
 	}
 }

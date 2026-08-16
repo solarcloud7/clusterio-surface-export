@@ -22,7 +22,9 @@
 //           moment the second ghost turns real, every pairwise pole distance
 //           graded against the live wire reach, the destination's own pole-copper prune log lines,
 //           and a control section: the last_user conditional's present/absent arms, a nil-target
-//           proxy-container read, and the far end of every copper pair
+//           proxy-container read, the persisted summary.import.proxies_linked graded against the
+//           destination's own physical count of proxy-containers holding a live target, and the far
+//           end of every copper pair
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
@@ -1469,6 +1471,65 @@ return out`);
 	}
 }
 
+function storedImportField(field) {
+	const out = execFileSync("node", ["tools/tests/testkit/cli.mjs", "log", "latest", "--field", field, "--json"],
+		{ encoding: "utf8", timeout: 120_000, cwd: REPO_ROOT });
+	return JSON.parse(out).value;
+}
+
+function checkProxiesLinkedWire(host) {
+	say("\n=== CONTROL: the relink count the destination reported is the count the store persisted ===");
+	const answer = lua(host, `${platformLua(CLONE)}
+local linked = 0
+for _, e in pairs(s.find_entities_filtered{ type = 'proxy-container' }) do
+  if e.valid and e.proxy_target_entity and e.proxy_target_entity.valid then linked = linked + 1 end
+end
+return { success = true, linked = linked }`);
+	const physical = Number(answer.linked);
+
+	let stored;
+	let dotted;
+	try {
+		stored = storedImportField("summary.import");
+		dotted = storedImportField("summary.import.proxies_linked");
+	} catch (error) {
+		console.error(error && error.stack ? error.stack : error);
+		fail(`reading the persisted import metrics failed: ${error.message} `
+			+ `${String(error.stderr || "").trim().slice(-300)} — proxies_linked reaches the controller's raw `
+			+ "event, but only enters summary.import if the Lua emission and buildImportMetrics both carry "
+			+ "it, and summary.import is what an operator and testkit log actually read");
+		return;
+	}
+
+	if (!Object.hasOwn(stored, "proxies_linked")) {
+		fail(`summary.import carries no proxies_linked key at all (keys: ${Object.keys(stored).join(", ")}) `
+			+ "— the count dies between the Lua event and the store, where no reader can ever see it");
+		return;
+	}
+	if (physical < 1) {
+		fail("the destination holds no proxy-container with a target, so this transfer relinked nothing and "
+			+ "a stored 0 would agree with the physical read vacuously — the rig's targeted proxy-container "
+			+ "did not arrive, which is a hole in this control, not a pass");
+		return;
+	}
+	if (stored.proxies_linked !== physical) {
+		fail(`summary.import.proxies_linked reads ${JSON.stringify(stored.proxies_linked)}, but the `
+			+ `destination physically holds ${physical} proxy-container(s) with a live target — the stored `
+			+ "number is the only copy that outlives the instance log, so a disagreement here is the number "
+			+ "every later reader gets. Both sides key on TYPE: restore_proxy_targets returns 0 unless "
+			+ "entity.type == 'proxy-container', so a probe filtered by NAME would be a different set and "
+			+ "this equality would be measuring two questions");
+		return;
+	}
+	if (dotted !== physical) {
+		fail(`the dotted query path summary.import.proxies_linked answers ${JSON.stringify(dotted)}, not the `
+			+ `${physical} the destination physically holds`);
+		return;
+	}
+	pass(`summary.import.proxies_linked reads ${physical}, agreeing with the destination's own physical `
+		+ "count of proxy-containers holding a live target");
+}
+
 function checkPoleCopperFarEnds(host, placementById) {
 	say("\n=== CONTROL: the far end of each copper pair ===");
 	const wire1 = placementById.get("polewire1");
@@ -1860,6 +1921,7 @@ async function main() {
 		}
 
 		checkProxyNilControl(DEST_HOST, placementById);
+		checkProxiesLinkedWire(DEST_HOST);
 		checkPoleCopperFarEnds(DEST_HOST, placementById);
 		checkGhostCopperFarEnds(DEST_HOST, placementById);
 		reportPruneLog(DEST_HOST);

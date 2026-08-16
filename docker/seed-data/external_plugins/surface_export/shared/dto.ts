@@ -221,6 +221,7 @@ export interface ImportMetrics {
 	inventory_state_failed?: number;
 	circuits_connected: number;
 	copper_pruned?: number;
+	proxies_linked?: number;
 	total_items: number;
 	total_fluids: number;
 	phaseSpans?: PhaseSpan[];

@@ -847,6 +847,7 @@ function ImportCompletion.run_phase2(job)
 				inventory_state_failed = job.metrics.inventory_state_failed or 0,
 				circuits_connected = job.metrics.circuits_connected or 0,
 				copper_pruned = job.metrics.copper_pruned or 0,
+				proxies_linked = job.metrics.proxies_linked or 0,
 				total_items = job.total_items or 0,
 				total_fluids = job.total_fluids or 0,
 				phase_spans = phase_spans,

@@ -1115,20 +1115,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     end
   end
 
-  if cb_data.constant_signals then
-    for _, signal_data in ipairs(cb_data.constant_signals) do
-      local sig_ok, sig_err = pcall(function()
-        cb.set_signal(signal_data.index, {
-          signal = signal_data.signal,
-          count = signal_data.count
-        })
-      end)
-      if not sig_ok then
-        log(string.format("[Deserializer Error] set_signal %d for %s: %s", signal_data.index, entity.name, tostring(sig_err)))
-      end
-    end
-  end
-
   safe_set("operation", cb_data.operation)
   safe_set("count", cb_data.count)
   safe_set("quality", cb_data.quality)
