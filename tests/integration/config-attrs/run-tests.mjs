@@ -21,7 +21,10 @@
 //           auto-connects one, so it could not go red on loss); assert the pruned count itself
 //           (summary.import.copper_pruned reports it; these rows measure the resulting topology);
 //           grade the prune log lines it prints (they are a discriminator for reading a red ghost
-//           row, not a verdict — the instance log spans earlier imports too)
+//           row, not a verdict — the instance log spans earlier imports too); cover a ghost wire
+//           between two NON-ghost entities — neither prune pass takes it (it is absent from
+//           real_connections and neither connector is_ghost) and no row here arms one, so whether
+//           the engine can even hold that state at this pin is UNMEASURED, not established absent
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -606,13 +609,15 @@ const ATTRS = [
 		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
 		expect: NO_GHOST_COPPER,
 		compare: (actual, expected) => asNoGhostCopper(actual) === expected,
-		describe: "two pole ghosts 4.0 apart, INSIDE the 7.5 reach, left unwired by the source. Ghost poles "
-			+ "are outside Deserializer.prune_pole_copper's scope twice over: it visits only entities whose "
-			+ "type is electric-pole (a ghost's type is entity-ghost) and it iterates real_connections, which "
-			+ "cannot contain a ghost wire. Whether create_entity auto-connects pole ghosts at all is "
-			+ "measured by this run's GHOST WIRE FACTS section and by the 'fresh default was' line: if it "
-			+ "does not, the armed value equals the default and this row is failed as unexercised rather "
-			+ "than passing vacuously",
+		describe: "two pole ghosts 4.0 apart, INSIDE the 7.5 reach, left unwired by the source — and "
+			+ "create_entity hands them a wire on the destination, which the GHOST WIRE FACTS section of this "
+			+ "run measures as the copper set create_entity alone produced. What removes it is the ghost pass "
+			+ "of Deserializer.prune_pole_copper (deserializer.lua:1374-1402): it visits pole-like entities — "
+			+ "an electric-pole, or an entity-ghost whose ghost_type is electric-pole — and takes from "
+			+ "connector.connections the wires with a ghost connector at either end, which is the set "
+			+ "real_connections cannot contain. A red here is that pass not running or not reaching this "
+			+ "pair. If the engine ever stops auto-connecting pole ghosts, the armed value equals the default "
+			+ "and this row is failed as unexercised rather than passing vacuously",
 	},
 	{
 		key: "ghost_real_pole_copper", attribute: "pole_copper GHOST-to-REAL (wire present)", on: "gmixwire",
@@ -628,9 +633,10 @@ const ATTRS = [
 			+ "whole wire a ghost wire — upstream 2.1.11 on LuaWireConnector.is_ghost: \"If any of 2 ends of "
 			+ "a wire attaches to a ghost connector, then a wire is considered to be a ghost\" — so the real "
 			+ "pole's real_connections is empty here too, and the far-end control below reads that at the "
-			+ "real end. This is the pair the prune's peer guard would reject even if it visited it: the "
-			+ "guard requires peer.type == 'electric-pole' (deserializer.lua:1349) and a ghost's type is "
-			+ "entity-ghost",
+			+ "real end. This is the ghost pass's OVER-prune arm: the payload carries this wire and both ends "
+			+ "capture it, so a pass that stopped consulting each pole's own circuit_connections "
+			+ "(payload_copper_peers, deserializer.lua:1315-1326) would take it and this row would read an "
+			+ "empty all= set",
 	},
 	{
 		key: "ghost_real_pole_copper_absent", attribute: "pole_copper GHOST-to-REAL (no wire)", on: "gmixnear",
@@ -640,10 +646,11 @@ const ATTRS = [
 		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
 		expect: NO_GHOST_COPPER,
 		compare: (actual, expected) => asNoGhostCopper(actual) === expected,
-		describe: "a pole ghost 4.0 from a REAL pole, INSIDE the 7.5 reach, left unwired by the source. The "
-			+ "real end of this pair IS visited by prune_pole_copper — it is an electric-pole the import "
-			+ "restored — but the wire to a ghost never appears in the real_connections it iterates, so a "
-			+ "fabricated planned wire survives the prune. The far-end control below reads that real end",
+		describe: "a pole ghost 4.0 from a REAL pole, INSIDE the 7.5 reach, left unwired by the source, and "
+			+ "wired by create_entity on the destination. The real end is visited by the prune's real pass as "
+			+ "an electric-pole, but a wire to a ghost never appears in the real_connections that pass "
+			+ "iterates; the ghost pass (deserializer.lua:1374-1402) is what removes it, from whichever end "
+			+ "reaches it first. The far-end control below reads that real end",
 	},
 	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
@@ -790,7 +797,6 @@ for _, sp in ipairs(entity_specs) do
     end
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = true,
       x = e.position.x, y = e.position.y, etype = e.type, stocked = stocked,
-      unit_number = e.unit_number,
       ghost_name = e.type == 'entity-ghost' and e.ghost_name or nil }
   else
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = false,
