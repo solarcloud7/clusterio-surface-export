@@ -10,9 +10,14 @@
 //           accepted and reads back at this pin; SOURCE physical reads of the armed ghosts through the
 //           same reader used on the destination; the export payload's per-ghost tags record; the
 //           destination gate verdict; and DESTINATION physical reads of tags on every ghost that
-//           arrived. A class the ARM table shows CAN hold tags joins the transferred fixture and is
-//           adjudicated at the destination, so a pin that widens the classes widens the coverage
-// does not: adjudicate tags through the exact gate — the gate measures items and fluids only, so a
+//           arrived. The ARM table is also ASSERTED as the coverage boundary over the classes it
+//           measures: the fixture carries entity-ghosts only, so a pin at which the tile-ghost or the
+//           steel-chest starts holding tags fails this suite rather than silently covering less than
+//           it measured
+// does not: measure any class outside the ARM table — the capture is ungated over every entity, and
+//           display-panel, item-request-proxy and every other type are neither armed nor adjudicated
+//           here, so this suite bounds three classes and not the capture's full reach; adjudicate tags
+//           through the exact gate — the gate measures items and fluids only, so a
 //           SUCCESS verdict is not evidence about tags and only the destination physical read decides;
 //           exercise the production trigger (a blueprint carrying mod-authored tags), because the
 //           fixture arms tags by script; cover tag values the JSON transport cannot express (an empty
@@ -33,7 +38,6 @@ const TILE_INNER = "space-platform-foundation";
 
 const GHOST_A = { x: 6.5, y: 6.5 };
 const GHOST_B = { x: 11.5, y: 6.5 };
-const TILE_GHOST = { x: 24.5, y: 6.5 };
 const ARM_ROW_Y = 18.5;
 const OFF_PLATFORM_ARM_ROW_Y = 24.5;
 
@@ -205,6 +209,11 @@ async function main() {
 			"engine: at least one route puts tags on a fresh entity-ghost at this pin",
 			JSON.stringify(arms.filter(arm => GHOST_ROUTES.includes(arm.arm))));
 		if (ghostRoutes.length === 0) throw new Error("no route can arm a ghost with tags — fixture cannot be built");
+		check(tileGhostRoutes.length === 0 && !chestHoldsTags,
+			"class boundary: neither measured non-ghost class (tile-ghost, steel-chest) holds tags at this "
+			+ "pin, so the entity-ghost fixture covers every class this suite has measured — either of them "
+			+ "gaining tags needs a fixture arm and a destination check added here first",
+			`tile-ghost routes=[${tileGhostRoutes.join(",")}] steel-chest=${chestHoldsTags}`);
 		const chosen = ghostRoutes[0];
 		console.log(`  ROUTE CHOSEN for the fixture: ${chosen}`);
 
@@ -213,17 +222,10 @@ async function main() {
 			: createLua({ entity: "entity-ghost", inner: GHOST_INNER }, varName, at, null)
 				+ `${varName}.tags=${tagsExpr} `);
 
-		const tileRoute = tileGhostRoutes[0] || null;
-		const armTileGhost = (varName, at, tagsExpr) => (tileRoute === "tile_ghost_create_param"
-			? createLua({ entity: "tile-ghost", inner: TILE_INNER }, varName, at, tagsExpr)
-			: createLua({ entity: "tile-ghost", inner: TILE_INNER }, varName, at, null)
-				+ `${varName}.tags=${tagsExpr} `);
-
 		const setup = lua(1, platformPrelude(PROBE)
 			+ armGhost("ga", GHOST_A, TAGS_A)
 			+ `ga.insert_plan=${PLAN_A} `
 			+ armGhost("gb", GHOST_B, TAGS_B)
-			+ (tileRoute ? armTileGhost("tg", TILE_GHOST, TAGS_A) : "")
 			+ "return {success=true, index=plat.index, plan_a=#ga.insert_plan} ");
 		if (!setup.success) throw new Error(`fixture setup failed: ${JSON.stringify(setup)}`);
 
@@ -231,7 +233,6 @@ async function main() {
 		if (!source.success) throw new Error(`source read failed: ${JSON.stringify(source)}`);
 		const srcGhostA = findAt(source, GHOST_A, "entity-ghost");
 		const srcGhostB = findAt(source, GHOST_B, "entity-ghost");
-		const srcTile = tileRoute ? findAt(source, TILE_GHOST, "tile-ghost") : null;
 		check(!!srcGhostA && srcGhostA.tags === CANON_A,
 			"source: ghost A is armed with flat scalar tags (string, integer, boolean)",
 			srcGhostA ? String(srcGhostA.tags) : "ghost A missing");
@@ -241,11 +242,6 @@ async function main() {
 		check(!!srcGhostA && srcGhostA.plan_len === 2,
 			"source: ghost A also carries an insert_plan — the control arm rides the same entity",
 			srcGhostA ? `plan_len=${srcGhostA.plan_len}` : "ghost A missing");
-		if (tileRoute) {
-			check(!!srcTile && srcTile.tags === CANON_A,
-				"source: the tile-ghost this pin CAN arm is armed too",
-				srcTile ? String(srcTile.tags) : "tile ghost missing");
-		}
 
 		const inspector = await exportInspect({ platform: PROBE, host: 1 });
 		const ghostRecords = (inspector.entities || [])
@@ -284,13 +280,6 @@ async function main() {
 		check(!!dstGhostB && dstGhostB.tags === CANON_B,
 			"dest: ghost B's nested tag values survive the transfer",
 			`want=${CANON_B} dst=${dstGhostB ? String(dstGhostB.tags) : "ghost B missing"}`);
-
-		if (tileRoute) {
-			const dstTile = findAt(dest, TILE_GHOST, "tile-ghost");
-			check(!!dstTile && dstTile.tags === CANON_A,
-				"dest: the tile-ghost's tags survive the transfer",
-				`want=${CANON_A} dst=${dstTile ? String(dstTile.tags) : "tile ghost did not arrive"}`);
-		}
 
 		const sourceGone = lua(1, "for _,q in pairs(game.forces.player.platforms) do "
 			+ `if q.valid and q.name=='${PROBE}' then return {success=true,present=true} end end `
