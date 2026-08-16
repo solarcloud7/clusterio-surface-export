@@ -2,8 +2,9 @@
 // segmented-unit-sleep — a demolisher staged asleep and indestructible must ARRIVE asleep and
 // indestructible, measured physically at the destination after activation
 //
-// requires: the cluster up, host-2 able to receive, debug_mode writable on host-2 (the gate verdict
-//           is read from the destination's own debug_import_result)
+// requires: the cluster up, host-2 able to receive, debug_mode writable on BOTH hosts (the gate
+//           verdict is read from the destination's own debug_import_result, the payload from the
+//           source's own debug_source_platform dump)
 // produces: a THROWAWAY probe platform built for this run — hub, a foundation pad, and one
 //           segmented-unit frozen by the #247 sequence (destructible=false, then
 //           minimum_activity_mode, then activity_mode=asleep LAST) — a source read-back taken
@@ -12,20 +13,20 @@
 //           LuaEntity.destructible + LuaSegmentedUnit.activity_mode taken twice 180 ticks apart so
 //           a unit between steps cannot read as asleep, plus the arrived unit's distance from the
 //           position it was captured at, which is what separates a unit that slept through the
-//           import from one that was awake until the post-activation write, plus the payload entity
-//           count and the destination's failed-entity rows read from the same debug_import_result,
-//           with the source's own segment count asserted non-zero first so the row assertion cannot
-//           pass on an empty universe
+//           import from one that was awake until the post-activation write, plus a count of the
+//           head's engine-owned segments in the source payload itself and in the destination's
+//           failed-entity rows, both gated on the source's own segment count being non-zero so
+//           neither can pass on an empty universe
 // does not: touch a protected fixture or the shared config-attrs rig (an awake demolisher eats its
 //           platform, so it gets its own throwaway and the throwaway is swept unconditionally);
-//           read the export payload (payload presence is not restoration — the payload claim here is
-//           read from the destination's refusal record, not from the export file); assert item or
+//           conclude restoration from the payload (the payload is read for the ABSENCE of a record,
+//           which is the whole claim about it — presence there proves nothing); assert item or
 //           fluid fidelity (the gate does that); prove anything about a segmented unit the engine
 //           refused to place (a refused staging is reported as a setup failure, never as a
 //           transfer verdict)
 
 import {
-	lua as luaRaw, rcon, sleep, docker, instanceIds, createBatchLifecycle, HOSTS,
+	lua as luaRaw, rcon, sleep, docker, instanceIds, createBatchLifecycle, readContainerJson, HOSTS,
 } from "../../lab-gallery/batch-lifecycle.mjs";
 
 const SOURCE_HOST = 1;
@@ -233,12 +234,16 @@ return { success = true, minimum_write_ok = minimum_write_ok, mode_write_ok = mo
 async function main() {
 	say(`=== segmented-unit-sleep: a frozen demolisher across a real transfer (probe '${PROBE}') ===`);
 	const ids = instanceIds();
-	const previousDebug = lua(DEST_HOST, "return { success = true, debug = (storage.surface_export_config "
-		+ "and storage.surface_export_config.debug_mode) == true }");
-	lua(DEST_HOST, "remote.call('surface_export', 'configure', { debug_mode = true }) return { success = true }");
+	const previousDebug = {};
 
 	let destinationRed = false;
 	try {
+		for (const host of [SOURCE_HOST, DEST_HOST]) {
+			previousDebug[host] = lua(host, "return { success = true, debug = (storage.surface_export_config "
+				+ "and storage.surface_export_config.debug_mode) == true }").debug === true;
+			lua(host, "remote.call('surface_export', 'configure', { debug_mode = true }) return { success = true }");
+		}
+
 		say("\n=== SOURCE: build a throwaway platform and stage one frozen segmented-unit ===");
 		const built = buildProbePlatform();
 		say(`  platform '${PROBE}' at index ${built.index} with ${built.tiles} foundation tiles`);
@@ -292,6 +297,7 @@ async function main() {
 
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
 		const marker = L.dropMarker(DEST_HOST, "transfer");
+		const sourceMarker = L.dropMarker(SOURCE_HOST, "export");
 		rcon(SOURCE_HOST, `/transfer-platform ${built.index} ${ids[DEST_HOST]}`);
 		const { result } = await L.waitForImportResult(DEST_HOST, marker);
 		if (result.validation_success !== true) {
@@ -302,6 +308,29 @@ async function main() {
 		pass("the exact gate passed (destination debug_import_result: validation_success=true)");
 
 		say("\n=== PAYLOAD: the head's engine-owned segments must never have been exported ===");
+		const dumps = L.filesNewerThanMarker(SOURCE_HOST, sourceMarker, `debug_source_platform_${PROBE}_*.json`);
+		if (dumps.length === 0) {
+			fail(`the source wrote no debug_source_platform dump for '${PROBE}' — the payload claim cannot be `
+				+ "measured, and reading it off the destination's refusal record alone would be the importer "
+				+ "grading its own input");
+		} else {
+			const payload = readContainerJson(SOURCE_HOST, dumps.at(-1));
+			const payloadEntities = luaList(payload.entities);
+			const payloadSegments = payloadEntities.filter(row => row.type === "segment");
+			const scanned = (payload.stats && payload.stats.entity_count) || 0;
+			say(`  source payload ${dumps.at(-1).split("/").at(-1)}: ${scanned} entity(ies) on the surface, `
+				+ `${payloadEntities.length} kept as records, ${payloadSegments.length} of type 'segment'`);
+			if (payloadSegments.length > 0) {
+				fail(`the export scanned ${payloadSegments.length} engine-owned segment(s) into the payload `
+					+ `(e.g. ${payloadSegments[0].name}) — a segment is created by its head and refused when `
+					+ "placed directly, so every one of them is a guaranteed placement failure the payload paid "
+					+ "to carry");
+			} else {
+				pass(`the payload carries none of the source's ${settled.segment_entities} 'segment' entities, `
+					+ `while still carrying ${payloadEntities.length} entity record(s)`);
+			}
+		}
+
 		const losses = result.validation_result && result.validation_result.failedEntityLosses;
 		const failedRows = luaList(losses && losses.entities);
 		const segmentRows = failedRows.filter(row => row.type === "segment");
@@ -418,13 +447,17 @@ async function main() {
 				fail(`leftover check on host ${host} threw: ${error.message} — treating as a leftover`);
 			}
 		}
-		try {
-			lua(DEST_HOST, `remote.call('surface_export', 'configure', { debug_mode = ${previousDebug.debug === true} }) `
-				+ "return { success = true }");
-			say(`  host ${DEST_HOST}: debug_mode restored to ${previousDebug.debug === true}`);
-		} catch (error) {
-			console.error(error && error.stack ? error.stack : error);
-			fail(`debug_mode restore threw: ${error.message} — the cluster is left with a changed config`);
+		for (const host of [SOURCE_HOST, DEST_HOST]) {
+			if (previousDebug[host] === undefined) continue;
+			try {
+				lua(host, `remote.call('surface_export', 'configure', { debug_mode = ${previousDebug[host]} }) `
+					+ "return { success = true }");
+				say(`  host ${host}: debug_mode restored to ${previousDebug[host]}`);
+			} catch (error) {
+				console.error(error && error.stack ? error.stack : error);
+				fail(`debug_mode restore on host ${host} threw: ${error.message} — the cluster is left with a `
+					+ "changed config");
+			}
 		}
 		try {
 			const paused = lua(SOURCE_HOST, "return { success = true, paused = game.tick_paused }");
