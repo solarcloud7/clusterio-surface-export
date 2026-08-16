@@ -1541,7 +1541,7 @@ export type ExportData = {
 	payload?: string;
 	stats?: ExportStats;
 	verification?: ExportVerification;
-	platform?: { force?: string; index?: number };
+	platform?: { force?: string };
 	platform_name?: string;
 	_transferId?: string;
 	_sourceInstanceId?: number;

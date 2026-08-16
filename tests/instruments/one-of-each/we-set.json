@@ -346,8 +346,6 @@
 				"crafting_progress",
 				"fluidboxes",
 				"recipe",
-				"recipe_allow_inserter_overload",
-				"recipe_overload_multiplier",
 				"recipe_quality",
 				"result_quality"
 			]
@@ -413,8 +411,6 @@
 				"crafting_progress",
 				"fluidboxes",
 				"recipe",
-				"recipe_allow_inserter_overload",
-				"recipe_overload_multiplier",
 				"recipe_quality"
 			]
 		},
@@ -480,11 +476,9 @@
 			"category": "mining-drill",
 			"fields": [
 				"bonus_mining_progress",
-				"drop_target",
 				"filter",
 				"mining_drill_filter_mode",
-				"mining_progress",
-				"mining_target"
+				"mining_progress"
 			]
 		},
 		{
@@ -585,8 +579,7 @@
 				"enable_logistics_while_moving",
 				"equipment_grid",
 				"orientation",
-				"schedule",
-				"train_id"
+				"schedule"
 			]
 		},
 		{
@@ -1381,7 +1374,7 @@
 		"restore_rules": 37,
 		"types_gated_rules": 22,
 		"handler_categories": 40,
-		"handler_fields": 92,
+		"handler_fields": 87,
 		"direct_writes": 35,
 		"we_set": 70
 	}

@@ -218,13 +218,10 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
 			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
-			force_name = force_name,
 			tick = game.tick,
 			timestamp = Util.format_timestamp(game.tick),
 			platform = {
-				name = platform.name,
 				force = force_name,
-				index = platform_index,
 				paused = platform.paused == true,
 				schedule = platform_schedule,
 				gateway_target = gateway_target,
@@ -233,8 +230,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			entities = {},
 			stats = {
 				entity_count = #entities,
-				tile_count = #tiles,
-				started_tick = game.tick
+				tile_count = #tiles
 			}
 		}
 	}
@@ -542,7 +538,6 @@ function ExportPipeline.complete(job)
 
 	if job.clone_dest_name then
 		job.export_data.platform_name = job.clone_dest_name
-		job.export_data.platform.name = job.clone_dest_name
 		local import_job_id, import_err = ImportPipeline.queue(job.export_data, job.clone_dest_name, job.force_name, "clone")
 		if import_job_id then
 			log(string.format("[Clone Platform] Import queued from completed export %s: job=%s, platform='%s'",

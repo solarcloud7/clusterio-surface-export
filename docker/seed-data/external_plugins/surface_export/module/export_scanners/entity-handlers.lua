@@ -112,12 +112,6 @@ EntityHandlers["assembling-machine"] = function(entity)
   local recipe, recipe_quality = entity.get_recipe()
   if recipe then
     data.recipe = recipe.name
-
-    local proto = recipe.prototype
-    if proto then
-      data.recipe_overload_multiplier = proto.overload_multiplier
-      data.recipe_allow_inserter_overload = proto.allow_inserter_overload
-    end
   end
 
   if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
@@ -146,12 +140,6 @@ EntityHandlers["furnace"] = function(entity)
   local recipe, recipe_quality = entity.get_recipe()
   if recipe then
     data.recipe = recipe.name
-
-    local proto = recipe.prototype
-    if proto then
-      data.recipe_overload_multiplier = proto.overload_multiplier
-      data.recipe_allow_inserter_overload = proto.allow_inserter_overload
-    end
   end
 
   if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
@@ -423,10 +411,6 @@ EntityHandlers["train"] = function(entity)
     data.orientation = entity.orientation
   end
 
-  if entity.train then
-    data.train_id = entity.train.id
-  end
-  
   data.color = GameUtils.extract_color(entity)
   
   data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
@@ -617,17 +601,6 @@ EntityHandlers["mining-drill"] = function(entity)
     data.bonus_mining_progress = bonus_mining_progress
   end
 
-  if entity.mining_target then
-    data.mining_target = {
-      name = entity.mining_target.name,
-      position = Util.round_position(entity.mining_target.position, 2)
-    }
-  end
-
-  if entity.drop_target then
-    data.drop_target = Util.round_position(entity.drop_target.position, 2)
-  end
-  
   if (entity.filter_slot_count or 0) > 0 then
     local filter_success, filter = pcall(function() return entity.get_filter(1) end)
     if not filter_success then
@@ -769,8 +742,7 @@ end
 
 EntityHandlers["entity-ghost"] = function(entity)
   local data = {
-    ghost_name = entity.ghost_name,
-    ghost_type = entity.ghost_type
+    ghost_name = entity.ghost_name
   }
   
   if entity.item_requests then
