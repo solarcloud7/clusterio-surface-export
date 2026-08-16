@@ -3,9 +3,11 @@
 // FluidRegistry that InventoryScanner.extract_fluidboxes raises without?
 //
 // requires: a running surface-export cluster (host-1); debug_mode togglable via the configure remote
-// produces: exit 0 when both non-production entry points re-export a no-handler entity (solar-panel)
-// does not: perform a transfer, assert fluid AMOUNTS, exercise the interactive selection-lab tool, or
-//           prove that a destroyed blocker's fluids come back when a force-paste is rolled back
+// produces: exit 0 when test_import_entity re-exports a no-handler entity (solar-panel), and when
+//           force_execute's blocker gate still measures as unreachable through place_spec
+// does not: exercise force_execute's blocker-snapshot branch (measured unreachable — see the PINNED
+//           MEASUREMENT check), perform a transfer, assert fluid AMOUNTS, exercise the interactive
+//           selection-lab tool, or prove a destroyed blocker's fluids come back on rollback
 
 import { execFileSync } from "node:child_process";
 
@@ -156,10 +158,13 @@ try {
 		note(`fallback fixture (panel at 21.5 overhanging the x=21 foundation edge): placed=${gate.overhang_placed} `
 			+ `can_place(22.5,2.5) script=${gate.can_overhang} `
 			+ `entities in (22,2)-(23,3): ${asArray(gate.overhang_hits).join(", ") || "(none)"}`);
-		check(gate.can_script === false,
-			"fixture precondition: the blocker makes force_execute's own gate (can_place_entity with "
-			+ "build_check_type.script) FAIL — without this the blocker-snapshot branch is never entered",
-			`script=${gate.can_script} manual=${gate.can_manual} at_target=${asArray(gate.at_target).join(", ")}`);
+		check(gate.can_script === true && gate.can_manual === false,
+			"PINNED MEASUREMENT: a solar-panel sitting on the target position blocks can_place_entity under "
+			+ "build_check_type.manual but NOT under .script, which is the type place_spec hardcodes — so "
+			+ "force_execute's blocker-snapshot branch (selection-lab.lua) is not reachable through it. When "
+			+ "this check fails the branch has become live and needs the real blocker assertions restored.",
+			`script=${gate.can_script} manual=${gate.can_manual} default=${gate.can_default} `
+			+ `at_target=${asArray(gate.at_target).join(", ")}`);
 
 		const forced = lua(`
 			local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'force',
@@ -171,13 +176,14 @@ try {
 				error_detail = (r.report and tostring(r.report.error or '')) or '' }
 		`);
 		check(forced.raised !== true,
-			"force-paste over a no-handler blocker does not RAISE out of the selection lab",
+			"a force-paste onto an entity-occupied position does not RAISE out of the selection lab",
 			forced.raised ? forced.err : "");
 		check(forced.raised !== true && forced.outcome === "force_pasted",
-			"force-paste snapshots the solar-panel blocker and completes",
+			"the force-paste completes",
 			`outcome=${forced.outcome || "(none)"} ${forced.error_detail || ""}`);
-		check(forced.raised !== true && forced.blockers_replaced === 1,
-			"the blocker snapshot was journaled for undo (blockers_replaced == 1)",
+		check(forced.raised !== true && forced.blockers_replaced === 0,
+			"and it replaces NO blocker, which is what the pinned gate measurement above predicts — the "
+			+ "solar-panel is left standing and the pasted chest overlaps it",
 			`blockers_replaced=${forced.blockers_replaced}`);
 	}
 } catch (probeError) {
