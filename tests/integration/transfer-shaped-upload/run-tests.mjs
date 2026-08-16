@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // transfer-shaped-upload — an uploaded payload that carries _transferId but no verification block is
-// refused at intake, instead of arriving as a paused platform of deactivated entities
+// refused at intake, instead of arriving as a platform whose entities are never activated
 //
 // requires: a running surface-export cluster (host-1 exports the probe, host-2 receives every upload);
 //           `clusterioctl surface-export upload-import`, the same controller request the web UI's
@@ -8,7 +8,8 @@
 // produces: a REAL export payload taken off a throwaway host-1 platform, then uploaded to host-2 three
 //           ways — unmutated (control), +_transferId -verification (the hole), and -verification alone
 //           (scope control) — each graded on the ctl exit status, the controller transaction row, and a
-//           PHYSICAL destination read (platform.paused, inserter.disabled_by_script, chest contents)
+//           PHYSICAL destination read (disabled_by_script, chest contents, platform.paused against a
+//           just-created platform's measured default)
 // does not: perform a cross-instance transfer (the real end-to-end transfer control is the suite's own
 //           config-attrs / gallery-suite runs); assert item/fluid FIDELITY (no gate runs on a
 //           non-transfer import); exercise the compressed wrapper shape (every arm uploads the
@@ -147,6 +148,7 @@ try {
 		+ "  starter_pack = 'space-platform-starter-pack' }\n"
 		+ "if not p then return { success = false, error = 'create_space_platform returned nil' } end\n"
 		+ "p.apply_starter_pack()\n"
+		+ "local fresh_paused = (p.paused == true)\n"
 		+ "local s = p.surface\n"
 		+ "local tiles = {}\n"
 		+ "for x = 5, 21 do for y = 0, 10 do\n"
@@ -156,11 +158,15 @@ try {
 		+ "local chest = s.create_entity{ name = 'wooden-chest', position = { 6.5, 2.5 }, force = force }\n"
 		+ `if chest then chest.insert{ name = 'iron-plate', count = ${CHEST_ITEMS} } end\n`
 		+ "local ins = s.create_entity{ name = 'inserter', position = { 8.5, 2.5 }, force = force }\n"
-		+ "return { success = true, index = p.index, chest = (chest ~= nil and chest.valid),\n"
+		+ "return { success = true, index = p.index, fresh_paused = fresh_paused,\n"
+		+ "  chest = (chest ~= nil and chest.valid),\n"
 		+ "  inserter = (ins ~= nil and ins.valid),\n"
 		+ "  plates = (chest and chest.get_item_count('iron-plate')) or 0,\n"
 		+ "  entities = #s.find_entities_filtered{} }");
 	probeIndex = setup.index;
+	const freshPaused = setup.fresh_paused === true;
+	note(`a just-created platform reads paused=${freshPaused} on this pin; the non-transfer import path `
+		+ "writes platform.paused only when it parks, so an upload arrival must agree with that default");
 	check(setup.chest === true && setup.inserter === true,
 		`probe fixture built on host ${SOURCE_HOST}: wooden-chest + inserter on platform ${PROBE}`,
 		`entities=${setup.entities} plates=${setup.plates}`);
@@ -237,11 +243,13 @@ try {
 	check(control.attempt.status === 0, "upload-import accepts a legitimate export-only payload",
 		control.attempt.output.trim().slice(-300));
 	check(control.index !== null, `'${ARM_CONTROL}' arrived on host ${DEST_HOST}`);
-	check(control.arrival.present === true && control.arrival.paused === false,
-		"the legitimate upload arrives UNPAUSED",
-		`present=${control.arrival.present} paused=${control.arrival.paused}`);
+	check(control.arrival.present === true && control.arrival.paused === freshPaused,
+		"the legitimate upload's platform.paused agrees with a just-created platform's default — nothing "
+		+ "in the non-transfer import path writes it",
+		`present=${control.arrival.present} paused=${control.arrival.paused} freshDefault=${freshPaused}`);
 	check(control.arrival.activatable > 0 && control.arrival.held === 0,
-		"no activatable entity on the legitimate arrival is held by disabled_by_script",
+		"LIVENESS: no activatable entity on the legitimate arrival is held by disabled_by_script (this, "
+		+ "not platform.paused, is what separates a working import from the dead one below)",
 		`held=${control.arrival.held}/${control.arrival.activatable}`);
 	check(control.arrival.plates === CHEST_ITEMS,
 		`the legitimate arrival restored the ${CHEST_ITEMS} iron-plate`,
@@ -252,10 +260,11 @@ try {
 		destInstanceId: ids[DEST_HOST] });
 	containerPaths.push(hole.containerPath);
 	if (hole.arrival.present === true) {
-		note(`REPRODUCTION: '${ARM_HOLE}' arrived anyway — paused=${hole.arrival.paused}, `
-			+ `disabled_by_script=${hole.arrival.held}/${hole.arrival.activatable} activatable entities, `
-			+ `${hole.arrival.entities} entities total. A transfer-shaped payload with no verification `
-			+ "skips the whole gate/activation block, so the platform lands dead.");
+		note(`REPRODUCTION: '${ARM_HOLE}' arrived anyway — `
+			+ `disabled_by_script=${hole.arrival.held}/${hole.arrival.activatable} activatable entities `
+			+ `(the control arm above read 0), paused=${hole.arrival.paused}, `
+			+ `${hole.arrival.entities} entities total. The gate/activation block is skipped whole, so `
+			+ "nothing ever clears disabled_by_script and no verdict is produced.");
 	}
 	if (hole.row) {
 		note(`transaction row for '${ARM_HOLE}': status=${hole.row.status} error=${JSON.stringify(hole.row.error)}`);
@@ -283,11 +292,11 @@ try {
 	check(scope.attempt.status === 0,
 		"the guard is scoped to transfer-shaped payloads: a verification-less EXPORT upload is still accepted",
 		scope.attempt.output.trim().slice(-300));
-	check(scope.index !== null && scope.arrival.present === true && scope.arrival.paused === false,
-		`'${ARM_SCOPE}' arrived UNPAUSED`,
-		`index=${scope.index} paused=${scope.arrival.paused}`);
-	check(scope.arrival.held === 0,
-		"the verification-less export arrival is not held by disabled_by_script",
+	check(scope.index !== null && scope.arrival.present === true && scope.arrival.paused === freshPaused,
+		`'${ARM_SCOPE}' arrived with platform.paused at the just-created default`,
+		`index=${scope.index} paused=${scope.arrival.paused} freshDefault=${freshPaused}`);
+	check(scope.arrival.activatable > 0 && scope.arrival.held === 0,
+		"LIVENESS: the verification-less export arrival is not held by disabled_by_script",
 		`held=${scope.arrival.held}/${scope.arrival.activatable}`);
 } catch (probeError) {
 	failures += 1;
