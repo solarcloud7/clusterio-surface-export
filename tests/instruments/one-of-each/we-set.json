@@ -1,0 +1,1397 @@
+{
+	"schema": "one-of-each/we-set@1",
+	"sources": {
+		"restore_rules": "module/core/deserializer.lua",
+		"handler_captures": "module/export_scanners/entity-handlers.lua",
+		"direct_writes": [
+			"module/core/deserializer.lua",
+			"module/import_phases/*.lua"
+		]
+	},
+	"restore_rules": [
+		{
+			"field": "crafting_progress",
+			"property": "crafting_progress",
+			"types": null,
+			"present": false,
+			"safecall": false
+		},
+		{
+			"field": "result_quality",
+			"property": "result_quality",
+			"types": [
+				"assembling-machine"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "character_corpse_death_cause",
+			"property": "character_corpse_death_cause",
+			"types": [
+				"character-corpse"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "bonus_progress",
+			"property": "bonus_progress",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "player_description",
+			"property": "combinator_description",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "ignore_unprioritised_targets",
+			"property": "ignore_unprioritised_targets",
+			"types": null,
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "use_filters",
+			"property": "use_filters",
+			"types": null,
+			"present": true,
+			"safecall": false
+		},
+		{
+			"field": "filter_mode",
+			"property": "inserter_filter_mode",
+			"types": null,
+			"present": false,
+			"safecall": false
+		},
+		{
+			"field": "stack_size_override",
+			"property": "inserter_stack_size_override",
+			"types": null,
+			"present": false,
+			"safecall": false
+		},
+		{
+			"field": "spoil_priority",
+			"property": "inserter_spoil_priority",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "filter",
+			"property": "splitter_filter",
+			"types": [
+				"lane-splitter",
+				"splitter"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "pickup_from_left_lane",
+			"property": "pickup_from_left_lane",
+			"types": [
+				"inserter"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "pickup_from_right_lane",
+			"property": "pickup_from_right_lane",
+			"types": [
+				"inserter"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "loader_filter_mode",
+			"property": "loader_filter_mode",
+			"types": [
+				"loader",
+				"loader-1x1"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "loader_belt_stack_size_override",
+			"property": "loader_belt_stack_size_override",
+			"types": [
+				"loader",
+				"loader-1x1"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "mining_drill_filter_mode",
+			"property": "mining_drill_filter_mode",
+			"types": [
+				"mining-drill"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "storage_filter",
+			"property": "storage_filter",
+			"types": [
+				"logistic-container"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "valve_threshold_override",
+			"property": "valve_threshold_override",
+			"types": [
+				"valve"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "send_to_orbit_automatically",
+			"property": "send_to_orbit_automatically",
+			"types": [
+				"rocket-silo"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "use_transitional_requests",
+			"property": "use_transitional_requests",
+			"types": [
+				"rocket-silo"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "alert_parameters",
+			"property": "alert_parameters",
+			"types": [
+				"programmable-speaker"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "linked_belt_type",
+			"property": "linked_belt_type",
+			"types": [
+				"linked-belt"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "link_id",
+			"property": "link_id",
+			"types": [
+				"linked-container"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "override_logistic_mode",
+			"property": "override_logistic_mode",
+			"types": [
+				"infinity-container"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "saved_request_filters",
+			"property": "saved_request_filters",
+			"types": [
+				"infinity-container"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "saved_storage_filters",
+			"property": "saved_storage_filters",
+			"types": [
+				"infinity-container"
+			],
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "saved_request_from_buffers",
+			"property": "saved_request_from_buffers",
+			"types": [
+				"infinity-container"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "saved_set_requests",
+			"property": "saved_set_requests",
+			"types": [
+				"infinity-container"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "input_priority",
+			"property": "splitter_input_priority",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "output_priority",
+			"property": "splitter_output_priority",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "color",
+			"property": "color",
+			"types": null,
+			"present": false,
+			"safecall": true
+		},
+		{
+			"field": "always_on",
+			"property": "always_on",
+			"types": null,
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "rocket_parts",
+			"property": "rocket_parts",
+			"types": null,
+			"present": false,
+			"safecall": false
+		},
+		{
+			"field": "artillery_auto_targeting",
+			"property": "artillery_auto_targeting",
+			"types": null,
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "opened",
+			"property": "opened",
+			"types": null,
+			"present": true,
+			"safecall": false
+		},
+		{
+			"field": "autopilot_destination",
+			"property": "autopilot_destination",
+			"types": null,
+			"present": false,
+			"safecall": false
+		},
+		{
+			"field": "switch_state",
+			"property": "power_switch_state",
+			"types": [
+				"power-switch"
+			],
+			"present": true,
+			"safecall": true
+		},
+		{
+			"field": "automatic_targeting_parameters",
+			"property": "vehicle_automatic_targeting_parameters",
+			"types": [
+				"spider-vehicle"
+			],
+			"present": true,
+			"safecall": true
+		}
+	],
+	"handler_captures": [
+		{
+			"category": "*common*",
+			"fields": [
+				"bonus_progress",
+				"burner",
+				"character_corpse_death_cause",
+				"corpse_death_ticks_ago",
+				"corpse_inventory_size",
+				"energy",
+				"loader_type",
+				"temperature"
+			]
+		},
+		{
+			"category": "agricultural-tower",
+			"fields": []
+		},
+		{
+			"category": "artillery-turret",
+			"fields": [
+				"artillery_auto_targeting"
+			]
+		},
+		{
+			"category": "assembling-machine",
+			"fields": [
+				"crafting_progress",
+				"fluidboxes",
+				"recipe",
+				"recipe_allow_inserter_overload",
+				"recipe_overload_multiplier",
+				"recipe_quality",
+				"result_quality"
+			]
+		},
+		{
+			"category": "car",
+			"fields": [
+				"color",
+				"driver_is_gunner",
+				"enable_logistics_while_moving",
+				"equipment_grid",
+				"orientation",
+				"selected_gun_index"
+			]
+		},
+		{
+			"category": "combinator",
+			"fields": [
+				"output_signals",
+				"parameters",
+				"player_description"
+			]
+		},
+		{
+			"category": "container",
+			"fields": [
+				"bar",
+				"link_id",
+				"override_logistic_mode",
+				"proxy_target_id",
+				"proxy_target_inventory",
+				"saved_request_filters",
+				"saved_request_from_buffers",
+				"saved_set_requests",
+				"saved_storage_filters",
+				"storage_filter"
+			]
+		},
+		{
+			"category": "display-panel",
+			"fields": [
+				"display_panel_always_show",
+				"display_panel_icon",
+				"display_panel_messages",
+				"display_panel_show_in_chart",
+				"display_panel_text"
+			]
+		},
+		{
+			"category": "entity-ghost",
+			"fields": [
+				"ghost_quality",
+				"item_requests"
+			]
+		},
+		{
+			"category": "fluid-storage",
+			"fields": []
+		},
+		{
+			"category": "furnace",
+			"fields": [
+				"crafting_progress",
+				"fluidboxes",
+				"recipe",
+				"recipe_allow_inserter_overload",
+				"recipe_overload_multiplier",
+				"recipe_quality"
+			]
+		},
+		{
+			"category": "gate",
+			"fields": [
+				"opened"
+			]
+		},
+		{
+			"category": "inserter",
+			"fields": [
+				"drop_position",
+				"filter_mode",
+				"held_item",
+				"pickup_from_left_lane",
+				"pickup_from_right_lane",
+				"pickup_position",
+				"spoil_priority",
+				"stack_size_override",
+				"use_filters"
+			]
+		},
+		{
+			"category": "item-request-proxy",
+			"fields": [
+				"insert_plan",
+				"item_requests",
+				"target_name",
+				"target_position"
+			]
+		},
+		{
+			"category": "lab",
+			"fields": []
+		},
+		{
+			"category": "lamp",
+			"fields": [
+				"always_on",
+				"color"
+			]
+		},
+		{
+			"category": "linked-belt",
+			"fields": [
+				"linked_belt_type"
+			]
+		},
+		{
+			"category": "loader",
+			"fields": [
+				"loader_belt_stack_size_override",
+				"loader_filter_mode"
+			]
+		},
+		{
+			"category": "loader-1x1",
+			"fields": [
+				"loader_belt_stack_size_override",
+				"loader_filter_mode"
+			]
+		},
+		{
+			"category": "mining-drill",
+			"fields": [
+				"bonus_mining_progress",
+				"drop_target",
+				"filter",
+				"mining_drill_filter_mode",
+				"mining_progress",
+				"mining_target"
+			]
+		},
+		{
+			"category": "pipe",
+			"fields": []
+		},
+		{
+			"category": "pipe-to-ground",
+			"fields": []
+		},
+		{
+			"category": "plant",
+			"fields": [
+				"grown_ticks_remaining"
+			]
+		},
+		{
+			"category": "power-switch",
+			"fields": [
+				"switch_state"
+			]
+		},
+		{
+			"category": "programmable-speaker",
+			"fields": [
+				"alert_parameters"
+			]
+		},
+		{
+			"category": "pump",
+			"fields": [
+				"fluid_filter"
+			]
+		},
+		{
+			"category": "resource",
+			"fields": []
+		},
+		{
+			"category": "roboport",
+			"fields": []
+		},
+		{
+			"category": "rocket-silo",
+			"fields": [
+				"recipe",
+				"recipe_quality",
+				"rocket_parts",
+				"send_to_orbit_automatically",
+				"use_transitional_requests"
+			]
+		},
+		{
+			"category": "space-platform-hub",
+			"fields": [
+				"providing_to_other_platforms",
+				"request_from_buffers",
+				"request_missing_construction_materials"
+			]
+		},
+		{
+			"category": "spider-vehicle",
+			"fields": [
+				"automatic_targeting_parameters",
+				"autopilot_destination",
+				"color",
+				"driver_is_gunner",
+				"enable_logistics_while_moving",
+				"equipment_grid",
+				"label",
+				"selected_gun_index"
+			]
+		},
+		{
+			"category": "splitter",
+			"fields": [
+				"filter",
+				"input_priority",
+				"output_priority"
+			]
+		},
+		{
+			"category": "tile-ghost",
+			"fields": []
+		},
+		{
+			"category": "train",
+			"fields": [
+				"color",
+				"copy_color_from_train_stop",
+				"enable_logistics_while_moving",
+				"equipment_grid",
+				"orientation",
+				"schedule",
+				"train_id"
+			]
+		},
+		{
+			"category": "train-stop",
+			"fields": [
+				"color",
+				"manual_trains_limit",
+				"priority"
+			]
+		},
+		{
+			"category": "transport-belt",
+			"fields": []
+		},
+		{
+			"category": "turret",
+			"fields": [
+				"ignore_unlisted_targets_condition",
+				"ignore_unprioritised_targets",
+				"priority_targets",
+				"read_ammo",
+				"set_ignore_unlisted_targets",
+				"set_priority_list"
+			]
+		},
+		{
+			"category": "underground-belt",
+			"fields": []
+		},
+		{
+			"category": "valve",
+			"fields": [
+				"valve_threshold_override"
+			]
+		}
+	],
+	"direct_writes": [
+		{
+			"property": "backer_name",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "character_corpse_tick_of_death",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "color",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "copy_color_from_train_stop",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "custom_status",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "destructible",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "direction",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "disabled_by_script",
+			"files": [
+				"import_phases/active_state_restoration.lua",
+				"import_phases/entity_creation.lua"
+			]
+		},
+		{
+			"property": "display_panel_always_show",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "display_panel_icon",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "display_panel_show_in_chart",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "display_panel_text",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "driver_is_gunner",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "drop_position",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "enable_logistics_while_moving",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "energy",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "entity_label",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "health",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "infinity_container_filters",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "insert_plan",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "inserter_filter_mode",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "last_user",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "mirroring",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "name_tag",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "orientation",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "pickup_position",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "proxy_target_entity",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "proxy_target_inventory",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "remove_unfiltered_items",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "selected_gun_index",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "tags",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "temperature",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "tick_grown",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "train_stop_priority",
+			"files": [
+				"core/deserializer.lua"
+			]
+		},
+		{
+			"property": "trains_limit",
+			"files": [
+				"core/deserializer.lua"
+			]
+		}
+	],
+	"we_set": [
+		{
+			"property": "alert_parameters",
+			"types": [
+				"programmable-speaker"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "always_on",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "artillery_auto_targeting",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "autopilot_destination",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "backer_name",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "bonus_progress",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "character_corpse_death_cause",
+			"types": [
+				"character-corpse"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "character_corpse_tick_of_death",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "color",
+			"types": null,
+			"origins": [
+				"restore_rule",
+				"direct_write"
+			]
+		},
+		{
+			"property": "combinator_description",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "copy_color_from_train_stop",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "crafting_progress",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "custom_status",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "destructible",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "direction",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "disabled_by_script",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "display_panel_always_show",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "display_panel_icon",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "display_panel_show_in_chart",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "display_panel_text",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "driver_is_gunner",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "drop_position",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "enable_logistics_while_moving",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "energy",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "entity_label",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "health",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "ignore_unprioritised_targets",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "infinity_container_filters",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "insert_plan",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "inserter_filter_mode",
+			"types": null,
+			"origins": [
+				"restore_rule",
+				"direct_write"
+			]
+		},
+		{
+			"property": "inserter_spoil_priority",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "inserter_stack_size_override",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "last_user",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "link_id",
+			"types": [
+				"linked-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "linked_belt_type",
+			"types": [
+				"linked-belt"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "loader_belt_stack_size_override",
+			"types": [
+				"loader",
+				"loader-1x1"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "loader_filter_mode",
+			"types": [
+				"loader",
+				"loader-1x1"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "mining_drill_filter_mode",
+			"types": [
+				"mining-drill"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "mirroring",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "name_tag",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "opened",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "orientation",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "override_logistic_mode",
+			"types": [
+				"infinity-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "pickup_from_left_lane",
+			"types": [
+				"inserter"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "pickup_from_right_lane",
+			"types": [
+				"inserter"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "pickup_position",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "power_switch_state",
+			"types": [
+				"power-switch"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "proxy_target_entity",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "proxy_target_inventory",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "remove_unfiltered_items",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "result_quality",
+			"types": [
+				"assembling-machine"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "rocket_parts",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "saved_request_filters",
+			"types": [
+				"infinity-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "saved_request_from_buffers",
+			"types": [
+				"infinity-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "saved_set_requests",
+			"types": [
+				"infinity-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "saved_storage_filters",
+			"types": [
+				"infinity-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "selected_gun_index",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "send_to_orbit_automatically",
+			"types": [
+				"rocket-silo"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "splitter_filter",
+			"types": [
+				"lane-splitter",
+				"splitter"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "splitter_input_priority",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "splitter_output_priority",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "storage_filter",
+			"types": [
+				"logistic-container"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "tags",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "temperature",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "tick_grown",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "train_stop_priority",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "trains_limit",
+			"types": null,
+			"origins": [
+				"direct_write"
+			]
+		},
+		{
+			"property": "use_filters",
+			"types": null,
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "use_transitional_requests",
+			"types": [
+				"rocket-silo"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "valve_threshold_override",
+			"types": [
+				"valve"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		},
+		{
+			"property": "vehicle_automatic_targeting_parameters",
+			"types": [
+				"spider-vehicle"
+			],
+			"origins": [
+				"restore_rule"
+			]
+		}
+	],
+	"counts": {
+		"restore_rules": 38,
+		"types_gated_rules": 22,
+		"handler_categories": 39,
+		"handler_fields": 92,
+		"direct_writes": 35,
+		"we_set": 71
+	}
+}
