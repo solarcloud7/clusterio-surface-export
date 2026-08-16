@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-	CELL_TOLERANCE, NOT_STAGED, buildTable, captureVerdict, completeness, createGateLatch,
+	CELL_TOLERANCE, NOT_MEASURED, NOT_STAGED, buildTable, captureVerdict, completeness, createGateLatch,
 	gateVerdictFor, matchCells, normalizeRows, restoreVerdict, summarizeGate, tallyVerdicts,
 } from "./sweep-model.mjs";
 
@@ -227,6 +227,38 @@ test("matchCells and the verdict helpers agree on the empty case", () => {
 	assert.equal(captureVerdict(empty, 0), NOT_STAGED);
 	assert.equal(restoreVerdict(empty, 0), NOT_STAGED);
 	assert.equal(restoreVerdict(matchCells([cell("gate", "gate", 0, 0)], []), 1), "LOST");
+});
+
+test("an unread destination reads NOT_MEASURED — never RESTORED, never LOST", () => {
+	const input = scenario({
+		destRows: null,
+		gate: {
+			failedEntityLosses: {
+				entity_count: 1,
+				entities: [{ type: "gate", name: "gate", position: { x: 4, y: 0 } }],
+			},
+		},
+	});
+	const { rows } = buildTable(input);
+	const staged = rows.filter(row => row.staged > 0);
+	assert.ok(staged.length > 0);
+	for (const row of staged) assert.equal(row.restore, NOT_MEASURED, row.type);
+	assert.equal(completeness(rows, TYPES).ok, true,
+		"a gate-failed run must still produce a COMPLETE table on the two columns it can measure");
+	assert.equal(rows.find(r => r.type === "gate").capture, "CAPTURED");
+	assert.equal(rows.find(r => r.type === "gate").gate, "REFUSED");
+	assert.equal(rows.find(r => r.type === "accumulator").gate, "PASS");
+});
+
+test("a type with no staged cell stays NOT_STAGED even when the destination went unread", () => {
+	const input = scenario({ types: [...TYPES, "reactor"], destRows: null });
+	assert.equal(buildTable(input).rows.find(r => r.type === "reactor").restore, NOT_STAGED);
+});
+
+test("restoreVerdict distinguishes 'nothing arrived' from 'nobody looked'", () => {
+	const empty = matchCells([cell("gate", "gate", 0, 0)], []);
+	assert.equal(restoreVerdict(empty, 1, true), "LOST");
+	assert.equal(restoreVerdict(empty, 1, false), NOT_MEASURED);
 });
 
 test("the tally counts every row exactly once", () => {

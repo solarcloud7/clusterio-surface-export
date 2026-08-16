@@ -15,9 +15,10 @@ export const CELL_TOLERANCE = 0.5;
 export const GATE_DETAIL_CAP = 50;
 
 export const NOT_STAGED = "NOT_STAGED";
+export const NOT_MEASURED = "NOT_MEASURED";
 export const CAPTURE_VERDICTS = ["CAPTURED", "PARTIAL", "ABSENT", NOT_STAGED];
 export const GATE_VERDICTS = ["PASS", "REFUSED", "UNKNOWN", NOT_STAGED];
-export const RESTORE_VERDICTS = ["RESTORED", "WRONG", "LOST", NOT_STAGED];
+export const RESTORE_VERDICTS = ["RESTORED", "WRONG", "LOST", NOT_MEASURED, NOT_STAGED];
 
 export function distance(a, b) {
 	return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y));
@@ -102,8 +103,9 @@ export function captureVerdict(match, staged) {
 	return "PARTIAL";
 }
 
-export function restoreVerdict(match, staged) {
+export function restoreVerdict(match, staged, measured = true) {
 	if (staged === 0) return NOT_STAGED;
+	if (!measured) return NOT_MEASURED;
 	if (match.missing.length > 0) return "LOST";
 	if (match.substituted.length > 0) return "WRONG";
 	return "RESTORED";
@@ -116,7 +118,6 @@ export function summarizeGate(gate) {
 	const byType = new Map();
 	for (const row of detailed) byType.set(row.type, (byType.get(row.type) || 0) + 1);
 	return {
-		success: gate ? gate.validation_success === true : false,
 		refusedTotal,
 		detailedTotal: detailed.length,
 		detailCapped: refusedTotal > detailed.length,
@@ -138,6 +139,7 @@ function sample(rows, limit = 3) {
 
 export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fixtureRows = [],
 	tolerance = CELL_TOLERANCE }) {
+	const destMeasured = destRows !== null && destRows !== undefined;
 	const source = normalizeRows(sourceRows);
 	const payload = normalizeRows(payloadRows);
 	const destination = normalizeRows(destRows);
@@ -169,7 +171,7 @@ export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fix
 			stagedOnFixture: (fixtureByType.get(type) || []).length,
 			capture: captureVerdict(captureMatch, cells.length),
 			gate: gateVerdictFor(type, gateSummary, cells.length),
-			restore: restoreVerdict(restoreMatch, cells.length),
+			restore: restoreVerdict(restoreMatch, cells.length, destMeasured),
 			capturedCells: captureMatch.matched.length,
 			restoredCells: restoreMatch.matched.length,
 			wrongCells: restoreMatch.substituted.length,

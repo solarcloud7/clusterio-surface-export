@@ -37,7 +37,7 @@ const SOURCE_HOST = 1;
 const DEST_HOST = 2;
 const RUN_TAG = Date.now().toString(36);
 const CLONE = `oneofeach-sweep-${RUN_TAG}`;
-const PAGE = 50;
+const PAGE = 400;
 const CLONE_WAIT_MS = 300_000;
 const SETTLE_MS = 4000;
 const REPORT_PATH = path.join(REPO_ROOT, "ci-artifacts", "one-of-each-sweep-report.json");
@@ -106,6 +106,7 @@ function readSurface(host, name) {
 	guardDestinationRead(host, `the physical read of '${name}'`);
 	const rows = [];
 	let total = null;
+	let pages = 0;
 	for (let from = 1; ; from += PAGE) {
 		const page = lua(host, `${platformLua(name)}\n`
 			+ "local ents = s.find_entities_filtered{}\n"
@@ -123,11 +124,26 @@ function readSurface(host, name) {
 				+ `(${total} -> ${page.total}) — a paged read of a moving world cannot be trusted`);
 		}
 		rows.push(...luaList(page.rows));
+		pages += 1;
 		if (from + PAGE - 1 >= total) break;
 	}
 	if (rows.length !== total) {
 		throw new Error(`paged read of '${name}' on host ${host} collected ${rows.length} row(s) for a `
 			+ `surface reporting ${total} entity(ies) — the read is incomplete, not the surface`);
+	}
+	if (pages > 1) {
+		const seen = new Set();
+		const repeated = [];
+		for (const row of rows) {
+			const key = `${row.t}|${row.n}|${row.x}|${row.y}`;
+			if (seen.has(key)) repeated.push(key);
+			seen.add(key);
+		}
+		if (repeated.length) {
+			throw new Error(`the ${pages}-page read of '${name}' on host ${host} returned ${repeated.length} `
+				+ `duplicate row(s) (e.g. ${repeated[0]}) — find_entities_filtered reordered between pages, so `
+				+ "the read dropped as many entities as it repeated");
+		}
 	}
 	return rows.map(row => ({ type: row.t, name: row.n, x: row.x, y: row.y }));
 }
@@ -153,21 +169,57 @@ function readSegmentedUnits(host, name) {
 	return { units: luaList(answer.units), asleep: answer.asleep };
 }
 
+function describeUnits(reading) {
+	return reading.units.map(unit => `${unit.n}@${unit.x},${unit.y} `
+		+ `mode=${unit.mode === undefined ? `UNREADABLE(${unit.mode_read})` : unit.mode}`).join(" | ");
+}
+
 function assertQuiescent(where, reading) {
 	if (reading.units.length === 0) {
 		say(`  NOTE  ${where} carries no segmented-unit — the wake-up confound cannot arise there, and `
 			+ "the segmented-unit row below reports what happened to it");
 		return;
 	}
-	const awake = reading.units.filter(unit => unit.mode !== reading.asleep);
-	const describe = reading.units.map(unit => `${unit.n}@${unit.x},${unit.y} `
-		+ `mode=${unit.mode === undefined ? unit.mode_read : unit.mode}`).join(" | ");
+	const describe = describeUnits(reading);
+	const awake = reading.units.filter(unit => unit.mode !== undefined && unit.mode !== reading.asleep);
+	const unreadable = reading.units.filter(unit => unit.mode === undefined);
 	if (awake.length > 0) {
-		infraFail(`${where} carries ${awake.length} segmented-unit(s) that are not asleep `
+		infraFail(`${where} carries ${awake.length} segmented-unit(s) that READ as not asleep `
 			+ `(asleep=${reading.asleep}): ${describe} — an awake demolisher eats the platform it is on, so `
 			+ "every fidelity row measured beside it describes a confound, not a transfer");
-	} else {
-		pass(`${where}: ${reading.units.length} segmented-unit(s) asleep (${describe})`);
+		return;
+	}
+	if (unreadable.length > 0) {
+		say(`  NOTE  ${where}: ${unreadable.length} segmented-unit(s) whose activity_mode could not be read `
+			+ `(${describe}) — the position check below is what carries the quiescence verdict for those`);
+		return;
+	}
+	pass(`${where}: ${reading.units.length} segmented-unit(s) asleep (${describe})`);
+}
+
+function assertUnitsHeldPosition(before, after) {
+	if (before.units.length === 0 || after.units.length === 0) {
+		say("  NOTE  a segmented-unit position comparison needs a head on both sides "
+			+ `(clone ${before.units.length}, destination ${after.units.length}) — not measured`);
+		return;
+	}
+	for (const head of after.units) {
+		const twin = before.units.filter(unit => unit.n === head.n)
+			.map(unit => ({ unit, drift: Math.hypot(unit.x - head.x, unit.y - head.y) }))
+			.sort((a, b) => a.drift - b.drift)[0];
+		if (!twin) {
+			infraFail(`the destination carries a ${head.n} the clone never had — the position comparison `
+				+ "cannot pair it, and an unpaired hostile is a confound");
+			continue;
+		}
+		if (twin.drift > 1.0) {
+			infraFail(`the arrived ${head.n} sits ${twin.drift.toFixed(3)} tiles from where the clone `
+				+ `carried it (${twin.unit.x},${twin.unit.y} -> ${head.x},${head.y}) — it moved, so it was `
+				+ "awake during the import whatever activity_mode reads");
+		} else {
+			pass(`the arrived ${head.n} is ${twin.drift.toFixed(3)} tiles from its captured clone position — `
+				+ "it never moved");
+		}
 	}
 }
 
@@ -313,7 +365,8 @@ async function main() {
 			infraFail("the clone carries no entities — every row below would read NOT_STAGED for a rig reason");
 			return;
 		}
-		assertQuiescent(`the clone ${CLONE}`, readSegmentedUnits(SOURCE_HOST, CLONE));
+		const cloneUnits = readSegmentedUnits(SOURCE_HOST, CLONE);
+		assertQuiescent(`the clone ${CLONE}`, cloneUnits);
 
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
 		const destMarker = L.dropMarker(DEST_HOST, "transfer");
@@ -328,13 +381,14 @@ async function main() {
 			platform_name: imported.result.platform_name,
 			total_entities: imported.result.total_entities,
 		};
-		if (!gate.success) {
-			infraFail("the transfer did not pass the exact gate — a destination read after a rollback "
-				+ `describes a discarded import, not a restoration: ${JSON.stringify(imported.result).slice(0, 600)}`);
-			return;
+		if (gate.success) {
+			pass(`the exact gate passed (${imported.path.split("/").at(-1)}, `
+				+ `platform=${imported.result.platform_name}, ${imported.result.total_entities} entities carried)`);
+		} else {
+			infraFail("the transfer did not pass the exact gate — the destination is not read at all, because "
+				+ "a read after a rollback describes a discarded import, not a restoration: "
+				+ `${JSON.stringify(imported.result).slice(0, 600)}`);
 		}
-		pass(`the exact gate passed (${imported.path.split("/").at(-1)}, `
-			+ `platform=${imported.result.platform_name}, ${imported.result.total_entities} entities carried)`);
 
 		say("\n=== PAYLOAD: what the export actually carried ===");
 		const { path: payloadPath, payload } = readPayload(sourceMarker);
@@ -342,10 +396,18 @@ async function main() {
 		say(`  ${payloadPath.split("/").at(-1)}: ${payloadRows.length} entity record(s)`);
 		report.property_findings = printPropertyFindings(payload);
 
-		say("\n=== DESTINATION: physical read, taken only after the gate was adjudicated ===");
-		const destRows = readSurface(DEST_HOST, CLONE);
-		say(`  the arrived '${CLONE}' carries ${destRows.length} entity(ies)`);
-		assertQuiescent(`the arrived ${CLONE}`, readSegmentedUnits(DEST_HOST, CLONE));
+		let destRows = null;
+		if (gate.success) {
+			say("\n=== DESTINATION: physical read, taken only after the gate was adjudicated ===");
+			destRows = readSurface(DEST_HOST, CLONE);
+			say(`  the arrived '${CLONE}' carries ${destRows.length} entity(ies)`);
+			const destUnits = readSegmentedUnits(DEST_HOST, CLONE);
+			assertQuiescent(`the arrived ${CLONE}`, destUnits);
+			assertUnitsHeldPosition(cloneUnits, destUnits);
+		} else {
+			say("\n=== DESTINATION: NOT READ (the gate failed) — the RESTORED column reads NOT_MEASURED, and "
+				+ "the CAPTURED and GATE columns below still stand on their own evidence ===");
+		}
 
 		const table = buildTable({
 			types: TYPES,
@@ -391,7 +453,7 @@ async function main() {
 			fixture_entities: fixtureRows.length,
 			clone_entities: sourceRows.length,
 			payload_entities: payloadRows.length,
-			destination_entities: destRows.length,
+			destination_entities: destRows === null ? null : destRows.length,
 			staged_types: table.rows.filter(row => row.staged > 0).length,
 		};
 		report.tally = Object.fromEntries(["capture", "gate", "restore"].map(column =>
