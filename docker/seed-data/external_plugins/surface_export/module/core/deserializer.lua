@@ -20,7 +20,7 @@ function Deserializer.release_item_state_session(session)
     Util.pcall_warn("[Deserializer] item-state scratch release", function()
       InventoryScanner.release_item_state_cache(session.scratch)
     end)
-    session.scratch = nil
+    session.scratch = false
   end
 end
 
@@ -34,54 +34,6 @@ local function session_scratch(session)
     end
   end
   return session.scratch or nil
-end
-
-local function restore_export_string_stack(stack, item, session)
-  if not (stack and stack.valid_for_read) then return false end
-  local name = stack.name
-  local quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
-  local count = stack.count
-  if not session then
-    log(string.format("[Deserializer] ITEM STATE DECLINED export_string for %s: no item-state session was "
-      .. "threaded to this restore, so no preflight and no counter exist here", name))
-    return false
-  end
-
-  local scratch = session_scratch(session)
-  local keeps, seen = false, "no scratch inventory"
-  if scratch then
-    keeps, seen = InventoryScanner.export_string_keeps_identity(scratch, name, quality, count, item.export_string)
-  end
-  if not keeps then
-    session.declined = session.declined + 1
-    session.logged = session.logged + 1
-    if session.logged <= 10 then
-      log(string.format("[Deserializer] ITEM STATE DECLINED export_string for %s (%s) x%d: the scratch preflight "
-        .. "read %s — the live stack was not written", name, quality, count, tostring(seen)))
-    end
-    return false
-  end
-
-  local ok, result = pcall(function() return stack.import_stack(item.export_string) end)
-  if ok and result == 0 then
-    session.applied = session.applied + 1
-    return true
-  end
-  session.failed = session.failed + 1
-  session.logged = session.logged + 1
-  if session.logged <= 10 then
-    log(string.format("[Deserializer] ITEM STATE export_string WRITE FAILED for %s: %s", name,
-      ok and ("import_stack returned " .. tostring(result)) or tostring(result)))
-  end
-  return false
-end
-
-local function place_plain_stack(stack, item)
-  local stack_params = { name = item.name, count = item.count }
-  if item.quality and item.quality ~= Util.QUALITY_NORMAL then
-    stack_params.quality = item.quality
-  end
-  return pcall(function() stack.set_stack(stack_params) end)
 end
 
 local function restore_item_scalar_properties(stack, item_data)
@@ -129,6 +81,71 @@ local function restore_item_scalar_properties(stack, item_data)
       end
     end)
   end
+end
+
+local function restore_export_string_with_session(stack, item, session)
+  local name = stack.name
+  local quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
+  local count = stack.count
+
+  local scratch = session_scratch(session)
+  local keeps, seen = false, "no scratch inventory"
+  if scratch then
+    keeps, seen = InventoryScanner.export_string_keeps_identity(scratch, name, quality, count, item.export_string)
+  end
+  if not keeps then
+    session.declined = session.declined + 1
+    restore_item_scalar_properties(stack, item)
+    session.logged = session.logged + 1
+    if session.logged <= 10 then
+      log(string.format("[Deserializer] ITEM STATE DECLINED export_string for %s (%s) x%d: the scratch preflight "
+        .. "read %s — the live stack keeps the plain item and its scalar properties, and was not written",
+        name, quality, count, tostring(seen)))
+    end
+    return false
+  end
+
+  local ok, result = pcall(function() return stack.import_stack(item.export_string) end)
+  if ok and result == 0 then
+    session.applied = session.applied + 1
+    return true
+  end
+  session.failed = session.failed + 1
+  session.logged = session.logged + 1
+  if session.logged <= 10 then
+    log(string.format("[Deserializer] ITEM STATE export_string WRITE FAILED for %s: %s", name,
+      ok and ("import_stack returned " .. tostring(result)) or tostring(result)))
+  end
+  return false
+end
+
+local function restore_export_string_stack(stack, item, session)
+  if not (stack and stack.valid_for_read) then
+    log(string.format("[Deserializer] ITEM STATE export_string skipped for '%s': the plain stack did not take, "
+      .. "so there is nothing to write the string onto", tostring(item.name)))
+    return false
+  end
+  if session then return restore_export_string_with_session(stack, item, session) end
+
+  local name = stack.name
+  local transient = Deserializer.new_item_state_session()
+  local ok, applied = pcall(restore_export_string_with_session, stack, item, transient)
+  Deserializer.release_item_state_session(transient)
+  if not ok then error(applied, 0) end
+  if transient.declined + transient.failed > 0 then
+    log(string.format("[Deserializer] ITEM STATE for %s on a restore with no session: declined %d failed %d — "
+      .. "the guard ran, but these counts reach no import metrics",
+      name, transient.declined, transient.failed))
+  end
+  return applied
+end
+
+local function place_plain_stack(stack, item)
+  local stack_params = { name = item.name, count = item.count }
+  if item.quality and item.quality ~= Util.QUALITY_NORMAL then
+    stack_params.quality = item.quality
+  end
+  return pcall(function() stack.set_stack(stack_params) end)
 end
 
 local function restore_item_properties(stack, item_data, item_state)
@@ -711,11 +728,15 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses, 
             local stack = inventory[slot_index]
             local placed_ok, placed_err = place_plain_stack(stack, item)
             if not placed_ok then
-              log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?): %s",
+              log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?): "
+                .. "%s — its export_string is dropped with it, and the absent item fails the census",
                 item.name, entity.name, tostring(placed_err)))
             else
               restore_export_string_stack(stack, item, item_state)
             end
+          else
+            log(string.format("[Deserializer] No free slot in %s for '%s' — the item is dropped and the absent "
+              .. "item fails the census", entity.name, tostring(item.name)))
           end
         else
           local stack_params = {

@@ -40,16 +40,20 @@ local function restore_into_chest(items, use_session)
   local session = use_session ~= false and Deserializer.new_item_state_session() or nil
   local entity_data = { specific_data = { inventories = { { type = "chest", items = items } } } }
   local ok, err = pcall(Deserializer.restore_inventories, chest, entity_data, nil, session)
+  if not ok then
+    log(string.format("[inventory-import-guard-selftest] restore_inventories threw: %s", tostring(err)))
+  end
   Deserializer.release_item_state_session(session)
 
-  local result = chest_readback(chest.get_inventory(defines.inventory.chest))
+  local read_ok, result = pcall(chest_readback, chest.get_inventory(defines.inventory.chest))
+  chest.destroy()
+  if not read_ok then error(result, 0) end
   result.built = true
   result.ok = ok
   result.err = ok and "" or tostring(err)
   result.applied = session and session.applied or -1
   result.declined = session and session.declined or -1
   result.failed = session and session.failed or -1
-  chest.destroy()
   return result
 end
 
@@ -75,6 +79,8 @@ local function inventory_import_guard_selftest()
   end
 
   local fixture_inv = game.create_inventory(2)
+  local build_ok, fixtures = pcall(function()
+  local built = {}
   fixture_inv[1].set_stack({ name = "blueprint", count = 1 })
   fixture_inv[1].set_blueprint_entities({
     { entity_number = 1, name = "wooden-chest", position = { x = 0.5, y = 0.5 } },
@@ -98,20 +104,29 @@ local function inventory_import_guard_selftest()
     end
   end
   fixture_inv[2].label = "the-book"
-  local book_string = fixture_inv[2].export_stack()
-  local book_state = InventoryScanner.extract_item_properties(fixture_inv[2])
-  fixture_inv.destroy()
+  built.book_string = fixture_inv[2].export_stack()
+  built.book_state = InventoryScanner.extract_item_properties(fixture_inv[2])
 
   local decoded = helpers.json_to_table(helpers.decode_string(same_type_string:sub(2)))
   decoded.blueprint.entities[2].name = UNKNOWN_ENTITY
   decoded.blueprint.icons = { { signal = { name = "wooden-chest" }, index = 1 } }
-  local partial_string = "0" .. helpers.encode_string(helpers.table_to_json(decoded))
+  built.partial_string = "0" .. helpers.encode_string(helpers.table_to_json(decoded))
+  built.same_type_string = same_type_string
+  return built
+  end)
+  fixture_inv.destroy()
+  if not build_ok then error(fixtures, 0) end
+  local same_type_string = fixtures.same_type_string
+  local book_string = fixtures.book_string
+  local book_state = fixtures.book_state
+  local partial_string = fixtures.partial_string
 
   check("fixture_string_names_an_entity_this_install_lacks", prototypes.entity[UNKNOWN_ENTITY] == nil,
     "the partial-import fixture is only a fixture if the entity it names really is unknown here")
 
   local function blueprint_item(export_string, slot)
-    return { name = "blueprint", count = 1, quality = "normal", slot = slot or 1, export_string = export_string }
+    return { name = "blueprint", count = 1, quality = "normal", slot = slot or 1, export_string = export_string,
+      label = { text = "chest-blueprint" } }
   end
 
   local clean = restore_into_chest({ blueprint_item(same_type_string) })
@@ -130,6 +145,13 @@ local function inventory_import_guard_selftest()
     "a string the engine can only import PARTIALLY (import_stack returns -1, dropping the entities this "
       .. "install lacks) must be declined whole: the plain stack stays placed so the census still balances, "
       .. "and the loss is counted rather than shipped as a blueprint quietly missing entities; "
+      .. report("partial", partial))
+
+  check("a_declined_stack_still_carries_the_scalar_properties_the_payload_captured",
+    partial.built and partial.label == "chest-blueprint",
+    "the export string normally carries the label, so a DECLINED stack would arrive blank and be "
+      .. "indistinguishable from every other empty blueprint in the inventory — the payload's own scalar "
+      .. "fields are restored on the decline path, where no string write follows to overwrite them; "
       .. report("partial", partial))
 
   local cross = restore_into_chest({ blueprint_item(book_string) })
@@ -163,11 +185,20 @@ local function inventory_import_guard_selftest()
       .. "SHRINKS a book to size 0, after which its free-slot scan has no slots; " .. report("book", book))
 
   local sessionless = restore_into_chest({ blueprint_item(same_type_string) }, false)
-  check("chest_declines_when_no_item_state_session_is_threaded",
+  check("chest_applies_a_clean_string_with_no_session_threaded",
     sessionless.built and sessionless.ok and sessionless.stacks == 1
-      and sessionless.name == "blueprint" and sessionless.entities == 0,
-    "with no session there is no preflight and no counter, so the string must NOT be written: an "
-      .. "uncounted write is the dead-field class this guard exists to prevent; " .. report("sessionless", sessionless))
+      and sessionless.name == "blueprint" and sessionless.entities == 2,
+    "a caller that threads no session still gets its content: the guard runs on a transient scratch rather "
+      .. "than refusing every write, so whether a blueprint keeps its entities cannot depend on which call "
+      .. "site reached the restore; " .. report("sessionless", sessionless))
+
+  local sessionless_partial = restore_into_chest({ blueprint_item(partial_string) }, false)
+  check("chest_still_declines_a_partial_string_with_no_session_threaded",
+    sessionless_partial.built and sessionless_partial.ok and sessionless_partial.stacks == 1
+      and sessionless_partial.name == "blueprint" and sessionless_partial.entities == 0,
+    "and the guard is never skipped just because the counters have nowhere to go — a transient session "
+      .. "counts into a log line instead of into the import metrics; "
+      .. report("sessionless-partial", sessionless_partial))
 
   return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

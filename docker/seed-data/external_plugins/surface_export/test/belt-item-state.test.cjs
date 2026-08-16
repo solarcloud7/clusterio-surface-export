@@ -129,12 +129,15 @@ test("a blueprint book restored from its export string is not then emptied by th
 		+ "whole stack, so a label written first is overwritten by the string's own");
 	const deserializer = read("core", "deserializer.lua");
 	assert.match(deserializer, /function Deserializer\.restore_nested_inventory\(inventory, items_data, item_state\)[\s\S]{0,200}?inventory\.clear\(\)/,
-		"pinning the clear() this drop exists to route around. The clear() still stands because the inventory "
-		+ "path cannot reach it with a book: measured at 2.1.11, blueprint-book is the ONLY item prototype of 400 "
-		+ "that reports is_item_with_inventory, and it always exports a string, so it always takes the "
-		+ "export_string branch — and that branch never calls restore_item_properties, which is the sole caller "
-		+ "of restore_nested_inventory for an item's own inventory. The belt-side drop is therefore still "
-		+ "load-bearing and was kept deliberately, not by omission");
+		"pinning the clear() this drop exists to route around. Measured at 2.1.11, blueprint-book is the ONLY "
+		+ "item prototype of 400 that reports is_item_with_inventory, and when it exports a string it takes the "
+		+ "export_string branch, which does not call restore_item_properties — the sole caller of "
+		+ "restore_nested_inventory for an item's own inventory. That leaves ONE reachable route on the "
+		+ "inventory path: extract_item_properties only attaches export_string when export_stack() succeeds "
+		+ "(inventory-scanner.lua), while nested_inventory is attached unconditionally, so a book whose "
+		+ "export_stack() FAILS on the source arrives carrying pages and no string, takes the non-export "
+		+ "branch, and is emptied here. That route is pre-existing and untouched by the guard change; the "
+		+ "belt-side drop remains load-bearing either way");
 });
 
 test("the declined counter reaches the log line and the import-complete metrics", () => {

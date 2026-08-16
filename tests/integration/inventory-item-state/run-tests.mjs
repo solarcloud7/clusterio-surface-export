@@ -91,8 +91,6 @@ function findPlatformIndex(host, name) {
 	return typeof r.index === "number" ? r.index : null;
 }
 
-// the readback keys off the LABELS this run wrote, not off chest identity: the arrived stack is
-// found wherever it landed, so a slot or container change cannot read as a content loss
 const READBACK_LUA = `local bp, book = nil, nil
 for _, e in pairs(s.find_entities_filtered{}) do
   if e.valid then
