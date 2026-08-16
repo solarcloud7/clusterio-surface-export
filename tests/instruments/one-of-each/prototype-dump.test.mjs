@@ -9,7 +9,9 @@
 //           than the one it records, or check that a rolling-stock or rail type list still
 //           ENUMERATES its subclass — the dump carries no per-prototype subclass, so a type ADDED
 //           at a future pin is not caught here (see does_not_carry / remedy_at_next_redump in the
-//           provenance)
+//           provenance); the row_fields comparison is a UNION over every row, so a field that goes
+//           CONDITIONAL in a re-dump is invisible to it — only a field added or removed everywhere
+//           trips it
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +22,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	DUMP_PATH, PROVENANCE_PATH, assemble, checkControls, loadVendoredDump, readDump, serializeArtifact,
+	DUMP_PATH, PROVENANCE_PATH, assemble, checkControls, checkRailTaxonomy, loadVendoredDump, readDump,
+	serializeArtifact,
 } from "./derive-universe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -136,4 +139,19 @@ test("the derivation reads the vendored dump by default and refuses live-only fl
 		assert.throws(() => readDump([flag, "whatever"]), /pass --live/,
 			`${flag} without --live must refuse rather than silently derive from the vendored dump`);
 	}
+});
+
+test("--dump refuses every live-only flag too — the captured path ignores them all the same", () => {
+	for (const flag of ["--live", "--instance", "--platform", "--host"]) {
+		assert.throws(() => readDump(["--dump", DUMP_PATH, flag, "whatever"]), /--dump reads a captured one/,
+			`${flag} beside --dump must refuse rather than be silently ignored`);
+	}
+});
+
+test("the vendored dump still carries every rolling-stock and rail type the derivation hardcodes", () => {
+	assert.equal(checkRailTaxonomy(dump.rows), undefined,
+		"the taxonomy control only runs in main() today, so a renamed type would reach no test");
+	assert.throws(() => checkRailTaxonomy(dump.rows.filter(row => row.t !== "straight-rail")),
+		/\[straight-rail\] are named as rolling stock or rail but do not exist/,
+		"the sha256 pin makes a rail-less dump unreachable on disk, so the teeth are proven on filtered real rows");
 });

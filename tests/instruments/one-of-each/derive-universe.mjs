@@ -475,10 +475,18 @@ export function loadVendoredDump(dumpPath = DUMP_PATH, provenancePath = PROVENAN
 }
 
 export function readDump(argv) {
-	const dumpArg = argv.indexOf("--dump");
-	if (dumpArg !== -1) return JSON.parse(readFileSync(argv[dumpArg + 1], "utf8"));
-
 	const liveOnly = ["--instance", "--platform", "--host"].filter(flag => argv.includes(flag));
+
+	const dumpArg = argv.indexOf("--dump");
+	if (dumpArg !== -1) {
+		const ignored = [...(argv.includes("--live") ? ["--live"] : []), ...liveOnly];
+		if (ignored.length) {
+			throw new Error(`[${ignored}] parameterize the live dump, but --dump reads a captured one — drop them, `
+				+ "or drop --dump to take a fresh one; silently ignoring them would read as a measurement");
+		}
+		return JSON.parse(readFileSync(argv[dumpArg + 1], "utf8"));
+	}
+
 	if (!argv.includes("--live")) {
 		if (liveOnly.length) {
 			throw new Error(`[${liveOnly}] only parameterize the live dump — pass --live to take a fresh one, or `
