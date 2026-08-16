@@ -142,14 +142,19 @@ allow-manifest entry and nothing to review. The trigger is now what the runner D
 transfer verdict, matched as the `debug_import_result` artifact name or an identifier ending in
 `ImportResult`/`ImportResults`.
 
-Sweep over the 24 `tests/integration/*/run-tests.{ps1,mjs}` runners at 13e7776, engagement derived by
-blinding each file's `validation_success` token and re-running the shipped function:
+Sweep over the 24 `tests/integration/*/run-tests.{ps1,mjs}` runners at 13e7776 — 23 mjs plus
+`engine-invariants` in ps1, which the mjs arm skips by construction, not by measurement:
 
 | | old literal trigger | derived trigger |
 |---|---|---|
 | runners the trigger reaches | 5 | 7 |
 | of those, an arm that can actually fail | 1 (`gallery-suite`) | 7 |
 | runners reported violating | 0 | 0 |
+
+The reach row is textual (does the trigger's pattern appear in comment-stripped code). The
+can-actually-fail row and the derived column's reach are MEASURED, by blinding each file's
+`validation_success` token and re-running the shipped `findMjsGroundingViolations` — a file whose
+blinded form fires is a file the rule engages on and can fail.
 
 The two runners the old literal missed entirely both read the glob through a local
 `readDestImportResult`: `gateway-park-proxies` and `platform-paused-restore` (PR #259, which reported
@@ -176,6 +181,12 @@ Two narrowings, each measured rather than assumed:
   (`evacuation-coverage` carries a bare `"SUCCESS"` string with no transfer at all;
   `inventory-item-state` carries no `validation_success` token to adjudicate). Not covered, not
   pretended.
+
+Residual the presence arm does NOT close: it proves that *a* verdict was adjudicated after the fetch,
+not that *each* transfer in a multi-transfer runner was. `gallery-suite` is that shape live — a forward
+transfer adjudicated at run-tests.mjs:132 and a refusal arm at :156 — so a future runner that
+adjudicates only one of its two transfers satisfies the arm. Closing it needs per-call-site pairing,
+which the textual scan cannot do.
 
 Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
 never a self-service response to a firing guard.
