@@ -29,6 +29,24 @@ review with nothing to catch a regression. This script is that catch.
 Each rule below maps to a CLAUDE.md Pitfall and was VERIFIED clean (or fixed clean) when added —
 so the guard is green today and only goes red if someone reintroduces the anti-pattern.
 
+`no-type-substring-dispatch` (Pitfall #32) bans string-searching an entity-type value — `type:find(…)`,
+`entity.type:match(…)`, `string.find(entity_type, …)`. One entity type name contains another, so a
+substring route swallows the longer name and strands its handler.
+
+[empirical, 2.1.11, measured 2026-08-15 on the local cluster] `get_entity_category` routed
+`artillery-turret` to the `turret` category because the type name contains `turret`, so
+`EntityHandlers["artillery-turret"]` never ran and `artillery_auto_targeting` never entered the
+payload. A transfer of a platform carrying an armed artillery turret (source `false`, prototype
+default `true`) restored `true` at the destination, with the gate reporting SUCCESS and PropertyCensus
+reporting `artillery_auto_targeting:not_in_payload=1`. Dispatch is now the explicit
+`GameUtils.TYPE_TO_CATEGORY` table, derived by replaying the old chain over the 132 entity types the
+engine reports at the pin.
+
+Sweep at introduction: 42 `find`/`match` calls under `module/`. Type-valued receivers were the 15
+chain branches plus one `entity.type:find("locomotive")`, which became `== "locomotive"` (only
+`locomotive` contains `locomotive` at the pin). The rule does not cover name-valued searches
+(`entity.name`, `prototype.name`), which remain in `connection-scanner.lua` and `entity-scanner.lua`.
+
 Scope: every .lua file under the plugin's module/ subtree.
 Run:   node scripts/lint-lua-invariants.mjs        (also: npm run lint:lua)
        (agent shell has no node on PATH — run inside a host container, see CLAUDE.md)

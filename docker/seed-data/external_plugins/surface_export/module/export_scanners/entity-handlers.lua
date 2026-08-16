@@ -421,7 +421,7 @@ EntityHandlers["train"] = function(entity)
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
 
-  if entity.train and entity.type:find("locomotive") then
+  if entity.train and entity.type == "locomotive" then
     data.schedule = entity.train.schedule
   end
 
