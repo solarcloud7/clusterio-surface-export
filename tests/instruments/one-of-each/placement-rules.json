@@ -1,6 +1,44 @@
 {
-	"schema": "one-of-each/placement-rules@1",
+	"schema": "one-of-each/placement-rules@2",
+	"freeze": {
+		"lever": "disabled_by_script",
+		"also": "destructible=false",
+		"segmented_unit_lever": "LuaSegmentedUnit.activity_mode + minimum_activity_mode = defines.segmented_unit_activity_mode.asleep",
+		"segmented_unit_note": "a segmented-unit takes neither lever the other cells take: disabled_by_script accepts the write and reads back false, so the fallback is activity_mode. Nothing else may be written to the unit afterwards — measured 2026-08-16 at 2.1.11 on this fixture, writing LuaSegmentedUnit.speed on a sleeping big-demolisher raises activity_mode from asleep to minimal in the same call and to full by the next sample, and the unit moves again. Left alone after the mode write it held asleep across 3491 ticks with its position constant to 3 decimal places, its 41 segments flat, and the corpse/smoke the waking demolisher had produced decaying to 1 and 0.",
+		"force": "player",
+		"reason": "owner ruling: every mobile/hostile cell is frozen and force-aligned so nothing fights, walks, dies or emits. The ruling names active=false; LuaEntity.active is READ-ONLY at 2.1.11 — measured 2026-08-16, the engine answers 'LuaEntity::active is read only.' for all 16 mobile/hostile/transient types probed — so the writable lever disabled_by_script carries the ruling instead, and every write is read back because on a segmented-unit the write is accepted and reads back false. Force alignment was already satisfied: create_entity passes force='player' for every cell (fish comes back neutral, which is the prototype's own force).",
+		"types": [
+			"unit",
+			"unit-spawner",
+			"turret",
+			"segmented-unit",
+			"spider-unit",
+			"combat-robot",
+			"ammo-turret",
+			"electric-turret",
+			"artillery-turret",
+			"land-mine",
+			"construction-robot",
+			"logistic-robot",
+			"fish"
+		],
+		"selection": "the six types the ruling names, plus every other universe type that moves or fights: the three player-force turret types, land-mine, both robot types, and fish"
+	},
 	"rules": {
+		"straight-rail": {
+			"segment": {
+				"count": 5,
+				"pitch": 2
+			},
+			"direction": "north",
+			"reason": "owner constraint: a rail segment is script-placed so infinity-cargo-wagon has something to sit on; five rails at the prototype's 2-tile pitch span 10 tiles, which covers the wagon's length inside one 26x12 cell"
+		},
+		"infinity-cargo-wagon": {
+			"on_type": "straight-rail",
+			"direction": "north",
+			"order": "after_targets",
+			"reason": "owner constraint: the wagon is placed onto the rail segment rather than into its own cell, so it is allocated after every other cell and takes the centre rail's measured position and direction"
+		},
 		"thruster": {
 			"edge": "south",
 			"direction": "south",

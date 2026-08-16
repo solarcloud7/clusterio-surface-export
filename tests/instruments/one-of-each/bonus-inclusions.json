@@ -1,0 +1,10 @@
+{
+	"schema": "one-of-each/bonus-inclusions@1",
+	"pin": "2.1.11",
+	"entries": [
+		{
+			"type": "straight-rail",
+			"reason": "included as a bonus type because infinity-cargo-wagon needs rail under it to exist at all, so the fixture places a rail segment either way; the surface-conditions derivation excludes straight-rail (gravity >= 1 but the platform measures 0) and create_entity places it anyway on a surface carrying ignore_surface_conditions, which makes the rail a payload-carried type the export scanner routes through its else branch"
+		}
+	]
+}
