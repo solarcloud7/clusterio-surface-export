@@ -9,26 +9,41 @@
 //           gate has been adjudicated
 // does not: contact the cluster, read the payload's own type list (rows are keyed on universe types,
 //           never on what the payload happened to carry), resolve any entity by unit_number, treat a
-//           capped gate detail list as a PASS, or grade a fidelity verdict as a test failure
+//           capped gate detail list as a PASS, grade a fidelity verdict as a test failure, or
+//           distinguish a restored entity from one the ENGINE re-created at the same position — a
+//           destination read taken after activation cannot separate the two, so a type the engine
+//           regenerates (a demolisher's trail corpses) or provides outright (the hub, whose row is
+//           marked PROVIDED because deserializer.lua never places one) reads restored either way
 
 export const CELL_TOLERANCE = 0.5;
 export const GATE_DETAIL_CAP = 50;
 
 export const NOT_STAGED = "NOT_STAGED";
 export const NOT_MEASURED = "NOT_MEASURED";
-export const CAPTURE_VERDICTS = ["CAPTURED", "PARTIAL", "ABSENT", NOT_STAGED];
-export const GATE_VERDICTS = ["PASS", "REFUSED", "UNKNOWN", NOT_STAGED];
-export const RESTORE_VERDICTS = ["RESTORED", "WRONG", "LOST", NOT_MEASURED, NOT_STAGED];
+export const LOST_IN_CLONE = "LOST_IN_CLONE";
+export const PROVIDED = "PROVIDED";
+export const CAPTURE_VERDICTS = ["CAPTURED", "PARTIAL", "ABSENT", LOST_IN_CLONE, NOT_STAGED];
+export const GATE_VERDICTS = ["PASS", "REFUSED", "UNKNOWN", LOST_IN_CLONE, NOT_STAGED];
+export const RESTORE_VERDICTS = ["RESTORED", PROVIDED, "WRONG", "LOST", NOT_MEASURED, LOST_IN_CLONE,
+	NOT_STAGED];
 
 export function distance(a, b) {
 	return Math.hypot(Number(a.x) - Number(b.x), Number(a.y) - Number(b.y));
 }
 
+export function ghostNameOf(row) {
+	return row.ghost_name ?? row.g ?? (row.specific_data && row.specific_data.ghost_name) ?? null;
+}
+
 export function normalizeRow(row) {
 	const position = row.position && typeof row.position === "object" ? row.position : row;
+	const name = row.name ?? row.n;
+	const ghosted = ghostNameOf(row);
 	return {
 		type: row.type ?? row.t,
-		name: row.name ?? row.n,
+		name,
+		ghosted,
+		identity: ghosted ?? name,
 		x: Number(Array.isArray(position) ? position[0] : position.x),
 		y: Number(Array.isArray(position) ? position[1] : position.y),
 	};
@@ -37,7 +52,7 @@ export function normalizeRow(row) {
 export function normalizeRows(rows) {
 	if (rows === null || rows === undefined) return [];
 	const list = Array.isArray(rows) ? rows : Object.values(rows);
-	return list.map(normalizeRow).filter(row => typeof row.type === "string" && typeof row.name === "string"
+	return list.map(normalizeRow).filter(row => typeof row.type === "string" && typeof row.identity === "string"
 		&& Number.isFinite(row.x) && Number.isFinite(row.y));
 }
 
@@ -61,7 +76,7 @@ export function matchCells(cells, rows, tolerance = CELL_TOLERANCE) {
 	const pending = [];
 	for (const cell of cells) {
 		const exact = nearestUnconsumed(cell, pool, tolerance,
-			row => row.type === cell.type && row.name === cell.name);
+			row => row.type === cell.type && row.identity === cell.identity);
 		if (exact) outcomes.set(cell, { kind: "matched", cell, drift: exact.drift });
 		else pending.push(cell);
 	}
@@ -134,11 +149,11 @@ export function gateVerdictFor(type, summary, staged) {
 }
 
 function sample(rows, limit = 3) {
-	return rows.slice(0, limit).map(row => `${row.name}@${row.x},${row.y}`);
+	return rows.slice(0, limit).map(row => `${row.identity}@${row.x},${row.y}`);
 }
 
 export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fixtureRows = [],
-	tolerance = CELL_TOLERANCE }) {
+	providedTypes = [], tolerance = CELL_TOLERANCE }) {
 	const destMeasured = destRows !== null && destRows !== undefined;
 	const source = normalizeRows(sourceRows);
 	const payload = normalizeRows(payloadRows);
@@ -163,17 +178,23 @@ export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fix
 	const captureByType = groupOutcomes(matchCells(staged, payload, tolerance).outcomes);
 	const restoreByType = groupOutcomes(matchCells(staged, destination, tolerance).outcomes);
 
+	const provided = new Set(providedTypes);
 	const rows = types.map(type => {
 		const cells = sourceByType.get(type) || [];
+		const onFixture = (fixtureByType.get(type) || []).length;
 		const captureMatch = captureByType.get(type) || EMPTY_MATCH;
 		const restoreMatch = restoreByType.get(type) || EMPTY_MATCH;
+		const lostInClone = cells.length === 0 && onFixture > 0;
+		let restore = lostInClone ? LOST_IN_CLONE : restoreVerdict(restoreMatch, cells.length, destMeasured);
+		if (restore === "RESTORED" && provided.has(type)) restore = PROVIDED;
 		return {
 			type,
 			staged: cells.length,
-			stagedOnFixture: (fixtureByType.get(type) || []).length,
-			capture: captureVerdict(captureMatch, cells.length),
-			gate: gateVerdictFor(type, gateSummary, cells.length),
-			restore: restoreVerdict(restoreMatch, cells.length, destMeasured),
+			stagedOnFixture: onFixture,
+			providedByPlatform: provided.has(type),
+			capture: lostInClone ? LOST_IN_CLONE : captureVerdict(captureMatch, cells.length),
+			gate: lostInClone ? LOST_IN_CLONE : gateVerdictFor(type, gateSummary, cells.length),
+			restore,
 			capturedCells: captureMatch.matched.length,
 			restoredCells: restoreMatch.matched.length,
 			wrongCells: restoreMatch.substituted.length,
@@ -182,8 +203,9 @@ export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fix
 			sourceSample: sample(cells),
 			destinationSample: sample(destByType.get(type) || []),
 			substitutions: restoreMatch.substituted.slice(0, 3).map(entry =>
-				`${entry.cell.name}@${entry.cell.x},${entry.cell.y} -> ${entry.found.type}/${entry.found.name}`),
-			lostSample: restoreMatch.missing.slice(0, 3).map(entry => `${entry.cell.name}@${entry.cell.x},${entry.cell.y}`),
+				`${entry.cell.identity}@${entry.cell.x},${entry.cell.y} -> ${entry.found.type}/${entry.found.identity}`),
+			lostSample: restoreMatch.missing.slice(0, 3)
+				.map(entry => `${entry.cell.identity}@${entry.cell.x},${entry.cell.y}`),
 			maxDrift: restoreMatch.matched.reduce((worst, entry) => Math.max(worst, entry.drift), 0),
 		};
 	});

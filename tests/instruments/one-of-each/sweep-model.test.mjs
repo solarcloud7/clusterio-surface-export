@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-	CELL_TOLERANCE, NOT_MEASURED, NOT_STAGED, buildTable, captureVerdict, completeness, createGateLatch,
-	gateVerdictFor, matchCells, normalizeRows, restoreVerdict, summarizeGate, tallyVerdicts,
+	CELL_TOLERANCE, LOST_IN_CLONE, NOT_MEASURED, NOT_STAGED, PROVIDED, buildTable, captureVerdict,
+	completeness, createGateLatch, gateVerdictFor, matchCells, normalizeRows, restoreVerdict,
+	summarizeGate, tallyVerdicts,
 } from "./sweep-model.mjs";
 
 const TYPES = ["accumulator", "gate", "straight-rail", "space-platform-hub"];
@@ -250,10 +251,14 @@ test("rows arrive from Lua as objects or arrays, and unreadable rows are dropped
 	assert.deepEqual(normalizeRows({}), []);
 	assert.deepEqual(normalizeRows(undefined), []);
 	assert.deepEqual(normalizeRows({ 1: { t: "gate", n: "gate", x: 1, y: 2 } }),
-		[{ type: "gate", name: "gate", x: 1, y: 2 }]);
+		[{ type: "gate", name: "gate", ghosted: null, identity: "gate", x: 1, y: 2 }]);
 	assert.deepEqual(normalizeRows([{ type: "gate", name: "gate", position: [1, 2] }]),
-		[{ type: "gate", name: "gate", x: 1, y: 2 }]);
+		[{ type: "gate", name: "gate", ghosted: null, identity: "gate", x: 1, y: 2 }]);
 	assert.deepEqual(normalizeRows([{ type: "gate", name: "gate" }]), []);
+	assert.deepEqual(
+		normalizeRows([{ t: "entity-ghost", n: "entity-ghost", g: "stone-furnace", x: 1, y: 2 }]),
+		[{ type: "entity-ghost", name: "entity-ghost", ghosted: "stone-furnace",
+			identity: "stone-furnace", x: 1, y: 2 }]);
 });
 
 test("matchCells and the verdict helpers agree on the empty case", () => {
@@ -293,6 +298,79 @@ test("restoreVerdict distinguishes 'nothing arrived' from 'nobody looked'", () =
 	const empty = matchCells([cell("gate", "gate", 0, 0)], []);
 	assert.equal(restoreVerdict(empty, 1, true), "LOST");
 	assert.equal(restoreVerdict(empty, 1, false), NOT_MEASURED);
+});
+
+test("an extra row fails completeness on its own, with nothing missing to force the verdict", () => {
+	const { rows } = buildTable(scenario());
+	const verdict = completeness([...rows, { ...rows[0], type: "not-a-universe-type" }], TYPES);
+	assert.equal(verdict.ok, false, "the extra arm must carry its own weight");
+	assert.deepEqual(verdict.missing, [], "nothing is missing — only the extra row can be failing this");
+	assert.deepEqual(verdict.duplicates, []);
+	assert.deepEqual(verdict.incomplete, []);
+	assert.deepEqual(verdict.extra, ["not-a-universe-type"]);
+});
+
+test("a staged type absent from the payload reads ABSENT — the verdict behind 'zero ABSENT'", () => {
+	const input = scenario();
+	input.payloadRows = input.payloadRows.filter(row => row.type !== "gate");
+	const row = buildTable(input).rows.find(r => r.type === "gate");
+	assert.equal(row.staged, 1);
+	assert.equal(row.capturedCells, 0);
+	assert.equal(row.capture, "ABSENT");
+	assert.equal(captureVerdict(matchCells([cell("gate", "gate", 0, 0)], []), 1), "ABSENT");
+});
+
+test("a ghost is paired on the prototype it ghosts, not on the literal name 'entity-ghost'", () => {
+	const ghost = (ghosted, x, y) => ({ type: "entity-ghost", name: "entity-ghost", g: ghosted, x, y });
+	const input = scenario({ types: [...TYPES, "entity-ghost"] });
+	input.sourceRows = [...input.sourceRows, ghost("assembling-machine-2", 20, 20)];
+	input.payloadRows = [...input.payloadRows, {
+		type: "entity-ghost", name: "entity-ghost", position: { x: 20, y: 20 },
+		specific_data: { ghost_name: "assembling-machine-2" },
+	}];
+	input.destRows = [...input.destRows, ghost("assembling-machine-2", 20, 20)];
+	const row = buildTable(input).rows.find(r => r.type === "entity-ghost");
+	assert.equal(row.capture, "CAPTURED", "the payload's specific_data.ghost_name must pair with the read");
+	assert.equal(row.restore, "RESTORED");
+	assert.match(row.sourceSample[0], /^assembling-machine-2@20,20$/);
+
+	const wrongPrototype = structuredClone(input);
+	wrongPrototype.destRows = [...input.destRows.slice(0, -1), ghost("stone-furnace", 20, 20)];
+	const swapped = buildTable(wrongPrototype).rows.find(r => r.type === "entity-ghost");
+	assert.equal(swapped.restore, "WRONG",
+		"a ghost of the wrong prototype at the right spot must not read RESTORED");
+	assert.match(swapped.substitutions[0], /assembling-machine-2@20,20 -> entity-ghost\/stone-furnace/);
+});
+
+test("a type on the fixture and absent from the clone reads LOST_IN_CLONE, not NOT_STAGED", () => {
+	const input = scenario();
+	input.fixtureRows = [...input.sourceRows, cell("character-corpse", "character-corpse", 9, 9)];
+	const table = buildTable({ ...input, types: [...TYPES, "character-corpse"] });
+	const lost = table.rows.find(r => r.type === "character-corpse");
+	assert.equal(lost.capture, LOST_IN_CLONE);
+	assert.equal(lost.gate, LOST_IN_CLONE);
+	assert.equal(lost.restore, LOST_IN_CLONE);
+	assert.equal(lost.stagedOnFixture, 1);
+	assert.equal(completeness(table.rows, [...TYPES, "character-corpse"]).ok, true);
+
+	const neverStaged = buildTable({ ...input, types: [...TYPES, "reactor"] }).rows
+		.find(r => r.type === "reactor");
+	assert.equal(neverStaged.restore, NOT_STAGED,
+		"a type on neither fixture nor clone must stay distinguishable from one the clone lost");
+});
+
+test("a platform-provided type reads PROVIDED, because its row cannot fail", () => {
+	const input = scenario({ providedTypes: ["space-platform-hub"] });
+	const { rows } = buildTable(input);
+	const hub = rows.find(r => r.type === "space-platform-hub");
+	assert.equal(hub.restore, PROVIDED);
+	assert.equal(hub.providedByPlatform, true);
+	assert.equal(rows.find(r => r.type === "accumulator").restore, "RESTORED");
+
+	const absent = scenario({ providedTypes: ["space-platform-hub"] });
+	absent.destRows = absent.destRows.filter(row => row.type !== "space-platform-hub");
+	assert.equal(buildTable(absent).rows.find(r => r.type === "space-platform-hub").restore, "LOST",
+		"PROVIDED must not mask a hub that genuinely did not arrive");
 });
 
 test("the tally counts every row exactly once", () => {

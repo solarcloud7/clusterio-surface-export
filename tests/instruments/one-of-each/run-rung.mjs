@@ -5,19 +5,30 @@
 //           writable on BOTH hosts (the payload is read from the source's own debug_source_platform
 //           dump, the gate verdict from the destination's own debug_import_result)
 // produces: a CLONE of the fixture transferred host-1 -> host-2 through the production path, and one
-//           row per STAGED TYPE from universe.json carrying CAPTURED/PARTIAL/ABSENT (payload),
-//           PASS/REFUSED/UNKNOWN (gate, read before any destination read), and RESTORED/WRONG/LOST
-//           (destination physical read) with the source and destination samples behind each; plus the
-//           payload's own property_findings, the fixture-vs-clone staging delta, and a JSON report at
+//           row per UNIVERSE TYPE from universe.json (82 rows; fewer are actually STAGED, and the
+//           staged count is printed beside the universe count everywhere both appear) carrying
+//           CAPTURED/PARTIAL/ABSENT (payload), PASS/REFUSED/UNKNOWN (gate, read before any
+//           destination read), and RESTORED/PROVIDED/WRONG/LOST (destination physical read) with the
+//           source and destination samples behind each; plus the payload's own property_findings, the
+//           fixture-vs-clone staging delta, and a JSON report at
 //           ci-artifacts/one-of-each-sweep-report.json
 // does not: touch the banked fixture (it is read, cloned, and never transferred or deleted); read the
 //           destination at all before the gate verdict is adjudicated (every destination read passes
-//           through a latch that throws, so the ordering cannot be lost by moving a line); resolve any
-//           destination entity by source unit_number (unit numbers do not survive a transfer); key any
-//           row on a payload type; write to a segmented unit (a write wakes it); grade a fidelity
-//           verdict as a test failure — LOST/WRONG/ABSENT rows are MEASUREMENTS, and only the
-//           infrastructure assertions (clone, gate, table completeness, quiescent hostiles, zero
+//           through a latch that throws — the latch OBJECT has mutation-killed teeth, its WIRING into
+//           each read is protected by review alone); resolve any destination entity by source
+//           unit_number (unit numbers do not survive a transfer); key any row on a payload type;
+//           write to a segmented unit (a write wakes it); separate a RESTORED entity from one the
+//           engine RE-CREATED at the same position (the destination is read after activation, so a
+//           demolisher's trail corpses and the platform-provided hub read restored either way — the
+//           hub's row is marked PROVIDED because deserializer.lua:246 never places one); measure
+//           anything BELOW the entity (inventories, fluids, circuit state, filters and the eight
+//           properties the source-side census reports missing are all outside this table); or grade a
+//           fidelity verdict as a test failure — LOST/WRONG/ABSENT rows are MEASUREMENTS, and only
+//           the infrastructure assertions (clone, gate, table completeness, quiescent hostiles, zero
 //           leftovers) can turn this rung red
+// caveat:   the STAGED denominator is counted off the CLONE, which is itself a product of the
+//           pipeline under test — a type the clone lost reports LOST_IN_CLONE, and a type culled by
+//           the engine before the fixture read is indistinguishable from one staging never placed
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -26,11 +37,14 @@ import { fileURLToPath } from "node:url";
 import {
 	REPO_ROOT, createBatchLifecycle, docker, instanceIds, lua as luaRaw, rcon, readContainerJson, sleep, HOSTS,
 } from "../../lab-gallery/batch-lifecycle.mjs";
+import { loadPlacementRules } from "./lattice.mjs";
 import { buildTable, completeness, createGateLatch, tallyVerdicts } from "./sweep-model.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const UNIVERSE = JSON.parse(readFileSync(path.join(here, "universe.json"), "utf8"));
 const TYPES = UNIVERSE.entries.map(entry => entry.type);
+const PROVIDED_TYPES = Object.entries(loadPlacementRules().rules)
+	.filter(([, rule]) => rule.provided_by).map(([type]) => type);
 
 const FIXTURE = "oneofeach-fixture-v1";
 const SOURCE_HOST = 1;
@@ -114,7 +128,12 @@ function readSurface(host, name) {
 			+ `for i = ${from}, math.min(${from + PAGE - 1}, #ents) do\n`
 			+ "  local e = ents[i]\n"
 			+ "  if e and e.valid then\n"
-			+ "    out[#out + 1] = { t = e.type, n = e.name, x = e.position.x, y = e.position.y }\n"
+			+ "    local rec = { t = e.type, n = e.name, x = e.position.x, y = e.position.y }\n"
+			+ "    if e.type == 'entity-ghost' or e.type == 'tile-ghost' then\n"
+			+ "      local gok, g = pcall(function() return e.ghost_name end)\n"
+			+ "      if gok and g then rec.g = g end\n"
+			+ "    end\n"
+			+ "    out[#out + 1] = rec\n"
 			+ "  end\n"
 			+ "end\n"
 			+ "return { success = true, total = #ents, rows = out }");
@@ -135,7 +154,7 @@ function readSurface(host, name) {
 		const seen = new Set();
 		const repeated = [];
 		for (const row of rows) {
-			const key = `${row.t}|${row.n}|${row.x}|${row.y}`;
+			const key = `${row.t}|${row.n}|${row.g ?? ""}|${row.x}|${row.y}`;
 			if (seen.has(key)) repeated.push(key);
 			seen.add(key);
 		}
@@ -145,7 +164,7 @@ function readSurface(host, name) {
 				+ "the read dropped as many entities as it repeated");
 		}
 	}
-	return rows.map(row => ({ type: row.t, name: row.n, x: row.x, y: row.y }));
+	return rows.map(row => ({ type: row.t, name: row.n, ghost_name: row.g ?? null, x: row.x, y: row.y }));
 }
 
 function readSegmentedUnits(host, name) {
@@ -243,7 +262,11 @@ function printTable(table) {
 		if (row.wrongCells > 0) detail.push(`wrong: ${row.substitutions.join("; ")}`);
 		if (row.lostCells > 0) detail.push(`lost: ${row.lostSample.join("; ")}`);
 		if (row.staged === 0 && row.stagedOnFixture > 0) {
-			detail.push(`on the fixture as ${row.stagedOnFixture} cell(s), absent from the clone`);
+			detail.push(`on the fixture as ${row.stagedOnFixture} cell(s), absent from the clone — engine `
+				+ "culling and a clone-pipeline loss are both live, cause not isolated");
+		}
+		if (row.providedByPlatform) {
+			detail.push("provided by the platform (deserializer.lua never places one), so this row cannot fail");
 		}
 		if (row.restore === "RESTORED" && row.maxDrift > 0.001) detail.push(`drift ${row.maxDrift.toFixed(3)}`);
 		if (detail.length === 0 && row.staged > 0) detail.push(row.sourceSample.join(" "));
@@ -311,7 +334,8 @@ async function waitForClone() {
 }
 
 async function main() {
-	say(`=== one-of-each sweep: ${TYPES.length} staged types across one real transfer (clone '${CLONE}') ===`);
+	say(`=== one-of-each sweep: ${TYPES.length} universe types across one real transfer `
+		+ `(clone '${CLONE}'); how many are STAGED is measured off the clone below ===`);
 	const ids = instanceIds();
 	const previousDebug = {};
 	const report = {
@@ -374,6 +398,12 @@ async function main() {
 		rcon(SOURCE_HOST, `/transfer-platform ${cloneIndex} ${ids[DEST_HOST]}`);
 		const imported = await L.waitForImportResult(DEST_HOST, destMarker);
 
+		if (imported.result.platform_name !== CLONE) {
+			infraFail(`the newest debug_import_result on host ${DEST_HOST} reports platform_name=`
+				+ `'${imported.result.platform_name}', not '${CLONE}' — this rung would be adjudicating some `
+				+ "other transfer's gate and then reading our platform against it");
+			return;
+		}
 		const gate = latch.adjudicate(imported.result);
 		report.gate = {
 			path: imported.path,
@@ -416,6 +446,7 @@ async function main() {
 			gate: (imported.result.validation_result || {}),
 			destRows,
 			fixtureRows,
+			providedTypes: PROVIDED_TYPES,
 		});
 		const gateSummary = {
 			refusedTotal: table.gateSummary.refusedTotal,
@@ -426,8 +457,9 @@ async function main() {
 		};
 		const verdict = completeness(table.rows, TYPES);
 
-		say(`\n=== PER-TYPE VERDICT TABLE (${table.rows.length} staged types; fidelity rows are `
-			+ "MEASUREMENTS, not failures) ===");
+		const stagedRows = table.rows.filter(row => row.staged > 0).length;
+		say(`\n=== PER-TYPE VERDICT TABLE (${table.rows.length} universe types, ${stagedRows} of them `
+			+ "STAGED on the clone; fidelity rows are MEASUREMENTS, not failures) ===");
 		printTable(table);
 		say("\n=== TALLY ===");
 		printTally(table);
@@ -445,9 +477,21 @@ async function main() {
 		}
 		const fixtureOnly = table.rows.filter(row => row.staged === 0 && row.stagedOnFixture > 0);
 		if (fixtureOnly.length) {
-			say(`  the CLONE lost ${fixtureOnly.length} type(s) the fixture carries — every row below them `
-				+ `measures the second transfer only: ${fixtureOnly.map(row => row.type).join(", ")}`);
+			say(`  LOST_IN_CLONE (${fixtureOnly.length}): on the fixture, absent from the clone, so it went `
+				+ "through a REAL export/import and did not arrive — but engine culling before the clone read "
+				+ "produces the same signature, and this run separates neither: "
+				+ fixtureOnly.map(row => row.type).join(", "));
 		}
+		const neverStaged = table.rows.filter(row => row.staged === 0 && row.stagedOnFixture === 0);
+		if (neverStaged.length) {
+			say(`  NOT_STAGED (${neverStaged.length}): on neither the fixture nor the clone. INFERRED (not `
+				+ "measured here) to be staging refusals; a type the engine culled before the fixture read "
+				+ `would be indistinguishable: ${neverStaged.map(row => row.type).join(", ")}`);
+		}
+		say(`  SCOPE: this table measures entity PRESENCE by type+name+position. The clone carried `
+			+ `${sourceRows.length} entities and the payload ${payloadRows.length} records, so entities `
+			+ "outside the staged-type rows are not in this table at all; nothing below the entity "
+			+ "(inventories, fluids, circuit state, the property findings above) is measured here either.");
 
 		report.counts = {
 			fixture_entities: fixtureRows.length,
@@ -469,7 +513,8 @@ async function main() {
 				+ `pass: missing=[${verdict.missing.join(", ")}] extra=[${verdict.extra.join(", ")}] `
 				+ `duplicated=[${verdict.duplicates.join(", ")}] unreadable=[${verdict.incomplete.join("; ")}]`);
 		} else {
-			pass(`every one of the ${TYPES.length} staged types reports exactly one verdict in all three columns`);
+			pass(`every one of the ${TYPES.length} universe types (${stagedRows} staged on the clone) reports `
+				+ "exactly one verdict in all three columns");
 		}
 	} finally {
 		try {

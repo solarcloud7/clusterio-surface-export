@@ -338,6 +338,18 @@ jobs:
       - name: Run integration suite
         run: node tools/tests/run-integration-tests.mjs
 
+      # if: always() — the one-of-each sweep's per-type report (stagedOnFixture, maxDrift, per-row
+      # source/destination samples) is only worth citing from a GREEN run, which the failure-only
+      # upload below would discard.
+      - name: Upload instrument reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrument-reports
+          path: ci-artifacts/*.json
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Collect logs on failure
         if: failure()
         run: |
