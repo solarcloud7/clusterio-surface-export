@@ -68,6 +68,7 @@ const RIG_ENTITIES = [
 	{ id: "boxchest", name: "steel-chest", dx: 25.5, dy: 4.5, stock: { name: "spidertron", count: 1 } },
 	{ id: "proxy", name: "proxy-container", dx: 25.5, dy: 7.5 },
 	{ id: "proxynil", name: "proxy-container", dx: 25.5, dy: 10.5 },
+	{ id: "artillery", name: "artillery-turret", dx: 25.5, dy: 14.5 },
 	{ id: "pswitch", name: "power-switch", dx: 4.5, dy: 20.5 },
 	{ id: "poleleft", name: "small-electric-pole", dx: 2.5, dy: 22.5 },
 	{ id: "poleright", name: "small-electric-pole", dx: 10.5, dy: 22.5 },
@@ -230,6 +231,12 @@ const ATTRS = [
 		key: "use_transitional_requests", attribute: "use_transitional_requests", on: "silo",
 		write: "e.use_transitional_requests = not e.use_transitional_requests",
 		read: BOOL_READ("use_transitional_requests"),
+		dynamicExpect: true,
+	},
+	{
+		key: "artillery_auto_targeting", attribute: "artillery_auto_targeting", on: "artillery",
+		write: "e.artillery_auto_targeting = not e.artillery_auto_targeting",
+		read: BOOL_READ("artillery_auto_targeting"),
 		dynamicExpect: true,
 	},
 	{

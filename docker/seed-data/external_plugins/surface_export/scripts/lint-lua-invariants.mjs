@@ -45,6 +45,15 @@ const RULES = [
 			+ "platform.name (rename dup exploit). Resolve name→index only at the admin boundary (fail-loud) "
 			+ "and annotate that line with `-- lint-lua:allow <reason>`.",
 	},
+	{
+		id: "no-type-substring-dispatch",
+		pitfall: "#32",
+		regex: /(?:^|[^\w.])[\w.]*type\s*:\s*(?:find|match)\s*\(|string\.(?:find|match)\s*\(\s*[\w.]*type\b/,
+		hint: "Never route on a substring of an entity type. One type name contains another "
+			+ "(artillery-turret contains turret), so the shorter route swallows the longer one and its "
+			+ "handler never runs. Dispatch through the explicit GameUtils.TYPE_TO_CATEGORY table, or "
+			+ "compare the type with ==.",
+	},
 ];
 
 function stripLineComment(line) {

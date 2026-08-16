@@ -15,42 +15,32 @@ function GameUtils.round_position(position, precision)
   }
 end
 
-function GameUtils.get_entity_category(entity)
-  local type = entity.type
+GameUtils.TYPE_TO_CATEGORY = {
+  ["ammo-turret"] = "turret",
+  ["arithmetic-combinator"] = "combinator",
+  ["cargo-wagon"] = "train",
+  ["constant-combinator"] = "combinator",
+  ["decider-combinator"] = "combinator",
+  ["electric-turret"] = "turret",
+  ["fluid-turret"] = "turret",
+  ["fluid-wagon"] = "train",
+  ["infinity-cargo-wagon"] = "train",
+  ["infinity-container"] = "container",
+  ["lane-splitter"] = "splitter",
+  ["linked-container"] = "container",
+  ["locomotive"] = "train",
+  ["logistic-container"] = "container",
+  ["proxy-container"] = "container",
+  ["rocket-silo-rocket"] = "rocket-silo",
+  ["rocket-silo-rocket-shadow"] = "rocket-silo",
+  ["selector-combinator"] = "combinator",
+  ["storage-tank"] = "fluid-storage",
+  ["temporary-container"] = "container",
+}
 
-  if type:find("assembling%-machine") then
-    return "assembling-machine"
-  elseif type:find("furnace") then
-    return "furnace"
-  elseif type:find("transport%-belt") then
-    return "transport-belt"
-  elseif type:find("underground%-belt") then
-    return "underground-belt"
-  elseif type:find("splitter") then
-    return "splitter"
-  elseif type:find("inserter") then
-    return "inserter"
-  elseif type:find("container") or type:find("chest") then
-    return "container"
-  elseif type:find("storage%-tank") or type:find("fluid%-tank") then
-    return "fluid-storage"
-  elseif type:find("locomotive") or type:find("cargo%-wagon") or type:find("fluid%-wagon") then
-    return "train"
-  elseif type:find("combinator") then
-    return "combinator"
-  elseif type:find("turret") then
-    return "turret"
-  elseif type:find("mining%-drill") then
-    return "mining-drill"
-  elseif type:find("lab") then
-    return "lab"
-  elseif type:find("roboport") then
-    return "roboport"
-  elseif type:find("rocket%-silo") then
-    return "rocket-silo"
-  else
-    return type
-  end
+function GameUtils.get_entity_category(entity)
+  local entity_type = entity.type
+  return GameUtils.TYPE_TO_CATEGORY[entity_type] or entity_type
 end
 
 function GameUtils.make_quality_key(item_name, quality_name)
