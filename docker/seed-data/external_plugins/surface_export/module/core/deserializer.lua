@@ -204,7 +204,6 @@ local SIMPLE_RESTORE_RULES = {
   { field = "always_on", present = true, safecall = true },
   { field = "rocket_parts" },
   { field = "artillery_auto_targeting", present = true, safecall = true },
-  { field = "opened", present = true },
   { field = "autopilot_destination" },
   { field = "switch_state", prop = "power_switch_state", present = true, safecall = true,
     types = { ["power-switch"] = true } },

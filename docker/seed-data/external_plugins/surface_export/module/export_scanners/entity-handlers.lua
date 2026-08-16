@@ -710,13 +710,7 @@ EntityHandlers["rocket-silo"] = function(entity)
 end
 
 EntityHandlers["gate"] = function(entity)
-  local data = {}
-  
-  if entity.opened ~= nil then
-    data.opened = entity.opened
-  end
-  
-  return next(data) and data or nil
+  return nil
 end
 
 EntityHandlers["power-switch"] = function(entity)
