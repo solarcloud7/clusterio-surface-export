@@ -41,7 +41,7 @@ function PlatformHubMapping.process(job)
     return true
 end
 
-function PlatformHubMapping.restore_hub_inventories(job)
+function PlatformHubMapping.restore_hub_inventories(job, item_state)
     local entity_data = job.hub_entity_data
     if not entity_data then
       return
@@ -57,7 +57,7 @@ function PlatformHubMapping.restore_hub_inventories(job)
     local slots_before = inv and #inv or 0
     
     Deserializer.restore_entity_state(hub, entity_data)
-    Deserializer.restore_inventories(hub, entity_data)
+    Deserializer.restore_inventories(hub, entity_data, nil, item_state)
     
     log(string.format("[Import] Restored space-platform-hub state and inventories (hub_main slots=%d)", slots_before))
 end

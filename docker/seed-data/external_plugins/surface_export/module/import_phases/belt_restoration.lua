@@ -191,37 +191,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
     return result
 end
 
-function BeltRestoration.export_string_keeps_identity(scratch, name, quality, count, export_string)
-    if not (scratch and scratch.inventory and scratch.inventory.valid) then
-        return false, "no scratch inventory"
-    end
-    local slot = scratch.inventory[1]
-    local wanted_quality = quality or QUALITY_NORMAL
-    local set_ok, set_error = pcall(function()
-        slot.clear()
-        slot.set_stack({ name = name, quality = wanted_quality, count = count })
-    end)
-    if not set_ok then return false, tostring(set_error) end
-    if not slot.valid_for_read then return false, "scratch stack did not take" end
-
-    local import_ok, import_result = pcall(function() return slot.import_stack(export_string) end)
-    if not import_ok then
-        Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
-        return false, tostring(import_result)
-    end
-
-    local seen = "empty"
-    local keeps = false
-    if slot.valid_for_read then
-        local seen_quality = (slot.quality and slot.quality.name) or QUALITY_NORMAL
-        seen = string.format("%s (%s) x%d, import_stack returned %s", slot.name, seen_quality, slot.count,
-            tostring(import_result))
-        keeps = import_result == 0
-            and slot.name == name and seen_quality == wanted_quality and slot.count == count
-    end
-    Util.pcall_warn("[BeltRestoration] scratch clear", function() slot.clear() end)
-    return keeps, seen
-end
+BeltRestoration.export_string_keeps_identity = InventoryScanner.export_string_keeps_identity
 
 local function needs_scratch(side_groups)
     for _, g in ipairs(side_groups or {}) do

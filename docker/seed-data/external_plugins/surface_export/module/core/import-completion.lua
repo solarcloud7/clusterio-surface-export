@@ -186,6 +186,26 @@ local function belt_delta_to_census_keys(delta)
 	return out
 end
 
+local function record_item_state(job, session)
+	if not session then return end
+	job.metrics = job.metrics or {}
+	job.metrics.inventory_state_applied = (job.metrics.inventory_state_applied or 0) + session.applied
+	job.metrics.inventory_state_declined = (job.metrics.inventory_state_declined or 0) + session.declined
+	job.metrics.inventory_state_failed = (job.metrics.inventory_state_failed or 0) + session.failed
+end
+
+local function log_item_state(job)
+	local applied = job.metrics.inventory_state_applied or 0
+	local declined = job.metrics.inventory_state_declined or 0
+	local failed = job.metrics.inventory_state_failed or 0
+	if applied + declined + failed > 0 then
+		log(string.format("[Import] INVENTORY ITEM STATE %s: applied %d | declined %d | failed %d",
+			tostring((job.target_platform and job.target_platform.valid and job.target_platform.name)
+				or job.platform_name),
+			applied, declined, failed))
+	end
+end
+
 local function census_scope(job)
 	local platform = job and job.target_platform
 	if platform and platform.valid and platform.surface and platform.surface.valid then
@@ -210,7 +230,11 @@ function ImportCompletion.run_phase1(job)
 		hub_scope = surf and surf.find_entities_filtered({ type = "space-platform-hub" }) or nil
 	end
 	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
-	PlatformHubMapping.restore_hub_inventories(job)
+	local hub_item_state = Deserializer.new_item_state_session()
+	local hub_ok, hub_err = pcall(PlatformHubMapping.restore_hub_inventories, job, hub_item_state)
+	Deserializer.release_item_state_session(hub_item_state)
+	record_item_state(job, hub_item_state)
+	if not hub_ok then error(hub_err, 0) end
 	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
 	PhaseRecorder.stop(job, "hub")
 
@@ -314,25 +338,32 @@ function ImportCompletion.run_phase2(job)
 	PhaseCensus.open(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	local inv_restored = 0
 	local inv_skipped = 0
-	for _, entity_data in ipairs(entities_to_create) do
-		if entity_data and entity_data.entity_id and entity_data.type == "beacon" then
-			local entity = entity_map[entity_data.entity_id]
-			if entity and entity.valid then
-				Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses)
+	local inv_item_state = Deserializer.new_item_state_session()
+	local inv_ok, inv_err = pcall(function()
+		for _, entity_data in ipairs(entities_to_create) do
+			if entity_data and entity_data.entity_id and entity_data.type == "beacon" then
+				local entity = entity_map[entity_data.entity_id]
+				if entity and entity.valid then
+					Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses, inv_item_state)
+				end
 			end
 		end
-	end
-	for _, entity_data in ipairs(entities_to_create) do
-		if entity_data and entity_data.entity_id and entity_data.type ~= "beacon" then
-			local entity = entity_map[entity_data.entity_id]
-			if entity and entity.valid then
-				Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses)
-				inv_restored = inv_restored + 1
-			else
-				inv_skipped = inv_skipped + 1
+		for _, entity_data in ipairs(entities_to_create) do
+			if entity_data and entity_data.entity_id and entity_data.type ~= "beacon" then
+				local entity = entity_map[entity_data.entity_id]
+				if entity and entity.valid then
+					Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses, inv_item_state)
+					inv_restored = inv_restored + 1
+				else
+					inv_skipped = inv_skipped + 1
+				end
 			end
 		end
-	end
+	end)
+	Deserializer.release_item_state_session(inv_item_state)
+	record_item_state(job, inv_item_state)
+	if not inv_ok then error(inv_err, 0) end
+	log_item_state(job)
 	PhaseCensus.close(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PhaseRecorder.stop(job, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
@@ -796,6 +827,9 @@ function ImportCompletion.run_phase2(job)
 				belt_state_failed = job.metrics.belt_state_failed or 0,
 				belt_state_merge_discarded = job.metrics.belt_state_merge_discarded or 0,
 				belt_state_declined = job.metrics.belt_state_declined or 0,
+				inventory_state_applied = job.metrics.inventory_state_applied or 0,
+				inventory_state_declined = job.metrics.inventory_state_declined or 0,
+				inventory_state_failed = job.metrics.inventory_state_failed or 0,
 				circuits_connected = job.metrics.circuits_connected or 0,
 				copper_pruned = job.metrics.copper_pruned or 0,
 				total_items = job.total_items or 0,
