@@ -8,15 +8,20 @@
 //           that decided it) for attributes no prototype supports at this pin, the measured
 //           destination roster and clock, a per-side copper readback on the wired power switch,
 //           copper readbacks on one out-of-reach WIRED pole pair and one in-reach UNWIRED pole pair,
-//           every pairwise pole distance graded against the live wire reach, and a control section:
-//           the last_user conditional's present/absent arms, a nil-target proxy-container read, and
-//           the far end of both copper pairs
+//           the same two-arm dichotomy on GHOST poles (ghost-to-ghost and ghost-to-real, each read
+//           as all-wires vs real-wires-only), a GHOST WIRE FACTS section reporting each new pole's
+//           unit_number and the copper set create_entity alone produced, every pairwise pole
+//           distance graded against the live wire reach, the destination's own pole-copper prune log
+//           lines, and a control section: the last_user conditional's present/absent arms, a
+//           nil-target proxy-container read, and the far end of every copper pair
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
 //           UNEXERCISED red, never expects nil); read an IN-reach WIRED pair (create_entity
 //           auto-connects one, so it could not go red on loss); assert the pruned count itself
-//           (summary.import.copper_pruned reports it; these rows measure the resulting topology)
+//           (summary.import.copper_pruned reports it; these rows measure the resulting topology);
+//           grade the prune log lines it prints (they are a discriminator for reading a red ghost
+//           row, not a verdict — the instance log spans earlier imports too)
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -81,10 +86,27 @@ const RIG_ENTITIES = [
 	{ id: "polenear1", name: "small-electric-pole", dx: 24.5, dy: 18.5 },
 	{ id: "polenear2", name: "small-electric-pole", dx: 28.5, dy: 18.5 },
 	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
+	{ id: "gwire1", name: "entity-ghost", innerName: "small-electric-pole", dx: 1.5, dy: 31.5 },
+	{ id: "gwire2", name: "entity-ghost", innerName: "small-electric-pole", dx: 11.5, dy: 31.5 },
+	{ id: "gnear1", name: "entity-ghost", innerName: "small-electric-pole", dx: 20.5, dy: 31.5 },
+	{ id: "gnear2", name: "entity-ghost", innerName: "small-electric-pole", dx: 24.5, dy: 31.5 },
+	{ id: "gmixwire", name: "entity-ghost", innerName: "small-electric-pole", dx: 1.5, dy: 40.5 },
+	{ id: "rmixwire", name: "small-electric-pole", dx: 11.5, dy: 40.5 },
+	{ id: "gmixnear", name: "entity-ghost", innerName: "small-electric-pole", dx: 20.5, dy: 40.5 },
+	{ id: "rmixnear", name: "small-electric-pole", dx: 24.5, dy: 40.5 },
 ];
+
+const POLE = "small-electric-pole";
 
 const COPPER_WIRED_PAIR = ["polewire1", "polewire2"];
 const COPPER_NEAR_PAIR = ["polenear1", "polenear2"];
+const GHOST_WIRED_PAIR = ["gwire1", "gwire2"];
+const GHOST_NEAR_PAIR = ["gnear1", "gnear2"];
+const GHOST_REAL_WIRED_PAIR = ["gmixwire", "rmixwire"];
+const GHOST_REAL_NEAR_PAIR = ["gmixnear", "rmixnear"];
+const REACHABLE_PAIRS = [COPPER_NEAR_PAIR, GHOST_NEAR_PAIR, GHOST_REAL_NEAR_PAIR];
+const GHOST_WIRE_POLES = [...GHOST_WIRED_PAIR, ...GHOST_NEAR_PAIR, ...GHOST_REAL_WIRED_PAIR,
+	...GHOST_REAL_NEAR_PAIR];
 
 const TICK_DRIFT_TOLERANCE = 60_000;
 const CORPSE_INVENTORY_SIZE = 25;
@@ -93,10 +115,13 @@ const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
 const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null,
-	poleCopperExpect: null };
+	poleCopperExpect: null, ghostCopperExpect: null, ghostRealCopperExpect: null };
 
 const NO_COPPER = "";
 const asNoCopper = value => (value === "nil" ? NO_COPPER : value);
+
+const NO_GHOST_COPPER = "all=[] real=[]";
+const asNoGhostCopper = value => (value === "nil" ? NO_GHOST_COPPER : value);
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -185,6 +210,27 @@ local function copper_side_key(e, connector_id)
   end
   table.sort(parts)
   return table.concat(parts, "+")
+end
+local function wire_peer_label(owner)
+  if owner.type == 'entity-ghost' then return 'ghost:' .. tostring(owner.ghost_name) end
+  return owner.name
+end
+local function wire_set_key(e, list)
+  local parts = {}
+  for _, conn in ipairs(list) do
+    local owner = conn.target and conn.target.owner
+    if owner and owner.valid then
+      parts[#parts + 1] = string.format("%s@%.2f,%.2f", wire_peer_label(owner),
+        owner.position.x - e.position.x, owner.position.y - e.position.y)
+    end
+  end
+  table.sort(parts)
+  return table.concat(parts, "+")
+end
+local function copper_wire_key(e, connector_id)
+  local c = e.get_wire_connector(connector_id, false)
+  if c == nil then return "nil" end
+  return string.format("all=[%s] real=[%s]", wire_set_key(e, c.connections), wire_set_key(e, c.real_connections))
 end
 local function switch_copper_key(e)
   return string.format("L=[%s] R=[%s]",
@@ -530,6 +576,76 @@ const ATTRS = [
 			+ "the default and the harness fails this row as unexercised rather than passing it vacuously",
 	},
 	{
+		key: "ghost_pole_copper", attribute: "pole_copper on a GHOST pair (wire present)", on: "gwire1",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "local near = e.get_wire_connector(copper, true)\n"
+			+ "local far = ents.gwire2.get_wire_connector(copper, true)\n"
+			+ "near.disconnect_all()\n"
+			+ "far.disconnect_all()\n"
+			+ "near.connect_to(far, false)",
+		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
+		get expect() { return RUNTIME.ghostCopperExpect; },
+		describe: "two entity-ghosts of a small-electric-pole, 10.0 apart and so past the pole's 7.5 wire "
+			+ "reach, wired to each other. A wire with a ghost at either end is a GHOST wire and is excluded "
+			+ "from real_connections by definition — upstream 2.1.11: real_connections is \"All wire "
+			+ "connectors this connector is connected to with real wires. It only includes wires that are "
+			+ "between two non-ghost entities\" "
+			+ "(https://lua-api.factorio.com/2.1.11/classes/LuaWireConnector.html) — so this row reads BOTH "
+			+ "sets and expects the wire in all=[] and nothing in real=[]. The export captures it because "
+			+ "extract_circuit_connections iterates wire_connector.connections, which upstream defines as "
+			+ "\"All wire connectors this connector is connected to. It includes all wires (ghost wires and "
+			+ "real wires)\" (connection-scanner.lua:21). Whether the payload's ghost-to-ghost wire can be "
+			+ "keyed at all depends on ghosts carrying a unit_number, which the GHOST WIRE FACTS section of "
+			+ "this run measures rather than assumes",
+	},
+	{
+		key: "ghost_pole_copper_absent", attribute: "pole_copper on a GHOST pair (no wire)", on: "gnear1",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "e.get_wire_connector(copper, true).disconnect_all()\n"
+			+ "ents.gnear2.get_wire_connector(copper, true).disconnect_all()",
+		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
+		expect: NO_GHOST_COPPER,
+		compare: (actual, expected) => asNoGhostCopper(actual) === expected,
+		describe: "two pole ghosts 4.0 apart, INSIDE the 7.5 reach, left unwired by the source. Ghost poles "
+			+ "are outside Deserializer.prune_pole_copper's scope twice over: it visits only entities whose "
+			+ "type is electric-pole (a ghost's type is entity-ghost) and it iterates real_connections, which "
+			+ "cannot contain a ghost wire. Whether create_entity auto-connects pole ghosts at all is "
+			+ "measured by this run's GHOST WIRE FACTS section and by the 'fresh default was' line: if it "
+			+ "does not, the armed value equals the default and this row is failed as unexercised rather "
+			+ "than passing vacuously",
+	},
+	{
+		key: "ghost_real_pole_copper", attribute: "pole_copper GHOST-to-REAL (wire present)", on: "gmixwire",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "local near = e.get_wire_connector(copper, true)\n"
+			+ "local far = ents.rmixwire.get_wire_connector(copper, true)\n"
+			+ "near.disconnect_all()\n"
+			+ "far.disconnect_all()\n"
+			+ "near.connect_to(far, false)",
+		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
+		get expect() { return RUNTIME.ghostRealCopperExpect; },
+		describe: "a pole ghost wired to a REAL pole 10.0 apart, past the 7.5 reach. One ghost end makes the "
+			+ "whole wire a ghost wire — upstream 2.1.11 on LuaWireConnector.is_ghost: \"If any of 2 ends of "
+			+ "a wire attaches to a ghost connector, then a wire is considered to be a ghost\" — so the real "
+			+ "pole's real_connections is empty here too, and the far-end control below reads that at the "
+			+ "real end. This is the pair the prune's peer guard would reject even if it visited it: the "
+			+ "guard requires peer.type == 'electric-pole' (deserializer.lua:1349) and a ghost's type is "
+			+ "entity-ghost",
+	},
+	{
+		key: "ghost_real_pole_copper_absent", attribute: "pole_copper GHOST-to-REAL (no wire)", on: "gmixnear",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "e.get_wire_connector(copper, true).disconnect_all()\n"
+			+ "ents.rmixnear.get_wire_connector(copper, true).disconnect_all()",
+		read: "return copper_wire_key(e, defines.wire_connector_id.pole_copper)",
+		expect: NO_GHOST_COPPER,
+		compare: (actual, expected) => asNoGhostCopper(actual) === expected,
+		describe: "a pole ghost 4.0 from a REAL pole, INSIDE the 7.5 reach, left unwired by the source. The "
+			+ "real end of this pair IS visited by prune_pole_copper — it is an electric-pole the import "
+			+ "restored — but the wire to a ghost never appears in the real_connections it iterates, so a "
+			+ "fabricated planned wire survives the prune. The far-end control below reads that real end",
+	},
+	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
 		on: "spider",
 		write: "local p = e.vehicle_automatic_targeting_parameters\n"
@@ -635,8 +751,10 @@ function buildAndArm() {
 		+ `dx = ${entity.dx}, dy = ${entity.dy}`
 		+ (entity.direction ? `, direction = ${entity.direction}` : "")
 		+ (entity.inventorySize ? `, inventory_size = ${entity.inventorySize}` : "")
+		+ (entity.innerName ? `, inner_name = '${entity.innerName}'` : "")
 		+ (entity.stock ? `, stock = { name = '${entity.stock.name}', count = ${entity.stock.count} }` : "")
 		+ " },").join("\n");
+	const ghostWirePoles = GHOST_WIRE_POLES.map(id => `  '${id}',`).join("\n");
 	const writers = ATTRS.map(a => `writers["${a.key}"] = function(e)\n${a.write}\nend`).join("\n");
 	const attrSpecs = ATTRS.map(a => `  { key = '${a.key}', on = '${a.on}' },`).join("\n");
 
@@ -648,7 +766,7 @@ local bx = math.floor(maxx) + 6
 local by = 0
 local tiles = {}
 for x = bx, bx + 28 do
-  for y = by, by + 22 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
+  for y = by, by + 42 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end
 end
 s.set_tiles(tiles)
 
@@ -661,6 +779,7 @@ for _, sp in ipairs(entity_specs) do
   local params = { name = sp.name, position = { bx + sp.dx, by + sp.dy }, force = 'player', raise_built = false }
   if sp.direction then params.direction = sp.direction end
   if sp.inventory_size then params.inventory_size = sp.inventory_size end
+  if sp.inner_name then params.inner_name = sp.inner_name end
   local ok, e = pcall(function() return s.create_entity(params) end)
   if ok and e and e.valid then
     ents[sp.id] = e
@@ -670,7 +789,9 @@ for _, sp in ipairs(entity_specs) do
       stocked = inv and inv.insert{ name = sp.stock.name, count = sp.stock.count } or 0
     end
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = true,
-      x = e.position.x, y = e.position.y, etype = e.type, stocked = stocked }
+      x = e.position.x, y = e.position.y, etype = e.type, stocked = stocked,
+      unit_number = e.unit_number,
+      ghost_name = e.type == 'entity-ghost' and e.ghost_name or nil }
   else
     placements[#placements + 1] = { id = sp.id, name = sp.name, placed = false,
       error = ok and 'create_entity returned nil' or tostring(e) }
@@ -682,6 +803,25 @@ local writers = {}
 ${writers}
 local readers = {}
 ${readerAssignments()}
+
+local ghost_wire_poles = {
+${ghostWirePoles}
+}
+local wire_facts = {}
+for _, id in ipairs(ghost_wire_poles) do
+  local e = ents[id]
+  local fact = { id = id }
+  if e and e.valid then
+    fact.unit_number = e.unit_number
+    fact.etype = e.type
+    local c = e.get_wire_connector(defines.wire_connector_id.pole_copper, false)
+    fact.connector = c ~= nil
+    if c then fact.is_ghost_connector = c.is_ghost end
+    local ok, key = pcall(function() return copper_wire_key(e, defines.wire_connector_id.pole_copper) end)
+    fact.fresh_copper = ok and key or ('THREW: ' .. tostring(key))
+  end
+  wire_facts[#wire_facts + 1] = fact
+end
 
 local attr_specs = {
 ${attrSpecs}
@@ -708,6 +848,7 @@ for _, a in ipairs(attr_specs) do
   armed[#armed + 1] = row
 end
 return { success = true, base = { x = bx, y = by }, placements = placements, armed = armed,
+  wire_facts = wire_facts,
   pole_wire_reach = prototypes.entity['small-electric-pole'].get_max_wire_distance() }`);
 }
 
@@ -813,7 +954,15 @@ function armCopperExpect(placementById) {
 const offsetKey = (target, origin) =>
 	`${target.name}@${(target.x - origin.x).toFixed(2)},${(target.y - origin.y).toFixed(2)}`;
 
+const peerLabel = placement => (placement.ghost_name ? `ghost:${placement.ghost_name}` : placement.name);
+
+const wireKey = (target, origin) =>
+	`all=[${peerLabel(target)}@${(target.x - origin.x).toFixed(2)},${(target.y - origin.y).toFixed(2)}] real=[]`;
+
 const isPair = (pair, a, b) => pair.includes(a.id) && pair.includes(b.id);
+
+const isPoleLike = placement => placement.placed
+	&& (placement.etype === "electric-pole" || placement.ghost_name === POLE);
 
 function checkPoleGeometry(placementById, reach) {
 	say("\n=== RIG GEOMETRY: which pole pairs the engine can auto-connect ===");
@@ -823,12 +972,12 @@ function checkPoleGeometry(placementById, reach) {
 			+ "grade nothing");
 		return;
 	}
-	const poles = [...placementById.values()].filter(p => p.placed && p.etype === "electric-pole");
+	const poles = [...placementById.values()].filter(isPoleLike);
 	for (let i = 0; i < poles.length; i++) {
 		for (let j = i + 1; j < poles.length; j++) {
 			const [a, b] = [poles[i], poles[j]];
 			const distance = Math.hypot(a.x - b.x, a.y - b.y);
-			const wantsReachable = isPair(COPPER_NEAR_PAIR, a, b);
+			const wantsReachable = REACHABLE_PAIRS.some(pair => isPair(pair, a, b));
 			if (wantsReachable && distance > reach) {
 				fail(`${a.id} and ${b.id} stand ${distance.toFixed(2)} tiles apart, past the ${reach} wire `
 					+ "reach — the engine would not have auto-connected them, so a destination that shows "
@@ -855,6 +1004,45 @@ function armPoleCopperExpect(placementById) {
 	}
 	RUNTIME.poleCopperExpect = offsetKey(wire2, wire1);
 	say(`  pole copper expectation from the measured rig: ${RUNTIME.poleCopperExpect}`);
+}
+
+const GHOST_WIRED_EXPECTS = [
+	{ slot: "ghostCopperExpect", pair: GHOST_WIRED_PAIR, label: "ghost-to-ghost" },
+	{ slot: "ghostRealCopperExpect", pair: GHOST_REAL_WIRED_PAIR, label: "ghost-to-real" },
+];
+
+function armGhostCopperExpect(placementById) {
+	for (const { slot, pair, label } of GHOST_WIRED_EXPECTS) {
+		const [near, far] = pair.map(id => placementById.get(id));
+		if (!(near?.placed && far?.placed)) {
+			fail(`the ${label} wired pole pair did not place in full, so its copper row has no measured `
+				+ "expectation");
+			continue;
+		}
+		RUNTIME[slot] = wireKey(far, near);
+		say(`  ${label} copper expectation from the measured rig: ${RUNTIME[slot]}`);
+	}
+}
+
+function reportGhostWireFacts(facts) {
+	say("\n=== GHOST WIRE FACTS: what create_entity alone produced, measured this run ===");
+	if (facts.length === 0) {
+		fail("the source rig returned no ghost-pole wire facts, so this run establishes neither ghost "
+			+ "unit_number nor ghost auto-connect and every ghost copper row reads against an unmeasured "
+			+ "engine");
+		return;
+	}
+	for (const fact of facts) {
+		say(`  ${fact.id}: type=${fact.etype ?? "NOT PLACED"} unit_number=${fact.unit_number ?? "nil"} `
+			+ `connector=${fact.connector === true} is_ghost_connector=${fact.is_ghost_connector ?? "n/a"} `
+			+ `fresh copper ${JSON.stringify(fact.fresh_copper ?? "unread")}`);
+	}
+	const ghosts = facts.filter(fact => fact.etype === "entity-ghost");
+	const numbered = ghosts.filter(fact => typeof fact.unit_number === "number");
+	say(`  pole ghosts carrying a unit_number: ${numbered.length}/${ghosts.length} — the export keys a wire `
+		+ "target by unit_number and falls back to pos_<x>_<y> (connection-scanner.lua:24-28) while the "
+		+ "entity's own id falls back to name@x,y#dir (game-utils.lua:121-129), so a ghost with no "
+		+ "unit_number can be matched only by the restore's position fallback (deserializer.lua:1247-1261)");
 }
 
 function checkProxyNilControl(host, placementById) {
@@ -930,6 +1118,79 @@ return out`);
 	} else {
 		pass(`the unwired pair is unwired at BOTH ends: polenear2 reads ${JSON.stringify(answer.near2)}`);
 	}
+}
+
+const GHOST_FAR_ENDS = [
+	{ id: "gwire2", peer: "gwire1", wired: true, label: "the ghost-to-ghost wired pair" },
+	{ id: "gnear2", peer: "gnear1", wired: false, label: "the ghost-to-ghost unwired pair" },
+	{ id: "rmixwire", peer: "gmixwire", wired: true, label: "the ghost-to-real wired pair" },
+	{ id: "rmixnear", peer: "gmixnear", wired: false, label: "the ghost-to-real unwired pair" },
+];
+
+function checkGhostCopperFarEnds(host, placementById) {
+	say("\n=== CONTROL: the far end of every ghost copper pair ===");
+	const targets = [];
+	for (const far of GHOST_FAR_ENDS) {
+		const end = placementById.get(far.id);
+		const peer = placementById.get(far.peer);
+		if (!(end?.placed && peer?.placed)) {
+			fail(`${far.label} is missing a pole on the source rig, so its far end cannot be read — a wire `
+				+ "present at one end only, and a fabricated wire seen from the other side, both go unmeasured");
+			continue;
+		}
+		targets.push({ ...far, end, peer });
+	}
+	if (targets.length === 0) return;
+
+	const targetLua = targets.map(t => `  { id = '${t.id}', name = '${t.end.name}', x = ${t.end.x}, `
+		+ `y = ${t.end.y} },`).join("\n");
+	const answer = lua(host, `${platformLua(CLONE)}
+${READER_HELPERS}
+local targets = {
+${targetLua}
+}
+local rows = {}
+for _, t in ipairs(targets) do
+  local found = s.find_entities_filtered{ name = t.name, position = { t.x, t.y }, radius = 0.3 }
+  local e = found and found[1]
+  if e and e.valid then
+    rows[#rows + 1] = { id = t.id, value = copper_wire_key(e, defines.wire_connector_id.pole_copper) }
+  else
+    rows[#rows + 1] = { id = t.id, value = 'MISSING' }
+  end
+end
+return { success = true, rows = rows }`);
+
+	const byId = new Map(asArray(answer.rows).map(row => [row.id, row]));
+	for (const target of targets) {
+		const row = byId.get(target.id);
+		const expected = target.wired ? wireKey(target.peer, target.end) : NO_GHOST_COPPER;
+		if (!row || row.value === "MISSING") {
+			fail(`${target.id} did not arrive on the destination, so the far end of ${target.label} cannot `
+				+ "be read");
+		} else if (asNoGhostCopper(row.value) !== expected) {
+			fail(`${target.id} reads copper ${JSON.stringify(row.value)}, expected ${JSON.stringify(expected)}`
+				+ (target.wired
+					? ` — ${target.label} arrived at one end only, or a second wire arrived at this end`
+					: ` — ${target.label} stands within wire reach and the source left it unwired, so this end `
+						+ "carries a connection the payload never had"));
+		} else {
+			pass(`${target.label}: ${target.id} reads ${JSON.stringify(row.value)}`);
+		}
+	}
+}
+
+function reportPruneLog(host) {
+	say("\n=== MEASUREMENT: the destination's own pole-copper prune lines ===");
+	const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+	const out = docker(["exec", HOSTS[host].container, "sh", "-c",
+		`grep -F -e 'Pole copper pruned' -e 'pole copper prune' ${path} | tail -20 || true`]);
+	const lines = out.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+	if (lines.length === 0) {
+		say("  none in this instance's log; the destination reads above are the only account of the prune");
+		return;
+	}
+	for (const line of lines) say(`  ${line}`);
 }
 
 const DECLINE_LOG_MARKER = "is not a player on this instance";
@@ -1068,11 +1329,13 @@ async function main() {
 		for (const placement of asArray(built.placements)) {
 			placementById.set(placement.id, placement);
 			if (!placement.placed) {
-				fail(`rig entity '${placement.name}' did NOT place (${placement.error}) — every attribute on it `
-					+ "is UNEXERCISED, which is a hole in this test, not a pass");
+				fail(`rig entity '${placement.id}' (${placement.name}) did NOT place (${placement.error}) — every `
+					+ "attribute on it is UNEXERCISED, which is a hole in this test, not a pass");
 				continue;
 			}
-			say(`  built ${placement.name} (${placement.etype}) at ${placement.x},${placement.y}`);
+			say(`  built ${placement.id}: ${placement.name}`
+				+ `${placement.ghost_name ? ` of ${placement.ghost_name}` : ""} (${placement.etype}) at `
+				+ `${placement.x},${placement.y}`);
 			const stock = stockById.get(placement.id);
 			if (stock && placement.stocked !== stock.count) {
 				fail(`rig entity '${placement.name}' took ${placement.stocked} of ${stock.count} ${stock.name} — `
@@ -1082,7 +1345,9 @@ async function main() {
 
 		armCopperExpect(placementById);
 		armPoleCopperExpect(placementById);
+		armGhostCopperExpect(placementById);
 		checkPoleGeometry(placementById, Number(built.pole_wire_reach));
+		reportGhostWireFacts(asArray(built.wire_facts));
 
 		await checkLastUserConditional(SOURCE_HOST, built.base);
 
@@ -1199,6 +1464,8 @@ async function main() {
 
 		checkProxyNilControl(DEST_HOST, placementById);
 		checkPoleCopperFarEnds(DEST_HOST, placementById);
+		checkGhostCopperFarEnds(DEST_HOST, placementById);
+		reportPruneLog(DEST_HOST);
 	} finally {
 		say("\n=== SWEEP ===");
 		for (const host of [SOURCE_HOST, DEST_HOST]) {
