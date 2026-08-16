@@ -217,6 +217,7 @@ export interface ImportMetrics {
 	belt_state_merge_discarded?: number;
 	belt_state_declined?: number;
 	circuits_connected: number;
+	copper_pruned?: number;
 	total_items: number;
 	total_fluids: number;
 	phaseSpans?: PhaseSpan[];

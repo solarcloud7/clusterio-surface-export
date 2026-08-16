@@ -7,12 +7,16 @@
 //           before any destination read, a DECLARED-INERT line (with the live prototype predicate
 //           that decided it) for attributes no prototype supports at this pin, the measured
 //           destination roster and clock, a per-side copper readback on the wired power switch,
-//           and a control section: the last_user conditional's present/absent arms and a
-//           nil-target proxy-container read on the destination
+//           copper readbacks on one out-of-reach WIRED pole pair and one in-reach UNWIRED pole pair,
+//           every pairwise pole distance graded against the live wire reach, and a control section:
+//           the last_user conditional's present/absent arms, a nil-target proxy-container read, and
+//           the far end of both copper pairs
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
-//           UNEXERCISED red, never expects nil)
+//           UNEXERCISED red, never expects nil); read an IN-reach WIRED pair (create_entity
+//           auto-connects one, so it could not go red on loss); assert the pruned count itself
+//           (summary.import.copper_pruned reports it; these rows measure the resulting topology)
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -72,8 +76,15 @@ const RIG_ENTITIES = [
 	{ id: "pswitch", name: "power-switch", dx: 4.5, dy: 20.5 },
 	{ id: "poleleft", name: "small-electric-pole", dx: 2.5, dy: 22.5 },
 	{ id: "poleright", name: "small-electric-pole", dx: 10.5, dy: 22.5 },
+	{ id: "polewire1", name: "small-electric-pole", dx: 4.5, dy: 13.5 },
+	{ id: "polewire2", name: "small-electric-pole", dx: 14.5, dy: 13.5 },
+	{ id: "polenear1", name: "small-electric-pole", dx: 24.5, dy: 18.5 },
+	{ id: "polenear2", name: "small-electric-pole", dx: 28.5, dy: 18.5 },
 	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
 ];
+
+const COPPER_WIRED_PAIR = ["polewire1", "polewire2"];
+const COPPER_NEAR_PAIR = ["polenear1", "polenear2"];
 
 const TICK_DRIFT_TOLERANCE = 60_000;
 const CORPSE_INVENTORY_SIZE = 25;
@@ -81,7 +92,11 @@ const CORPSE_LOOT_COUNT = 123;
 const CORPSE_DEATH_TICKS_AGO_MAX = 300_000;
 const CORPSE_DEATH_TICKS_AGO_MIN = 4_000;
 
-const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null };
+const RUNTIME = { deathTicksAgo: null, sourcePlayer: null, lastUserDestExpect: null, copperExpect: null,
+	poleCopperExpect: null };
+
+const NO_COPPER = "";
+const asNoCopper = value => (value === "nil" ? NO_COPPER : value);
 
 const NUMERIC_READ = attr => `local v = e.${attr}; if v == nil then return "nil" end return string.format("%.6f", v)`;
 const BOOL_READ = attr => `return tostring(e.${attr})`;
@@ -468,9 +483,51 @@ const ATTRS = [
 			+ "the defines table): a connector id alone does not say which side of a switch a wire landed on, "
 			+ "so a union-keyed comparison would read a wire moved between sides as intact. The two poles "
 			+ "stand 8.0 apart, past a small-electric-pole's 7.5 wire reach (get_max_wire_distance, same "
-			+ "pin), so the only copper on the rig is the pair this row makes. An extra pole on the LEFT "
-			+ "set is the shared-id defect: restore_power_connections reaching a non-pole target "
-			+ "(deserializer.lua:1345-1347)",
+			+ "pin), so the engine auto-connects neither them nor the copper-row poles below to this "
+			+ "switch's poles; checkPoleGeometry grades every pairwise distance among the rig's poles "
+			+ "against the live reach, on its own, whether or not those rows arm. An extra pole on the LEFT "
+			+ "set was the shared-id defect #232 fixed with a target type guard; the pass that carried it is "
+			+ "deleted, so this row now guards restore_circuit_connections replaying each side's own "
+			+ "connector id",
+	},
+	{
+		key: "pole_copper", attribute: "pole_copper (wire present)", on: "polewire1",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "local near = e.get_wire_connector(copper, true)\n"
+			+ "local far = ents.polewire2.get_wire_connector(copper, true)\n"
+			+ "near.disconnect_all()\n"
+			+ "far.disconnect_all()\n"
+			+ "near.connect_to(far, false)",
+		read: "return copper_side_key(e, defines.wire_connector_id.pole_copper)",
+		get expect() { return RUNTIME.poleCopperExpect; },
+		describe: "polewire1 and polewire2 stand 10.0 apart, PAST a small-electric-pole's 7.5 wire reach "
+			+ "(measured 2026-08-15 at 2.1.11 with LuaEntityPrototype.get_max_wire_distance), so the engine "
+			+ "will not auto-connect them at create_entity and the payload is the only thing that can put "
+			+ "this wire on the destination. connect_to's reach_check argument is false at the restore site "
+			+ "(deserializer.lua:1269), which is what lets an out-of-reach wire arm and restore. That "
+			+ "distance is the whole point: measured 2026-08-15 in CI run 31918880538, an IN-reach pair "
+			+ "arrives wired even when the restore is stopped from making pole-to-pole copper, so a row on "
+			+ "a reachable pair cannot go red on loss. restore_circuit_connections is what restores this "
+			+ "wire — it replays the same pole_copper connector id on both ends, extract_circuit_connections "
+			+ "iterating get_wire_connectors unfiltered (measured on a live pole pair at the same pin, "
+			+ "connector id 5 with target connector id 5); run 31919809131 disabled the since-deleted "
+			+ "restore_power_connections and changed no row",
+	},
+	{
+		key: "pole_copper_absent", attribute: "pole_copper (no wire)", on: "polenear1",
+		write: "local copper = defines.wire_connector_id.pole_copper\n"
+			+ "e.get_wire_connector(copper, true).disconnect_all()\n"
+			+ "ents.polenear2.get_wire_connector(copper, true).disconnect_all()",
+		read: "return copper_side_key(e, defines.wire_connector_id.pole_copper)",
+		expect: NO_COPPER,
+		compare: (actual, expected) => asNoCopper(actual) === expected,
+		describe: "polenear1 and polenear2 stand 4.0 apart, INSIDE the 7.5 reach, and the source deletes the "
+			+ "copper the engine gave them. The destination must show none. A destination pole reads its "
+			+ "empty copper set as either '' or 'nil' depending on whether the connector object exists at "
+			+ "all, and both mean no wire, so the comparison normalises 'nil' — an actual wire is neither. "
+			+ "The 'fresh default was' line reports what create_entity alone produced, which is this row's "
+			+ "auto-connect measurement: if the engine ever stops auto-connecting, the armed value equals "
+			+ "the default and the harness fails this row as unexercised rather than passing it vacuously",
 	},
 	{
 		key: "vehicle_automatic_targeting_parameters", attribute: "vehicle_automatic_targeting_parameters",
@@ -650,7 +707,8 @@ for _, a in ipairs(attr_specs) do
   end
   armed[#armed + 1] = row
 end
-return { success = true, base = { x = bx, y = by }, placements = placements, armed = armed }`);
+return { success = true, base = { x = bx, y = by }, placements = placements, armed = armed,
+  pole_wire_reach = prototypes.entity['small-electric-pole'].get_max_wire_distance() }`);
 }
 
 function readRig(host, targets) {
@@ -752,6 +810,53 @@ function armCopperExpect(placementById) {
 	say(`  copper expectation from the measured rig: ${RUNTIME.copperExpect}`);
 }
 
+const offsetKey = (target, origin) =>
+	`${target.name}@${(target.x - origin.x).toFixed(2)},${(target.y - origin.y).toFixed(2)}`;
+
+const isPair = (pair, a, b) => pair.includes(a.id) && pair.includes(b.id);
+
+function checkPoleGeometry(placementById, reach) {
+	say("\n=== RIG GEOMETRY: which pole pairs the engine can auto-connect ===");
+	if (!Number.isFinite(reach)) {
+		fail(`small-electric-pole reported wire reach ${JSON.stringify(reach)} rather than a number, so no `
+			+ "pole pair on the rig can be shown in or out of auto-connect range and both copper rows "
+			+ "grade nothing");
+		return;
+	}
+	const poles = [...placementById.values()].filter(p => p.placed && p.etype === "electric-pole");
+	for (let i = 0; i < poles.length; i++) {
+		for (let j = i + 1; j < poles.length; j++) {
+			const [a, b] = [poles[i], poles[j]];
+			const distance = Math.hypot(a.x - b.x, a.y - b.y);
+			const wantsReachable = isPair(COPPER_NEAR_PAIR, a, b);
+			if (wantsReachable && distance > reach) {
+				fail(`${a.id} and ${b.id} stand ${distance.toFixed(2)} tiles apart, past the ${reach} wire `
+					+ "reach — the engine would not have auto-connected them, so a destination that shows "
+					+ "them unwired proves nothing about fabrication");
+			} else if (!wantsReachable && distance <= reach) {
+				fail(`${a.id} and ${b.id} stand ${distance.toFixed(2)} tiles apart, within the ${reach} wire `
+					+ "reach — the engine can auto-connect this pair at create_entity and feed copper into a "
+					+ "set a copper row reads as the payload's");
+			} else {
+				say(`  ${a.id}<->${b.id}: ${distance.toFixed(2)} tiles, ${wantsReachable ? "in" : "out of"} `
+					+ `auto-connect range (${reach}) as intended`);
+			}
+		}
+	}
+}
+
+function armPoleCopperExpect(placementById) {
+	const wire1 = placementById.get("polewire1");
+	const wire2 = placementById.get("polewire2");
+	if (!(wire1?.placed && wire2?.placed)) {
+		fail("the out-of-reach wired pole pair did not place in full, so the pole_copper row has no measured "
+			+ "expectation");
+		return;
+	}
+	RUNTIME.poleCopperExpect = offsetKey(wire2, wire1);
+	say(`  pole copper expectation from the measured rig: ${RUNTIME.poleCopperExpect}`);
+}
+
 function checkProxyNilControl(host, placementById) {
 	const nilProxy = placementById.get("proxynil");
 	if (!nilProxy || !nilProxy.placed) {
@@ -778,6 +883,52 @@ return out`);
 			+ "never had");
 	} else {
 		pass("nil-target control: a proxy-container exported with no target arrives with no target");
+	}
+}
+
+function checkPoleCopperFarEnds(host, placementById) {
+	say("\n=== CONTROL: the far end of each copper pair ===");
+	const wire1 = placementById.get("polewire1");
+	const wire2 = placementById.get("polewire2");
+	const near2 = placementById.get("polenear2");
+	if (!(wire1?.placed && wire2?.placed && near2?.placed)) {
+		fail("a copper-pair pole is missing from the source rig, so neither far end can be read — a wire "
+			+ "present at one end only, and a fabricated wire seen from the other side, both go unmeasured");
+		return;
+	}
+	const answer = lua(host, `${platformLua(CLONE)}
+${READER_HELPERS}
+local out = { success = true }
+local function copper(x, y)
+  local found = s.find_entities_filtered{ name = 'small-electric-pole', position = { x, y }, radius = 0.3 }
+  local e = found and found[1]
+  if not (e and e.valid) then return 'MISSING' end
+  return copper_side_key(e, defines.wire_connector_id.pole_copper)
+end
+out.wire2 = copper(${wire2.x}, ${wire2.y})
+out.near2 = copper(${near2.x}, ${near2.y})
+return out`);
+
+	const wire2Expect = offsetKey(wire1, wire2);
+	if (answer.wire2 === "MISSING") {
+		fail("polewire2 did not arrive on the destination, so the far end of the armed copper wire cannot "
+			+ "be read");
+	} else if (answer.wire2 !== wire2Expect) {
+		fail(`polewire2 reads copper ${JSON.stringify(answer.wire2)}, expected `
+			+ `${JSON.stringify(wire2Expect)} — the armed wire is present at one end only, or a second wire `
+			+ "arrived at the far end");
+	} else {
+		pass(`the armed copper wire arrives at BOTH ends: polewire2 reads ${JSON.stringify(answer.wire2)}`);
+	}
+
+	if (answer.near2 === "MISSING") {
+		fail("polenear2 did not arrive on the destination, so the far end of the unwired pair cannot be read");
+	} else if (asNoCopper(answer.near2) !== NO_COPPER) {
+		fail(`polenear2 reads copper ${JSON.stringify(answer.near2)} — it stands within wire reach of `
+			+ "polenear1 and the source left the pair unwired, so the import FABRICATED a connection the "
+			+ "payload never carried");
+	} else {
+		pass(`the unwired pair is unwired at BOTH ends: polenear2 reads ${JSON.stringify(answer.near2)}`);
 	}
 }
 
@@ -930,6 +1081,8 @@ async function main() {
 		}
 
 		armCopperExpect(placementById);
+		armPoleCopperExpect(placementById);
+		checkPoleGeometry(placementById, Number(built.pole_wire_reach));
 
 		await checkLastUserConditional(SOURCE_HOST, built.base);
 
@@ -1045,6 +1198,7 @@ async function main() {
 		}
 
 		checkProxyNilControl(DEST_HOST, placementById);
+		checkPoleCopperFarEnds(DEST_HOST, placementById);
 	} finally {
 		say("\n=== SWEEP ===");
 		for (const host of [SOURCE_HOST, DEST_HOST]) {
