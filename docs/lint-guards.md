@@ -136,8 +136,8 @@ preventative rule nobody has watched fire is indistinguishable from one that doe
 
 ### Rule 3's mjs trigger is derived, and its scope is narrowed on measurement
 
-Until 2026-08-16 the mjs arm engaged only on the literal helper name `waitForImportResult`, so any
-runner that rolled its own differently-named reader opted OUT of the rule silently, with no
+The mjs arm engaged only on the literal helper name `waitForImportResult` until this guard change, so
+any runner that rolled its own differently-named reader opted OUT of the rule silently, with no
 allow-manifest entry and nothing to review. The trigger is now what the runner DOES: it fetches a
 transfer verdict, matched as the `debug_import_result` artifact name or an identifier ending in
 `ImportResult`/`ImportResults`.
