@@ -14,9 +14,12 @@
 //           PROBES section that arms a ghost wire and then revives BOTH ends (out of reach, in
 //           reach, and an unwired control) and stamps a wire-carrying blueprint over two existing
 //           real poles, reading connector is_ghost plus connections vs real_connections at every
-//           step and grading each arm against what run 31943113370 measured (both revive arms end
+//           step (peer identity, not wire counts — each end is graded on whether it links to THAT
+//           peer) and grading each arm against what run 31943113370 measured: both revive arms end
 //           with the wire INSIDE real_connections at both ends the moment the second ghost turns
-//           real; the aligned blueprint stamp adds no wire at all), every pairwise pole distance
+//           real, and the blueprint stamp — run in BOTH build modes, each preceded by destroying a
+//           witness entity the blueprint also carries — may end with no wire or a real one but
+//           never a ghost one, every pairwise pole distance
 //           graded against the live wire reach, the destination's own pole-copper prune log lines,
 //           and a control section: the last_user conditional's present/absent arms, a nil-target
 //           proxy-container read, and the far end of every copper pair
@@ -32,7 +35,12 @@
 //           whether a ghost wire can hold between two NON-ghost poles at all, taken before any
 //           export, and they grade no destination state; probe the two producers foreclosed by API
 //           surface (connect_to has no ghost origin; LuaUndoRedoStack applies nothing), which are
-//           reported as foreclosed rather than measured
+//           reported as foreclosed rather than measured; probe build_from_cursor, clone_area/
+//           clone_entities/clone_brush or drag_wire, which are named NOT PROBED so the producer
+//           enumeration is not read as closed; treat a stamp that did not rebuild the witness as a
+//           refusal — that reads NOT ESTABLISHED, because build_mode normal is documented
+//           all-or-nothing and a wholesale refusal is indistinguishable from a declined wire
+//           without the witness
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -113,6 +121,7 @@ const RIG_ENTITIES = [
 	{ id: "rvnear2", name: "entity-ghost", innerName: "small-electric-pole", dx: 5.5, dy: 67.5 },
 	{ id: "bpwire1", name: "small-electric-pole", dx: 1.5, dy: 76.5 },
 	{ id: "bpwire2", name: "small-electric-pole", dx: 5.5, dy: 76.5 },
+	{ id: "bpwitness", name: "stone-wall", dx: 9.5, dy: 76.5 },
 ];
 
 const POLE = "small-electric-pole";
@@ -136,16 +145,16 @@ const MEASURED_AT = "run 31943113370 at 2.1.11";
 
 const REAL_PAIR_ARMS = [
 	{ id: "revive_far_wired", pair: REVIVE_WIRED_PAIR, kind: "revive", wired: true, load: true,
-		expect: "real",
+		expect: ["real"],
 		label: "revive both ends of an OUT-of-reach ghost-wired pole pair" },
 	{ id: "revive_far_unwired", pair: REVIVE_CONTROL_PAIR, kind: "revive", wired: false, control: true,
-		expect: "none",
+		expect: ["none"],
 		label: "revive both ends of an OUT-of-reach UNWIRED ghost pole pair (control)" },
 	{ id: "revive_near_wired", pair: REVIVE_NEAR_PAIR, kind: "revive", wired: true,
-		expect: "real",
+		expect: ["real"],
 		label: "revive both ends of an IN-reach ghost-wired pole pair" },
-	{ id: "blueprint_stamp", pair: BLUEPRINT_PAIR, kind: "blueprint", wired: true,
-		expect: "none",
+	{ id: "blueprint_stamp", pair: BLUEPRINT_PAIR, kind: "blueprint", wired: true, witness: "bpwitness",
+		expect: ["none", "real"],
 		label: "stamp a wire-carrying blueprint over two existing REAL unwired poles" },
 ];
 
@@ -295,7 +304,15 @@ end`;
 
 const REAL_PAIR_PROBE_LUA = `local copper_id = defines.wire_connector_id.pole_copper
 
-local function probe_side(e)
+local function links_to(list, peer)
+  for _, conn in ipairs(list) do
+    local owner = conn.target and conn.target.owner
+    if owner and owner.valid and owner.unit_number == peer.unit_number then return true end
+  end
+  return false
+end
+
+local function probe_side(e, peer)
   if not (e and e.valid) then return { present = false } end
   local row = { present = true, etype = e.type, unit_number = e.unit_number }
   local c = e.get_wire_connector(copper_id, false)
@@ -307,13 +324,15 @@ local function probe_side(e)
   row.is_ghost = c.is_ghost
   row.n_all = c.connection_count
   row.n_real = c.real_connection_count
+  row.linked_all = peer ~= nil and peer.valid and links_to(c.connections, peer) or false
+  row.linked_real = peer ~= nil and peer.valid and links_to(c.real_connections, peer) or false
   local ok, key = pcall(function() return copper_wire_key(e, copper_id) end)
   row.key = ok and key or ('THREW: ' .. tostring(key))
   return row
 end
 
 local function probe_pair(a, b)
-  return { a = probe_side(a), b = probe_side(b) }
+  return { a = probe_side(a, b), b = probe_side(b, a) }
 end
 
 local function revive_pole(e, pos)
@@ -358,9 +377,48 @@ local function run_revive_arm(arm)
   return out
 end
 
-local function blueprint_body(out, a, b, apos, bpos, bp)
-  local area = { { math.min(apos.x, bpos.x) - 1, math.min(apos.y, bpos.y) - 1 },
-    { math.max(apos.x, bpos.x) + 1, math.max(apos.y, bpos.y) + 1 } }
+local function clear_witness(wpos)
+  local names = {}
+  for _, e in ipairs(s.find_entities_filtered{ position = wpos, radius = 0.4 }) do
+    if e.valid then
+      names[#names + 1] = e.name
+      e.destroy()
+    end
+  end
+  return table.concat(names, '+')
+end
+
+local function witness_key(wpos)
+  local names = {}
+  for _, e in ipairs(s.find_entities_filtered{ position = wpos, radius = 0.4 }) do
+    if e.valid then
+      names[#names + 1] = e.type == 'entity-ghost' and ('ghost:' .. tostring(e.ghost_name)) or e.name
+    end
+  end
+  table.sort(names)
+  return table.concat(names, '+')
+end
+
+local function stamp_once(bp, a, b, stamp, area, wpos, mode_name, mode)
+  local row = { mode = mode_name, cleared = clear_witness(wpos) }
+  arm_pair(a, b, false)
+  row.before = probe_pair(a, b)
+  local ok, built = pcall(function()
+    return bp.build_blueprint{ surface = s, force = 'player', position = stamp,
+      build_mode = mode, raise_built = false }
+  end)
+  if ok then row.built_count = #(built or {}) else row.build_error = tostring(built) end
+  row.witness = witness_key(wpos)
+  row.after = probe_pair(a, b)
+  row.ghosts_in_area = #s.find_entities_filtered{ name = 'entity-ghost', area = area }
+  return row
+end
+
+local function blueprint_body(out, a, b, apos, bpos, bp, wpos)
+  local xs = { apos.x, bpos.x, wpos.x }
+  local ys = { apos.y, bpos.y, wpos.y }
+  local area = { { math.min(xs[1], xs[2], xs[3]) - 1, math.min(ys[1], ys[2], ys[3]) - 1 },
+    { math.max(xs[1], xs[2], xs[3]) + 1, math.max(ys[1], ys[2], ys[3]) + 1 } }
   out.armed = arm_pair(a, b, true)
   out.with_wire = probe_pair(a, b)
 
@@ -402,30 +460,41 @@ local function blueprint_body(out, a, b, apos, bpos, bp)
   out.second_pole_lands = string.format('%.2f,%.2f', stamp.x + poles[2].position.x,
     stamp.y + poles[2].position.y)
   out.second_pole_stands = string.format('%.2f,%.2f', reals[2].position.x, reals[2].position.y)
+  out.witness_in_blueprint = false
+  for _, be in ipairs(bents) do
+    local lands_x = stamp.x + be.position.x
+    local lands_y = stamp.y + be.position.y
+    if math.abs(lands_x - wpos.x) < 0.4 and math.abs(lands_y - wpos.y) < 0.4 then
+      out.witness_in_blueprint = true
+      out.witness_name = be.name
+    end
+  end
 
-  arm_pair(a, b, false)
-  out.before = probe_pair(a, b)
-  local ok, built = pcall(function()
-    return bp.build_blueprint{ surface = s, force = 'player', position = stamp,
-      build_mode = defines.build_mode.normal, raise_built = false }
-  end)
-  if ok then out.built_count = #(built or {}) else out.build_error = tostring(built) end
-  out.after = probe_pair(a, b)
-  out.ghosts_in_area = #s.find_entities_filtered{ name = 'entity-ghost', area = area }
+  out.stamps = {
+    stamp_once(bp, a, b, stamp, area, wpos, 'normal', defines.build_mode.normal),
+    stamp_once(bp, a, b, stamp, area, wpos, 'forced', defines.build_mode.forced),
+  }
 end
 
 local function run_blueprint_arm(arm)
   local out = { id = arm.id }
   local a, b = ents[arm.a], ents[arm.b]
+  local w = ents[arm.witness]
   if not (a and a.valid and b and b.valid) then
     out.error = 'the arm poles were not both placed'
     return out
   end
+  if not (w and w.valid) then
+    out.error = 'the witness entity was not placed, so no stamp can be shown to have acted'
+    return out
+  end
   local apos = { x = a.position.x, y = a.position.y }
   local bpos = { x = b.position.x, y = b.position.y }
+  local wpos = { x = w.position.x, y = w.position.y }
   out.distance = string.format('%.2f', math.sqrt((apos.x - bpos.x) ^ 2 + (apos.y - bpos.y) ^ 2))
+  out.witness_position = string.format('%.2f,%.2f', wpos.x, wpos.y)
   local inv = game.create_inventory(1)
-  local ok, err = pcall(function() blueprint_body(out, a, b, apos, bpos, inv[1]) end)
+  local ok, err = pcall(function() blueprint_body(out, a, b, apos, bpos, inv[1], wpos) end)
   inv.destroy()
   if not ok then out.error = 'blueprint arm threw: ' .. tostring(err) end
   return out
@@ -1258,7 +1327,8 @@ const describeSide = side => {
 	if (!side || side.present !== true) return "ABSENT";
 	if (side.connector !== true) return `${side.etype} #${side.unit_number ?? "nil"} (no copper connector)`;
 	return `${side.etype} #${side.unit_number ?? "nil"} is_ghost=${side.is_ghost} all=${side.n_all} `
-		+ `real=${side.n_real} ` + JSON.stringify(side.key ?? "unread");
+		+ `real=${side.n_real} linked-to-peer all=${side.linked_all} real=${side.linked_real} `
+		+ JSON.stringify(side.key ?? "unread");
 };
 
 const sayPair = (stage, state) => {
@@ -1274,8 +1344,8 @@ function pairShape(state) {
 		return { readable: true, wired: false, realWired: false, ghostWire: false,
 			bothReal: a.etype === POLE_TYPE && b.etype === POLE_TYPE };
 	}
-	const wired = a.n_all > 0 && b.n_all > 0;
-	const realWired = a.n_real > 0 && b.n_real > 0;
+	const wired = a.linked_all === true && b.linked_all === true;
+	const realWired = a.linked_real === true && b.linked_real === true;
 	return {
 		readable: true, wired, realWired,
 		ghostWire: wired && !realWired,
@@ -1364,26 +1434,52 @@ function checkBlueprintArm(arm, probe) {
 			+ "it did or did not make says nothing about existing entities");
 		return null;
 	}
-	sayPair("before the stamp", probe.before);
-	const before = pairShape(probe.before);
-	if (!before.readable || before.wired) {
-		fail(`${arm.id}: the pair was not left unwired before the stamp, so a wire after it proves nothing`);
+	if (probe.witness_in_blueprint !== true) {
+		fail(`${arm.id}: the blueprint carries nothing that would land on the witness position `
+			+ `${probe.witness_position}, so no stamp can be shown to have acted and every reading below is `
+			+ "NOT ESTABLISHED rather than a refusal");
 		return null;
 	}
-	say(`     build_blueprint returned ${probe.built_count ?? `THREW: ${probe.build_error}`} entities; `
-		+ `${probe.ghosts_in_area} entity-ghosts stand in the area afterwards`);
-	sayPair("after the stamp", probe.after);
-	const after = pairShape(probe.after);
-	if (!after.readable) {
-		fail(`${arm.id}: the pair could not be read after the stamp`);
+	say(`     witness ${probe.witness_name} lands at ${probe.witness_position}; it is destroyed before each `
+		+ "stamp, so its reappearance is the proof the stamp acted at all");
+
+	let acted = null;
+	for (const stamp of asArray(probe.stamps)) {
+		const before = pairShape(stamp.before);
+		const after = pairShape(stamp.after);
+		say(`     [${stamp.mode}] cleared ${JSON.stringify(stamp.cleared)}; build_blueprint returned `
+			+ `${stamp.built_count ?? `THREW: ${stamp.build_error}`} entities; witness reads `
+			+ `${JSON.stringify(stamp.witness)}; ${stamp.ghosts_in_area} entity-ghosts in the area`);
+		sayPair(`[${stamp.mode}] after`, stamp.after);
+		if (!before.readable || before.wired) {
+			fail(`${arm.id} [${stamp.mode}]: the pair was not left unwired before the stamp, so a wire after `
+				+ "it would prove nothing");
+			continue;
+		}
+		if (!stamp.witness) {
+			say(`     [${stamp.mode}] the witness did not reappear — this mode built NOTHING, so its reading `
+				+ "of the pair is NOT ESTABLISHED, never a refusal");
+			continue;
+		}
+		if (!after.readable) {
+			fail(`${arm.id} [${stamp.mode}]: the pair could not be read after the stamp`);
+			continue;
+		}
+		if (!after.bothReal) {
+			fail(`${arm.id} [${stamp.mode}]: after the stamp the pair no longer reads as two ${POLE_TYPE} `
+				+ "entities, so the stamp replaced them rather than wiring them");
+			continue;
+		}
+		if (!acted) acted = { mode: stamp.mode, after };
+	}
+	if (!acted) {
+		fail(`${arm.id}: no build mode rebuilt the witness, so no stamp is shown to have acted on this `
+			+ "surface at all. The blueprint producer is NOT ESTABLISHED at this pin — it is not measured "
+			+ "and refused, and this arm must not be read as evidence either way");
 		return null;
 	}
-	if (!after.bothReal) {
-		fail(`${arm.id}: after the stamp the pair no longer reads as two ${POLE_TYPE} entities, so the stamp `
-			+ "replaced them rather than wiring them and this arm measures a different question");
-		return null;
-	}
-	return after;
+	say(`     the ${acted.mode} stamp acted (witness rebuilt), and it is the one graded`);
+	return acted.after;
 }
 
 function reportRealPairProbes(probes) {
@@ -1418,9 +1514,9 @@ function reportRealPairProbes(probes) {
 		}
 		const outcome = after.ghostWire ? "ghost" : after.realWired ? "real" : "none";
 		say(`     MEASURED: ${OUTCOME_TEXT[outcome]}`);
-		if (outcome !== arm.expect) {
-			fail(`${arm.id}: ${MEASURED_AT} measured ${OUTCOME_TEXT[arm.expect]} between the two REAL `
-				+ `poles at the end of this arm; this run reads ${OUTCOME_TEXT[outcome]}`);
+		if (!arm.expect.includes(outcome)) {
+			fail(`${arm.id}: ${MEASURED_AT} measured ${arm.expect.map(e => OUTCOME_TEXT[e]).join(" or ")} `
+				+ `between the two REAL poles at the end of this arm; this run reads ${OUTCOME_TEXT[outcome]}`);
 		}
 		graded.push({ arm, after, outcome });
 	}
@@ -1443,7 +1539,8 @@ function reportRealPairProbes(probes) {
 	}
 	const reachable = graded.filter(g => g.outcome === "ghost");
 	say(`\n  VERDICT — a ghost wire between two REAL poles is ${reachable.length ? "REACHABLE"
-		: "NOT REACHABLE"} by any producer probed here`);
+		: "NOT REACHABLE"} by any producer probed here (this grades the arms above; it contains no novel `
+		+ "producer, so what it defends is the revive transition, not the whole space of producers)");
 	if (reachable.length) {
 		fail(`${reachable.map(g => g.arm.id).join(", ")} produced a wire between two REAL poles that is `
 			+ "absent from real_connections while neither connector is a ghost. At " + MEASURED_AT + " no "
@@ -1468,9 +1565,17 @@ function reportRealPairProbes(probes) {
 		say("  no auto-connect can reach across that pair, so the wire it ended with is the one the arm armed "
 			+ "while both ends were ghosts, not a fresh one the engine supplied");
 	}
-	say("  producers foreclosed by API surface, not probed: connect_to's origin enum has exactly three "
+	say("  what actually forecloses the class is not this enumeration but the API the prune reads: upstream "
+		+ "2.1.11 defines is_ghost as \"If this connector is owned by an entity inside of a ghost\", and "
+		+ "real_connections as the wires \"between two non-ghost entities\", so two REAL poles have no ghost "
+		+ "connector and any wire between them is in real_connections by definition");
+	say("  producers FORECLOSED by API surface, not probed: connect_to's origin enum has exactly three "
 		+ "members (player, radars, script) and none is a ghost origin; LuaUndoRedoStack exposes get/remove/"
 		+ "tag methods only and none applies an undo item");
+	say("  producers NOT PROBED at all, named so the enumeration is not read as closed: "
+		+ "LuaPlayer.build_from_cursor (the player's own paste path, which build_blueprint only approximates), "
+		+ "LuaSurface.clone_area/clone_entities/clone_brush (this repo's own clone_platform path), and "
+		+ "LuaPlayer.drag_wire");
 }
 
 function checkProxyNilControl(host, placementById) {
