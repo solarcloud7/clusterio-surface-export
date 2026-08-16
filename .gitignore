@@ -82,3 +82,6 @@ Thumbs.db
 controller-logs.txt
 
 /backups/
+
+# CI failure-repro captures and instrument run reports — run products, never committed
+/ci-artifacts/
