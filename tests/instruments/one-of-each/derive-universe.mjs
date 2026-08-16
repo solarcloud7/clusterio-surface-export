@@ -1,23 +1,29 @@
 #!/usr/bin/env node
 // derive-universe — the one-of-each fixture's type universe and its per-type representative
 //
-// requires: a live instance to read prototypes.entity and the platform surface's property vector
-//           from (--instance), or a previously captured dump (--dump <path>); plus the reviewed
-//           residue in ephemera-exclusions.json, and the rolling-stock and rail type names below,
-//           enumerated from RollingStockPrototype's and RailPrototype's subtypes at the pin
+// requires: the vendored dump beside this script (prototype-dump.json, pinned by sha256 in
+//           prototype-dump.provenance.json) by default, or a live instance to read
+//           prototypes.entity and the platform surface's property vector from (--live), or another
+//           captured dump (--dump <path>); plus the reviewed residue in ephemera-exclusions.json,
+//           and the rolling-stock and rail type names below, enumerated from RollingStockPrototype's
+//           and RailPrototype's subtypes at the pin
 //           (https://lua-api.factorio.com/2.1.11/prototypes/RollingStockPrototype.html,
 //           https://lua-api.factorio.com/2.1.11/prototypes/RailPrototype.html) and controlled for
 //           existence against the dump by checkRailTaxonomy
 // produces: universe.json — one entry per type the fixture must carry, each naming the prototype
 //           chosen to represent it and why, plus every excluded type with the predicate or the
 //           reviewed reason that excluded it
-// does not: place anything, contact the destination instance, decide what a placement will DO
-//           (create_entity is the only oracle for that — see build-staging.mjs), accept a reviewed
-//           exclusion without a reason, isolate WHY a player-build sweep places no rolling stock on
-//           a platform (#248 measured the block; the cause beyond rail's own surface conditions is
-//           not isolated), or write anything when a control fails
+// does not: place anything, contact the destination instance (or any instance without --live),
+//           decide what a placement will DO (create_entity is the only oracle for that — see
+//           build-staging.mjs), accept a reviewed exclusion without a reason, isolate WHY a
+//           player-build sweep places no rolling stock on a platform (#248 measured the block; the
+//           cause beyond rail's own surface conditions is not isolated), carry per-prototype
+//           subclass — so checkRailTaxonomy catches a rolling-stock or rail type RENAMED or REMOVED
+//           at a future pin but not one ADDED (see does_not_carry / remedy_at_next_redump in the
+//           provenance) — or write anything when a control fails
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +33,8 @@ const EPHEMERA_PATH = path.join(here, "ephemera-exclusions.json");
 const BONUS_PATH = path.join(here, "bonus-inclusions.json");
 const ANNEX_PATH = path.join(here, "transient-annex.json");
 const OUT_PATH = path.join(here, "universe.json");
+export const DUMP_PATH = path.join(here, "prototype-dump.json");
+export const PROVENANCE_PATH = path.join(here, "prototype-dump.provenance.json");
 
 export const SCHEMA = "one-of-each/universe@1";
 
@@ -440,9 +448,44 @@ export function checkControls(artifact) {
 	return failures;
 }
 
-function readDump(argv) {
+export function serializeArtifact(artifact) {
+	return JSON.stringify(artifact, null, "\t") + "\n";
+}
+
+export function loadVendoredDump(dumpPath = DUMP_PATH, provenancePath = PROVENANCE_PATH) {
+	const provenance = JSON.parse(readFileSync(provenancePath, "utf8"));
+	const bytes = readFileSync(dumpPath);
+	const sha256 = createHash("sha256").update(bytes).digest("hex");
+	if (bytes.length !== provenance.bytes || sha256 !== provenance.sha256) {
+		throw new Error(`${dumpPath} is ${bytes.length} bytes sha256 ${sha256}, but its provenance records `
+			+ `${provenance.bytes} bytes sha256 ${provenance.sha256} — the vendored dump is the bytes an instance `
+			+ "produced or it is not a measurement, and an edited one would re-derive a universe nothing measured");
+	}
+	const dump = JSON.parse(bytes.toString("utf8"));
+	if (dump.version !== provenance.pin) {
+		throw new Error(`${dumpPath} was dumped at ${dump.version} but its provenance claims pin ${provenance.pin}`);
+	}
+	const errs = luaTable(dump.errs);
+	if (errs.length) {
+		throw new Error(`${dumpPath} records ${errs.length} prototype(s) that threw during the dump `
+			+ `(${errs.map(row => row.n).join(", ")}) — the live path refuses such a dump, so the vendored path `
+			+ "refuses it too");
+	}
+	return dump;
+}
+
+export function readDump(argv) {
 	const dumpArg = argv.indexOf("--dump");
 	if (dumpArg !== -1) return JSON.parse(readFileSync(argv[dumpArg + 1], "utf8"));
+
+	const liveOnly = ["--instance", "--platform", "--host"].filter(flag => argv.includes(flag));
+	if (!argv.includes("--live")) {
+		if (liveOnly.length) {
+			throw new Error(`[${liveOnly}] only parameterize the live dump — pass --live to take a fresh one, or `
+				+ "drop them to derive from the vendored dump; silently ignoring them would read as a measurement");
+		}
+		return loadVendoredDump();
+	}
 
 	const instanceArg = argv.indexOf("--instance");
 	const instance = instanceArg !== -1 ? argv[instanceArg + 1] : "clusterio-host-1-instance-1";
@@ -480,7 +523,7 @@ function main() {
 		process.exit(1);
 	}
 
-	writeFileSync(OUT_PATH, JSON.stringify(artifact, null, "\t") + "\n");
+	writeFileSync(OUT_PATH, serializeArtifact(artifact));
 	const c = artifact.counts;
 	console.log(`wrote ${OUT_PATH}: ${c.universe} types in the universe at pin ${artifact.application_version} `
 		+ `(${c.player_buildable} player-buildable + ${c.script_only} script-only + ${c.bonus} bonus), out of `
