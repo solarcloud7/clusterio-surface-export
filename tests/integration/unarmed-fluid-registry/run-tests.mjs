@@ -3,11 +3,13 @@
 // FluidRegistry that InventoryScanner.extract_fluidboxes raises without?
 //
 // requires: a running surface-export cluster (host-1); debug_mode togglable via the configure remote
-// produces: exit 0 when test_import_entity re-exports a no-handler entity (solar-panel), and when
-//           force_execute's blocker gate still measures as unreachable through place_spec
-// does not: exercise force_execute's blocker-snapshot branch (measured unreachable — see the PINNED
-//           MEASUREMENT check), perform a transfer, assert fluid AMOUNTS, exercise the interactive
-//           selection-lab tool, or prove a destroyed blocker's fluids come back on rollback
+// produces: exit 0 when test_import_entity re-exports a no-handler entity (solar-panel), and when a
+//           real force-paste over a real blocker still replaces and guards nothing
+// does not: exercise force_execute's blocker-snapshot branch (not entered — see the PIN check), cover
+//           the arming at selection-lab.lua AT ALL (deleting it leaves this suite green), measure any
+//           record shape other than a plain entity record (item-on-ground, item-request-proxy and
+//           entity-ghost recs reach force_execute unexempted and are UNMEASURED here), perform a
+//           transfer, assert fluid AMOUNTS, or exercise the interactive selection-lab tool
 
 import { execFileSync } from "node:child_process";
 
@@ -51,17 +53,22 @@ const note = (text) => console.log(`  NOTE  ${text}`);
 console.log(`=== unarmed-fluid-registry: serialize_entity needs an armed FluidRegistry (${PROBE}) ===`);
 
 let setup = null;
-let prevDebug = false;
+// Read BEFORE anything writes it. A setup body that raises after its own configure() call does not
+// roll back, so a prevDebug assigned only from that body's return value would restore the wrong value.
+let prevDebug = null;
 try {
+	prevDebug = lua(`
+		return { debug = (storage.surface_export_config and storage.surface_export_config.debug_mode) == true }
+	`).debug === true;
+
 	setup = lua(`
-		local prev_debug = (storage.surface_export_config and storage.surface_export_config.debug_mode) == true
 		remote.call('surface_export', 'configure', { debug_mode = true })
 		storage.selection_lab = storage.selection_lab or {}
 		storage.__selab_probe_saved = storage.selection_lab[${LAB_PLAYER}]
 		storage.selection_lab[${LAB_PLAYER}] = nil
 		local p = game.forces.player.create_space_platform{ name = '${PROBE}', planet = 'nauvis',
 			starter_pack = 'space-platform-starter-pack' }
-		if not p then return { ok = false, prev_debug = prev_debug, err = 'platform not created' } end
+		if not p then return { ok = false, err = 'platform not created' } end
 		p.apply_starter_pack()
 		local s, force = p.surface, game.forces.player
 		local tiles = {}
@@ -72,13 +79,12 @@ try {
 		local pl = game.get_player(${LAB_PLAYER})
 		local roster = 0
 		for _ in pairs(game.players) do roster = roster + 1 end
-		return { ok = true, prev_debug = prev_debug, surface = s.name, platform = p.index,
+		return { ok = true, surface = s.name, platform = p.index,
 			chest = (chest ~= nil and chest.valid), panel = (panel ~= nil and panel.valid),
 			roster = roster, connected = #game.connected_players,
 			player = (pl ~= nil and pl.valid), player_force = (pl and pl.force.name) or '',
 			lab_state_was_live = storage.__selab_probe_saved ~= nil }
 	`);
-	prevDebug = setup.prev_debug === true;
 	if (setup.ok !== true) throw new Error(`probe setup refused: ${setup.err}`);
 
 	note(`instance ${INSTANCE}: ${setup.roster} player record(s), ${setup.connected} connected; `
@@ -121,9 +127,9 @@ try {
 			"selection-lab copies the source chest (this path already arms the registry)",
 			`ok=${copy.ok} outcome=${copy.outcome} records=${copy.records} ${copy.err}`);
 
-		// force_execute only reaches the blocker snapshot when can_place_entity is FALSE, and it asks
-		// with build_check_type.script (place_spec). A fixture whose blocker does not make THAT call
-		// fail cannot exercise the line under test, so the precondition is measured, not assumed.
+		// These can_place_entity calls EXPLAIN the outcome; they do not stand in for it. They re-type
+		// their own build_check_type, so they cannot see a change to the one place_spec passes. The
+		// assertion that protects the invariant is blockers_replaced, read back off a real force-paste.
 		const gate = lua(`
 			local s = game.surfaces['${setup.surface}']
 			local bct = defines.build_check_type
@@ -158,13 +164,11 @@ try {
 		note(`fallback fixture (panel at 21.5 overhanging the x=21 foundation edge): placed=${gate.overhang_placed} `
 			+ `can_place(22.5,2.5) script=${gate.can_overhang} `
 			+ `entities in (22,2)-(23,3): ${asArray(gate.overhang_hits).join(", ") || "(none)"}`);
-		check(gate.can_script === true && gate.can_manual === false,
-			"PINNED MEASUREMENT: a solar-panel sitting on the target position blocks can_place_entity under "
-			+ "build_check_type.manual but NOT under .script, which is the type place_spec hardcodes — so "
-			+ "force_execute's blocker-snapshot branch (selection-lab.lua) is not reachable through it. When "
-			+ "this check fails the branch has become live and needs the real blocker assertions restored.",
-			`script=${gate.can_script} manual=${gate.can_manual} default=${gate.can_default} `
-			+ `at_target=${asArray(gate.at_target).join(", ")}`);
+		check(gate.can_manual === false && asArray(gate.at_target).some(e => e.startsWith("solar-panel@14.50,2.50")),
+			"CONTROL: the blocker is really there and really blocks — can_place_entity says false for the "
+			+ "target under the ordinary build_check_type.manual, so a force-paste that replaces nothing "
+			+ "cannot be explained by an absent or non-colliding fixture",
+			`manual=${gate.can_manual} default=${gate.can_default} at_target=${asArray(gate.at_target).join(", ")}`);
 
 		const forced = lua(`
 			local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'force',
@@ -173,6 +177,7 @@ try {
 			return { raised = false, ok = r.ok == true, err = tostring(r.err or ''),
 				outcome = (r.report and r.report.outcome) or '',
 				blockers_replaced = (r.report and r.report.blockers_replaced) or -1,
+				blockers_guarded = (r.report and r.report.blockers_guarded) or -1,
 				error_detail = (r.report and tostring(r.report.error or '')) or '' }
 		`);
 		check(forced.raised !== true,
@@ -181,10 +186,13 @@ try {
 		check(forced.raised !== true && forced.outcome === "force_pasted",
 			"the force-paste completes",
 			`outcome=${forced.outcome || "(none)"} ${forced.error_detail || ""}`);
-		check(forced.raised !== true && forced.blockers_replaced === 0,
-			"and it replaces NO blocker, which is what the pinned gate measurement above predicts — the "
-			+ "solar-panel is left standing and the pasted chest overlaps it",
-			`blockers_replaced=${forced.blockers_replaced}`);
+		check(forced.raised !== true && forced.blockers_replaced === 0 && forced.blockers_guarded === 0,
+			"PIN (read through the production path, so it sees the build_check_type place_spec actually "
+			+ "passes): the force-paste replaces and guards NOTHING, i.e. force_execute's can_place_entity "
+			+ "gate did not fire on a blocker the ordinary check calls blocking, so the blocker-snapshot "
+			+ "branch is not entered. Change place_spec's check type and this goes red, which is when the "
+			+ "real blocker assertions have to come back.",
+			`blockers_replaced=${forced.blockers_replaced} blockers_guarded=${forced.blockers_guarded}`);
 	}
 } catch (probeError) {
 	failures += 1;
@@ -209,10 +217,11 @@ try {
 				if n == 0 then storage.selection_lab = nil end
 			end
 			storage.__selab_probe_saved = nil
-			remote.call('surface_export', 'configure', { debug_mode = ${prevDebug} })
+			${prevDebug === null ? "" : `remote.call('surface_export', 'configure', { debug_mode = ${prevDebug} })`}
 			return { removed = removed }
 		`);
-		console.log(`  cleanup: delete_surface issued for ${swept.removed} probe platform(s); debug_mode restored to ${prevDebug}`);
+		console.log(`  cleanup: delete_surface issued for ${swept.removed} probe platform(s); debug_mode `
+			+ (prevDebug === null ? "left alone (never written — the pre-read failed)" : `restored to ${prevDebug}`));
 		await sleep(3000);
 		const residue = lua(`
 			local surfaces = {}

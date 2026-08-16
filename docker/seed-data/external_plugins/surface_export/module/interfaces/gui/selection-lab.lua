@@ -606,7 +606,7 @@ function SelectionLab.force(event)
 		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
 	local physical_items = physical_census(entity_map)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with their items; their fluids do NOT).",
 		created, create_failed, #destroyed_records,
 		guarded > 0 and (", " .. guarded .. " protected blockers kept") or "",
 		offset.x, offset.y, physical_items), { r = 0.4, g = 1, b = 0.4 })
@@ -714,7 +714,7 @@ function SelectionLab.undo(event)
 	end
 	table.insert(st.redo, entry)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with their items; fluids are NOT restored. Ctrl+Alt+Y redoes.",
 		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
 end
 
