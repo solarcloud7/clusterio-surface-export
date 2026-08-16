@@ -709,6 +709,10 @@ EntityHandlers["rocket-silo"] = function(entity)
   return data
 end
 
+EntityHandlers["gate"] = function(entity)
+  return nil
+end
+
 EntityHandlers["power-switch"] = function(entity)
   local data = {}
   
