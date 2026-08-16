@@ -11,9 +11,12 @@ source of truth for what each artifact contains; this file documents how to *cha
 | `lab-gallery-destination-surface-export-2.1.11.zip` | Golden **destination** — the matching empty world | yes, `saves.destination.sha256` |
 | Other `lab-gallery-snapshot-*.zip` (each the golden until the re-bank that replaced it) | Dated **restore points** from the live gallery | **no — deliberately unpinned insurance** |
 
-Resolve a golden by `saves.<role>.artifact`, never by `saves.<role>.name`: the `name` is the in-game
-server-save name (`lab-gallery-source-of-truth`), and a file of that name in this directory was the golden
-two re-banks ago. It is now `lab-gallery-snapshot-2026-07-22-retired-golden.zip`.
+Resolve a golden by `saves.<role>.artifact`, never by `saves.<role>.name`. `.artifact` is the field that
+holds a path — `tests/lab-gallery/manifest.mjs` validates it against
+`^docker/seed-data/lab-saves/.+\.zip$` — while `.name` is validated as a bare save name carrying no
+extension. The two looked interchangeable because a file matching `saves.source.name` exactly
+(`lab-gallery-source-of-truth.zip`) sat in this directory: the golden two re-banks ago, now
+`lab-gallery-snapshot-2026-07-22-retired-golden.zip`.
 
 The two goldens are also the cluster's seed saves — byte-identical copies, verified:
 

@@ -23,6 +23,11 @@ test("the fixture builds under its permanent banked name, not a staging name", (
 	assert.doesNotMatch(PLATFORM_NAME, /staging/,
 		"the generator clones, strips and rescans by name — a rename after banking would leave it building a "
 		+ "platform the banked save does not contain");
+
+	const manifest = JSON.parse(readFileSync(path.join(here, "..", "..", "lab-gallery", "manifest.json"), "utf8"));
+	assert.ok(manifest.fixtures.some(fixture => fixture.platformName === PLATFORM_NAME),
+		"the gallery manifest must name this platform, or the readiness gate's fixture-platform check cannot "
+		+ "demand the banked fixture by name and a re-bank that drops it passes quietly");
 });
 
 test("a rail rule expands one cell into a centred segment at the prototype's own pitch", () => {
