@@ -3,13 +3,19 @@
 //
 // requires: a live instance to read prototypes.entity and the platform surface's property vector
 //           from (--instance), or a previously captured dump (--dump <path>); plus the reviewed
-//           residue in ephemera-exclusions.json
+//           residue in ephemera-exclusions.json, and the rolling-stock and rail type names below,
+//           enumerated from RollingStockPrototype's and RailPrototype's subtypes at the pin
+//           (https://lua-api.factorio.com/2.1.11/prototypes/RollingStockPrototype.html,
+//           https://lua-api.factorio.com/2.1.11/prototypes/RailPrototype.html) and controlled for
+//           existence against the dump by checkRailTaxonomy
 // produces: universe.json — one entry per type the fixture must carry, each naming the prototype
 //           chosen to represent it and why, plus every excluded type with the predicate or the
 //           reviewed reason that excluded it
 // does not: place anything, contact the destination instance, decide what a placement will DO
 //           (create_entity is the only oracle for that — see build-staging.mjs), accept a reviewed
-//           exclusion without a reason, or write anything when a control fails
+//           exclusion without a reason, isolate WHY a player-build sweep places no rolling stock on
+//           a platform (#248 measured the block; the cause beyond rail's own surface conditions is
+//           not isolated), or write anything when a control fails
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -28,10 +34,17 @@ export const EXPORT_SCANNER_EXCLUSIONS = ["character", "item-entity", "spider-le
 
 export const CLASSES = ["player_buildable", "script_only", "bonus", "excluded"];
 
+export const ROLLING_STOCK_TYPES = ["artillery-wagon", "cargo-wagon", "fluid-wagon",
+	"infinity-cargo-wagon", "locomotive"];
+
+export const RAIL_TYPES = ["curved-rail-a", "curved-rail-b", "elevated-curved-rail-a",
+	"elevated-curved-rail-b", "elevated-half-diagonal-rail", "elevated-straight-rail",
+	"half-diagonal-rail", "legacy-curved-rail", "legacy-straight-rail", "rail-ramp", "straight-rail"];
+
 const CONTROL_TYPE_COUNT = 132;
-const CONTROL_PLAYER_BUILDABLE = 61;
+const CONTROL_PLAYER_BUILDABLE = 60;
 const CONTROL_SCRIPT_ONLY = 20;
-const CONTROL_BONUS = 1;
+const CONTROL_BONUS = 2;
 const CONTROL_UNIVERSE = 82;
 const CONTROL_EPHEMERA = 18;
 const CONTROL_ANNEX = 3;
@@ -78,6 +91,31 @@ export function conditionFailure(condition, propertyVector) {
 
 export function conditionFailures(row, propertyVector) {
 	return luaTable(row.sc).map(condition => conditionFailure(condition, propertyVector)).filter(Boolean);
+}
+
+export function railBuildability(rows, propertyVector) {
+	const railRows = rows.filter(row => RAIL_TYPES.includes(row.t) && row.pl > 0);
+	const buildable = railRows.filter(row => conditionFailures(row, propertyVector).length === 0);
+	return {
+		buildable: buildable.length > 0,
+		types: [...new Set(railRows.map(row => row.t))].sort(),
+		failures: [...new Set(railRows.flatMap(row => conditionFailures(row, propertyVector)))],
+	};
+}
+
+export function checkRailTaxonomy(rows) {
+	const types = new Set(rows.map(row => row.t));
+	const missing = [...ROLLING_STOCK_TYPES, ...RAIL_TYPES].filter(type => !types.has(type));
+	if (missing.length) {
+		throw new Error(`[${missing}] are named as rolling stock or rail but do not exist at this pin — a renamed `
+			+ "or removed type would disarm the rail dependency silently, and rolling stock would go back to "
+			+ "being derived player-buildable on a surface no player can lay rail on");
+	}
+}
+
+export function playerPlaceable(type, protos, propertyVector, rail) {
+	if (ROLLING_STOCK_TYPES.includes(type) && !rail.buildable) return [];
+	return protos.filter(row => row.pl > 0 && conditionFailures(row, propertyVector).length === 0);
 }
 
 export function featuresOf(row) {
@@ -151,10 +189,11 @@ export function classifyTypes({ rows, propertyVector, ephemera, bonus = [], anne
 	const annexById = new Map(annex.map(entry => [entry.type, entry]));
 	const entries = [];
 	const exclusions = [];
+	const rail = railBuildability(rows, propertyVector);
 
 	for (const [type, protos] of [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
 		const placeable = protos.filter(row => row.pl > 0);
-		const legal = placeable.filter(row => conditionFailures(row, propertyVector).length === 0);
+		const legal = playerPlaceable(type, protos, propertyVector, rail);
 
 		if (EXPORT_SCANNER_EXCLUSIONS.includes(type)) {
 			exclusions.push({
@@ -179,6 +218,22 @@ export function classifyTypes({ rows, propertyVector, ephemera, bonus = [], anne
 				entries.push(buildEntry({
 					type, protos, candidates: placeable, klass: "bonus", propertyVector, note: bonusEntry.reason,
 				}));
+				continue;
+			}
+			const surfaceLegal = placeable.filter(row => conditionFailures(row, propertyVector).length === 0);
+			if (surfaceLegal.length > 0) {
+				exclusions.push({
+					type, prototypes: protos.length, derivation: "rail_dependency",
+					reason: `${surfaceLegal.length} placeable ${type} prototype(s) pass every surface condition on `
+						+ `the measured platform vector, but ${type} is rolling stock and rolling stock is built on `
+						+ `rail: none of the ${rail.types.length} rail type(s) at this pin is placeable here `
+						+ `(${rail.failures.join("; ")}). Measured 2026-08-16 at 2.1.11 (PR #248): a `
+						+ "can_place_entity build_check_type.manual sweep of all 4350 non-empty-space tiles of "
+						+ "lab-transfer-fixture-v1 returned 0 placeable for rolling stock — infinity-cargo-wagon "
+						+ "among them, whose own surface_conditions are EMPTY — while gate 592/4350 and "
+						+ "solar-panel 23/4350 in the same sweep show the probe discriminates; the residual cause "
+						+ "beyond rail's own surface conditions was NOT isolated",
+				});
 				continue;
 			}
 			const failures = [...new Set(placeable.flatMap(row => conditionFailures(row, propertyVector)))];
@@ -241,6 +296,7 @@ export function loadEphemera(raw, rows) {
 
 export function loadBonusInclusions(raw, rows, propertyVector) {
 	const byType = groupByType(rows);
+	const rail = railBuildability(rows, propertyVector);
 	const entries = [];
 	for (const entry of raw.entries || []) {
 		if (!entry.type) throw new Error(`bonus inclusion without a type: ${JSON.stringify(entry)}`);
@@ -255,7 +311,7 @@ export function loadBonusInclusions(raw, rows, propertyVector) {
 			throw new Error(`bonus inclusion ${entry.type} names a type with no placeable prototype — a bonus cell `
 				+ "is a thing create_entity builds, not a reviewed script-only residue");
 		}
-		if (placeable.some(row => conditionFailures(row, propertyVector).length === 0)) {
+		if (playerPlaceable(entry.type, protos, propertyVector, rail).length > 0) {
 			throw new Error(`bonus inclusion ${entry.type} is already platform-legal, so the derivation carries it `
 				+ "on its own — a redundant override would hide the day it stops being derived");
 		}
@@ -320,7 +376,8 @@ export function assemble({ dump, ephemeraRaw, bonusRaw = { entries: [] }, annexR
 		bonus: entries.filter(entry => entry.class === "bonus").length,
 		excluded: exclusions.length,
 	};
-	for (const derivation of ["export_scanner", "surface_conditions", "ephemera", "transient_annex"]) {
+	for (const derivation of ["export_scanner", "surface_conditions", "rail_dependency", "ephemera",
+		"transient_annex"]) {
 		counts[`excluded_${derivation}`] = exclusions.filter(row => row.derivation === derivation).length;
 	}
 
@@ -410,6 +467,7 @@ function readDump(argv) {
 
 function main() {
 	const dump = readDump(process.argv);
+	checkRailTaxonomy(dump.rows);
 	const ephemeraRaw = JSON.parse(readFileSync(EPHEMERA_PATH, "utf8"));
 	const bonusRaw = JSON.parse(readFileSync(BONUS_PATH, "utf8"));
 	const annexRaw = JSON.parse(readFileSync(ANNEX_PATH, "utf8"));
@@ -427,8 +485,9 @@ function main() {
 	console.log(`wrote ${OUT_PATH}: ${c.universe} types in the universe at pin ${artifact.application_version} `
 		+ `(${c.player_buildable} player-buildable + ${c.script_only} script-only + ${c.bonus} bonus), out of `
 		+ `${c.types} types over ${c.prototypes} prototypes; excluded ${c.excluded} = `
-		+ `${c.excluded_surface_conditions} surface-conditions + ${c.excluded_ephemera} ephemera + `
-		+ `${c.excluded_transient_annex} transient-annex + ${c.excluded_export_scanner} export-scanner`);
+		+ `${c.excluded_surface_conditions} surface-conditions + ${c.excluded_rail_dependency} rail-dependency + `
+		+ `${c.excluded_ephemera} ephemera + ${c.excluded_transient_annex} transient-annex + `
+		+ `${c.excluded_export_scanner} export-scanner`);
 	const illegal = artifact.entries.filter(entry => entry.representative_surface_legal === false);
 	console.log(`${illegal.length} representative(s) are surface-ILLEGAL at this pin and were chosen anyway: `
 		+ illegal.map(entry => `${entry.type}=${entry.representative}`).join(", "));
