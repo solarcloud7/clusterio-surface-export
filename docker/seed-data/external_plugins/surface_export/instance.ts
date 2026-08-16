@@ -570,13 +570,40 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		if (!transferId || !Number.isInteger(sourceInstanceId) || sourceInstanceId <= 0) {
 			if (operationId) {
+				const importSucceeded = data.success !== false;
+				const failedStage = typeof data.failed_stage === "string" && data.failed_stage
+					? data.failed_stage
+					: null;
+				const reportedError = typeof data.error === "string" && data.error ? data.error : null;
+				const cleanupFailed = data.cleanup_failed === true;
+				const cleanupError = typeof data.cleanup_error === "string" && data.cleanup_error
+					? data.cleanup_error
+					: null;
+				const destinationPreserved = data.destination_preserved === true;
+				const importError = importSucceeded ? null : [
+					`Import failed${failedStage ? ` at ${failedStage}` : ""}: `
+						+ `${reportedError ?? "the destination refused the import"}`,
+					cleanupFailed
+						? `destination discard FAILED — a leftover platform remains on instance ${this.i.id}: `
+							+ `${cleanupError ?? "delete_platform failed"}`
+						: null,
+					destinationPreserved
+						? "destination platform was PRESERVED by preserve_failed_destination"
+						: null,
+				].filter(Boolean).join("; ");
+				if (!importSucceeded) {
+					this.logger.error(`Import operation ${operationId} FAILED on ${data.platform_name}: ${importError}`);
+				}
 				try {
 					await this.i.sendTo("controller", new messages.ImportOperationCompleteEvent({
 						operationId,
 						platformName: String(data.platform_name || "Unknown"),
 						instanceId: this.i.id,
-						success: true,
-						error: null,
+						success: importSucceeded,
+						error: importError,
+						failedStage,
+						cleanupFailed,
+						destinationPreserved,
 						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
 						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
 						metrics: (metrics as Record<string, unknown> | null) || null,
