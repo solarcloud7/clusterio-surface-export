@@ -70,14 +70,4 @@ function FluidRegistry.list(registry)
 	return out
 end
 
-function FluidRegistry.totals_by_name(segments)
-	local totals = {}
-	for _, rec in pairs(segments) do
-		if rec.fluid and rec.total and rec.total > 0 then
-			totals[rec.fluid] = (totals[rec.fluid] or 0) + rec.total
-		end
-	end
-	return totals
-end
-
 return FluidRegistry
