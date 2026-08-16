@@ -131,7 +131,7 @@ try {
 		local run_head = belt_at(14.5, 44.5, defines.direction.east)
 		belt_at(15.5, 44.5, defines.direction.east)
 		belt_at(16.5, 44.5, defines.direction.east)
-		local filled_run = fill_line(run_head, 'iron-plate', 11)
+		local filled_run = 0
 		local run_length = run_head and run_head.get_transport_line(1).line_length or -1
 		local pl = game.get_player(${LAB_PLAYER})
 		local ghost = s.find_entities_filtered{ area = { { 14, 38 }, { 15, 39 } }, name = 'entity-ghost' }[1]
@@ -445,27 +445,47 @@ try {
 		after7.join(", ") || "(empty)");
 
 	// ---------------------------------------------------------------------------------------------
-	// Arm 8 — a belt blocker whose transport line CONTINUES onto belts outside the replaced set. The
-	// capture reads the whole line, so the resurrection must not re-place items that never died.
+	// Arm 8 — a belt blocker cut out of a RUN that keeps carrying items on the pieces nobody
+	// destroyed. One insert_at per RCON round trip seats one item per lane; the belts keep moving
+	// between calls, so repeated top-ups back the run up instead of bouncing off an occupied slot.
 	// ---------------------------------------------------------------------------------------------
+	const topUp = () => lua(`
+		local s = game.surfaces['${SURF}']
+		local seated = 0
+		for _, e in pairs(s.find_entities_filtered{ area = { { 13, 43 }, { 18, 47 } }, type = 'transport-belt' }) do
+			for li = 1, e.get_max_transport_line_index() do
+				if e.get_transport_line(li).insert_at_back({ name = 'iron-plate' }) then seated = seated + 1 end
+			end
+		end
+		return { seated = seated }
+	`).seated;
+	let seated = 0;
+	for (let i = 0; i < 10; i += 1) seated += topUp();
 	const copy8 = drive("copy", 6, 44, 8, 46);
 	const run8Before = beltRun(13, 43, 18, 47);
 	const force8 = drive("force", 16, 44, 18, 46);
 	const run8Mid = beltRun(13, 43, 18, 47);
 	const undo8 = undo();
 	const run8After = beltRun(13, 43, 18, 47);
-	note(`arm 8 (belt run cut at its end piece): copy=${copy8.outcome} force=${force8.outcome} `
-		+ `replaced=${force8.blockers_replaced} undo_raised=${undo8.raised}`);
+	note(`arm 8 (belt run cut at its end piece): seated by top-up=${seated} copy=${copy8.outcome} `
+		+ `force=${force8.outcome} replaced=${force8.blockers_replaced} undo_raised=${undo8.raised}`);
 	note(`arm 8 items on the run: before=${run8Before.total} (${run8Before.pieces} pieces) `
 		+ `after force=${run8Mid.total} (${run8Mid.pieces} pieces) `
-		+ `after undo=${run8After.total} (${run8After.pieces} pieces)`);
+		+ `after undo=${run8After.total} (${run8After.pieces} pieces) `
+		+ `| destroyed with the piece=${run8Before.total - run8Mid.total} `
+		+ `| re-placed by the resurrection=${run8After.total - run8Mid.total}`);
 	check(force8.raised !== true && force8.outcome === "force_pasted" && run8Mid.pieces === 2,
 		"arm 8 setup: the force really cut one piece out of a three-piece belt run",
 		`outcome=${force8.outcome || "(none)"} pieces after force=${run8Mid.pieces}`);
+	check(run8Mid.total > 0,
+		"arm 8 premise: items really did SURVIVE on the two pieces nobody destroyed — without this the "
+		+ "no-duplication arm below is vacuous, because there would be nothing left to duplicate",
+		`items still on the run after the force=${run8Mid.total}`);
 	check(run8After.total <= run8Before.total,
-		"ARM 8 NO DUPLICATION: resurrecting a belt piece whose captured transport line also covered "
-		+ "belts that were never destroyed does NOT grow the run's item total",
-		`before=${run8Before.total} after undo=${run8After.total}`);
+		"ARM 8 NO DUPLICATION: cutting one piece out of a loaded run and resurrecting it does not grow "
+		+ "the run's item total — the items still sitting on the surviving pieces are not re-placed on "
+		+ "top of themselves",
+		`before=${run8Before.total} after force=${run8Mid.total} after undo=${run8After.total}`);
 
 	// ---------------------------------------------------------------------------------------------
 	// Arm 9 — ONE 3x3 blocker under TWO 1x1 targets. The blocker is destroyed once, so it must be
