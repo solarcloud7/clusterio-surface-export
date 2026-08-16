@@ -5,10 +5,12 @@
 // requires: a running surface-export cluster (host-1); debug_mode togglable via the configure remote;
 //           a player record at index 1 (force_execute dereferences player.force and player.index)
 // produces: exit 0 when a resurrected blocker arrives with its container inventory AND its belt items,
-//           when one unrestorable record does not void its siblings' restores, when a foreign-force
-//           blocker is not silently overlapped, when the item-request-proxy plan exemption still
-//           admits a proxy whose target already stands at the destination, and when a resurrected
-//           belt run does not gain items; plus measured NOTE lines for both fluid arms
+//           when one unrestorable record does not void its siblings' restores, when undo's own report
+//           counts and NAMES the blockers it re-created without a complete restore (and reports zero
+//           on the fully restored case), when a foreign-force blocker is not silently overlapped, when
+//           the item-request-proxy plan exemption still admits a proxy whose target already stands at
+//           the destination, and when a resurrected belt run does not gain items; plus measured NOTE
+//           lines for both fluid arms
 // does not: measure the interactive selection-lab GUI tool (every arm drives the selection_lab_drive
 //           remote), perform a transfer, re-assert the paste conflict-refusal predicate (that is
 //           tests/integration/lab-paste-conflict), exercise redo, or exercise the character and
@@ -182,7 +184,11 @@ try {
 		local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'undo',
 			${LAB_PLAYER}, nil, nil, nil, nil, '${SURF}')
 		if not ok then return { raised = true, err = tostring(r) } end
-		return { raised = false, ok = r.ok == true }
+		local rep = r.report or {}
+		return { raised = false, ok = r.ok == true, outcome = tostring(rep.outcome or ''),
+			removed = rep.removed or -1, missed = rep.missed or -1,
+			resurrected = rep.resurrected or -1, restore_failures = rep.restore_failures or -1,
+			restore_detail = table.concat(rep.restore_failure_details or {}, ' | ') }
 	`);
 
 	// Every claim below is paired with one of these physical reads of the destination.
@@ -253,6 +259,13 @@ try {
 		`outcome=${force1.outcome || "(none)"} replaced=${force1.blockers_replaced}`);
 	const undo1 = undo();
 	check(undo1.raised !== true, "arm 1: undo does not raise out of the lab", String(undo1.err || ""));
+	note(`arm 1 undo self-report: outcome=${undo1.outcome} resurrected=${undo1.resurrected} `
+		+ `restore_failures=${undo1.restore_failures} detail=${undo1.restore_detail || "(none)"}`);
+	check(undo1.resurrected === 2 && undo1.restore_failures === 0,
+		"ARM 1 SHORTFALL CONTROL: the fully restored case reports ZERO restore failures — without this, "
+		+ "a shortfall count that is always non-zero would satisfy arm 2 while telling the player nothing",
+		`resurrected=${undo1.resurrected} restore_failures=${undo1.restore_failures} `
+		+ `detail=${undo1.restore_detail || "(none)"}`);
 	const belt1After = beltRun(13, 1, 15, 4);
 	const chest1After = chestAt(16.5, 2.5);
 	note(`arm 1 after undo: belt items=${belt1After.total} (${belt1After.pieces} piece(s)) `
@@ -309,6 +322,16 @@ try {
 	const belt2After = beltRun(13, 7, 15, 10);
 	note(`arm 2 after undo: chest present=${chest2After.present} items=${chest2After.count} `
 		+ `(before ${chest2Before.count}) | belt items=${belt2After.total} (before ${belt2Before.total})`);
+	note(`arm 2 undo self-report: outcome=${undo2.outcome} resurrected=${undo2.resurrected} `
+		+ `restore_failures=${undo2.restore_failures} detail=${undo2.restore_detail || "(none)"}`);
+	check(undo2.resurrected === 2 && undo2.restore_failures === 1
+		&& /belt items present but NO side partition/.test(undo2.restore_detail || ""),
+		"ARM 2 SHORTFALL REPORT: undo counts the blocker it re-created WITHOUT a complete restore and "
+		+ "names it — a re-created shell must not be reported as a restored blocker, which is exactly "
+		+ "what this arm's own physical numbers (chest 9 back, belt cargo gone) would otherwise let the "
+		+ "message claim",
+		`resurrected=${undo2.resurrected} restore_failures=${undo2.restore_failures} `
+		+ `detail=${(undo2.restore_detail || "(none)").slice(0, 120)}`);
 	check(chest2After.present === true && chest2After.count === chest2Before.count,
 		"ARM 2 ISOLATION: one record whose belt items cannot be restored does NOT void its siblings' "
 		+ "restores — the chest still comes back full",

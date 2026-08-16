@@ -16,8 +16,8 @@ local function selection_lab_drive(mode, player_index, x1, y1, x2, y2, surface_n
   end
   local effective_index = (player and player.index) or player_index or 0
   if mode == "undo" or mode == "redo" then
-    SelectionLab[mode]({ player_index = effective_index })
-    return { ok = true }
+    local report = SelectionLab[mode]({ player_index = effective_index })
+    return { ok = true, report = report }
   end
   if not (x1 and y1 and x2 and y2) then return { ok = false, err = "area required" } end
   local entities = surface.find_entities_filtered({ area = { { x1, y1 }, { x2, y2 } } })
