@@ -4,7 +4,7 @@
 		"pin": "2.1.11",
 		"date": "2026-08-15",
 		"method": "surface.create_entity{name, position, force} inside pcall on a space-platform surface, one attempt per representative prototype, destroyed immediately; the quoted text is the thrown message",
-		"note": "nine of these eighteen types CREATE successfully with bare parameters at this pin — their exclusion rests on the reviewed category, not on an engine refusal"
+		"note": "nine of these seventeen types CREATE successfully with bare parameters at this pin — their exclusion rests on the reviewed category, not on an engine refusal"
 	},
 	"entries": [
 		{
@@ -58,10 +58,6 @@
 		{
 			"type": "rocket-silo-rocket-shadow",
 			"reason": "render-only shadow of a rocket-silo-rocket; it has no state of its own, and its parent is already excluded"
-		},
-		{
-			"type": "segment",
-			"reason": "engine-owned body segment of a segmented-unit, measured: create_entity threw 'big-demolisher-segment-x0_65 can not be created manually.' — the same relationship spider-leg has to its spider, and is_exportable_entity already refuses that one"
 		},
 		{
 			"type": "smoke-with-trigger",

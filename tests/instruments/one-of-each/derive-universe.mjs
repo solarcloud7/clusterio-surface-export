@@ -38,7 +38,7 @@ export const PROVENANCE_PATH = path.join(here, "prototype-dump.provenance.json")
 
 export const SCHEMA = "one-of-each/universe@1";
 
-export const EXPORT_SCANNER_EXCLUSIONS = ["character", "item-entity", "spider-leg"];
+export const EXPORT_SCANNER_EXCLUSIONS = ["character", "item-entity", "segment", "spider-leg"];
 
 export const CLASSES = ["player_buildable", "script_only", "bonus", "excluded"];
 
@@ -54,7 +54,7 @@ const CONTROL_PLAYER_BUILDABLE = 60;
 const CONTROL_SCRIPT_ONLY = 20;
 const CONTROL_BONUS = 2;
 const CONTROL_UNIVERSE = 82;
-const CONTROL_EPHEMERA = 18;
+const CONTROL_EPHEMERA = 17;
 const CONTROL_ANNEX = 3;
 const CONTROL_MEMBER = "character-corpse";
 

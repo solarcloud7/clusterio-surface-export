@@ -28,6 +28,7 @@
 	"export_scanner_exclusions": [
 		"character",
 		"item-entity",
+		"segment",
 		"spider-leg"
 	],
 	"counts": {
@@ -38,10 +39,10 @@
 		"script_only": 20,
 		"bonus": 2,
 		"excluded": 50,
-		"excluded_export_scanner": 3,
+		"excluded_export_scanner": 4,
 		"excluded_surface_conditions": 26,
 		"excluded_rail_dependency": 0,
-		"excluded_ephemera": 18,
+		"excluded_ephemera": 17,
 		"excluded_transient_annex": 3
 	},
 	"entries": [
@@ -2442,8 +2443,8 @@
 		{
 			"type": "segment",
 			"prototypes": 60,
-			"derivation": "ephemera",
-			"reason": "engine-owned body segment of a segmented-unit, measured: create_entity threw 'big-demolisher-segment-x0_65 can not be created manually.' — the same relationship spider-leg has to its spider, and is_exportable_entity already refuses that one"
+			"derivation": "export_scanner",
+			"reason": "is_exportable_entity refuses type \"segment\" (entity-scanner.lua), so no payload can carry it and a fixture cell for it would measure the scanner, not the pipeline"
 		},
 		{
 			"type": "smoke-with-trigger",
