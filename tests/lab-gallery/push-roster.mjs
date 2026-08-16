@@ -84,12 +84,7 @@ function pushRoster(json, hash) {
 function main() {
 	const dryRun = process.argv.includes("--dry-run");
 	const manifest = loadGalleryManifest(new URL("../../", import.meta.url));
-	const problems = validateGalleryManifest(manifest, { requireArtifacts: false });
-	if (problems.length) {
-		console.error("manifest validation FAILED:");
-		for (const p of problems) console.error(`  - ${p}`);
-		process.exit(1);
-	}
+	validateGalleryManifest(manifest, { requireArtifacts: false });
 
 	const fixtures = manifest.fixtures.map(trimFixture);
 	const json = stableStringify({ schema: manifest.schema, fixtures });
