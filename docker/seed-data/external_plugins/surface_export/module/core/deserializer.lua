@@ -446,17 +446,15 @@ function Deserializer.restore_entity_state(entity, entity_data)
 
   local data = entity_data.specific_data
 
-  if entity.type == "entity-ghost" or entity.type == "tile-ghost" then
-    if data.item_requests and #data.item_requests > 0 then
-      local requests = {}
-      for _, req in ipairs(data.item_requests) do
-        local item_with_quality = {
-          name = req.item,
-          quality = req.quality
-        }
-        requests[item_with_quality] = req.count
-      end
+  if entity.type == "entity-ghost" then
+    if data.insert_plan and #data.insert_plan > 0 then
+      safe_call(string.format("insert_plan for ghost of %s", tostring(data.ghost_name)),
+        function() entity.insert_plan = data.insert_plan end)
     end
+    return
+  end
+
+  if entity.type == "tile-ghost" then
     return
   end
 
@@ -477,17 +475,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   if entity.type == "item-request-proxy" then
-    if data.item_requests and #data.item_requests > 0 then
-      local requests = {}
-      for _, req in ipairs(data.item_requests) do
-        local item_with_quality = {
-          name = req.item,
-          quality = req.quality
-        }
-        requests[item_with_quality] = req.count
-      end
-    end
-    
     if data.insert_plan then
       entity.insert_plan = data.insert_plan
     end

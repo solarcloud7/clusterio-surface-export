@@ -23,6 +23,10 @@ const PLAN_B = "{{id={name='productivity-module',quality='rare'},"
 const PLAN_PROXY = "{{id={name='iron-plate',quality='normal'},"
 	+ "items={in_inventory={{inventory=defines.inventory.chest,stack=0,count=10}}}}}";
 
+const EXPECT_A = "efficiency-module/uncommonx1,speed-module/normalx1";
+const EXPECT_B = "productivity-module/rarex2";
+const EXPECT_PROXY = "iron-plate/normalx10";
+
 const ROUTES = [
 	{ id: "post_creation_insert_plan_write", param: null },
 	{ id: "create_insert_plan", param: "insert_plan" },
@@ -67,11 +71,11 @@ function routeProbeLua(platformName) {
 		body += `local ok${index},res${index}=pcall(function() `
 			+ ghostCreateLua(route.id, "g", at, PLAN_A)
 			+ "return g end) "
-			+ `local n${index}=-1 `
-			+ `if ok${index} and res${index} and res${index}.valid then n${index}=#res${index}.item_requests `
-			+ `res${index}.destroy() end `
-			+ `out[#out+1]={route='${route.id}', ok=ok${index}, `
-			+ `err=(ok${index} and nil or tostring(res${index})), requests=n${index}} `;
+			+ `local n${index}=-1 local e${index} `
+			+ `if ok${index} then if res${index} and res${index}.valid then `
+			+ `n${index}=#res${index}.item_requests res${index}.destroy() end `
+			+ `else e${index}=tostring(res${index}) end `
+			+ `out[#out+1]={route='${route.id}', ok=ok${index}, err=e${index}, requests=n${index}} `;
 	});
 	return body + "return {success=true, routes=out} ";
 }
@@ -151,13 +155,13 @@ async function main() {
 		const srcGhostA = findAt(source, GHOST_A, "entity-ghost");
 		const srcGhostB = findAt(source, GHOST_B, "entity-ghost");
 		const srcProxy = findAt(source, CHEST, "item-request-proxy");
-		check(!!srcGhostA && requestsOf(srcGhostA) === "efficiency-module/uncommonx1,speed-module/normalx1",
+		check(!!srcGhostA && requestsOf(srcGhostA) === EXPECT_A,
 			"source: ghost A requests two modules, one at uncommon quality",
 			srcGhostA ? requestsOf(srcGhostA) : "ghost A missing");
-		check(!!srcGhostB && requestsOf(srcGhostB) === "productivity-module/rarex2",
+		check(!!srcGhostB && requestsOf(srcGhostB) === EXPECT_B,
 			"source: ghost B requests two rare-quality productivity modules",
 			srcGhostB ? requestsOf(srcGhostB) : "ghost B missing");
-		check(!!srcProxy && requestsOf(srcProxy) === "iron-plate/normalx10",
+		check(!!srcProxy && requestsOf(srcProxy) === EXPECT_PROXY,
 			"source: control proxy requests ten iron plates",
 			srcProxy ? requestsOf(srcProxy) : "proxy missing");
 
@@ -190,18 +194,18 @@ async function main() {
 		const dstGhostB = findAt(dest, GHOST_B, "entity-ghost");
 		const dstProxy = findAt(dest, CHEST, "item-request-proxy");
 
-		check(!!dstProxy && requestsOf(dstProxy) === requestsOf(srcProxy),
+		check(!!dstProxy && requestsOf(dstProxy) === EXPECT_PROXY,
 			"CONTROL: the item-request-proxy's requests arrive intact (probe is sound)",
-			`src=${requestsOf(srcProxy)} dst=${dstProxy ? requestsOf(dstProxy) : "proxy missing"}`);
+			`want=${EXPECT_PROXY} dst=${dstProxy ? requestsOf(dstProxy) : "proxy missing"}`);
 
 		check(!!dstGhostA, "dest: ghost A arrived", JSON.stringify(asArray(dest.entities).map(keyOf)));
 		check(!!dstGhostB, "dest: ghost B arrived", JSON.stringify(asArray(dest.entities).map(keyOf)));
-		check(!!dstGhostA && requestsOf(dstGhostA) === requestsOf(srcGhostA),
+		check(!!dstGhostA && requestsOf(dstGhostA) === EXPECT_A,
 			"dest: ghost A's item requests survive the transfer, quality included",
-			`src=${requestsOf(srcGhostA)} dst=${dstGhostA ? requestsOf(dstGhostA) : "ghost A missing"}`);
-		check(!!dstGhostB && requestsOf(dstGhostB) === requestsOf(srcGhostB),
+			`want=${EXPECT_A} dst=${dstGhostA ? requestsOf(dstGhostA) : "ghost A missing"}`);
+		check(!!dstGhostB && requestsOf(dstGhostB) === EXPECT_B,
 			"dest: ghost B's item requests survive the transfer, quality included",
-			`src=${requestsOf(srcGhostB)} dst=${dstGhostB ? requestsOf(dstGhostB) : "ghost B missing"}`);
+			`want=${EXPECT_B} dst=${dstGhostB ? requestsOf(dstGhostB) : "ghost B missing"}`);
 
 		const sourceGone = lua(1, "for _,q in pairs(game.forces.player.platforms) do "
 			+ `if q.valid and q.name=='${PROBE}' then return {success=true,present=true} end end `
