@@ -423,8 +423,9 @@ try {
 			afterPasteD.join(", ") || "(empty)");
 
 		// --- Adjacency: the refusal predicate scans footprint_area, which floors/ceils to tile bounds.
-		// A 1x1 target at 14.5 floors to [14,15]; the 3x3 panel at 16.5 starts at exactly x=15. The two
-		// collision boxes do NOT overlap, so a paste here must still land.
+		// A 1x1 chest target at 14.5 rounds out to the scan area [14,15]; the 3x3 panel at 16.5 has its
+		// collision box starting at 15.15 (measured by the boxes NOTE above). The scan stops 0.15 tiles
+		// short of the panel's box, so a paste here must still land.
 		const copyE = drive("copy", 6, 24, 8, 26);
 		check(copyE.raised !== true && copyE.outcome === "copied" && copyE.records === 1,
 			"adjacency setup: the lab copies the chest record",
@@ -435,9 +436,12 @@ try {
 		note(`adjacency paste report: outcome=${pasteE.outcome} conflicts=${pasteE.conflicts} created=${pasteE.created}`);
 		note(`adjacency destination: ${afterPasteE.join(", ") || "(empty)"}`);
 		check(pasteE.raised !== true && pasteE.outcome === "pasted",
-			"ADJACENCY: a target whose floored footprint TOUCHES a neighbouring 3x3 entity's box at "
-			+ "exactly one tile boundary is NOT refused — the tile-rounded scan does not turn a merely "
-			+ "adjacent entity into a blocker, so a dense capture still pastes",
+			"ADJACENCY: a 1x1 target whose tile-rounded scan area ends at x=15 while the neighbouring "
+			+ "3x3 entity's collision box begins at 15.15 is NOT refused — this fixture measures a 0.15 "
+			+ "tile gap, not a touch, so it bounds the rounding by one case and nothing more. Whether a "
+			+ "DENSE capture still pastes is evidenced elsewhere: 15 gallery pads copy a real build and "
+			+ "paste it through this same predicate under /test-run (tests/lab-gallery/manifest.json), "
+			+ "and a refusal there fails the pad",
 			`outcome=${pasteE.outcome || "(none)"} conflicts=${pasteE.conflicts}`);
 		check(afterPasteE.some(h => h.startsWith("wooden-chest:container@14.50,24.50"))
 			&& afterPasteE.some(h => h.startsWith("solar-panel:")),

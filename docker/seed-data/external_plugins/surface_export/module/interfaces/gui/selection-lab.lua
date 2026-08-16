@@ -318,10 +318,21 @@ local function apply_paste_activation(records, entity_map)
 	end
 end
 
+local function proxy_last(recs)
+	local ordered = {}
+	for _, rec in ipairs(recs) do
+		if rec.type ~= "item-request-proxy" then ordered[#ordered + 1] = rec end
+	end
+	for _, rec in ipairs(recs) do
+		if rec.type == "item-request-proxy" then ordered[#ordered + 1] = rec end
+	end
+	return ordered
+end
+
 local function execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
-	for _, rec in ipairs(recs) do
+	for _, rec in ipairs(proxy_last(recs)) do
 		local ok, entity
 		if rec.type == "item-on-ground" then
 			ok, entity = pcall(function() return Deserializer.create_ground_item(surface, rec) end)
@@ -354,60 +365,75 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			if e and e.valid then e.destroy() destroyed = destroyed + 1 end
 		end
 		log(string.format("[SelectionLab] TRANSACTION ROLLBACK (%s): destroyed %d created entities", reason, destroyed))
-		return nil, nil, created, create_failed, false, reason
+		return nil, nil, created, create_failed, false, reason, {}
 	end
 	if transactional and create_failed > 0 then
 		return rollback(create_failed .. " creation failure(s)")
 	end
+	local failures = {}
 	local function run_restores()
-	if side_groups then
-		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
-		if unplaced > 0 or anomalies > 0 then
-			local message = string.format(
-				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback)",
-				placed, unplaced, anomalies)
-			if transactional then error(message) end
-			say(player, message, { r = 1, g = 0.6, b = 0.3 })
+	local function rec_label(rec)
+		return string.format("%s at (%.1f,%.1f)", tostring(rec.name), rec.position.x, rec.position.y)
+	end
+	local function step(label, fn)
+		local ok, err = pcall(fn)
+		if not ok then
+			failures[#failures + 1] = label .. ": " .. tostring(err)
+			log(string.format("[SelectionLab] restore step FAILED (%s): %s", label, tostring(err)))
 		end
+	end
+	if side_groups then
+		step("belt side-restore", function()
+			local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+			if unplaced > 0 or anomalies > 0 then
+				error(string.format("%d placed, %d UNPLACED, %d anomalies (no fallback)",
+					placed, unplaced, anomalies), 0)
+			end
+		end)
 	else
 		for _, rec in ipairs(records) do
 			if rec.type and BELT_LINE_TYPES[rec.type] and rec.specific_data and rec.specific_data.items then
-				error("[SelectionLab] belt records present but NO side partition was captured — refusing the deleted legacy consolidation restore")
+				local message = rec_label(rec)
+					.. ": belt items present but NO side partition was captured — refusing the deleted legacy consolidation restore"
+				failures[#failures + 1] = message
+				log("[SelectionLab] " .. message)
 			end
 		end
 	end
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid then
-			Deserializer.restore_entity_state(entity, rec)
+			step(rec_label(rec) .. " entity state", function() Deserializer.restore_entity_state(entity, rec) end)
 		end
 	end
-	EntityStateRestoration.restore_all(records, entity_map)
+	step("entity-state batch", function() EntityStateRestoration.restore_all(records, entity_map) end)
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid and rec.type == "beacon" then
-			Deserializer.restore_inventories(entity, rec)
+			step(rec_label(rec) .. " inventories", function() Deserializer.restore_inventories(entity, rec) end)
 		end
 	end
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid and rec.type ~= "beacon" then
-			Deserializer.restore_inventories(entity, rec)
+			step(rec_label(rec) .. " inventories", function() Deserializer.restore_inventories(entity, rec) end)
 		end
 	end
-	ActiveStateRestoration.restore_held_items_only(records, entity_map)
+	step("held items", function() ActiveStateRestoration.restore_held_items_only(records, entity_map) end)
 	if paste_touches_live_fluid_network(entity_map) then
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
 			{ r = 1, g = 0.7, b = 0.3 })
 	else
-		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map, fluid_segments) end)
-		if not fluids_ok then
-			log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
-			if transactional then error("fluid restore failed: " .. tostring(fluids_err)) end
-			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
-		end
+		step("fluid restore", function() FluidRestoration.restore(records, entity_map, fluid_segments) end)
 	end
 	apply_paste_activation(records, entity_map)
+	if #failures > 0 then
+		local summary = string.format("%d restore step(s) failed across %d record(s): %s",
+			#failures, #records, table.concat(failures, " | "))
+		if transactional then error(summary, 0) end
+		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] PARTIAL RESTORE — " .. summary,
+			{ r = 1, g = 0.6, b = 0.3 })
+	end
 	end
 	local restore_ok, restore_err = xpcall(run_restores, debug.traceback)
 	if not restore_ok then
@@ -415,13 +441,14 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		if transactional then
 			return rollback("restore error: " .. tostring(restore_err))
 		end
+		failures[#failures + 1] = "restore aborted: " .. tostring(restore_err)
 		apply_paste_activation(records, entity_map)
 		if player then
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] restore error (best-effort path): " .. tostring(restore_err),
 				{ r = 1, g = 0.4, b = 0.4 })
 		end
 	end
-	return records, entity_map, created, create_failed, true, nil
+	return records, entity_map, created, create_failed, true, nil, failures
 end
 
 local function push_undo(st, entry)
@@ -429,6 +456,12 @@ local function push_undo(st, entry)
 	stack[#stack + 1] = entry
 	while #stack > UNDO_DEPTH do table.remove(stack, 1) end
 	st.redo = {}
+end
+
+local function shortfall_clause(restore_failures)
+	local n = restore_failures and #restore_failures or 0
+	if n == 0 then return "" end
+	return string.format(", %d WITHOUT a complete restore (%s)", n, table.concat(restore_failures, " | "))
 end
 
 local function journal_created(records, entity_map)
@@ -471,18 +504,15 @@ function SelectionLab.paste(event)
 				conflict_details[#conflict_details + 1] = "+" .. (#plan.conflict - 5) .. " more"
 				break
 			end
-			local blocker = c.blockers and c.blockers[1]
-			conflict_details[#conflict_details + 1] = string.format("%s at (%s,%s)%s",
-				c.rec.name, c.rec.position.x, c.rec.position.y,
-				blocker and (" blocked by " .. blocker.name) or " (placement check failed)")
+			conflict_details[#conflict_details + 1] = string.format("%s at (%s,%s) blocked by %s",
+				c.rec.name, c.rec.position.x, c.rec.position.y, c.blockers[1].name)
 		end
 		return lab_result("paste", { outcome = "refused", conflicts = #plan.conflict, targets = #cap.records,
 			offset = offset, conflict_details = conflict_details })
 	end
 
 	local recs = {}
-	for _, c in ipairs(plan.clear) do if c.rec.type ~= "item-request-proxy" then recs[#recs + 1] = c.rec end end
-	for _, c in ipairs(plan.clear) do if c.rec.type == "item-request-proxy" then recs[#recs + 1] = c.rec end end
+	for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
 		execute_create_and_restore(surface, recs, player, cap.side_groups, cap.fluid_segments, true)
 	if not exec_ok then
@@ -533,39 +563,138 @@ function SelectionLab.preview(event)
 end
 
 
-local function force_execute(surface, recs, player, side_groups, fluid_segments)
-	local destroyed_records, guarded = {}, 0
-	InventoryScanner.fluid_registry = FluidRegistry.new()
-	local snapshot_ok, snapshot_err = pcall(function()
+local function blocker_guard_reason(entity, player)
+	if entity.type == "character" then return "character" end
+	if entity.name == "space-platform-hub" then return "platform hub" end
+	if entity.force ~= player.force then return "force " .. entity.force.name end
+	return nil
+end
+
+local function partition_force_targets(surface, recs, player)
+	local placeable, refused, guarded_units = {}, {}, {}
+	for _, rec in ipairs(recs) do
+		local guards = {}
+		for _, e in ipairs(blocking_entities(surface, rec)) do
+			local reason = blocker_guard_reason(e, player)
+			if reason then
+				guards[#guards + 1] = string.format("%s (%s)", e.name, reason)
+				guarded_units[e.unit_number] = true
+			end
+		end
+		if #guards > 0 then
+			refused[#refused + 1] = string.format("%s at (%.1f,%.1f) held by %s",
+				tostring(rec.name), rec.position.x, rec.position.y, table.concat(guards, ", "))
+		else
+			placeable[#placeable + 1] = rec
+		end
+	end
+	local guarded = 0
+	for _ in pairs(guarded_units) do guarded = guarded + 1 end
+	return placeable, refused, guarded
+end
+
+local function snapshot_blockers(surface, recs, player)
+	local victims, seen = {}, {}
 	for _, rec in ipairs(recs) do
 		for _, e in ipairs(blocking_entities(surface, rec)) do
-			if e.type == "character" or e.name == "space-platform-hub" or e.force ~= player.force then
-				guarded = guarded + 1
-			else
-				draw_box(surface, rec.position, CONFLICT_RED, player.index)
-				local snapshot = EntityScanner.serialize_entity(e)
-				if snapshot then
-					snapshot.lab_active = e.active
-					destroyed_records[#destroyed_records + 1] = snapshot
-				end
-				e.destroy()
+			if not seen[e.unit_number] then
+				seen[e.unit_number] = true
+				victims[#victims + 1] = { entity = e, name = e.name,
+					position = { x = e.position.x, y = e.position.y } }
+				if player then draw_box(surface, e.position, CONFLICT_RED, player.index) end
 			end
 		end
 	end
-	end)
-	InventoryScanner.fluid_registry = nil
-	if not snapshot_ok then error(snapshot_err) end
-	local records, entity_map, created, create_failed, exec_ok, exec_err =
-		execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, true)
-	if not exec_ok then
-		local resurrected = 0
-		if #destroyed_records > 0 then
-			local rrecords = execute_create_and_restore(surface, destroyed_records, player, nil, nil, false)
-			resurrected = rrecords and #rrecords or 0
+	local belt_pairs = {}
+	local registry = FluidRegistry.new()
+	InventoryScanner.fluid_registry = registry
+	local snapshot_ok, snapshot_err = pcall(function()
+		for _, v in ipairs(victims) do
+			local snapshot = EntityScanner.serialize_entity(v.entity)
+			if snapshot then
+				snapshot.lab_active = v.entity.active
+				v.record = snapshot
+				if BELT_LINE_TYPES[v.entity.type] then
+					belt_pairs[#belt_pairs + 1] = { entity = v.entity, id = snapshot.entity_id }
+				end
+			else
+				log(string.format(
+					"[SelectionLab] blocker %s at (%.1f,%.1f) was invalid at snapshot time — skipped, not journaled",
+					v.name, v.position.x, v.position.y))
+			end
 		end
-		return nil, nil, created, create_failed, destroyed_records, guarded, false, exec_err, resurrected
+	end)
+	local side_ok, side_groups = true, nil
+	if snapshot_ok then
+		side_ok, side_groups = pcall(BeltRestoration.capture_side_groups, belt_pairs)
 	end
-	return records, entity_map, created, create_failed, destroyed_records, guarded, true, nil, 0
+	InventoryScanner.fluid_registry = nil
+	if not snapshot_ok then error(snapshot_err, 0) end
+	if not side_ok then error(side_groups, 0) end
+	return victims, side_groups, FluidRegistry.list(registry)
+end
+
+local function destroy_blockers(victims)
+	for _, v in ipairs(victims) do
+		if v.record and v.entity.valid then
+			local ok, err = pcall(function() v.entity.destroy() end)
+			if not ok then
+				log(string.format("[SelectionLab] destroy raised for blocker %s at (%.1f,%.1f): %s",
+					v.name, v.position.x, v.position.y, tostring(err)))
+			end
+		end
+	end
+	local destroyed_records, survivors = {}, {}
+	for _, v in ipairs(victims) do
+		if v.entity.valid then
+			survivors[#survivors + 1] = string.format("%s at (%.1f,%.1f)", v.name, v.position.x, v.position.y)
+		elseif v.record then
+			destroyed_records[#destroyed_records + 1] = v.record
+		end
+	end
+	return destroyed_records, survivors
+end
+
+local function force_execute(surface, recs, player, side_groups, fluid_segments)
+	local placeable, refused, guarded = partition_force_targets(surface, recs, player)
+	local result = { ok = false, created = 0, create_failed = 0, resurrected = 0,
+		resurrection_failures = {}, destroyed_records = {}, refused = refused, guarded = guarded }
+	if #placeable == 0 then
+		result.refused_all = true
+		return result
+	end
+	local victims, blocker_side_groups, blocker_fluid_segments = snapshot_blockers(surface, placeable, player)
+	local destroyed_records, survivors = destroy_blockers(victims)
+	result.destroyed_records = destroyed_records
+	result.destroyed_side_groups = blocker_side_groups
+	result.destroyed_fluid_segments = blocker_fluid_segments
+	local function resurrect()
+		if #destroyed_records == 0 then return end
+		local rrecords, _rmap, _rc, _rcf, _rok, _rerr, rfailures =
+			execute_create_and_restore(surface, destroyed_records, player,
+				blocker_side_groups, blocker_fluid_segments, false)
+		result.resurrected = rrecords and #rrecords or 0
+		result.resurrection_failures = rfailures or {}
+	end
+	if #survivors > 0 then
+		result.err = string.format("%d blocker(s) survived the destroy pass: %s",
+			#survivors, table.concat(survivors, ", "))
+		resurrect()
+		return result
+	end
+	local records, entity_map, created, create_failed, exec_ok, exec_err =
+		execute_create_and_restore(surface, placeable, player, side_groups, fluid_segments, true)
+	result.created = created
+	result.create_failed = create_failed
+	if not exec_ok then
+		result.err = exec_err
+		resurrect()
+		return result
+	end
+	result.records = records
+	result.entity_map = entity_map
+	result.ok = true
+	return result
 end
 
 function SelectionLab.force(event)
@@ -580,29 +709,49 @@ function SelectionLab.force(event)
 	local offset = paste_offset(cap, event)
 	local recs = {}
 	for _, rec in ipairs(cap.records) do recs[#recs + 1] = translate(rec, offset) end
-	local records, entity_map, created, create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
-		force_execute(surface, recs, player, cap.side_groups, cap.fluid_segments)
-	if not exec_ok then
+	local outcome = force_execute(surface, recs, player, cap.side_groups, cap.fluid_segments)
+	if outcome.refused_all then
 		player.play_sound({ path = "utility/cannot_build" })
 		say(player, string.format(
-			"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE ROLLED BACK (%s) — created entities removed, %d/%d replaced blockers resurrected. Nothing journaled.",
-			tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
+			"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE REFUSED: all %d targets are held by protected blockers (%s). Nothing was destroyed, nothing was placed.",
+			#recs, table.concat(outcome.refused, "; ")), { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("force", {
-			outcome = "rolled_back", error = tostring(exec_err),
-			blockers_destroyed = #destroyed_records, blockers_resurrected = resurrected, offset = offset,
+			outcome = "refused", records_refused = #outcome.refused, targets = #recs,
+			blockers_guarded = outcome.guarded, refused_details = outcome.refused, offset = offset,
 		})
 	end
+	if not outcome.ok then
+		player.play_sound({ path = "utility/cannot_build" })
+		say(player, string.format(
+			"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE ROLLED BACK (%s) — created entities removed, %d/%d replaced blockers re-created%s. Nothing journaled.",
+			tostring(outcome.err), outcome.resurrected, #outcome.destroyed_records,
+			shortfall_clause(outcome.resurrection_failures)), { r = 1, g = 0.4, b = 0.4 })
+		return lab_result("force", {
+			outcome = "rolled_back", error = tostring(outcome.err),
+			blockers_destroyed = #outcome.destroyed_records, blockers_resurrected = outcome.resurrected,
+			restore_failures = #outcome.resurrection_failures,
+			restore_failure_details = outcome.resurrection_failures,
+			records_refused = #outcome.refused, blockers_guarded = outcome.guarded, offset = offset,
+		})
+	end
+	local records, entity_map = outcome.records, outcome.entity_map
+	local created, create_failed = outcome.created, outcome.create_failed
+	local destroyed_records, guarded = outcome.destroyed_records, outcome.guarded
 	push_undo(st, { mode = "force", surface = surface.name, created = journal_created(records, entity_map),
-		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
+		destroyed_records = destroyed_records, destroyed_side_groups = outcome.destroyed_side_groups,
+		destroyed_fluid_segments = outcome.destroyed_fluid_segments,
+		plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
 	local physical_items = physical_census(entity_map)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with their items; their fluids do NOT).",
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes: it re-creates the replaced blockers and restores their inventories, belt cargo and fluids, reporting by name whatever it could not restore (a belt whose partition is gone, or a fluid system that rejoins a live network).",
 		created, create_failed, #destroyed_records,
-		guarded > 0 and (", " .. guarded .. " protected blockers kept") or "",
+		#outcome.refused > 0 and string.format(", %d record(s) REFUSED over %d protected blocker(s): %s",
+			#outcome.refused, guarded, table.concat(outcome.refused, "; ")) or "",
 		offset.x, offset.y, physical_items), { r = 0.4, g = 1, b = 0.4 })
 	return lab_result("force", {
 		outcome = "force_pasted", created = created, create_failed = create_failed,
 		blockers_replaced = #destroyed_records, blockers_guarded = guarded,
+		records_refused = #outcome.refused, refused_details = outcome.refused,
 		offset = offset, physical_items = physical_items,
 	})
 end
@@ -673,16 +822,19 @@ end
 
 function SelectionLab.undo(event)
 	local player = event_player(event)
-	if not debug_enabled() then return end
+	if not debug_enabled() then return lab_result("undo", { outcome = "debug_mode_off" }) end
 	local st = pstate(event.player_index)
 	local stack = st.undo
 	local entry = table.remove(stack)
 	if not entry then
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] nothing to undo", { r = 1, g = 0.6, b = 0.3 })
-		return
+		return lab_result("undo", { outcome = "nothing_to_undo" })
 	end
 	local surface = game.surfaces[entry.surface]
-	if not surface then say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] undo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
+	if not surface then
+		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] undo surface gone", { r = 1, g = 0.4, b = 0.4 })
+		return lab_result("undo", { outcome = "surface_gone", surface = entry.surface })
+	end
 	local removed, missed = 0, 0
 	for _, c in ipairs(entry.created) do
 		local hit = nil
@@ -697,29 +849,42 @@ function SelectionLab.undo(event)
 		end
 		if hit and hit.valid then hit.destroy() removed = removed + 1 else missed = missed + 1 end
 	end
-	local resurrected = 0
+	local resurrected, restore_failures = 0, {}
 	if #entry.destroyed_records > 0 then
-		local records = execute_create_and_restore(surface, entry.destroyed_records, player, nil, nil, false)
+		local records, _rmap, _rc, _rcf, _rok, _rerr, rfailures =
+			execute_create_and_restore(surface, entry.destroyed_records, player,
+				entry.destroyed_side_groups, entry.destroyed_fluid_segments, false)
 		resurrected = records and #records or 0
+		restore_failures = rfailures or {}
 	end
 	table.insert(st.redo, entry)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with their items; fluids are NOT restored. Ctrl+Alt+Y redoes.",
-		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), re-created %d replaced blockers%s. Ctrl+Alt+Y redoes.",
+		removed, missed, resurrected,
+		#restore_failures == 0
+			and " with their inventories, belt cargo and fluids"
+			or shortfall_clause(restore_failures)), { r = 0.4, g = 0.9, b = 1 })
+	return lab_result("undo", {
+		outcome = "undone", removed = removed, missed = missed, resurrected = resurrected,
+		restore_failures = #restore_failures, restore_failure_details = restore_failures,
+	})
 end
 
 function SelectionLab.redo(event)
 	local player = event_player(event)
-	if not debug_enabled() then return end
+	if not debug_enabled() then return lab_result("redo", { outcome = "debug_mode_off" }) end
 	local st = pstate(event.player_index)
 	local stack = st.redo
 	local entry = table.remove(stack)
 	if not entry then
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] nothing to redo", { r = 1, g = 0.6, b = 0.3 })
-		return
+		return lab_result("redo", { outcome = "nothing_to_redo" })
 	end
 	local surface = game.surfaces[entry.surface]
-	if not surface then say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] redo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
+	if not surface then
+		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] redo surface gone", { r = 1, g = 0.4, b = 0.4 })
+		return lab_result("redo", { outcome = "surface_gone", surface = entry.surface })
+	end
 	local mode = entry.mode
 		or ((entry.destroyed_records and #entry.destroyed_records > 0) and "force" or "paste")
 
@@ -734,7 +899,8 @@ function SelectionLab.redo(event)
 				"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO REFUSED: %d of %d targets now occupied (red). Nothing re-pasted; still redoable.",
 				#plan.conflict, #entry.plan_records), { r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry)
-			return
+			return lab_result("redo", { outcome = "refused", conflicts = #plan.conflict,
+				targets = #entry.plan_records })
 		end
 		local recs = {}
 		for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
@@ -745,7 +911,7 @@ function SelectionLab.redo(event)
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO ROLLED BACK (" .. tostring(exec_err) .. ") — still redoable.",
 				{ r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry)
-			return
+			return lab_result("redo", { outcome = "rolled_back", error = tostring(exec_err) })
 		end
 		for _, rec in ipairs(records) do
 			draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
@@ -755,24 +921,44 @@ function SelectionLab.redo(event)
 		table.insert(st.undo, entry)
 		say(player, string.format("[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO: re-pasted %d entities (all-or-nothing).", created),
 			{ r = 0.4, g = 0.9, b = 1 })
+		return lab_result("redo", { outcome = "repasted", created = created })
 	else
-		local records, entity_map, created, _create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
-			force_execute(surface, entry.plan_records, player, entry.side_groups, entry.fluid_segments)
-		if not exec_ok then
+		local outcome = force_execute(surface, entry.plan_records, player, entry.side_groups, entry.fluid_segments)
+		if outcome.refused_all then
 			player.play_sound({ path = "utility/cannot_build" })
 			say(player, string.format(
-				"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO ROLLED BACK (%s) — %d/%d replaced blockers resurrected; still redoable.",
-				tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
+				"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO REFUSED: all %d targets are held by protected blockers (%s). Nothing was destroyed; still redoable.",
+				#entry.plan_records, table.concat(outcome.refused, "; ")), { r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry)
-			return
+			return lab_result("redo", { outcome = "refused", records_refused = #outcome.refused,
+				targets = #entry.plan_records, blockers_guarded = outcome.guarded })
 		end
-		entry.created = journal_created(records, entity_map)
-		entry.destroyed_records = destroyed_records
+		if not outcome.ok then
+			player.play_sound({ path = "utility/cannot_build" })
+			say(player, string.format(
+				"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO ROLLED BACK (%s) — %d/%d replaced blockers re-created%s; still redoable.",
+				tostring(outcome.err), outcome.resurrected, #outcome.destroyed_records,
+				shortfall_clause(outcome.resurrection_failures)), { r = 1, g = 0.4, b = 0.4 })
+			table.insert(stack, entry)
+			return lab_result("redo", { outcome = "rolled_back", error = tostring(outcome.err),
+				blockers_resurrected = outcome.resurrected,
+				restore_failures = #outcome.resurrection_failures,
+				restore_failure_details = outcome.resurrection_failures })
+		end
+		entry.created = journal_created(outcome.records, outcome.entity_map)
+		entry.destroyed_records = outcome.destroyed_records
+		entry.destroyed_side_groups = outcome.destroyed_side_groups
+		entry.destroyed_fluid_segments = outcome.destroyed_fluid_segments
 		table.insert(st.undo, entry)
 		say(player, string.format(
 			"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO: force re-pasted %d entities (%d blockers replaced%s).",
-			created, #destroyed_records, guarded > 0 and (", " .. guarded .. " protected kept") or ""),
+			outcome.created, #outcome.destroyed_records,
+			#outcome.refused > 0 and string.format(", %d record(s) REFUSED over %d protected blocker(s)",
+				#outcome.refused, outcome.guarded) or ""),
 			{ r = 0.4, g = 0.9, b = 1 })
+		return lab_result("redo", { outcome = "force_repasted", created = outcome.created,
+			blockers_replaced = #outcome.destroyed_records, blockers_guarded = outcome.guarded,
+			records_refused = #outcome.refused })
 	end
 end
 
