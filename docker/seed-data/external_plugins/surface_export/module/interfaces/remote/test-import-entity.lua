@@ -264,8 +264,12 @@ return function(entity_json, surface_index, position_override)
   end
   
   if entity_data.items then
-    local main_inv = created_entity.get_inventory(defines.inventory.chest)
-    if main_inv then
+    local inv_read_success, main_inv = pcall(function()
+      return created_entity.get_inventory(defines.inventory.chest)
+    end)
+    if not inv_read_success then
+      table.insert(result.warnings, "Inventory size read failed: " .. tostring(main_inv))
+    elseif main_inv then
       result.debug_info.inventory_size = #main_inv
     end
   end
