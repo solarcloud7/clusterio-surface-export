@@ -109,24 +109,19 @@ EntityHandlers["assembling-machine"] = function(entity)
 
   data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
 
-  if entity.get_recipe then
-    local recipe = entity.get_recipe()
-    if recipe then
-      data.recipe = recipe.name
+  local recipe, recipe_quality = entity.get_recipe()
+  if recipe then
+    data.recipe = recipe.name
 
-      local proto = recipe.prototype
-      if proto then
-        data.recipe_overload_multiplier = proto.overload_multiplier
-        data.recipe_allow_inserter_overload = proto.allow_inserter_overload
-      end
+    local proto = recipe.prototype
+    if proto then
+      data.recipe_overload_multiplier = proto.overload_multiplier
+      data.recipe_allow_inserter_overload = proto.allow_inserter_overload
     end
   end
 
-  if entity.get_recipe then
-    local _, recipe_quality = entity.get_recipe()
-    if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
-      data.recipe_quality = recipe_quality.name
-    end
+  if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
+    data.recipe_quality = recipe_quality.name
   end
 
   if entity.crafting_progress then
@@ -148,20 +143,19 @@ EntityHandlers["furnace"] = function(entity)
 
   data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
 
-  if entity.get_recipe then
-    local recipe, recipe_quality = entity.get_recipe()
-    if recipe then
-      data.recipe = recipe.name
+  local recipe, recipe_quality = entity.get_recipe()
+  if recipe then
+    data.recipe = recipe.name
 
-      local proto = recipe.prototype
-      if proto then
-        data.recipe_overload_multiplier = proto.overload_multiplier
-        data.recipe_allow_inserter_overload = proto.allow_inserter_overload
-      end
+    local proto = recipe.prototype
+    if proto then
+      data.recipe_overload_multiplier = proto.overload_multiplier
+      data.recipe_allow_inserter_overload = proto.allow_inserter_overload
     end
-    if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
-      data.recipe_quality = recipe_quality.name
-    end
+  end
+
+  if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
+    data.recipe_quality = recipe_quality.name
   end
 
   if entity.crafting_progress then
@@ -686,8 +680,9 @@ EntityHandlers["rocket-silo"] = function(entity)
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
   
-  if entity.get_recipe then
-    local recipe, recipe_quality = entity.get_recipe()
+  -- intentional probe; failure expected on the rocket types routed to this handler, no log
+  local recipe_ok, recipe, recipe_quality = pcall(function() return entity.get_recipe() end)
+  if recipe_ok then
     if recipe then
       data.recipe = recipe.name
     end
@@ -696,8 +691,9 @@ EntityHandlers["rocket-silo"] = function(entity)
     end
   end
 
-  if entity.rocket_parts then
-    data.rocket_parts = entity.rocket_parts
+  local rocket_parts = GameUtils.safe_get(entity, "rocket_parts")
+  if rocket_parts then
+    data.rocket_parts = rocket_parts
   end
 
   local send_to_orbit_automatically = GameUtils.safe_get(entity, "send_to_orbit_automatically")
