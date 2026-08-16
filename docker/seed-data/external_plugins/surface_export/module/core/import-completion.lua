@@ -763,9 +763,10 @@ function ImportCompletion.run_phase2(job)
 
 			if not job.park_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
-				local captured_paused = job.platform_data and job.platform_data.platform
-					and job.platform_data.platform.paused == true
+				local captured_paused = job.platform_data.platform.paused == true
 				local ok_captured, err_captured = pcall(function() tp.paused = captured_paused end)
+				result.sourcePaused = captured_paused
+				result.sourcePausedApplied = ok_captured == true
 				if ok_captured then
 					log(string.format("[Import] Platform %s settled at the CAPTURED paused=%s (tick %d)",
 						job.platform_name, tostring(captured_paused), game.tick))
