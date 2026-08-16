@@ -541,6 +541,8 @@ end
 
 local function force_execute(surface, recs, player, side_groups, fluid_segments)
 	local destroyed_records, guarded = {}, 0
+	InventoryScanner.fluid_registry = FluidRegistry.new()
+	local snapshot_ok, snapshot_err = pcall(function()
 	for _, rec in ipairs(recs) do
 		if not surface.can_place_entity(place_spec(rec, player)) then
 			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
@@ -560,6 +562,9 @@ local function force_execute(surface, recs, player, side_groups, fluid_segments)
 			end
 		end
 	end
+	end)
+	InventoryScanner.fluid_registry = nil
+	if not snapshot_ok then error(snapshot_err) end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
 		execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, true)
 	if not exec_ok then

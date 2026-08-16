@@ -119,6 +119,48 @@ try {
 			"selection-lab copies the source chest (this path already arms the registry)",
 			`ok=${copy.ok} outcome=${copy.outcome} records=${copy.records} ${copy.err}`);
 
+		// force_execute only reaches the blocker snapshot when can_place_entity is FALSE, and it asks
+		// with build_check_type.script (place_spec). A fixture whose blocker does not make THAT call
+		// fail cannot exercise the line under test, so the precondition is measured, not assumed.
+		const gate = lua(`
+			local s = game.surfaces['${setup.surface}']
+			local bct = defines.build_check_type
+			local at_target = {}
+			for _, e in pairs(s.find_entities_filtered{ area = { { 13, 1 }, { 17, 5 } } }) do
+				at_target[#at_target + 1] = string.format('%s@%.2f,%.2f', e.name, e.position.x, e.position.y)
+			end
+			local spec = { name = 'wooden-chest', position = { 14.5, 2.5 }, direction = 0, force = 'player' }
+			local can_script = s.can_place_entity{ name = spec.name, position = spec.position,
+				direction = spec.direction, force = spec.force, build_check_type = bct.script }
+			local can_manual = s.can_place_entity{ name = spec.name, position = spec.position,
+				direction = spec.direction, force = spec.force, build_check_type = bct.manual }
+			local can_default = s.can_place_entity{ name = spec.name, position = spec.position,
+				direction = spec.direction, force = spec.force }
+			local can_offfoundation = s.can_place_entity{ name = spec.name, position = { 25.5, 2.5 },
+				direction = 0, force = 'player', build_check_type = bct.script }
+			local overhang = s.create_entity{ name = 'solar-panel', position = { 21.5, 2.5 }, force = 'player' }
+			local can_overhang = s.can_place_entity{ name = spec.name, position = { 22.5, 2.5 },
+				direction = 0, force = 'player', build_check_type = bct.script }
+			local overhang_hits = {}
+			for _, e in pairs(s.find_entities_filtered{ area = { { 22, 2 }, { 23, 3 } } }) do
+				overhang_hits[#overhang_hits + 1] = e.name
+			end
+			return { at_target = at_target, can_script = can_script, can_manual = can_manual,
+				can_default = can_default, can_offfoundation = can_offfoundation,
+				overhang_placed = (overhang ~= nil and overhang.valid), can_overhang = can_overhang,
+				overhang_hits = overhang_hits }
+		`);
+		note(`can_place_entity(wooden-chest @14.5,2.5): script=${gate.can_script} manual=${gate.can_manual} `
+			+ `default=${gate.can_default}; off-foundation(25.5,2.5) script=${gate.can_offfoundation}; `
+			+ `entities in (13,1)-(17,5): ${asArray(gate.at_target).join(", ") || "(none)"}`);
+		note(`fallback fixture (panel at 21.5 overhanging the x=21 foundation edge): placed=${gate.overhang_placed} `
+			+ `can_place(22.5,2.5) script=${gate.can_overhang} `
+			+ `entities in (22,2)-(23,3): ${asArray(gate.overhang_hits).join(", ") || "(none)"}`);
+		check(gate.can_script === false,
+			"fixture precondition: the blocker makes force_execute's own gate (can_place_entity with "
+			+ "build_check_type.script) FAIL — without this the blocker-snapshot branch is never entered",
+			`script=${gate.can_script} manual=${gate.can_manual} at_target=${asArray(gate.at_target).join(", ")}`);
+
 		const forced = lua(`
 			local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'force',
 				${LAB_PLAYER}, 14, 2, 16, 4, '${setup.surface}')
