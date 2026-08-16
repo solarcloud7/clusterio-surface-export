@@ -1083,6 +1083,8 @@ export class ImportOperationCompleteEvent {
 			success: { type: "boolean" },
 			error: { type: ["string", "null"] },
 			failedStage: { type: ["string", "null"] },
+			cleanupFailed: { type: "boolean" },
+			destinationPreserved: { type: "boolean" },
 			durationTicks: { type: ["integer", "null"] },
 			entityCount: { type: ["integer", "null"] },
 			metrics: { type: ["object", "null"] },
@@ -1097,28 +1099,32 @@ export class ImportOperationCompleteEvent {
 	success: boolean;
 	error: string | null;
 	failedStage: string | null;
+	cleanupFailed: boolean;
+	destinationPreserved: boolean;
 	durationTicks: number | null;
 	entityCount: number | null;
 	metrics: Record<string, unknown> | null;
 
-	constructor(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; failedStage?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
+	constructor(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; failedStage?: string | null; cleanupFailed?: boolean; destinationPreserved?: boolean; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
 		this.operationId = json.operationId;
 		this.platformName = json.platformName;
 		this.instanceId = json.instanceId;
 		this.success = json.success;
 		this.error = json.error ?? null;
 		this.failedStage = json.failedStage ?? null;
+		this.cleanupFailed = json.cleanupFailed === true;
+		this.destinationPreserved = json.destinationPreserved === true;
 		this.durationTicks = json.durationTicks ?? null;
 		this.entityCount = json.entityCount ?? null;
 		this.metrics = json.metrics ?? null;
 	}
 
-	static fromJSON(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; failedStage?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
+	static fromJSON(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; failedStage?: string | null; cleanupFailed?: boolean; destinationPreserved?: boolean; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
 		return new ImportOperationCompleteEvent(json);
 	}
 
 	toJSON() {
-		return { operationId: this.operationId, platformName: this.platformName, instanceId: this.instanceId, success: this.success, error: this.error, failedStage: this.failedStage, durationTicks: this.durationTicks, entityCount: this.entityCount, metrics: this.metrics };
+		return { operationId: this.operationId, platformName: this.platformName, instanceId: this.instanceId, success: this.success, error: this.error, failedStage: this.failedStage, cleanupFailed: this.cleanupFailed, destinationPreserved: this.destinationPreserved, durationTicks: this.durationTicks, entityCount: this.entityCount, metrics: this.metrics };
 	}
 }
 

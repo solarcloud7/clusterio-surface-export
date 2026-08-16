@@ -92,6 +92,43 @@ test("an explicit success=false is forwarded with the stage and reason the desti
 	assert.equal(errors.length, 1, "a refused import must be visible in the instance log too");
 });
 
+test("a failed discard is forwarded, so the operator learns a leftover platform exists", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		failed_stage: "items",
+		error: "Item mismatches: copper-plate: loss - expected 5000, got 0",
+		cleanup_failed: true,
+		cleanup_error: "GameUtils.delete_platform failed: returned false",
+	});
+
+	assert.equal(sent[0].success, false);
+	assert.equal(sent[0].cleanupFailed, true);
+	assert.match(sent[0].error, /leftover platform remains/);
+	assert.ok(sent[0].error.includes("GameUtils.delete_platform failed: returned false"),
+		"the discard failure's own reason must survive, not just the flag");
+});
+
+test("a deliberately preserved destination is stated, and is not a failed discard", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		failed_stage: "items",
+		error: "Item mismatches",
+		destination_preserved: true,
+	});
+
+	assert.equal(sent[0].cleanupFailed, false);
+	assert.equal(sent[0].destinationPreserved, true);
+	assert.match(sent[0].error, /PRESERVED/);
+});
+
 test("success=false with no reason still fails, with a stated default", async () => {
 	const { plugin, sent } = makeInstanceHarness();
 
@@ -136,6 +173,24 @@ test("the controller marks the operation failed and keeps the stage the metric l
 	assert.match(operation.error, /belts/);
 	assert.equal(operation.failedStage, "belts");
 	assert.ok(logged.some(entry => entry.eventType === "import_failed"));
+});
+
+test("a failed discard promotes the row past plain failed, so retries and metrics see it", async () => {
+	const { plugin, operation } = makeControllerHarness();
+
+	await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+		operationId: operation.transferId,
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: false,
+		error: "Import failed at items: …; destination discard FAILED — a leftover platform remains",
+		failedStage: "items",
+		cleanupFailed: true,
+	}));
+
+	assert.equal(operation.status, "cleanup_failed",
+		"lib/metrics.ts maps cleanup_failed to its own result label, and the retry guards read the status");
+	assert.equal(operation.failedStage, "items");
 });
 
 test("an unrecognised stage never reaches the operation record", async () => {

@@ -575,10 +575,22 @@ export class InstancePlugin extends BaseInstancePlugin {
 					? data.failed_stage
 					: null;
 				const reportedError = typeof data.error === "string" && data.error ? data.error : null;
-				const importError = importSucceeded
-					? null
-					: `Import failed${failedStage ? ` at ${failedStage}` : ""}: `
-						+ `${reportedError ?? "the destination refused the import"}`;
+				const cleanupFailed = data.cleanup_failed === true;
+				const cleanupError = typeof data.cleanup_error === "string" && data.cleanup_error
+					? data.cleanup_error
+					: null;
+				const destinationPreserved = data.destination_preserved === true;
+				const importError = importSucceeded ? null : [
+					`Import failed${failedStage ? ` at ${failedStage}` : ""}: `
+						+ `${reportedError ?? "the destination refused the import"}`,
+					cleanupFailed
+						? `destination discard FAILED — a leftover platform remains on instance ${this.i.id}: `
+							+ `${cleanupError ?? "delete_platform failed"}`
+						: null,
+					destinationPreserved
+						? "destination platform was PRESERVED by preserve_failed_destination"
+						: null,
+				].filter(Boolean).join("; ");
 				if (!importSucceeded) {
 					this.logger.error(`Import operation ${operationId} FAILED on ${data.platform_name}: ${importError}`);
 				}
@@ -590,6 +602,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 						success: importSucceeded,
 						error: importError,
 						failedStage,
+						cleanupFailed,
+						destinationPreserved,
 						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
 						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
 						metrics: (metrics as Record<string, unknown> | null) || null,

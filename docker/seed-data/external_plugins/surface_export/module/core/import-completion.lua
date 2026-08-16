@@ -858,6 +858,9 @@ function ImportCompletion.run_phase2(job)
 			event_payload.error = validation_result.mismatchDetails
 				or validation_result.message
 				or "the destination refused the import"
+			event_payload.cleanup_failed = validation_result.cleanup_failed == true
+			event_payload.cleanup_error = validation_result.cleanup_error
+			event_payload.destination_preserved = validation_result.destinationPreserved == true
 		end
 
 		if job.transfer_id then

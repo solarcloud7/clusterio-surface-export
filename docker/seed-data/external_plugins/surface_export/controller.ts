@@ -519,7 +519,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				});
 		} else {
 			const error = event.error || "Import failed";
-			operation.status = "failed";
+			operation.status = event.cleanupFailed ? "cleanup_failed" : "failed";
 			operation.error = error;
 			operation.failedAt = Date.now();
 			if (event.failedStage === "items" || event.failedStage === "fluids"
