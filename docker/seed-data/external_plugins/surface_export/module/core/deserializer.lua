@@ -1335,6 +1335,13 @@ local function restored_unit_numbers(entity_map)
   return restored
 end
 
+local function is_pole_like(entity)
+  if entity.type == "electric-pole" then
+    return true
+  end
+  return entity.type == "entity-ghost" and entity.ghost_type == "electric-pole"
+end
+
 local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label, tally)
   local peers = payload_copper_peers(entity_data, entity_map, copper)
   local connector = entity.get_wire_connector(copper, false)
@@ -1364,6 +1371,36 @@ local function prune_one_pole(entity, entity_data, entity_map, restored, copper,
   end
 end
 
+local function prune_one_pole_ghost_wires(entity, entity_data, entity_map, restored, copper, label, tally)
+  local peers = payload_copper_peers(entity_data, entity_map, copper)
+  local connector = entity.get_wire_connector(copper, false)
+  if not connector then
+    return
+  end
+
+  local foreign = {}
+  for _, conn in ipairs(connector.connections) do
+    local peer_connector = conn.target
+    local peer = peer_connector and peer_connector.owner
+    if peer and peer.valid and (connector.is_ghost or peer_connector.is_ghost)
+      and is_pole_like(peer) and peer.unit_number
+      and restored[peer.unit_number] and not peers[peer.unit_number] then
+      foreign[#foreign + 1] = {
+        connector = peer_connector,
+        label = string.format("%s (%.1f, %.1f)", peer.name, peer.position.x, peer.position.y),
+      }
+    end
+  end
+
+  for _, target in ipairs(foreign) do
+    if connector.disconnect_from(target.connector) then
+      tally.pruned = tally.pruned + 1
+    else
+      log(string.format("[Deserializer] ghost pole copper prune DECLINED %s -> %s", label, target.label))
+    end
+  end
+end
+
 function Deserializer.prune_pole_copper(entities_to_create, entity_map)
   local copper = defines.wire_connector_id.pole_copper
   local restored = restored_unit_numbers(entity_map)
@@ -1371,12 +1408,22 @@ function Deserializer.prune_pole_copper(entities_to_create, entity_map)
 
   for _, entity_data in ipairs(entities_to_create) do
     local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid and entity.type == "electric-pole" then
+    if entity and entity.valid and is_pole_like(entity) then
       local label = string.format("%s (%.1f, %.1f)", entity.name, entity.position.x, entity.position.y)
-      local ok, err = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label, tally)
-      if not ok then
-        log(string.format("[Deserializer] pole copper prune THREW for %s: %s — that pole may keep copper the "
-          .. "payload does not carry, import continues", label, tostring(err)))
+
+      if entity.type == "electric-pole" then
+        local ok, err = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label, tally)
+        if not ok then
+          log(string.format("[Deserializer] pole copper prune THREW for %s: %s — that pole may keep copper the "
+            .. "payload does not carry, import continues", label, tostring(err)))
+        end
+      end
+
+      local ghost_ok, ghost_err = pcall(prune_one_pole_ghost_wires, entity, entity_data, entity_map, restored,
+        copper, label, tally)
+      if not ghost_ok then
+        log(string.format("[Deserializer] ghost pole copper prune THREW for %s: %s — that pole may keep a "
+          .. "planned wire the payload does not carry, import continues", label, tostring(ghost_err)))
       end
     end
   end
