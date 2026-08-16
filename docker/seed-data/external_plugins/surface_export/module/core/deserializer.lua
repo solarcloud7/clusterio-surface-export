@@ -1,4 +1,5 @@
 local Util = require("modules/surface_export/utils/util")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 
 local Deserializer = {}
 
@@ -8,6 +9,31 @@ local function safe_call(context, func)
     log(string.format("[Deserializer Error] %s: %s", context, tostring(err)))
   end
   return ok
+end
+
+function Deserializer.new_item_state_session()
+  return { applied = 0, declined = 0, failed = 0, logged = 0 }
+end
+
+function Deserializer.release_item_state_session(session)
+  if session and session.scratch then
+    Util.pcall_warn("[Deserializer] item-state scratch release", function()
+      InventoryScanner.release_item_state_cache(session.scratch)
+    end)
+    session.scratch = false
+  end
+end
+
+local function session_scratch(session)
+  if session.scratch == nil then
+    local ok, cache = pcall(InventoryScanner.new_item_state_cache)
+    session.scratch = ok and cache or false
+    if not ok then
+      log(string.format("[Deserializer] item-state scratch unavailable (%s) — every export_string is declined; "
+        .. "the plain stack is still placed", tostring(cache)))
+    end
+  end
+  return session.scratch or nil
 end
 
 local function restore_item_scalar_properties(stack, item_data)
@@ -57,18 +83,83 @@ local function restore_item_scalar_properties(stack, item_data)
   end
 end
 
-local function restore_item_properties(stack, item_data)
+local function restore_export_string_with_session(stack, item, session)
+  local name = stack.name
+  local quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
+  local count = stack.count
+
+  local scratch = session_scratch(session)
+  local keeps, seen = false, "no scratch inventory"
+  if scratch then
+    keeps, seen = InventoryScanner.export_string_keeps_identity(scratch, name, quality, count, item.export_string)
+  end
+  if not keeps then
+    session.declined = session.declined + 1
+    restore_item_scalar_properties(stack, item)
+    session.logged = session.logged + 1
+    if session.logged <= 10 then
+      log(string.format("[Deserializer] ITEM STATE DECLINED export_string for %s (%s) x%d: the scratch preflight "
+        .. "read %s — the live stack keeps the plain item and its scalar properties, and was not written",
+        name, quality, count, tostring(seen)))
+    end
+    return false
+  end
+
+  local ok, result = pcall(function() return stack.import_stack(item.export_string) end)
+  if ok and result == 0 then
+    session.applied = session.applied + 1
+    return true
+  end
+  session.failed = session.failed + 1
+  session.logged = session.logged + 1
+  if session.logged <= 10 then
+    log(string.format("[Deserializer] ITEM STATE export_string WRITE FAILED for %s: %s", name,
+      ok and ("import_stack returned " .. tostring(result)) or tostring(result)))
+  end
+  return false
+end
+
+local function restore_export_string_stack(stack, item, session)
+  if not (stack and stack.valid_for_read) then
+    log(string.format("[Deserializer] ITEM STATE export_string skipped for '%s': the plain stack did not take, "
+      .. "so there is nothing to write the string onto", tostring(item.name)))
+    return false
+  end
+  if session then return restore_export_string_with_session(stack, item, session) end
+
+  local name = stack.name
+  local transient = Deserializer.new_item_state_session()
+  local ok, applied = pcall(restore_export_string_with_session, stack, item, transient)
+  Deserializer.release_item_state_session(transient)
+  if not ok then error(applied, 0) end
+  if transient.declined + transient.failed > 0 then
+    log(string.format("[Deserializer] ITEM STATE for %s on a restore with no session: declined %d failed %d — "
+      .. "the guard ran, but these counts reach no import metrics",
+      name, transient.declined, transient.failed))
+  end
+  return applied
+end
+
+local function place_plain_stack(stack, item)
+  local stack_params = { name = item.name, count = item.count }
+  if item.quality and item.quality ~= Util.QUALITY_NORMAL then
+    stack_params.quality = item.quality
+  end
+  return pcall(function() stack.set_stack(stack_params) end)
+end
+
+local function restore_item_properties(stack, item_data, item_state)
   if not stack or not stack.valid_for_read then return end
 
   restore_item_scalar_properties(stack, item_data)
 
   if item_data.grid and stack.grid then
-    Deserializer.restore_equipment_grid(stack.grid, item_data.grid)
+    Deserializer.restore_equipment_grid(stack.grid, item_data.grid, item_state)
   end
   if item_data.nested_inventory and stack.is_item_with_inventory then
     local sub_inventory = stack.get_inventory(defines.inventory.item_main)
     if sub_inventory and sub_inventory.valid then
-      Deserializer.restore_nested_inventory(sub_inventory, item_data.nested_inventory)
+      Deserializer.restore_nested_inventory(sub_inventory, item_data.nested_inventory, item_state)
     end
   end
 end
@@ -587,7 +678,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 end
 
-function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
+function Deserializer.restore_inventories(entity, entity_data, overflow_losses, item_state)
   if not entity.valid or not entity_data.specific_data then
     return
   end
@@ -622,19 +713,30 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
       for _, item in ipairs(inv_data.items) do
         if item.export_string then
           local slot_index = nil
-          for i = 1, #inventory do
-            if not inventory[i].valid_for_read then
-              slot_index = i
-              break
+          if item.slot and item.slot <= #inventory and not inventory[item.slot].valid_for_read then
+            slot_index = item.slot
+          else
+            for i = 1, #inventory do
+              if not inventory[i].valid_for_read then
+                slot_index = i
+                break
+              end
             end
           end
-          
+
           if slot_index then
             local stack = inventory[slot_index]
-            local import_result = stack.import_stack(item.export_string)
-            if import_result < 0 then
-              log(string.format("[FactorioSurfaceExport] Warning: Failed to import blueprint for %s", entity.name))
+            local placed_ok, placed_err = place_plain_stack(stack, item)
+            if not placed_ok then
+              log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?): "
+                .. "%s — its export_string is dropped with it, and the absent item fails the census",
+                item.name, entity.name, tostring(placed_err)))
+            else
+              restore_export_string_stack(stack, item, item_state)
             end
+          else
+            log(string.format("[Deserializer] No free slot in %s for '%s' — the item is dropped and the absent "
+              .. "item fails the census", entity.name, tostring(item.name)))
           end
         else
           local stack_params = {
@@ -668,7 +770,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
           elseif item.slot and item.slot <= #inventory then
             local slot = inventory[item.slot]
             if slot.valid_for_read then
-              restore_item_properties(slot, item)
+              restore_item_properties(slot, item, item_state)
             end
             if not slot.valid_for_read or slot.count < item.count then
               local actual_count = slot.valid_for_read and slot.count or 0
@@ -701,7 +803,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
 
             if inserted > 0 then
               local inserted_stack = inventory.find_item_stack(item.name)
-              restore_item_properties(inserted_stack, item)
+              restore_item_properties(inserted_stack, item, item_state)
             end
           end
         end
@@ -714,7 +816,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
 
 end
 
-function Deserializer.restore_equipment_grid(grid, grid_data)
+function Deserializer.restore_equipment_grid(grid, grid_data, item_state)
   if not grid or not grid.valid then
     return
   end
@@ -763,18 +865,18 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
         end
         
         if equip_data.burner.inventory and burner.inventory and burner.inventory.valid then
-          Deserializer.restore_nested_inventory(burner.inventory, equip_data.burner.inventory)
+          Deserializer.restore_nested_inventory(burner.inventory, equip_data.burner.inventory, item_state)
         end
-        
+
         if equip_data.burner.burnt_result_inventory and burner.burnt_result_inventory and burner.burnt_result_inventory.valid then
-          Deserializer.restore_nested_inventory(burner.burnt_result_inventory, equip_data.burner.burnt_result_inventory)
+          Deserializer.restore_nested_inventory(burner.burnt_result_inventory, equip_data.burner.burnt_result_inventory, item_state)
         end
       end
     end
   end
 end
 
-function Deserializer.restore_nested_inventory(inventory, items_data)
+function Deserializer.restore_nested_inventory(inventory, items_data, item_state)
   if not inventory or not inventory.valid or not items_data then
     return
   end
@@ -790,12 +892,15 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
           break
         end
       end
-      
+
       if slot_index then
         local stack = inventory[slot_index]
-        local import_result = stack.import_stack(item.export_string)
-        if import_result < 0 then
-          log(string.format("[FactorioSurfaceExport] Warning: Failed to import nested blueprint '%s'", item.name))
+        local placed_ok, placed_err = place_plain_stack(stack, item)
+        if not placed_ok then
+          log(string.format("[Deserializer] Failed to place nested item '%s': %s",
+            tostring(item.name), tostring(placed_err)))
+        else
+          restore_export_string_stack(stack, item, item_state)
         end
       end
     else
@@ -818,7 +923,7 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
       end
       if ok and result > 0 then
         local inserted_stack = inventory.find_item_stack(item.name)
-        restore_item_properties(inserted_stack, item)
+        restore_item_properties(inserted_stack, item, item_state)
       end
     end
   end

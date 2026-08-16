@@ -88,12 +88,17 @@ test("a payload without per-stack state stays importable, and a malformed one is
 
 test("export_string reaches the live belt stack only after a scratch stack proved identity survives", () => {
 	const restoration = read("import_phases", "belt_restoration.lua");
-	assert.match(restoration, /function BeltRestoration\.export_string_keeps_identity\(scratch, name, quality, count, export_string\)/,
-		"the preflight is a named module member so a test can drive it with a real cross-type string");
-	assert.match(restoration, /slot\.set_stack\(\{ name = name, quality = wanted_quality, count = count \}\)[\s\S]{0,400}?slot\.import_stack\(export_string\)/,
+	const scanner = read("export_scanners", "inventory-scanner.lua");
+	assert.match(scanner, /function InventoryScanner\.export_string_keeps_identity\(scratch, name, quality, count, export_string\)/,
+		"the preflight is a named module member so a test can drive it with a real cross-type string. It lives on "
+		+ "InventoryScanner, which already owns the scratch-cache family, because the inventory restore path needs "
+		+ "the same oracle and deserializer.lua cannot require belt_restoration.lua — that require runs the other way");
+	assert.match(restoration, /BeltRestoration\.export_string_keeps_identity = InventoryScanner\.export_string_keeps_identity/,
+		"the belt path keeps the member it exposed, bound to the one implementation rather than a second copy");
+	assert.match(scanner, /slot\.set_stack\(\{ name = name, quality = wanted_quality, count = count \}\)[\s\S]{0,400}?slot\.import_stack\(export_string\)/,
 		"the dry run must happen on a scratch stack of the SAME name, quality and count — that is what makes it "
 		+ "an oracle for the write about to hit the belt");
-	assert.match(restoration, /keeps = import_result == 0\s*\n\s*and slot\.name == name and seen_quality == wanted_quality and slot\.count == count/,
+	assert.match(scanner, /keeps = import_result == 0\s*\n\s*and slot\.name == name and seen_quality == wanted_quality and slot\.count == count/,
 		"the verdict needs BOTH halves and neither implies the other, measured at 2.1.11: import_stack returns 0 "
 		+ "while silently changing the item name (a blueprint-book string into a blueprint stack), so the return "
 		+ "code cannot police IDENTITY; and it returns -1 while leaving identity untouched and silently dropping "
@@ -103,7 +108,7 @@ test("export_string reaches the live belt stack only after a scratch stack prove
 		+ "checked too — a nonzero there is a partial write, not a success");
 	assert.match(restoration, /else\s*\n\s*state_stats\.declined = state_stats\.declined \+ 1[\s\S]{0,600}?STATE DECLINED export_string/,
 		"a failed preflight must count and name the decline, never fall through to the write");
-	assert.match(restoration, /if not \(scratch and scratch\.inventory and scratch\.inventory\.valid\) then\s*\n\s*return false, "no scratch inventory"/,
+	assert.match(scanner, /if not \(scratch and scratch\.inventory and scratch\.inventory\.valid\) then\s*\n\s*return false, "no scratch inventory"/,
 		"a missing scratch inventory declines — an absent oracle must never be read as a pass");
 	assert.match(restoration, /local function needs_scratch\(side_groups\)[\s\S]{0,300}?slot\.st and slot\.st\.export_string/,
 		"the scratch inventory is created only when a payload actually carries an export_string");
@@ -123,9 +128,16 @@ test("a blueprint book restored from its export string is not then emptied by th
 		+ "fix that measured intact; reordering scalars before the string is NOT — import_stack replaces the "
 		+ "whole stack, so a label written first is overwritten by the string's own");
 	const deserializer = read("core", "deserializer.lua");
-	assert.match(deserializer, /function Deserializer\.restore_nested_inventory\(inventory, items_data\)[\s\S]{0,200}?inventory\.clear\(\)/,
-		"pinning the clear() this drop exists to route around — if the inventory path's half of the book bug is "
-		+ "ever fixed there, this belt-side drop should be revisited rather than silently kept");
+	assert.match(deserializer, /function Deserializer\.restore_nested_inventory\(inventory, items_data, item_state\)[\s\S]{0,200}?inventory\.clear\(\)/,
+		"pinning the clear() this drop exists to route around. Measured at 2.1.11, blueprint-book is the ONLY "
+		+ "item prototype of 400 that reports is_item_with_inventory, and when it exports a string it takes the "
+		+ "export_string branch, which does not call restore_item_properties — the sole caller of "
+		+ "restore_nested_inventory for an item's own inventory. That leaves ONE reachable route on the "
+		+ "inventory path: extract_item_properties only attaches export_string when export_stack() succeeds "
+		+ "(inventory-scanner.lua), while nested_inventory is attached unconditionally, so a book whose "
+		+ "export_stack() FAILS on the source arrives carrying pages and no string, takes the non-export "
+		+ "branch, and is emptied here. That route is pre-existing and untouched by the guard change; the "
+		+ "belt-side drop remains load-bearing either way");
 });
 
 test("the declined counter reaches the log line and the import-complete metrics", () => {

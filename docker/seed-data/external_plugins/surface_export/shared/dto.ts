@@ -216,6 +216,9 @@ export interface ImportMetrics {
 	belt_state_failed?: number;
 	belt_state_merge_discarded?: number;
 	belt_state_declined?: number;
+	inventory_state_applied?: number;
+	inventory_state_declined?: number;
+	inventory_state_failed?: number;
 	circuits_connected: number;
 	copper_pruned?: number;
 	total_items: number;

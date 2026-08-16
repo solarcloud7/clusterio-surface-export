@@ -227,6 +227,7 @@ export function buildImportMetrics(raw: Record<string, unknown> | null | undefin
 		"entities_mapped", "fluids_restored",
 		"belt_items_restored", "belt_state_applied", "belt_state_unmatched", "belt_state_failed",
 		"belt_state_merge_discarded", "belt_state_declined",
+		"inventory_state_applied", "inventory_state_declined", "inventory_state_failed",
 		"circuits_connected", "copper_pruned", "total_items", "total_fluids"];
 	const result: Record<string, number> = { total_ticks: Number(input.total_ticks || durationTicks || 0) };
 	for (const f of tickFields) {

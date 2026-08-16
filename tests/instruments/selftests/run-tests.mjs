@@ -8,6 +8,7 @@ const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const SELFTESTS = [
 	"version",
 	"belt_side_restore",
+	"inventory_import_guard",
 	"gateway",
 	"schedule",
 	"transfer_lock",
