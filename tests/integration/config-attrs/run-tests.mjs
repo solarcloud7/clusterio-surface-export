@@ -14,10 +14,12 @@
 //           PROBES section that arms a ghost wire and then revives BOTH ends (out of reach, in
 //           reach, and an unwired control) and stamps a wire-carrying blueprint over two existing
 //           real poles, reading connector is_ghost plus connections vs real_connections at every
-//           step, every pairwise pole distance graded against the live wire reach, the destination's
-//           own pole-copper prune log lines, and a control section: the last_user conditional's
-//           present/absent arms, a nil-target proxy-container read, and the far end of every copper
-//           pair
+//           step and grading each arm against what run 31943113370 measured (both revive arms end
+//           with the wire INSIDE real_connections at both ends the moment the second ghost turns
+//           real; the aligned blueprint stamp adds no wire at all), every pairwise pole distance
+//           graded against the live wire reach, the destination's own pole-copper prune log lines,
+//           and a control section: the last_user conditional's present/absent arms, a nil-target
+//           proxy-container read, and the far end of every copper pair
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
@@ -130,16 +132,28 @@ const REACHABLE_PAIRS = [COPPER_NEAR_PAIR, GHOST_NEAR_PAIR, GHOST_REAL_NEAR_PAIR
 const GHOST_WIRE_POLES = [...GHOST_WIRED_PAIR, ...GHOST_NEAR_PAIR, ...GHOST_REAL_WIRED_PAIR,
 	...GHOST_REAL_NEAR_PAIR];
 
+const MEASURED_AT = "run 31943113370 at 2.1.11";
+
 const REAL_PAIR_ARMS = [
 	{ id: "revive_far_wired", pair: REVIVE_WIRED_PAIR, kind: "revive", wired: true, load: true,
+		expect: "real",
 		label: "revive both ends of an OUT-of-reach ghost-wired pole pair" },
 	{ id: "revive_far_unwired", pair: REVIVE_CONTROL_PAIR, kind: "revive", wired: false, control: true,
+		expect: "none",
 		label: "revive both ends of an OUT-of-reach UNWIRED ghost pole pair (control)" },
 	{ id: "revive_near_wired", pair: REVIVE_NEAR_PAIR, kind: "revive", wired: true,
+		expect: "real",
 		label: "revive both ends of an IN-reach ghost-wired pole pair" },
 	{ id: "blueprint_stamp", pair: BLUEPRINT_PAIR, kind: "blueprint", wired: true,
+		expect: "none",
 		label: "stamp a wire-carrying blueprint over two existing REAL unwired poles" },
 ];
+
+const OUTCOME_TEXT = {
+	ghost: "GHOST WIRE BETWEEN TWO REAL POLES",
+	real: "a REAL wire",
+	none: "no wire",
+};
 
 const TICK_DRIFT_TOLERANCE = 60_000;
 const CORPSE_INVENTORY_SIZE = 25;
@@ -1293,9 +1307,26 @@ function checkReviveArm(arm, probe) {
 		return null;
 	}
 	sayPair("after reviving A", probe.after_a);
-	for (const [end, err] of [["A", probe.revive_a_error], ["B", probe.revive_b_error]]) {
-		if (err) fail(`${arm.id}: end ${end} did not revive — ${err}`);
+	if (probe.revive_a_error) fail(`${arm.id}: end A did not revive — ${probe.revive_a_error}`);
+	if (arm.wired) {
+		const mid = pairShape(probe.after_a);
+		if (!mid.readable) {
+			fail(`${arm.id}: ${mid.why} with one end revived, so the half-revived state was not measured`);
+		} else if (!mid.wired) {
+			fail(`${arm.id}: the wire vanished the moment ONE end was revived — at ${MEASURED_AT} it `
+				+ "survived that step, so a wire the payload captured on a half-built pair no longer "
+				+ "means at this pin what the capture assumes");
+		} else if (mid.realWired) {
+			fail(`${arm.id}: with one end still a GHOST the wire already reads inside real_connections — `
+				+ "that is the exact partition both prune passes rest on (the real pass takes "
+				+ "real_connections, the ghost pass takes the is_ghost remainder), and it does not hold "
+				+ `at this pin as it did at ${MEASURED_AT}`);
+		} else {
+			pass(`${arm.id}: one real end and one ghost end still read the wire as a GHOST wire — outside `
+				+ "real_connections at both ends, which is the partition the two prune passes divide");
+		}
 	}
+	if (probe.revive_b_error) fail(`${arm.id}: end B did not revive — ${probe.revive_b_error}`);
 	sayPair("after reviving BOTH", probe.after_both);
 	const after = pairShape(probe.after_both);
 	if (!after.readable) {
@@ -1385,10 +1416,13 @@ function reportRealPairProbes(probes) {
 				+ "is_ghost=true — the prune's ghost pass selects wires on exactly that flag "
 				+ "(deserializer.lua:1490), so this pin does not mean by is_ghost what both passes assume");
 		}
-		const verdict = after.ghostWire ? "GHOST WIRE BETWEEN TWO REAL POLES"
-			: after.realWired ? "a REAL wire" : "no wire";
-		say(`     MEASURED: ${verdict}`);
-		graded.push({ arm, after });
+		const outcome = after.ghostWire ? "ghost" : after.realWired ? "real" : "none";
+		say(`     MEASURED: ${OUTCOME_TEXT[outcome]}`);
+		if (outcome !== arm.expect) {
+			fail(`${arm.id}: ${MEASURED_AT} measured ${OUTCOME_TEXT[arm.expect]} between the two REAL `
+				+ `poles at the end of this arm; this run reads ${OUTCOME_TEXT[outcome]}`);
+		}
+		graded.push({ arm, after, outcome });
 	}
 
 	const control = graded.find(g => g.arm.control);
@@ -1407,9 +1441,19 @@ function reportRealPairProbes(probes) {
 			+ "wire, and the real-to-real class stays UNMEASURED");
 		return;
 	}
-	const reachable = graded.some(g => g.after.ghostWire);
-	say(`\n  VERDICT — a ghost wire between two REAL poles is ${reachable ? "REACHABLE" : "NOT REACHABLE"} `
-		+ "by any producer probed here");
+	const reachable = graded.filter(g => g.outcome === "ghost");
+	say(`\n  VERDICT — a ghost wire between two REAL poles is ${reachable.length ? "REACHABLE"
+		: "NOT REACHABLE"} by any producer probed here`);
+	if (reachable.length) {
+		fail(`${reachable.map(g => g.arm.id).join(", ")} produced a wire between two REAL poles that is `
+			+ "absent from real_connections while neither connector is a ghost. At " + MEASURED_AT + " no "
+			+ "producer could, which is why prune_pole_copper's two passes may partition every wire "
+			+ "between real_connections and the is_ghost remainder. A producer for that class means the "
+			+ "payload's circuit_connections record (which carries no ghostness) now conflates a PLANNED "
+			+ "wire with a real one: restore_circuit_connections replays it through connect_to "
+			+ "(deserializer.lua:1374), which between two real entities can only make a REAL wire, and "
+			+ "payload_copper_peers (deserializer.lua:1420) then whitelists that pair against the prune");
+	}
 	say(`  the load-bearing arm ended ${load.after.ghostWire ? "with a wire outside real_connections"
 		: load.after.realWired ? "with the wire in real_connections at both ends"
 			: "with no wire at all"}, both ends reading as ${POLE_TYPE}`);
