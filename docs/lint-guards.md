@@ -126,12 +126,67 @@ Rules per tests/integration/<name>/run-tests.{ps1,mjs}, with comments stripped (
   1. A fidelity test performs an independent physical item count.        [both dialects]
   2. Validator fidelity self-reports are cross-grounded physically.      [both dialects]
   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
-     ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs validation_success before any board/census]
+     ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs a runner that FETCHES a transfer verdict must
+     adjudicate validation_success after the fetch, and before any board/census read]
 
 Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
 runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
 self-test proving it FIRES on a synthetic violator (test/lint-test-grounding.test.cjs). A
 preventative rule nobody has watched fire is indistinguishable from one that does not work.
+
+### Rule 3's mjs trigger is derived, and its scope is narrowed on measurement
+
+The mjs arm engaged only on the literal helper name `waitForImportResult` until this guard change, so
+any runner that rolled its own differently-named reader opted OUT of the rule silently, with no
+allow-manifest entry and nothing to review. The trigger is now what the runner DOES: it fetches a
+transfer verdict, matched as the `debug_import_result` artifact name or an identifier ending in
+`ImportResult`/`ImportResults`.
+
+Sweep over the 24 `tests/integration/*/run-tests.{ps1,mjs}` runners at 13e7776 — 23 mjs plus
+`engine-invariants` in ps1, which the mjs arm skips by construction, not by measurement:
+
+| | old literal trigger | derived trigger |
+|---|---|---|
+| runners the trigger reaches | 5 | 7 |
+| of those, an arm that can actually fail | 1 (`gallery-suite`) | 7 |
+| runners reported violating | 0 | 0 |
+
+The reach row is textual (does the trigger's pattern appear in comment-stripped code). The
+can-actually-fail row and the derived column's reach are MEASURED, by blinding each file's
+`validation_success` token and re-running the shipped `findMjsGroundingViolations` — a file whose
+blinded form fires is a file the rule engages on and can fail.
+
+The two runners the old literal missed entirely both read the glob through a local
+`readDestImportResult`: `gateway-park-proxies` and `platform-paused-restore` (PR #259, which reported
+the gap in its own body). Both are grounded in substance; neither was covered. The other five —
+`gallery-suite`, `ghost-item-requests`, `hub-request-sections`, `latch-rearm-adversarial`,
+`segmented-unit-sleep` — reach the rule through the shared `L.waitForImportResult`, and four of those
+five carry no board/census marker at all, which is why the old arm could fail exactly one file.
+
+Two narrowings, each measured rather than assumed:
+
+- **The ordering arm keeps its board/census markers** (`runBoard(2`, `runBoard(destHost`, `Count-`,
+  `census`) and is NOT widened to the `rconJson(DST_INSTANCE, ...)` idiom. A runner legitimately polls
+  the destination to detect arrival BEFORE the verdict file it is waiting for can exist:
+  `gateway-park-proxies` reads the destination at run-tests.mjs:115, adjudicates the verdict at :124,
+  and asserts on that captured read at :128 onward. Every widening tried against that shape — first
+  destination read after the verdict, last read after the verdict, any read after the verdict — turns
+  it red. What holds across all 7 is the PRESENCE arm: fetching the verdict artifact and never
+  adjudicating `validation_success` fires. `test/lint-test-grounding.test.cjs` pins the narrowing
+  itself, so a later "improvement" to the ordering markers trips a self-test instead of the tree.
+- **The transaction-log verdict path is out of scope**: `belt-item-state`, `config-attrs` and
+  `inventory-item-state` adjudicate by parsing `"result": "SUCCESS"` out of
+  `testkit/cli.mjs log latest --field summary`. Reaching them needs a second verdict vocabulary in the
+  adjudication predicate, and the files that then become marginal are marginal only because of it
+  (`evacuation-coverage` carries a bare `"SUCCESS"` string with no transfer at all;
+  `inventory-item-state` carries no `validation_success` token to adjudicate). Not covered, not
+  pretended.
+
+Residual the presence arm does NOT close: it proves that *a* verdict was adjudicated after the fetch,
+not that *each* transfer in a multi-transfer runner was. `gallery-suite` is that shape live — a forward
+transfer adjudicated at run-tests.mjs:132 and a refusal arm at :156 — so a future runner that
+adjudicates only one of its two transfers satisfies the arm. Closing it needs per-call-site pairing,
+which the textual scan cannot do.
 
 Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
 never a self-service response to a firing guard.
