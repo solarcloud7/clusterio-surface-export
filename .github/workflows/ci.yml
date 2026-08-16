@@ -8,10 +8,9 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cancel in-progress runs for the same ref (branch/PR)
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   PLUGIN_DIR: docker/seed-data/external_plugins/surface_export
@@ -277,15 +276,62 @@ jobs:
           echo "Both instances are RCON/plugin ready"
           $CTL instance list
 
-      # The repo-root package.json, which the plugin's `npm ci` above does not cover. The canvas test
-      # needs a REAL browser — jsdom returns zeros from getBoundingClientRect, which is the geometry
-      # this test asserts on. Chromium only; `--with-deps` pulls its OS libraries on a bare runner.
-      - name: Install repo-root test dependencies and browser
+      # The repo-root package.json, which the plugin's `npm ci` above does not cover. The canvas
+      # suites need a REAL browser — jsdom returns zeros from getBoundingClientRect, which is the
+      # geometry they assert on.
+      - name: Install repo-root test dependencies
         timeout-minutes: 10
         run: |
           NPM_FLAGS="--fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
           npm ci $NPM_FLAGS || { echo "::warning::root npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
-          npx playwright install --with-deps chromium
+
+      - name: Resolve the pinned Playwright version
+        id: playwright-version
+        run: |
+          v=$(node -p "require('./package-lock.json').packages['node_modules/playwright']?.version ?? ''")
+          test -n "$v" || { echo "::error::could not resolve playwright's version from package-lock.json — an unkeyed browser cache would serve a stale browser after a version bump"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright" >> "$GITHUB_ENV"
+          echo "SE_PLAYWRIGHT_INSTALL_ERROR=$RUNNER_TEMP/playwright-install-error.log" >> "$GITHUB_ENV"
+          echo "Playwright version: $v"
+
+      - name: Restore cached Playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install Playwright chromium
+        id: playwright-install
+        timeout-minutes: 10
+        run: |
+          set -o pipefail
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            CMD="npx playwright install-deps chromium"
+          else
+            CMD="npx playwright install --with-deps chromium"
+          fi
+          LOG="$RUNNER_TEMP/playwright-install.log"
+          if $CMD 2>&1 | tee "$LOG"; then
+            INSTALLED=true
+          else
+            INSTALLED=false
+            echo "::warning::Playwright browser install failed ($CMD) — the canvas suites will report a loud SKIP and every other integration suite still runs"
+            {
+              grep -m1 -E "Error|error:" "$LOG" || echo "$CMD failed, with no Error line in its output"
+              echo "command: $CMD"
+              tail -n 15 "$LOG"
+            } > "$SE_PLAYWRIGHT_INSTALL_ERROR"
+          fi
+          echo "installed=$INSTALLED" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true' && steps.playwright-install.outputs.installed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
 
       # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs}: the dir set is the
       # single source of truth, so adding a test dir wires it in here with no step to maintain.

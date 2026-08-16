@@ -7,9 +7,9 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { chromium } from "playwright";
 
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
+import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
 
 const CONTROLLER_CONTAINER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
@@ -58,7 +58,7 @@ async function centreOf(locator) {
 
 console.log("=== canvas-locking: the padlock gates edge deletion, edges never fall back to blue ===");
 
-const browser = await chromium.launch();
+const browser = await launchChromiumOrSkip("canvas-locking");
 try {
 	const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
 	const page = await context.newPage();

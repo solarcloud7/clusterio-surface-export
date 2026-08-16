@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { chromium } from "playwright";
 
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
+import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
 
 const CONTROLLER_CONTAINER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
@@ -45,7 +45,7 @@ async function dragBetween(page, from, to) {
 
 console.log("=== canvas-drag: a platform row can be dragged onto another instance's gateway ===");
 
-const browser = await chromium.launch();
+const browser = await launchChromiumOrSkip("canvas-drag");
 let exitCode = 0;
 try {
 	const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
