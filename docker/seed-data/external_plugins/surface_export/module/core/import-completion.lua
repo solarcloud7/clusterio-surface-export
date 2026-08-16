@@ -242,6 +242,7 @@ function ImportCompletion.run_phase1(job)
 					job.metrics.belt_state_unmatched = r_state.unmatched
 					job.metrics.belt_state_failed = r_state.failed
 					job.metrics.belt_state_merge_discarded = r_state.merge_discarded
+					job.metrics.belt_state_declined = r_state.declined
 				end
 				PhaseCensus.record_external(job, "belts", PhaseCensus.SUBJECT_BELTS,
 					belt_delta_to_census_keys(r_delta), "side-group member lines")
@@ -793,6 +794,7 @@ function ImportCompletion.run_phase2(job)
 				belt_state_unmatched = job.metrics.belt_state_unmatched or 0,
 				belt_state_failed = job.metrics.belt_state_failed or 0,
 				belt_state_merge_discarded = job.metrics.belt_state_merge_discarded or 0,
+				belt_state_declined = job.metrics.belt_state_declined or 0,
 				circuits_connected = job.metrics.circuits_connected or 0,
 				total_items = job.total_items or 0,
 				total_fluids = job.total_fluids or 0,

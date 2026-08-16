@@ -226,7 +226,8 @@ export function buildImportMetrics(raw: Record<string, unknown> | null | undefin
 	const countFields = ["tiles_placed", "entities_created", "entities_failed", "entities_skipped",
 		"entities_mapped", "fluids_restored",
 		"belt_items_restored", "belt_state_applied", "belt_state_unmatched", "belt_state_failed",
-		"belt_state_merge_discarded", "circuits_connected", "total_items", "total_fluids"];
+		"belt_state_merge_discarded", "belt_state_declined",
+		"circuits_connected", "total_items", "total_fluids"];
 	const result: Record<string, number> = { total_ticks: Number(input.total_ticks || durationTicks || 0) };
 	for (const f of tickFields) {
 		const ticks = Number(input[f + "_ticks"] || (f === "total" ? durationTicks || 0 : 0));

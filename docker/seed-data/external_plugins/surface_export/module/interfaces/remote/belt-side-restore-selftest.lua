@@ -1,4 +1,5 @@
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 
 local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
 
@@ -489,7 +490,8 @@ local function belt_side_restore_selftest(opts)
       for _, item in ipairs(line.contents) do
         out[#out + 1] = {
           unique_id = item.id,
-          stack = { name = item.name, quality = { name = item.quality }, count = item.count },
+          stack = { name = item.name, quality = { name = item.quality }, count = item.count,
+            valid_for_read = true },
         }
       end
       return out
@@ -621,6 +623,150 @@ local function belt_side_restore_selftest(opts)
     string.format("a declined merge must put the partner back and stay bracket-silent; placed=%d unplaced=%d anomalies=%d stacks=%d count=%s",
       dplaced, dunplaced, danomalies, #decline_line.contents,
       decline_line.contents[1] and tostring(decline_line.contents[1].count) or "none"))
+
+  local UNKNOWN_ENTITY = "modded-entity-the-destination-lacks"
+  local bp_inv = game.create_inventory(2)
+  bp_inv[1].set_stack({ name = "blueprint", count = 1 })
+  bp_inv[1].set_blueprint_entities({
+    { entity_number = 1, name = "wooden-chest", position = { x = 0.5, y = 0.5 } },
+    { entity_number = 2, name = "iron-chest", position = { x = 1.5, y = 0.5 } },
+  })
+  local same_type_string = bp_inv[1].export_stack()
+  bp_inv[2].set_stack({ name = "blueprint-book", count = 1 })
+  local cross_type_string = bp_inv[2].export_stack()
+  bp_inv.destroy()
+
+  local decoded = helpers.json_to_table(helpers.decode_string(same_type_string:sub(2)))
+  decoded.blueprint.entities[2].name = UNKNOWN_ENTITY
+  decoded.blueprint.icons = { { signal = { name = "wooden-chest" }, index = 1 } }
+  local partial_string = "0" .. helpers.encode_string(helpers.table_to_json(decoded))
+
+  local preflight_scratch = InventoryScanner.new_item_state_cache()
+  local same_ok, same_seen = BeltRestoration.export_string_keeps_identity(
+    preflight_scratch, "blueprint", "normal", 1, same_type_string)
+  local cross_ok, cross_seen = BeltRestoration.export_string_keeps_identity(
+    preflight_scratch, "blueprint", "normal", 1, cross_type_string)
+  local partial_ok, partial_seen = BeltRestoration.export_string_keeps_identity(
+    preflight_scratch, "blueprint", "normal", 1, partial_string)
+  InventoryScanner.release_item_state_cache(preflight_scratch)
+  check("preflight_string_names_an_entity_this_install_lacks", prototypes.entity[UNKNOWN_ENTITY] == nil,
+    "the partial-import fixture is only a fixture if the entity it names really is unknown here")
+  check("preflight_passes_a_same_type_export_string", same_ok == true,
+    string.format("a blueprint's own export string must preflight clean; got %s (%s)",
+      tostring(same_ok), tostring(same_seen)))
+  check("preflight_refuses_a_type_changing_export_string",
+    cross_ok == false and type(cross_seen) == "string" and string.find(cross_seen, "blueprint%-book") ~= nil,
+    string.format("a blueprint-book string imported into a blueprint stack changes the item name while "
+      .. "import_stack still returns 0, so the return code alone cannot refuse it; got %s (%s)",
+      tostring(cross_ok), tostring(cross_seen)))
+  check("preflight_refuses_a_partially_importable_export_string",
+    partial_ok == false and type(partial_seen) == "string" and string.find(partial_seen, "returned %-1") ~= nil,
+    string.format("a string naming an entity this install lacks imports PARTIALLY: identity is untouched and "
+      .. "import_stack returns -1, so identity alone cannot refuse it; got %s (%s)",
+      tostring(partial_ok), tostring(partial_seen)))
+
+  local function real_belt_restore(export_string, item_name, state)
+    local surface = game.surfaces["nauvis"]
+    local spot = surface.find_non_colliding_position("transport-belt", { x = 0, y = 0 }, 400, 1)
+    local belt = spot and surface.create_entity({ name = "transport-belt", position = spot, force = "player",
+      direction = defines.direction.east, raise_built = false })
+    if not (belt and belt.valid) then return { built = false } end
+    local st = { export_string = export_string }
+    for key, value in pairs(state or {}) do st[key] = value end
+    local groups = {
+      { members = { { id = 1, li = 1 } },
+        slots = { { n = item_name or "blueprint", q = "normal", ct = 1, st = st } },
+        item_source_positions = { 1, 1, 128 } },
+    }
+    local placed, unplaced, anomalies, _, stats = BeltRestoration.restore_side_groups(groups, { [1] = belt })
+    local result = { built = true, placed = placed, unplaced = unplaced, anomalies = anomalies, stats = stats,
+      stacks = 0, name = "none", entities = -1, book_slots = -1, book_filled = -1 }
+    for _, it in ipairs(belt.get_transport_line(1).get_detailed_contents()) do
+      if it.stack and it.stack.valid_for_read then
+        result.stacks = result.stacks + 1
+        result.name = it.stack.name
+        result.entities = it.stack.is_blueprint and it.stack.get_blueprint_entity_count() or -1
+        if it.stack.is_item_with_inventory then
+          local inner = it.stack.get_inventory(defines.inventory.item_main)
+          if inner and inner.valid then
+            result.book_slots = #inner
+            result.book_filled = 0
+            for i = 1, #inner do
+              if inner[i].valid_for_read then result.book_filled = result.book_filled + 1 end
+            end
+          end
+        end
+      end
+    end
+    belt.destroy()
+    return result
+  end
+
+  local function belt_report(label, r)
+    if not r.built then return label .. ": belt did not build" end
+    return string.format("%s: placed=%d unplaced=%d anomalies=%d applied=%s declined=%s failed=%s "
+      .. "stacks=%d name=%s entities=%d", label, r.placed, r.unplaced, r.anomalies,
+      tostring(r.stats and r.stats.applied), tostring(r.stats and r.stats.declined),
+      tostring(r.stats and r.stats.failed), r.stacks, r.name, r.entities)
+  end
+
+  local clean_belt = real_belt_restore(same_type_string)
+  check("real_belt_applies_a_clean_export_string",
+    clean_belt.built and clean_belt.stats ~= nil and clean_belt.stats.applied == 1
+      and clean_belt.stats.declined == 0 and clean_belt.stats.failed == 0
+      and clean_belt.placed == 1 and clean_belt.anomalies == 0
+      and clean_belt.stacks == 1 and clean_belt.name == "blueprint" and clean_belt.entities == 2,
+    "a clean string must reach the stack on a REAL transport line and land both entities; "
+      .. belt_report("clean", clean_belt))
+
+  local partial_belt = real_belt_restore(partial_string)
+  check("real_belt_declines_a_partial_export_string",
+    partial_belt.built and partial_belt.stats ~= nil and partial_belt.stats.declined == 1
+      and partial_belt.stats.applied == 0 and partial_belt.stats.failed == 0
+      and partial_belt.placed == 1 and partial_belt.anomalies == 0
+      and partial_belt.stacks == 1 and partial_belt.name == "blueprint" and partial_belt.entities == 0,
+    "a string the engine can only import PARTIALLY must be declined whole, not written stripped: the stack "
+      .. "stays placed and keeps its identity, and the loss is counted rather than shipped as a blueprint "
+      .. "quietly missing entities; " .. belt_report("partial", partial_belt))
+
+  local book_inv = game.create_inventory(1)
+  book_inv[1].set_stack({ name = "blueprint-book", count = 1 })
+  local book_inner = book_inv[1].get_inventory(defines.inventory.item_main)
+  for _, inner_label in ipairs({ "book-page-one", "book-page-two" }) do
+    book_inner.insert({ name = "blueprint", count = 1 })
+    for i = 1, #book_inner do
+      if book_inner[i].valid_for_read and book_inner[i].label == nil then
+        book_inner[i].set_blueprint_entities({
+          { entity_number = 1, name = "wooden-chest", position = { x = 0.5, y = 0.5 } },
+        })
+        book_inner[i].label = inner_label
+        break
+      end
+    end
+  end
+  local book_string = book_inv[1].export_stack()
+  local book_state = InventoryScanner.extract_item_properties(book_inv[1])
+  book_inv.destroy()
+
+  local book_belt = real_belt_restore(book_string, "blueprint-book",
+    { nested_inventory = book_state.nested_inventory })
+  check("real_belt_book_keeps_its_pages_through_the_nested_inventory_restore",
+    book_belt.built and book_belt.stats ~= nil and book_belt.stats.applied == 1
+      and book_belt.stats.declined == 0 and book_belt.stats.failed == 0
+      and book_belt.name == "blueprint-book" and book_belt.book_slots == 2 and book_belt.book_filled == 2,
+    string.format("a book restored from its export string arrives full, and the nested_inventory the same "
+      .. "capture also carries must not then empty it: restore_nested_inventory clears the inventory, which "
+      .. "SHRINKS a book to size 0, after which its free-slot scan has no slots; %s slots=%d filled=%d",
+      belt_report("book", book_belt), book_belt.book_slots, book_belt.book_filled))
+
+  local cross_belt = real_belt_restore(cross_type_string)
+  check("real_belt_declines_a_type_changing_export_string",
+    cross_belt.built and cross_belt.stats ~= nil and cross_belt.stats.declined == 1
+      and cross_belt.stats.applied == 0 and cross_belt.stats.failed == 0
+      and cross_belt.placed == 1 and cross_belt.anomalies == 0
+      and cross_belt.stacks == 1 and cross_belt.name == "blueprint",
+    "a type-changing string must never reach a real belt stack — the census dimension is the item name; "
+      .. belt_report("cross-type", cross_belt))
 
   local v1 = BeltRestoration.validate_side_groups({ {} })
   check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")
