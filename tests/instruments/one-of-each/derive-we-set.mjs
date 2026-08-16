@@ -3,11 +3,21 @@
 //
 // requires: module/core/deserializer.lua and module/export_scanners/entity-handlers.lua
 // produces: we-set.json — restore-rule rows (field, property, gating types), per-category handler
-//           capture field names, direct entity property writes, and we_set: the union of properties
-//           the pipeline actually writes to an entity
+//           capture field names (from `data.X =` assignments AND from the keys of a handler's
+//           `local data = {...}` / `return {...}` constructor), direct entity property writes
+//           (bare `entity.X =`, plus `RECV[VAR] =` whose VAR an enclosing `for _, VAR in
+//           ipairs({"lit",...})` resolves to literals), receiver_writes (writes through a receiver
+//           that is NOT the entity: a nested `entity.a.b =` chain, or a local bound to an
+//           entity-derived value), and we_set: the union of properties the pipeline writes to an
+//           ENTITY
 // does not: contact the cluster, read the API index, prove restoration (a property in the WE-SET is
-//           one the pipeline TRIES to set — the differ decides whether it landed), or emit anything
-//           when a floor or a known-member control fails
+//           one the pipeline TRIES to set — the differ decides whether it landed), emit anything
+//           when a floor or a known-member control fails, resolve a bracket index the enclosing
+//           source does not bind to literals (`entity[prop]` driven by the restore-rule loop stays
+//           unresolved — those properties enter we_set as restore rules, not as writes), or admit a
+//           receiver_writes leaf into we_set (the receiver decides, never the leaf name: `cb`'s
+//           `parameters` write is a LuaControlBehavior write even though LuaEntity also has a
+//           `parameters` attribute)
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -29,12 +39,21 @@ const MIN_TYPES_GATED_RULES = 10;
 const MIN_HANDLER_CATEGORIES = 25;
 const MIN_HANDLER_FIELDS = 80;
 const MIN_DIRECT_WRITES = 20;
+const MIN_RECEIVER_WRITES = 3;
 
 const RESTORE_RULE_CONTROLS = ["link_id", "override_logistic_mode", "crafting_progress",
 	"result_quality", "switch_state"];
 const HANDLER_CONTROLS = [["assembling-machine", "recipe"], ["inserter", "held_item"],
 	["power-switch", "switch_state"], [COMMON_CATEGORY, "burner"]];
+const CONSTRUCTOR_CAPTURE_CONTROLS = [["entity-ghost", "ghost_name"], ["transport-belt", "items"],
+	["assembling-machine", "inventories"], ["underground-belt", "belt_to_ground_type"]];
 const DIRECT_WRITE_CONTROLS = ["last_user", "health", "color", "orientation", "tick_grown"];
+const BRACKET_WRITE_CONTROLS = ["providing_to_other_platforms", "request_from_buffers",
+	"mining_progress", "bonus_mining_progress"];
+const RECEIVER_WRITE_CONTROLS = [["entity.burner", "currently_burning"], ["entity.train", "schedule"],
+	["entity.segmented_unit", "activity_mode"], ["entity.segmented_unit", "minimum_activity_mode"]];
+const WE_SET_EXCLUDED_CONTROLS = ["currently_burning", "schedule", "activity_mode",
+	"minimum_activity_mode"];
 
 export function matchedBlock(source, openIndex) {
 	let depth = 0;
@@ -89,13 +108,35 @@ export function extractRestoreRules(source) {
 	});
 }
 
+export function topLevelKeys(table) {
+	const body = table.slice(1, -1);
+	const keys = [];
+	let depth = 0;
+	let start = 0;
+	const take = end => {
+		const key = body.slice(start, end).match(/^\s*([a-z_][a-z0-9_]*)\s*=(?!=)/);
+		if (key) keys.push(key[1]);
+	};
+	for (let i = 0; i < body.length; i++) {
+		const ch = body[i];
+		if (ch === "{" || ch === "(") depth++;
+		else if (ch === "}" || ch === ")") depth--;
+		else if (ch === "," && depth === 0) { take(i); start = i + 1; }
+	}
+	take(body.length);
+	return keys;
+}
+
 export function extractHandlerCaptures(source) {
 	const lines = source.split("\n");
 	const blocks = [];
 	const aliases = [];
 	let current = null;
+	let offset = 0;
 
 	for (const line of lines) {
+		const lineStart = offset;
+		offset += line.length + 1;
 		const category = line.match(/^EntityHandlers\["([^"]+)"\]\s*=\s*function/);
 		const alias = line.match(/^EntityHandlers\["([^"]+)"\]\s*=\s*EntityHandlers\["([^"]+)"\]/);
 		const named = line.match(/^function EntityHandlers\.([a-z_]+)/);
@@ -117,7 +158,13 @@ export function extractHandlerCaptures(source) {
 			continue;
 		}
 		if (!current) continue;
+		if (/^end\s*$/.test(line)) { current = null; continue; }
 		for (const m of line.matchAll(/\bdata\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) current.fields.add(m[1]);
+		const constructor = line.match(/(?:\blocal\s+data\s*=|\breturn)\s*\{/);
+		if (constructor) {
+			const brace = lineStart + constructor.index + constructor[0].length - 1;
+			for (const key of topLevelKeys(matchedBlock(source, brace))) current.fields.add(key);
+		}
 	}
 
 	const byCategory = new Map();
@@ -137,27 +184,90 @@ export function extractHandlerCaptures(source) {
 		.sort((a, b) => a.category.localeCompare(b.category));
 }
 
-export function extractDirectWrites(files) {
-	const byProperty = new Map();
-	for (const { rel, source } of files) {
-		for (const m of source.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) {
-			const existing = byProperty.get(m[1]) || new Set();
-			existing.add(rel);
-			byProperty.set(m[1], existing);
+function entityAliases(source) {
+	const aliases = new Map();
+	for (const m of source.matchAll(/\blocal\s+([a-z_][a-z0-9_]*)\s*=\s*(entity\.[a-z_][a-z0-9_]*)(\()?/g)) {
+		aliases.set(m[1], m[3] ? `${m[2]}()` : m[2]);
+	}
+	return aliases;
+}
+
+function indexLiterals(source) {
+	const bound = new Map();
+	for (const m of source.matchAll(
+		/\bfor\s+[a-z_][a-z0-9_]*\s*,\s*([a-z_][a-z0-9_]*)\s+in\s+ipairs\(\s*\{([^}]*)\}\s*\)/g)) {
+		const names = [...m[2].matchAll(/"([a-z_][a-z0-9_]*)"/g)].map(literal => literal[1]);
+		if (names.length) bound.set(m[1], names);
+	}
+	return bound;
+}
+
+function isEntityReceiver(receiver) {
+	return receiver.split(".").pop() === "entity";
+}
+
+export function scanWrites(source) {
+	const aliases = entityAliases(source);
+	const bound = indexLiterals(source);
+	const writes = [];
+
+	for (const m of source.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) {
+		writes.push({ receiver: "entity", property: m[1] });
+	}
+	for (const m of source.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) {
+		writes.push({ receiver: `entity.${m[1]}`, property: m[2] });
+	}
+	for (const [alias, receiver] of aliases) {
+		for (const m of source.matchAll(new RegExp(`\\b${alias}\\.([a-z_][a-z0-9_]*)\\s*=(?!=)`, "g"))) {
+			writes.push({ receiver, property: m[1] });
 		}
 	}
-	return [...byProperty.entries()]
-		.map(([property, files]) => ({ property, files: [...files].sort() }))
+	for (const m of source.matchAll(/\b([a-z_][a-z0-9_.]*)\[([a-z_][a-z0-9_]*)\]\s*=(?!=)/g)) {
+		const receiver = isEntityReceiver(m[1]) ? m[1] : aliases.get(m[1]);
+		if (!receiver) continue;
+		for (const property of bound.get(m[2]) || []) writes.push({ receiver, property });
+	}
+
+	return writes;
+}
+
+function collect(files, keep, shape) {
+	const rows = new Map();
+	for (const { rel, source } of files) {
+		for (const write of scanWrites(source)) {
+			if (!keep(write)) continue;
+			const key = shape(write).join("\0");
+			const existing = rows.get(key) || { write, files: new Set() };
+			existing.files.add(rel);
+			rows.set(key, existing);
+		}
+	}
+	return rows;
+}
+
+export function extractDirectWrites(files) {
+	const rows = collect(files, write => isEntityReceiver(write.receiver), write => [write.property]);
+	return [...rows.values()]
+		.map(({ write, files: seen }) => ({ property: write.property, files: [...seen].sort() }))
 		.sort((a, b) => a.property.localeCompare(b.property));
+}
+
+export function extractReceiverWrites(files) {
+	const rows = collect(files, write => !isEntityReceiver(write.receiver),
+		write => [write.receiver, write.property]);
+	return [...rows.values()]
+		.map(({ write, files: seen }) => ({
+			receiver: write.receiver, property: write.property, files: [...seen].sort(),
+		}))
+		.sort((a, b) => a.receiver.localeCompare(b.receiver) || a.property.localeCompare(b.property));
 }
 
 export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 	const restoreRules = extractRestoreRules(deserializerSource);
 	const handlerCaptures = extractHandlerCaptures(handlerSource);
-	const directWrites = extractDirectWrites([
-		{ rel: "core/deserializer.lua", source: deserializerSource },
-		...phaseFiles,
-	]);
+	const writeFiles = [{ rel: "core/deserializer.lua", source: deserializerSource }, ...phaseFiles];
+	const directWrites = extractDirectWrites(writeFiles);
+	const receiverWrites = extractReceiverWrites(writeFiles);
 
 	const weSet = new Map();
 	for (const rule of restoreRules) {
@@ -183,10 +293,12 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			restore_rules: "module/core/deserializer.lua",
 			handler_captures: "module/export_scanners/entity-handlers.lua",
 			direct_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
+			receiver_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
 		},
 		restore_rules: restoreRules,
 		handler_captures: handlerCaptures,
 		direct_writes: directWrites,
+		receiver_writes: receiverWrites,
 		we_set: [...weSet.values()].sort((a, b) => a.property.localeCompare(b.property)),
 		counts: {
 			restore_rules: restoreRules.length,
@@ -194,6 +306,7 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			handler_categories: handlerCaptures.length,
 			handler_fields: new Set(handlerCaptures.flatMap(row => row.fields)).size,
 			direct_writes: directWrites.length,
+			receiver_writes: receiverWrites.length,
 			we_set: weSet.size,
 		},
 	};
@@ -209,9 +322,10 @@ export function checkControls(artifact) {
 		["handler_categories", counts.handler_categories, MIN_HANDLER_CATEGORIES],
 		["handler_fields", counts.handler_fields, MIN_HANDLER_FIELDS],
 		["direct_writes", counts.direct_writes, MIN_DIRECT_WRITES],
+		["receiver_writes", counts.receiver_writes, MIN_RECEIVER_WRITES],
 	];
 	for (const [name, actual, floor] of floors) {
-		if (actual < floor) failures.push(`${name} extracted ${actual}, floor is ${floor} — a lexer that `
+		if (!(actual >= floor)) failures.push(`${name} extracted ${actual}, floor is ${floor} — a lexer that `
 			+ "desyncs returns few rows, not zero, so the floor is the control");
 	}
 
@@ -221,15 +335,32 @@ export function checkControls(artifact) {
 	}
 
 	const captures = new Map(artifact.handler_captures.map(row => [row.category, new Set(row.fields)]));
-	for (const [category, field] of HANDLER_CONTROLS) {
+	for (const [category, field] of [...HANDLER_CONTROLS, ...CONSTRUCTOR_CAPTURE_CONTROLS]) {
 		if (!captures.get(category)?.has(field)) {
 			failures.push(`handler capture ${category}.${field} went missing from the extraction`);
 		}
 	}
 
 	const written = new Set(artifact.direct_writes.map(row => row.property));
-	for (const control of DIRECT_WRITE_CONTROLS) {
+	for (const control of [...DIRECT_WRITE_CONTROLS, ...BRACKET_WRITE_CONTROLS]) {
 		if (!written.has(control)) failures.push(`direct write "${control}" went missing from the extraction`);
+	}
+
+	const throughReceiver = new Set((artifact.receiver_writes || [])
+		.map(row => `${row.receiver}.${row.property}`));
+	for (const [receiver, property] of RECEIVER_WRITE_CONTROLS) {
+		if (!throughReceiver.has(`${receiver}.${property}`)) {
+			failures.push(`receiver write "${receiver}.${property}" went missing from the extraction`);
+		}
+	}
+
+	const entityProperties = new Set(artifact.we_set.map(row => row.property));
+	for (const property of WE_SET_EXCLUDED_CONTROLS) {
+		if (entityProperties.has(property)) {
+			failures.push(`"${property}" is written only through a non-entity receiver, so its presence in `
+				+ "the WE-SET means the receiver stopped deciding membership and the leaf name started — "
+				+ "the differ would then assert it on every entity and report it unwalked forever");
+		}
 	}
 
 	const alias = artifact.handler_captures.find(row => row.category === "loader-1x1");
@@ -262,7 +393,8 @@ function main() {
 	const c = artifact.counts;
 	console.log(`wrote ${OUT_PATH}: ${c.restore_rules} restore rules (${c.types_gated_rules} types-gated), `
 		+ `${c.handler_categories} handler categories carrying ${c.handler_fields} distinct fields, `
-		+ `${c.direct_writes} direct writes, WE-SET ${c.we_set} properties`);
+		+ `${c.direct_writes} direct writes, ${c.receiver_writes} writes through non-entity receivers, `
+		+ `WE-SET ${c.we_set} properties`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();

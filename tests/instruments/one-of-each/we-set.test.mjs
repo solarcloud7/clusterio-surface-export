@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import {
 	COMMON_CATEGORY, assemble, checkControls, extractDirectWrites, extractHandlerCaptures,
-	extractRestoreRules, matchedBlock,
+	extractReceiverWrites, extractRestoreRules, matchedBlock, topLevelKeys,
 } from "./derive-we-set.mjs";
 import { loadWeSet, weSetRow, writesProperty, capturesFor } from "./we-set.mjs";
 
@@ -39,6 +39,13 @@ test("the committed artifact still matches what the module source says today", (
 	assert.deepEqual(fresh.restore_rules, artifact.restore_rules);
 	assert.deepEqual(fresh.handler_captures, artifact.handler_captures);
 	assert.deepEqual(fresh.direct_writes, artifact.direct_writes);
+	assert.deepEqual(fresh.receiver_writes, artifact.receiver_writes);
+});
+
+const rebuild = (sources = {}) => assemble({
+	deserializerSource: sources.deserializerSource ?? deserializerSource,
+	handlerSource: sources.handlerSource ?? handlerSource,
+	phaseFiles: sources.phaseFiles ?? phaseFiles,
 });
 
 test("the extraction is non-vacuous and passes its own controls", () => {
@@ -48,7 +55,78 @@ test("the extraction is non-vacuous and passes its own controls", () => {
 	assert.ok(artifact.counts.handler_categories >= 25);
 	assert.ok(artifact.counts.handler_fields >= 80);
 	assert.ok(artifact.counts.direct_writes >= 20);
+	assert.ok(artifact.counts.receiver_writes >= 3);
 	assert.ok(artifact.counts.we_set >= 50);
+});
+
+test("a handler's constructor literal contributes its keys, in both the local and return shapes", () => {
+	assert.ok(capturesFor("entity-ghost").includes("ghost_name"),
+		"entity-ghost captures ghost_name only in its `local data = { ghost_name = ... }` constructor — a "
+		+ "parser reading `data.X =` alone reports the category capturing everything BUT its identity");
+	assert.ok(capturesFor("transport-belt").includes("items"),
+		"transport-belt's whole body is `return { items = ... }`, so the return shape is the only way its "
+		+ "one field is seen at all");
+	assert.ok(capturesFor("assembling-machine").includes("inventories"));
+	assert.deepEqual(capturesFor("underground-belt").filter(f => ["items", "belt_to_ground_type"].includes(f)),
+		["belt_to_ground_type", "items"],
+		"a constructor carrying two keys contributes both, not just the first");
+});
+
+test("a constructor's NESTED keys stay out — only the top level is a capture field", () => {
+	assert.deepEqual(topLevelKeys('{ a = 1, b = { c = 2, d = 3 }, e = f(g, h) }'), ["a", "b", "e"],
+		"a nested table's keys are the shape of a captured VALUE, not further payload fields, and a comma "
+		+ "inside a call's argument list must not split an element either");
+	assert.equal(capturesFor("item-request-proxy").includes("name"), false,
+		"item-request-proxy builds `data.filter`-style nested tables whose inner keys (name, quality) are "
+		+ "not payload fields of the category");
+});
+
+test("a bracket-index write resolves through the ipairs literal list that binds it", () => {
+	for (const property of ["providing_to_other_platforms", "request_missing_construction_materials",
+		"request_from_buffers"]) {
+		assert.notEqual(weSetRow(property), null,
+			`the space-platform-hub branch writes entity[hub_field] for ${property}, and a parser reading `
+			+ "only `entity.<name> =` sees a hub whose config the pipeline never restores");
+	}
+	for (const property of ["mining_progress", "bonus_mining_progress"]) {
+		assert.notEqual(weSetRow(property), null,
+			`the deferred mining-progress pass writes rec.entity[field] for ${property} — the receiver's `
+			+ "last component is `entity`, so the leaf is an entity property");
+	}
+});
+
+test("an unresolvable bracket index contributes nothing, rather than a guessed name", () => {
+	const rows = extractDirectWrites([{
+		rel: "synthetic.lua",
+		source: [
+			"entity[prop] = value",
+			"for _, known in ipairs({ \"alpha\", \"beta\" }) do entity[known] = data[known] end",
+			"data[prop] = value",
+		].join("\n"),
+	}]);
+	assert.deepEqual(rows.map(row => row.property), ["alpha", "beta"],
+		"the restore-rule applier's entity[prop] is driven by a rule row, not by literals in the source — "
+		+ "inventing a property name there would put a name in the WE-SET that no line ever writes, while "
+		+ "the rule's own property is already carried by the restore_rule arm. A non-entity receiver's "
+		+ "bracket write is not an entity write at all");
+});
+
+test("writes through a non-entity receiver are recorded, and stay OUT of the WE-SET", () => {
+	const through = new Set(artifact.receiver_writes.map(row => `${row.receiver}.${row.property}`));
+	for (const write of ["entity.segmented_unit.activity_mode", "entity.segmented_unit.minimum_activity_mode",
+		"entity.burner.currently_burning", "entity.burner.remaining_burning_fuel", "entity.train.schedule",
+		"entity.get_or_create_control_behavior().parameters"]) {
+		assert.ok(through.has(write), `${write} is a write the pipeline performs — the derivation must see it`);
+	}
+	for (const leaf of ["activity_mode", "minimum_activity_mode", "currently_burning", "schedule"]) {
+		assert.equal(weSetRow(leaf), null,
+			`${leaf} is written on a LuaSegmentedUnit/LuaBurner/LuaTrain, not on the entity, so the WE-SET `
+			+ "must not claim it: the differ would assert it on every entity and report it unwalked forever");
+	}
+	assert.equal(artifact.direct_writes.some(row => row.property === "parameters"), false,
+		"cb.parameters is the sharpest case for deciding membership by RECEIVER and never by leaf name: "
+		+ "LuaEntity really does have a parameters attribute, so a leaf-name rule would admit a "
+		+ "LuaControlBehavior write as an entity write and look correct doing it");
 });
 
 test("a restore rule's prop overrides its payload field name", () => {
@@ -123,6 +201,50 @@ test("MUTATION KILL: dropping a known direct write turns its control red", () =>
 	const broken = JSON.parse(JSON.stringify(artifact));
 	broken.direct_writes = broken.direct_writes.filter(row => row.property !== "last_user");
 	assert.ok(checkControls(broken).some(f => f.includes('direct write "last_user" went missing')));
+});
+
+test("MUTATION KILL: removing a constructor-literal field is seen as a loss", () => {
+	const mutated = handlerSource.replace("  local data = {\n    ghost_name = entity.ghost_name\n  }",
+		"  local data = {\n  }");
+	assert.notEqual(mutated, handlerSource, "the mutation must apply, or this test proves nothing");
+	const captures = extractHandlerCaptures(mutated);
+	assert.equal(captures.find(row => row.category === "entity-ghost").fields.includes("ghost_name"), false,
+		"the derivation must SEE the removed constructor field disappear");
+	assert.ok(checkControls(rebuild({ handlerSource: mutated }))
+		.some(failure => failure.includes("entity-ghost.ghost_name went missing")),
+		"and the control must go red, so main() refuses to write the shortened artifact");
+});
+
+test("MUTATION KILL: removing a non-entity-receiver write is seen as a loss", () => {
+	const mutated = deserializerSource.replace(
+		"function() unit.activity_mode = wanted.activity_mode end)", "function() end)");
+	assert.notEqual(mutated, deserializerSource, "the mutation must apply, or this test proves nothing");
+	const writes = extractReceiverWrites([{ rel: "core/deserializer.lua", source: mutated }]);
+	assert.equal(writes.some(row => row.property === "activity_mode"), false,
+		"the derivation must SEE the removed alias-receiver write disappear");
+	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+		.some(failure => failure.includes("entity.segmented_unit.activity_mode\" went missing")));
+});
+
+test("MUTATION KILL: removing a nested-chain write is seen as a loss", () => {
+	const mutated = deserializerSource.replace("entity.burner.currently_burning = {", "local dead = {");
+	assert.notEqual(mutated, deserializerSource, "the mutation must apply, or this test proves nothing");
+	const writes = extractReceiverWrites([{ rel: "core/deserializer.lua", source: mutated }]);
+	assert.equal(writes.some(row => row.property === "currently_burning"), false,
+		"a nested `entity.a.b =` chain is the shape the direct-write scan was blind to — the arm must see "
+		+ "its removal, or it is not reading that shape at all");
+	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+		.some(failure => failure.includes("entity.burner.currently_burning\" went missing")));
+});
+
+test("MUTATION KILL: removing a bracket write's literal is seen as a loss", () => {
+	const mutated = deserializerSource.replace("      \"providing_to_other_platforms\",\n", "");
+	assert.notEqual(mutated, deserializerSource, "the mutation must apply, or this test proves nothing");
+	const writes = extractDirectWrites([{ rel: "core/deserializer.lua", source: mutated }]);
+	assert.equal(writes.some(row => row.property === "providing_to_other_platforms"), false,
+		"the literal list IS the property list for a bracket write — dropping one must shrink the WE-SET");
+	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+		.some(failure => failure.includes('direct write "providing_to_other_platforms" went missing')));
 });
 
 test("unbalanced Lua braces desync loudly rather than returning a short read", () => {

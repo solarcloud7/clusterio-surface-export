@@ -107,11 +107,22 @@ function entityWrites(region) {
 	const patterns = [
 		/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g,
 		/\bentity\.(?:[a-z_][a-z0-9_]*\([^()]*\)\.)+([a-z_][a-z0-9_]*)\s*=(?!=)/g,
+		/\bentity\.(?:[a-z_][a-z0-9_]*\.)+([a-z_][a-z0-9_]*)\s*=(?!=)/g,
+		/\bentity\[([^\]]+)\]\s*=(?!=)/g,
 	];
-	return patterns
-		.flatMap(pattern => [...region.matchAll(pattern)])
-		.map(match => ({ property: match[1], index: match.index }))
-		.sort((a, b) => a.index - b.index);
+	const byIndex = new Map();
+	for (const pattern of patterns) {
+		for (const match of region.matchAll(pattern)) {
+			if (!byIndex.has(match.index)) byIndex.set(match.index, { property: match[1], index: match.index });
+		}
+	}
+	return [...byIndex.values()].sort((a, b) => a.index - b.index);
+}
+
+function unguardedWrites(region) {
+	const spans = safeCallSpans(region);
+	const guarded = write => spans.some(([open, close]) => write.index > open && write.index < close);
+	return entityWrites(region).filter(write => !guarded(write)).map(write => write.property);
 }
 
 test("the rule table parses into plausible rows (a broken parser must not pass vacuously)", () => {
@@ -184,17 +195,42 @@ test("the type-branch scan sees its own writes and spans (a broken scanner must 
 });
 
 test("every entity write in the deserializer type branches is inside safe_call", () => {
-	const region = typeBranchRegion();
-	const spans = safeCallSpans(region);
-	const guarded = write => spans.some(([open, close]) => write.index > open && write.index < close);
-
-	const offenders = entityWrites(region).filter(write => !guarded(write)).map(write => write.property);
+	const offenders = unguardedWrites(typeBranchRegion());
 	assert.deepEqual(offenders, [],
 		"a type-branch write reaches the entity unguarded on the on_tick import path (control.lua on_tick "
 		+ "-> AsyncProcessor.process_tick -> entity_creation.lua -> restore_entity_state), and that chain "
 		+ "contains no pcall, so a throw there kills the instance. These branches sit outside "
 		+ "SIMPLE_RESTORE_RULES, so no rule-row check reaches them. Wrap in safe_call: "
 		+ offenders.join(", "));
+});
+
+test("MUTATION KILL: a bare nested-chain write in the region is an offender", () => {
+	const region = typeBranchRegion();
+	assert.deepEqual(unguardedWrites(`${region}\n    entity.burner.currently_burning = data.fuel\n`),
+		["currently_burning"],
+		"entity.a.b = is the shape the two original patterns could not see: the first needs `=` right "
+		+ "after the first name, the second needs a call in the chain. The deserializer performs three such "
+		+ "writes today (train.schedule, burner.currently_burning, burner.remaining_burning_fuel), all "
+		+ "outside this region — so nothing but this injection can prove the arm reads the shape at all");
+	assert.deepEqual(unguardedWrites(`${region}\n    safe_call("x", function() entity.burner.f = 1 end)\n`),
+		[], "and the arm must still respect safe_call, or it would report every guarded write as an offender");
+});
+
+test("MUTATION KILL: a bare bracket-index write in the region is an offender", () => {
+	const region = typeBranchRegion();
+	assert.deepEqual(unguardedWrites(`${region}\n    entity[hub_field] = data[hub_field]\n`), ["hub_field"],
+		"a bracket write reaches the entity exactly as a dotted one does, and the guard cares about the "
+		+ "throw, not about whether the property name is statically known");
+	assert.deepEqual(unguardedWrites(`${region}\n    safe_call("x", function() entity[f] = 1 end)\n`), [],
+		"and a guarded bracket write is not an offender");
+});
+
+test("the four write patterns never double-count one write site", () => {
+	const writes = entityWrites('entity.health = 1\nentity.train.schedule = 2\n'
+		+ 'entity.get_inventory(1).bar = 3\nentity[prop] = 4\n');
+	assert.deepEqual(writes.map(write => write.property), ["health", "schedule", "bar", "prop"],
+		"each site must yield exactly one write: a site counted twice inflates the floor above and could "
+		+ "carry the region past MIN_TYPE_BRANCH_WRITES while real writes went missing");
 });
 
 test("override_logistic_mode is restored before the saved_* rows it would otherwise consume", () => {
