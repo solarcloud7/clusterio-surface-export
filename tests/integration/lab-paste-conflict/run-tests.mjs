@@ -12,8 +12,11 @@
 // does not: assert any terrain or off-foundation rule (the refusal predicate is an entity footprint
 //           scan and has no terrain component — pasting off the platform edge is left to fail at
 //           create_entity as it does today), assert what a blocker SNAPSHOT contains or that undo
-//           restores it, measure the interactive selection-lab GUI tool, perform a transfer, exercise
-//           undo/redo, or assert item or fluid amounts
+//           restores it, assert the footprint an ENTITY-GHOST record resolves to (footprint_area looks
+//           up prototypes.entity[rec.name], which for a ghost is the entity-ghost prototype and not the
+//           inner entity — the box is reported as a NOTE, not asserted), measure the interactive
+//           selection-lab GUI tool, perform a transfer, exercise undo/redo, or assert item or fluid
+//           amounts
 
 import { execFileSync } from "node:child_process";
 
@@ -88,7 +91,7 @@ try {
 		p.apply_starter_pack()
 		local s, force = p.surface, game.forces.player
 		local tiles = {}
-		for x = 4, 42 do for y = 0, 26 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
+		for x = 4, 42 do for y = 0, 28 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
 		s.set_tiles(tiles)
 		local made = {}
 		local function put(spec)
@@ -108,6 +111,8 @@ try {
 		put{ name = 'item-request-proxy', position = { 6.5, 20.5 }, force = force, target = pchest,
 			modules = { { id = { name = 'iron-plate' },
 				items = { in_inventory = { { inventory = defines.inventory.chest, stack = 1, count = 10 } } } } } }
+		put{ name = 'wooden-chest', position = { 6.5, 24.5 }, force = force }
+		put{ name = 'solar-panel', position = { 16.5, 24.5 }, force = force }
 		put{ name = 'item-on-ground', position = { 32.5, 2.5 }, stack = { name = 'copper-plate', count = 3 } }
 		put{ name = 'entity-ghost', inner_name = 'wooden-chest', position = { 34.5, 2.5 }, force = force }
 		local mchest = put{ name = 'wooden-chest', position = { 36.5, 2.5 }, force = force }
@@ -184,11 +189,12 @@ try {
 			+ `| nauvis clear control=${matrix.control[t]}`);
 	}
 	note(`nauvis control position (find_non_colliding_position for wooden-chest): ${matrix.nauvis_pos || "(none)"}`);
-	check(TYPES.some(t => matrix.control[t] === "true") && TYPES.some(t => matrix.control[t] === "false"),
-		"CONTROL: on an ordinary nauvis surface the same call form DISCRIMINATES — at least one check "
-		+ "type answers true at a non-colliding position and at least one answers false — so a matrix "
-		+ "that does not discriminate on the platform is a fact about the platform, not a malformed spec",
-		TYPES.map(t => `${t}=${matrix.control[t]}`).join(" "));
+	const flipped = TYPES.filter(t => cell(t, "clear_foundation") === "false" && matrix.control[t] === "true");
+	check(flipped.length > 0,
+		"CONTROL: at least one check type that answers false on CLEAR laid platform foundation answers "
+		+ "TRUE at a non-colliding position on nauvis — so the platform-side false is a fact about that "
+		+ "surface, not a malformed spec and not a check type that is false everywhere",
+		`flipped=${flipped.join(",") || "none"} | ` + TYPES.map(t => `${t}=${matrix.control[t]}`).join(" "));
 
 	const usable = TYPES.filter(t => cell(t, "clear_foundation") === "true" && cell(t, "entity_blocker") === "false");
 	note(`build_check_types satisfying (clear=true, blocker=false): ${usable.join(", ") || "(NONE)"}`);
@@ -229,9 +235,18 @@ try {
 				out[tname .. '|' .. c.key] = ok and tostring(res) or ('RAISED ' .. tostring(res))
 			end
 		end
-		return { out = out }
+		local boxes = {}
+		for _, pname in ipairs({ 'entity-ghost', 'item-request-proxy', 'wooden-chest', 'solar-panel' }) do
+			local proto = prototypes.entity[pname]
+			local cb = proto and proto.collision_box
+			boxes[pname] = cb and string.format('%.2f,%.2f..%.2f,%.2f', cb.left_top.x, cb.left_top.y,
+				cb.right_bottom.x, cb.right_bottom.y) or 'none'
+		end
+		return { out = out, boxes = boxes }
 	`);
 	const scell = (t, c) => shapes.out[`${t}|${c}`];
+	note("collision_box footprint_area resolves per record name: "
+		+ Object.entries(shapes.boxes).map(([k, v]) => `${k}=${v}`).join(" "));
 	for (const t of TYPES) {
 		note(`shape matrix (${t}): ghost_over_entity=${scell(t, "entity_ghost_over_entity")} `
 			+ `ghost_over_clear=${scell(t, "entity_ghost_over_clear")} `
@@ -326,8 +341,9 @@ try {
 		note(`shape B captured record: name=${ghostRec.name} type=${ghostRec.type} ghost_name=${ghostRec.ghost_name}`);
 		check(copyB.raised !== true && copyB.outcome === "copied" && ghostRec.name === "entity-ghost"
 			&& ghostRec.ghost_name === "wooden-chest",
-			"shape B setup: the capture really is an entity-ghost record whose name is the EntityID "
-			+ "place_spec passes and whose ghost_name becomes inner_name",
+			"shape B setup: the capture really is an entity-ghost record — its name is 'entity-ghost', "
+			+ "which is the name footprint_area resolves against prototypes.entity, and the inner entity "
+			+ "is carried separately as specific_data.ghost_name",
 			`outcome=${copyB.outcome} name=${ghostRec.name} ghost_name=${ghostRec.ghost_name}`);
 
 		const pasteB = drive("paste", 14, 8, 16, 10);
@@ -405,6 +421,28 @@ try {
 			&& afterPasteD.some(h => h.startsWith("item-request-proxy:")),
 			"SHAPE D physical arm: both the chest and its proxy are really at the destination",
 			afterPasteD.join(", ") || "(empty)");
+
+		// --- Adjacency: the refusal predicate scans footprint_area, which floors/ceils to tile bounds.
+		// A 1x1 target at 14.5 floors to [14,15]; the 3x3 panel at 16.5 starts at exactly x=15. The two
+		// collision boxes do NOT overlap, so a paste here must still land.
+		const copyE = drive("copy", 6, 24, 8, 26);
+		check(copyE.raised !== true && copyE.outcome === "copied" && copyE.records === 1,
+			"adjacency setup: the lab copies the chest record",
+			`outcome=${copyE.outcome} records=${copyE.records} ${copyE.err}`);
+
+		const pasteE = drive("paste", 14, 24, 16, 26);
+		const afterPasteE = scanArea(SURF, 13, 23, 19, 27);
+		note(`adjacency paste report: outcome=${pasteE.outcome} conflicts=${pasteE.conflicts} created=${pasteE.created}`);
+		note(`adjacency destination: ${afterPasteE.join(", ") || "(empty)"}`);
+		check(pasteE.raised !== true && pasteE.outcome === "pasted",
+			"ADJACENCY: a target whose floored footprint TOUCHES a neighbouring 3x3 entity's box at "
+			+ "exactly one tile boundary is NOT refused — the tile-rounded scan does not turn a merely "
+			+ "adjacent entity into a blocker, so a dense capture still pastes",
+			`outcome=${pasteE.outcome || "(none)"} conflicts=${pasteE.conflicts}`);
+		check(afterPasteE.some(h => h.startsWith("wooden-chest:container@14.50,24.50"))
+			&& afterPasteE.some(h => h.startsWith("solar-panel:")),
+			"ADJACENCY physical arm: the chest landed beside the panel and the panel is untouched",
+			afterPasteE.join(", ") || "(empty)");
 	}
 } catch (probeError) {
 	failures += 1;
