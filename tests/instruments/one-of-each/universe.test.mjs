@@ -445,6 +445,12 @@ test("the vendored wagon is NOT player_buildable, and says why without inventing
 	assert.match(wagon.representative_reason, /0 placeable for infinity-cargo-wagon/);
 	assert.match(wagon.representative_reason, /NOT isolated/,
 		"the residual cause beyond rail's own surface conditions was never isolated (#248)");
+	assert.match(wagon.representative_reason, /build_check_type\.manual is the ONLY route that sweep measured/,
+		"the sweep ran one build route, so the reason must scope its claim to that route");
+	assert.match(wagon.representative_reason, /revival routes[^.]*UNMEASURED/,
+		"the routes the sweep never ran must be named unmeasured rather than covered by silence");
+	assert.doesNotMatch(wagon.representative_reason, /no player or bot route/i,
+		"the retracted overclaim: a build_check_type.manual sweep is not evidence about bot revival");
 	assert.equal(VENDORED.entries.some(entry => entry.type === "infinity-cargo-wagon"), true,
 		"the fixture still stages the wagon on its rail segment — reclassifying must not drop the cell");
 });

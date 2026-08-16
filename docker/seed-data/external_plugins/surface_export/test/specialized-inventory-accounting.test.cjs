@@ -47,12 +47,24 @@ const ownership = new Map(categories.map(category => [category, {
 	fluidCapability: specializedFluidCapabilities.get(category) || null,
 }]));
 
-function parseHandlerAssignments() {
-	const assignments = [...source.matchAll(/^EntityHandlers\["([^"]+)"\]\s*=\s*([^\r\n]*)$/gm)];
-	const unanchored = [...source.matchAll(/EntityHandlers\["[^"]+"\]\s*=/g)].length;
+function closingEnd(text, start, limit, key) {
+	const closing = /^end[ \t]*\r?$/gm;
+	closing.lastIndex = start;
+	const match = closing.exec(text);
+	assert.ok(match && match.index < limit,
+		`EntityHandlers["${key}"] has no column-0 "end" before the next assignment — the body bound is `
+		+ "undefined, and slicing to the next assignment would attribute inter-handler text to it");
+	return match.index + match[0].length;
+}
+
+function parseHandlerAssignments(text) {
+	// does not: see a single-quoted or dot-form key — both regexes below read the same
+	//           double-quoted-bracket spelling, so their agreement is not a completeness guarantee
+	const assignments = [...text.matchAll(/^EntityHandlers\["([^"]+)"\]\s*=\s*([^\r\n]*)$/gm)];
+	const unanchored = [...text.matchAll(/EntityHandlers\["[^"]+"\]\s*=/g)].length;
 	assert.equal(assignments.length, unanchored,
 		"an EntityHandlers key assignment escaped the line-anchored parse");
-	const tail = source.indexOf("\nreturn EntityHandlers");
+	const tail = text.indexOf("\nreturn EntityHandlers");
 	assert.notEqual(tail, -1, "entity-handlers.lua must close by returning EntityHandlers");
 	assert.ok(assignments.length > 0, "entity-handlers.lua must assign at least one handler key");
 	assert.ok(tail > assignments.at(-1).index,
@@ -67,7 +79,7 @@ function parseHandlerAssignments() {
 		const alias = rhs.match(/^EntityHandlers\["([^"]+)"\]$/);
 		if (/^function\s*\([^)]*\)/.test(rhs)) {
 			const next = assignments[index + 1];
-			definitions.set(key, source.slice(match.index, next ? next.index : tail));
+			definitions.set(key, text.slice(match.index, closingEnd(text, match.index, next ? next.index : tail, key)));
 		} else if (alias) {
 			aliases.set(key, alias[1]);
 		} else {
@@ -77,7 +89,7 @@ function parseHandlerAssignments() {
 	return { definitions, aliases };
 }
 
-const { definitions: handlerBodies, aliases: handlerAliases } = parseHandlerAssignments();
+const { definitions: handlerBodies, aliases: handlerAliases } = parseHandlerAssignments(source);
 const fluidboxOptOutDerived = new Set([...handlerBodies]
 	.filter(([, body]) => !body.includes("extract_fluidboxes"))
 	.map(([category]) => category));
@@ -95,6 +107,54 @@ const fluidboxOptOut = new Set([
 	"entity-ghost", "tile-ghost", "item-request-proxy", "space-platform-hub", "display-panel",
 	"train-stop",
 ]);
+
+function fixtureModule({ betaCall, neighbourHelper }) {
+	return [
+		'EntityHandlers["alpha"] = function(entity)',
+		"  return { fluidboxes = InventoryScanner.extract_fluidboxes(entity) }",
+		"end",
+		"",
+		'EntityHandlers["beta"] = function(entity)',
+		betaCall
+			? "  return { fluidboxes = InventoryScanner.extract_fluidboxes(entity) }"
+			: "  return {}",
+		"end",
+		"",
+		...(neighbourHelper ? [
+			"local function beta_helper(entity)",
+			"  return InventoryScanner.extract_fluidboxes(entity)",
+			"end",
+			"",
+		] : []),
+		'EntityHandlers["gamma"] = function(entity)',
+		"  return { fluidboxes = InventoryScanner.extract_fluidboxes(entity) }",
+		"end",
+		"",
+		"return EntityHandlers",
+		"",
+	].join("\n");
+}
+
+function derivedOptOut(text) {
+	const { definitions } = parseHandlerAssignments(text);
+	return [...definitions]
+		.filter(([, body]) => !body.includes("extract_fluidboxes"))
+		.map(([category]) => category)
+		.sort();
+}
+
+test("a handler body ends at its own end — neighbouring text cannot vouch for a lost fluidbox call", () => {
+	assert.deepEqual(derivedOptOut(fixtureModule({ betaCall: true, neighbourHelper: false })), [],
+		"every fixture handler calls extract_fluidboxes, so nothing may derive as opted out");
+	assert.deepEqual(derivedOptOut(fixtureModule({ betaCall: false, neighbourHelper: false })), ["beta"],
+		"a handler that drops its own extract_fluidboxes call must derive as opted out");
+	assert.deepEqual(derivedOptOut(fixtureModule({ betaCall: false, neighbourHelper: true })), ["beta"],
+		"a local helper between beta's end and the next assignment carries the literal, and a body sliced to "
+		+ "the next assignment would credit beta with a call it does not make");
+	const { definitions } = parseHandlerAssignments(fixtureModule({ betaCall: false, neighbourHelper: true }));
+	assert.doesNotMatch(definitions.get("beta"), /beta_helper/,
+		"beta's body must not reach past its own end");
+});
 
 test("the handler parse found real definitions (a broken matcher must not pass vacuously)", () => {
 	assert.ok(handlerBodies.size >= 30,
