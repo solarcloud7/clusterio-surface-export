@@ -541,6 +541,8 @@ end
 
 local function force_execute(surface, recs, player, side_groups, fluid_segments)
 	local destroyed_records, guarded = {}, 0
+	InventoryScanner.fluid_registry = FluidRegistry.new()
+	local snapshot_ok, snapshot_err = pcall(function()
 	for _, rec in ipairs(recs) do
 		if not surface.can_place_entity(place_spec(rec, player)) then
 			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
@@ -560,6 +562,9 @@ local function force_execute(surface, recs, player, side_groups, fluid_segments)
 			end
 		end
 	end
+	end)
+	InventoryScanner.fluid_registry = nil
+	if not snapshot_ok then error(snapshot_err) end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
 		execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, true)
 	if not exec_ok then
@@ -601,7 +606,7 @@ function SelectionLab.force(event)
 		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
 	local physical_items = physical_census(entity_map)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with their items; their fluids do NOT).",
 		created, create_failed, #destroyed_records,
 		guarded > 0 and (", " .. guarded .. " protected blockers kept") or "",
 		offset.x, offset.y, physical_items), { r = 0.4, g = 1, b = 0.4 })
@@ -709,7 +714,7 @@ function SelectionLab.undo(event)
 	end
 	table.insert(st.redo, entry)
 	say(player, string.format(
-		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
+		"[color=yellow][font=default-bold][SelectionLab][/font][/color] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with their items; fluids are NOT restored. Ctrl+Alt+Y redoes.",
 		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
 end
 

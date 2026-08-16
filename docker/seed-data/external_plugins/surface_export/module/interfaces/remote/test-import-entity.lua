@@ -1,5 +1,7 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 local json = require("modules/surface_export/core/json")
@@ -287,10 +289,12 @@ return function(entity_json, surface_index, position_override)
   end
   
   if created_entity.valid then
+    InventoryScanner.fluid_registry = FluidRegistry.new()
     local export_success, exported_data = pcall(function()
       return EntityScanner.serialize_entity(created_entity)
     end)
-    
+    InventoryScanner.fluid_registry = nil
+
     if not export_success then
       log(string.format("[test_import_entity] re-export pcall failed: %s", tostring(exported_data)))
     end
