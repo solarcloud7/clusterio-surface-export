@@ -535,15 +535,16 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
   
 
-  if data.bar and entity.get_inventory then
-    local inv = entity.get_inventory(defines.inventory.chest)
-    if inv and inv.valid then
-      safe_call(string.format("inventory bar for %s", entity.name),
-        function() inv.set_bar(data.bar) end)
-    end
+  if data.bar then
+    safe_call(string.format("inventory bar for %s", entity.name), function()
+      local inv = entity.get_inventory(defines.inventory.chest)
+      if inv and inv.valid then
+        inv.set_bar(data.bar)
+      end
+    end)
   end
 
-  if data.fluid_filter and entity.set_fluid_filter then
+  if data.fluid_filter then
     safe_call(string.format("fluid_filter for %s", entity.name),
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end

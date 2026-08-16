@@ -63,6 +63,28 @@ test("every types-gated restore rule carries safecall", () => {
 		+ "Add safecall = true to: " + offenders.join(", "));
 });
 
+test("the inventory-bar branch performs its entity call inside safe_call", () => {
+	const marker = "if data.bar then";
+	const start = source.indexOf(marker);
+	assert.notEqual(start, -1, "the data.bar restore branch must exist in deserializer.lua");
+	const rest = source.slice(start);
+	const closer = rest.search(/\n {2}end\s*$/m);
+	assert.notEqual(closer, -1, "the data.bar branch must close at its own indent level");
+	const block = rest.slice(0, closer);
+
+	const guard = block.indexOf("safe_call(");
+	const call = block.indexOf("entity.get_inventory(");
+	assert.notEqual(call, -1, "the branch must still read the chest inventory");
+	assert.notEqual(guard, -1, "the branch must still route through safe_call");
+	assert.ok(guard < call,
+		"entity.get_inventory(...) must be CALLED inside the safe_call closure, not before it. This branch "
+		+ "runs on the on_tick import path (control.lua on_tick -> AsyncProcessor.process_tick -> "
+		+ "entity_creation.lua:106 -> restore_entity_state), and that chain contains no pcall, so a throw "
+		+ "here kills the instance. The vacuous `and entity.get_inventory` clause that used to head this "
+		+ "branch was removed as dead (it is a truthy method reference, never a guard); the safe_call is "
+		+ "what actually makes the call survivable");
+});
+
 test("override_logistic_mode is restored before the saved_* rows it would otherwise consume", () => {
 	const order = rules.map(fieldOf);
 	const override = order.indexOf("override_logistic_mode");

@@ -221,34 +221,39 @@ return function(entity_json, surface_index, position_override)
     table.insert(result.warnings, "Inventory restoration failed: " .. tostring(inv_error))
   end
   
-  if entity_data.specific_data and entity_data.specific_data.items 
-     and created_entity.valid and created_entity.get_transport_line then
+  if entity_data.specific_data and entity_data.specific_data.items and created_entity.valid then
     local belt_items_placed = 0
     local belt_items_failed = 0
-    for _, line_data in ipairs(entity_data.specific_data.items) do
-      local line = created_entity.get_transport_line(line_data.line)
-      if line and line.valid and line_data.items then
-        table.sort(line_data.items, function(a, b) return (a.position or 0) < (b.position or 0) end)
-        for _, item in ipairs(line_data.items) do
-          local stack = {
-            name = item.name,
-            count = item.count,
-            quality = item.quality or GameUtils.QUALITY_NORMAL
-          }
-          local success = false
-          if item.position then
-            success = VersionCompat.belt_insert_at(line, item.position, stack, item.count)
-          end
-          if not success then
-            success = VersionCompat.belt_insert_at_back(line, stack, item.count)
-          end
-          if success then
-            belt_items_placed = belt_items_placed + item.count
-          else
-            belt_items_failed = belt_items_failed + item.count
+    local belt_restore_success, belt_error = pcall(function()
+      for _, line_data in ipairs(entity_data.specific_data.items) do
+        local line = created_entity.get_transport_line(line_data.line)
+        if line and line.valid and line_data.items then
+          table.sort(line_data.items, function(a, b) return (a.position or 0) < (b.position or 0) end)
+          for _, item in ipairs(line_data.items) do
+            local stack = {
+              name = item.name,
+              count = item.count,
+              quality = item.quality or GameUtils.QUALITY_NORMAL
+            }
+            local success = false
+            if item.position then
+              success = VersionCompat.belt_insert_at(line, item.position, stack, item.count)
+            end
+            if not success then
+              success = VersionCompat.belt_insert_at_back(line, stack, item.count)
+            end
+            if success then
+              belt_items_placed = belt_items_placed + item.count
+            else
+              belt_items_failed = belt_items_failed + item.count
+            end
           end
         end
       end
+    end)
+
+    if not belt_restore_success then
+      table.insert(result.warnings, "Belt restoration failed: " .. tostring(belt_error))
     end
     result.debug_info.belt_items_placed = belt_items_placed
     result.debug_info.belt_items_failed = belt_items_failed
@@ -258,18 +263,26 @@ return function(entity_json, surface_index, position_override)
     end
   end
   
-  if entity_data.items and created_entity.get_inventory then
-    local main_inv = created_entity.get_inventory(defines.inventory.chest)
-    if main_inv then
+  if entity_data.items then
+    local inv_read_success, main_inv = pcall(function()
+      return created_entity.get_inventory(defines.inventory.chest)
+    end)
+    if not inv_read_success then
+      table.insert(result.warnings, "Inventory size read failed: " .. tostring(main_inv))
+    elseif main_inv then
       result.debug_info.inventory_size = #main_inv
     end
   end
   
-  if entity_data.recipe and created_entity.get_recipe then
-    local recipe = created_entity.get_recipe()
-    result.debug_info.recipe_set = recipe and recipe.name or "none"
-    if entity_data.recipe ~= (recipe and recipe.name) then
-      table.insert(result.warnings, "Recipe mismatch: expected '" .. tostring(entity_data.recipe) .. "', got '" .. tostring(recipe and recipe.name) .. "'")
+  if entity_data.recipe then
+    local recipe_success, recipe = pcall(function() return created_entity.get_recipe() end)
+    if not recipe_success then
+      table.insert(result.warnings, "Recipe read failed: " .. tostring(recipe))
+    else
+      result.debug_info.recipe_set = recipe and recipe.name or "none"
+      if entity_data.recipe ~= (recipe and recipe.name) then
+        table.insert(result.warnings, "Recipe mismatch: expected '" .. tostring(entity_data.recipe) .. "', got '" .. tostring(recipe and recipe.name) .. "'")
+      end
     end
   end
   
