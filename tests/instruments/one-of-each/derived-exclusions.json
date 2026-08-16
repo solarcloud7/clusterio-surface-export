@@ -1,0 +1,835 @@
+{
+	"schema": "one-of-each/derived-exclusions@1",
+	"source": "https://lua-api.factorio.com/2.1.11/runtime-api.json",
+	"application_version": "2.1.11",
+	"api_version": 6,
+	"scope_classes": [
+		"LuaEntity",
+		"LuaItemStack",
+		"LuaInventory",
+		"LuaTrain",
+		"LuaSpacePlatform"
+	],
+	"derivations": {
+		"absolute_clock": {
+			"classification": "band",
+			"derived_by": "scripts/lint-tick-portability.mjs absoluteTickAttributes()",
+			"names": [
+				"character_corpse_tick_of_death",
+				"spoil_tick",
+				"tick_grown",
+				"tick_of_last_attack",
+				"tick_of_last_damage"
+			],
+			"count": 5
+		},
+		"object_valued": {
+			"classification": "canonicalize",
+			"rule": "read_type names a Lua class, recursing through array/dictionary/union; a table complex_type is a plain Lua table and is serialized, not canonicalized",
+			"count": 87
+		},
+		"identity": {
+			"classification": "exclude",
+			"doc_pattern": "^A unique number|^The unique|unique number identifying|^The index of this",
+			"count": 4
+		},
+		"manual": {
+			"classification": "exclude",
+			"count": 3
+		}
+	},
+	"entries": [
+		{
+			"class": "LuaEntity",
+			"member": "ai_settings",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "associated_player",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "attached_cargo_pod",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "burner",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cargo_bay_connection_owner",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cargo_hatches",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cargo_pod",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cargo_pod_origin",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "character_corpse_tick_of_death",
+			"definingClass": "LuaEntity",
+			"classification": "band",
+			"derivation": "absolute_clock",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "combat_robot_owner",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "commandable",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "connected_rail",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "created_by_corpse",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cursor_record",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "cursor_stack",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "drop_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "electric_network",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "electric_network_id",
+			"definingClass": "LuaEntity",
+			"classification": "exclude",
+			"derivation": "manual",
+			"reason": "read-only at the pin (write=false in the vendored index), and the doc scopes it to the network the entity is connected to on the instance it was read from: 'Returns the id of the electric network that this entity is connected to, if any.'"
+		},
+		{
+			"class": "LuaEntity",
+			"member": "electric_network_statistics",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "electric_networks",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "fluidbox_neighbours",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "follow_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "following_robots",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "force",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "force_index",
+			"definingClass": "LuaControl",
+			"classification": "exclude",
+			"derivation": "manual",
+			"reason": "read-only at the pin (write=false in the vendored index); the doc calls it an index associated with the force on this instance: 'Unique index (ID) associated with the force of this entity.'"
+		},
+		{
+			"class": "LuaEntity",
+			"member": "ghost_prototype",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "grid",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "heat_neighbours",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "held_stack",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "hub",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "item_request_proxy",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "last_user",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "linked_belt_neighbour",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "loader_container",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "logistic_cell",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "logistic_network",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "mining_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "opened",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "owned_plants",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "pickup_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "player",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "priority_targets",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "prototype",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "proxy_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "proxy_target_entity",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "pump_input_rail_targets",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "pump_output_rail_targets",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "quality",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "render_player",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "render_to_forces",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "result_quality",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "rocket",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "segmented_unit",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "selected",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "shooting_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "stack",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "sticked_to",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "stickers",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "surface",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "surface_index",
+			"definingClass": "LuaControl",
+			"classification": "exclude",
+			"derivation": "manual",
+			"reason": "read-only at the pin (write=false in the vendored index); the doc calls it an index associated with the surface on this instance: 'Unique index (ID) associated with the surface this entity is currently on.'"
+		},
+		{
+			"class": "LuaEntity",
+			"member": "tick_grown",
+			"definingClass": "LuaEntity",
+			"classification": "band",
+			"derivation": "absolute_clock",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "tick_of_last_attack",
+			"definingClass": "LuaEntity",
+			"classification": "band",
+			"derivation": "absolute_clock",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "tick_of_last_damage",
+			"definingClass": "LuaEntity",
+			"classification": "band",
+			"derivation": "absolute_clock",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "train",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "transitional_request_target",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "underground_belt_neighbour",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "unit_number",
+			"definingClass": "LuaEntity",
+			"classification": "exclude",
+			"derivation": "identity",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "units",
+			"definingClass": "LuaEntity",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaEntity",
+			"member": "vehicle",
+			"definingClass": "LuaControl",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaInventory",
+			"member": "entity_owner",
+			"definingClass": "LuaInventory",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaInventory",
+			"member": "equipment_owner",
+			"definingClass": "LuaInventory",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaInventory",
+			"member": "player_owner",
+			"definingClass": "LuaInventory",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "grid",
+			"definingClass": "LuaItemCommon",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "item",
+			"definingClass": "LuaItemStack",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "item_number",
+			"definingClass": "LuaItemCommon",
+			"classification": "exclude",
+			"derivation": "identity",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "prototype",
+			"definingClass": "LuaItemStack",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "quality",
+			"definingClass": "LuaItemStack",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaItemStack",
+			"member": "spoil_tick",
+			"definingClass": "LuaItemStack",
+			"classification": "band",
+			"derivation": "absolute_clock",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "force",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "hub",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "index",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "exclude",
+			"derivation": "identity",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "last_visited_space_location",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "space_connection",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "space_location",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaSpacePlatform",
+			"member": "surface",
+			"definingClass": "LuaSpacePlatform",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "back_end",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "back_stock",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "cargo_wagons",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "carriages",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "fluid_wagons",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "front_end",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "front_stock",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "id",
+			"definingClass": "LuaTrain",
+			"classification": "exclude",
+			"derivation": "identity",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "passengers",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "path",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "path_end_rail",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "path_end_stop",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "signal",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		},
+		{
+			"class": "LuaTrain",
+			"member": "station",
+			"definingClass": "LuaTrain",
+			"classification": "canonicalize",
+			"derivation": "object_valued",
+			"reason": null
+		}
+	]
+}
