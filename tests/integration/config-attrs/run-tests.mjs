@@ -78,8 +78,8 @@ const RIG_ENTITIES = [
 	{ id: "poleright", name: "small-electric-pole", dx: 10.5, dy: 22.5 },
 	{ id: "polewire1", name: "small-electric-pole", dx: 4.5, dy: 13.5 },
 	{ id: "polewire2", name: "small-electric-pole", dx: 14.5, dy: 13.5 },
-	{ id: "polenear1", name: "small-electric-pole", dx: 24.5, dy: 13.5 },
-	{ id: "polenear2", name: "small-electric-pole", dx: 28.5, dy: 13.5 },
+	{ id: "polenear1", name: "small-electric-pole", dx: 24.5, dy: 18.5 },
+	{ id: "polenear2", name: "small-electric-pole", dx: 28.5, dy: 18.5 },
 	{ id: "spider", name: "spidertron", dx: 10.5, dy: 20.5 },
 ];
 
