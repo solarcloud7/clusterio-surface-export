@@ -440,6 +440,11 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
+  if entity_data.tags then
+    safe_call(string.format("tags for %s", entity.name),
+      function() entity.tags = entity_data.tags end)
+  end
+
   if not entity_data.specific_data then
     return
   end
@@ -591,10 +596,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
       safe_call(string.format("train-stop color for %s", entity.name),
         function() entity.color = data.color end)
     end
-  end
-
-  if entity_data.tags then
-    entity.tags = entity_data.tags
   end
 
   if data.equipment_grid and entity.grid and entity.grid.valid then
