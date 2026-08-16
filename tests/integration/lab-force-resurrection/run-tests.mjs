@@ -76,7 +76,7 @@ try {
 		p.apply_starter_pack()
 		local s, force = p.surface, game.forces.player
 		local tiles = {}
-		for x = 4, 44 do for y = 0, 50 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
+		for x = 4, 44 do for y = 0, 54 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
 		s.set_tiles(tiles)
 		local made = {}
 		local function put(spec)
@@ -125,6 +125,9 @@ try {
 		put{ name = 'wooden-chest', position = { 6.5, 38.5 }, force = force }
 		put{ name = 'entity-ghost', inner_name = 'wooden-chest', position = { 14.5, 38.5 }, force = force }
 		put{ name = 'wooden-chest', position = { 6.5, 44.5 }, force = force }
+		put{ name = 'wooden-chest', position = { 6.5, 50.5 }, force = force }
+		put{ name = 'wooden-chest', position = { 7.5, 50.5 }, force = force }
+		put{ name = 'solar-panel', position = { 15.5, 50.5 }, force = force }
 		local run_head = belt_at(14.5, 44.5, defines.direction.east)
 		belt_at(15.5, 44.5, defines.direction.east)
 		belt_at(16.5, 44.5, defines.direction.east)
@@ -463,6 +466,30 @@ try {
 		"ARM 8 NO DUPLICATION: resurrecting a belt piece whose captured transport line also covered "
 		+ "belts that were never destroyed does NOT grow the run's item total",
 		`before=${run8Before.total} after undo=${run8After.total}`);
+
+	// ---------------------------------------------------------------------------------------------
+	// Arm 9 — ONE 3x3 blocker under TWO 1x1 targets. The blocker is destroyed once, so it must be
+	// journaled once: a second journal entry resurrects a second copy on top of the first.
+	// ---------------------------------------------------------------------------------------------
+	const copy9 = drive("copy", 6, 50, 8, 52);
+	check(copy9.raised !== true && copy9.outcome === "copied" && copy9.records === 2,
+		"arm 9 setup: the lab copies two adjacent 1x1 records whose destination footprints both fall "
+		+ "inside one 3x3 solar-panel",
+		`outcome=${copy9.outcome} records=${copy9.records} ${copy9.err}`);
+	const force9 = drive("force", 14, 50, 16, 52);
+	note(`arm 9 force report: outcome=${force9.outcome} replaced=${force9.blockers_replaced} `
+		+ `created=${force9.created} ${force9.error_detail}`);
+	check(force9.raised !== true && force9.outcome === "force_pasted" && force9.blockers_replaced === 1,
+		"ARM 9 DEDUPE: two records sharing one physical blocker replace it ONCE — the blocker is "
+		+ "journaled once, not once per record it blocked",
+		`outcome=${force9.outcome || "(none)"} replaced=${force9.blockers_replaced}`);
+	const undo9 = undo();
+	const after9 = scanArea(13, 49, 18, 53);
+	note(`arm 9 after undo (raised=${undo9.raised}): ${after9.join(", ") || "(empty)"}`);
+	check(after9.filter(h => h.startsWith("solar-panel:")).length === 1,
+		"ARM 9 physical arm: exactly ONE solar-panel stands after undo — a duplicated journal entry "
+		+ "would stack a second panel on the first",
+		after9.filter(h => h.startsWith("solar-panel:")).join(", ") || "(none)");
 } catch (probeError) {
 	failures += 1;
 	process.exitCode = 1;
