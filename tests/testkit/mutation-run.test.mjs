@@ -183,27 +183,35 @@ test("readOutcome reads the fail count and the dead test names, and refuses to g
 		"a suite that never ran must not read as a suite that passed");
 });
 
-test("the ritual runs BOTH packages against the mutant, restores the file, and re-checks BOTH", t => {
-	const root = fixtureRepo(t, "mutation-run-e2e-");
+const ORIGINAL = "export const limit = 5;\n";
+
+function ritualFixture(t, prefix, rootPackageFailsWhenMutated = true) {
+	const root = fixtureRepo(t, prefix);
 	const target = path.join(root, "guard.mjs");
-	const original = "export const limit = 5;\n";
-	writeFileSync(target, original);
+	writeFileSync(target, ORIGINAL);
 	writeFileSync(path.join(root, ".git", "info", "exclude"), "guard.mjs\n");
 
 	const seen = [];
-	let builds = 0;
+	const builds = [];
 	const hooks = {
-		buildNode: cwd => { builds++; assert.equal(path.resolve(cwd), root, "a build must target the mutated tree"); },
+		buildNode: cwd => { builds.push(cwd); assert.equal(path.resolve(cwd), root, "a build targets the mutated tree"); },
 		runSuites: cwd => {
 			assert.equal(path.resolve(cwd), root, "a suite run must target the mutated tree");
 			seen.push(readFileSync(target, "utf8"));
-			const mutantIsInPlace = seen.at(-1) !== original;
+			const mutantIsInPlace = seen.at(-1) !== ORIGINAL;
+			const rootFails = mutantIsInPlace && rootPackageFailsWhenMutated;
 			return [
 				outcome("plugin-pkg", 0),
-				outcome("root-pkg", mutantIsInPlace ? 1 : 0, mutantIsInPlace ? ["the guard's own test"] : []),
+				outcome("root-pkg", rootFails ? 1 : 0, rootFails ? ["the guard's own test"] : []),
 			];
 		},
 	};
+	return { root, target, seen, builds, hooks };
+}
+
+test("the ritual runs BOTH packages against the mutant, restores the file, and re-checks BOTH", t => {
+	const { root, target, seen, builds, hooks } = ritualFixture(t, "mutation-run-e2e-");
+	const original = ORIGINAL;
 
 	const { value: killed, lines } = quietly(() => mutationRun(
 		{ file: "guard.mjs", find: "limit = 5", replace: "limit = 500", cwd: root }, hooks));
@@ -212,11 +220,48 @@ test("the ritual runs BOTH packages against the mutant, restores the file, and r
 	assert.equal(seen.length, 2, "one run against the mutant, one to verify the restore");
 	assert.match(seen[0], /limit = 500/);
 	assert.equal(seen[1], original);
-	assert.equal(builds, 2, "the mutant build and the restore build");
+	assert.equal(builds.length, 2, "the mutant build and the restore build");
 	assert.equal(readFileSync(target, "utf8"), original, "the restore cannot be skipped");
 	assert.equal(existsSync(`${target}.mutation-backup`), false, "the sidecar must not outlive the run");
 	assert.match(lines.join("\n"), /restore verified green in both suites/);
 	assert.match(lines.join("\n"), /MUTATION KILLED/);
+});
+
+test("--baseline measures BOTH packages first, then proceeds with the ritual", t => {
+	const { root, seen, hooks } = ritualFixture(t, "mutation-run-baseline-green-");
+
+	const { value: killed } = quietly(() => mutationRun(
+		{ file: "guard.mjs", find: "limit = 5", replace: "limit = 500", baseline: true, cwd: root }, hooks));
+
+	assert.equal(killed, true);
+	assert.equal(seen.length, 3, "baseline, mutant, restore-verify");
+	assert.equal(seen[0], ORIGINAL, "the baseline runs against the UNmutated file");
+});
+
+test("--baseline refuses on a red repo-root package, before anything is mutated", t => {
+	const { root, target, seen, builds, hooks } = ritualFixture(t, "mutation-run-baseline-red-");
+	const red = {
+		buildNode: hooks.buildNode,
+		runSuites: cwd => hooks.runSuites(cwd).map(result =>
+			result.suite === "root-pkg" ? outcome("root-pkg", 3, ["an unrelated red test"]) : result),
+	};
+
+	let thrown = null;
+	quietly(() => {
+		try {
+			mutationRun({ file: "guard.mjs", find: "limit = 5", replace: "limit = 500", baseline: true, cwd: root }, red);
+		} catch (error) {
+			thrown = error;
+		}
+	});
+
+	assert.ok(thrown, "a baseline blind to the repo-root package makes every later verdict meaningless");
+	assert.match(thrown.message, /ALREADY red \(3 failing\)/);
+	assert.match(thrown.message, /an unrelated red test/);
+	assert.equal(seen.length, 1, "the baseline is the only run — the ritual must not start");
+	assert.equal(builds.length, 0);
+	assert.equal(readFileSync(target, "utf8"), ORIGINAL);
+	assert.equal(existsSync(`${target}.mutation-backup`), false, "no sidecar before a passing baseline");
 });
 
 test("the ritual refuses from a REAL linked worktree, before touching the target file", t => {
