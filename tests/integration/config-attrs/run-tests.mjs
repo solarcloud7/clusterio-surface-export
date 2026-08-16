@@ -1026,7 +1026,8 @@ function buildAndArm() {
 		+ " },").join("\n");
 	const ghostWirePoles = GHOST_WIRE_POLES.map(id => `  '${id}',`).join("\n");
 	const realPairArms = REAL_PAIR_ARMS.map(arm => `  { id = '${arm.id}', kind = '${arm.kind}', `
-		+ `a = '${arm.pair[0]}', b = '${arm.pair[1]}', wired = ${arm.wired} },`).join("\n");
+		+ `a = '${arm.pair[0]}', b = '${arm.pair[1]}', wired = ${arm.wired}`
+		+ (arm.witness ? `, witness = '${arm.witness}'` : "") + " },").join("\n");
 	const writers = ATTRS.map(a => `writers["${a.key}"] = function(e)\n${a.write}\nend`).join("\n");
 	const attrSpecs = ATTRS.map(a => `  { key = '${a.key}', on = '${a.on}' },`).join("\n");
 
