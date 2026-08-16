@@ -4,6 +4,85 @@ local Util = require("modules/surface_export/utils/util")
 
 local LAB_PREFIX = "no-tick-sync-lab-"
 
+local LAB_VERDICT_FIELDS = {
+	"held_item_intentional_restore",
+	"validation_called",
+	"validation_success",
+}
+
+local LAB_OBSERVATION_FIELDS = {
+	"surface",
+	"tick_before",
+	"tick_after",
+	"game_paused",
+	"machine_active_after",
+	"inserter_active_after",
+	"crafting_progress_before",
+	"crafting_progress_after",
+	"held_before_restore",
+	"held_item_after_restore",
+	"held_item_after_validation",
+	"restored",
+	"failed",
+	"validation_message",
+	"validation",
+}
+
+local function name_set(names)
+	local set = {}
+	for _, name in ipairs(names) do
+		set[name] = true
+	end
+	return set
+end
+
+local LAB_VERDICT_SET = name_set(LAB_VERDICT_FIELDS)
+local LAB_OBSERVATION_SET = name_set(LAB_OBSERVATION_FIELDS)
+
+local function held_row_text(row)
+	if row == nil then return "nil" end
+	return string.format("%s x%s (%s)", tostring(row.name), tostring(row.count), tostring(row.quality))
+end
+
+local LAB_VERDICT_EVIDENCE = {
+	held_item_intentional_restore = function(result)
+		return string.format("restored=%s failed=%s held_before=%s held_after=%s",
+			tostring(result.restored), tostring(result.failed),
+			held_row_text(result.held_before_restore), held_row_text(result.held_item_after_restore))
+	end,
+	validation_success = function(result)
+		return "validation_message=" .. tostring(result.validation_message)
+	end,
+}
+
+local function lab_verdict(result)
+	local unenumerated = {}
+	for key in pairs(result) do
+		if not (LAB_VERDICT_SET[key] or LAB_OBSERVATION_SET[key]) then
+			unenumerated[#unenumerated + 1] = tostring(key)
+		end
+	end
+	if #unenumerated > 0 then
+		table.sort(unenumerated)
+		return "unenumerated",
+			"result fields classified as neither verdict nor observation: " .. table.concat(unenumerated, ", ")
+	end
+
+	local failures = {}
+	for _, field in ipairs(LAB_VERDICT_FIELDS) do
+		if result[field] ~= true then
+			local evidence = LAB_VERDICT_EVIDENCE[field]
+			failures[#failures + 1] = field .. "=" .. tostring(result[field])
+				.. (evidence and (" [" .. evidence(result) .. "]") or "")
+		end
+	end
+	if #failures > 0 then
+		return "failed", table.concat(failures, "; ")
+	end
+
+	return "passed", nil
+end
+
 local function held_stack_row(entity)
 	local stack = entity and entity.valid and entity.held_stack or nil
 	if stack and stack.valid_for_read then
@@ -174,8 +253,7 @@ local function run_lab(surface)
 	local crafting_progress_after = machine.crafting_progress
 	local held_item_after_validation = held_stack_row(inserter)
 
-	return {
-		status = "passed",
+	local result = {
 		surface = surface.name,
 		tick_before = tick_before,
 		tick_after = tick_after,
@@ -200,6 +278,9 @@ local function run_lab(surface)
 		validation_message = validation and (validation.mismatchDetails or validation.message) or nil,
 		validation = validation,
 	}
+
+	result.status, result.reason = lab_verdict(result)
+	return result
 end
 
 local function no_tick_sync_selftest(opts)
