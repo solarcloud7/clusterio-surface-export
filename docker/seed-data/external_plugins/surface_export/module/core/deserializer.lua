@@ -459,9 +459,18 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   if entity.type == "display-panel" then
-    if data.display_panel_text ~= nil then entity.display_panel_text = data.display_panel_text end
-    if data.display_panel_always_show ~= nil then entity.display_panel_always_show = data.display_panel_always_show end
-    if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
+    if data.display_panel_text ~= nil then
+      safe_call(string.format("display_panel_text for %s", entity.name),
+        function() entity.display_panel_text = data.display_panel_text end)
+    end
+    if data.display_panel_always_show ~= nil then
+      safe_call(string.format("display_panel_always_show for %s", entity.name),
+        function() entity.display_panel_always_show = data.display_panel_always_show end)
+    end
+    if data.display_panel_show_in_chart ~= nil then
+      safe_call(string.format("display_panel_show_in_chart for %s", entity.name),
+        function() entity.display_panel_show_in_chart = data.display_panel_show_in_chart end)
+    end
     if data.display_panel_icon ~= nil then
       safe_call(string.format("display_panel_icon for %s", entity.name),
         function() entity.display_panel_icon = data.display_panel_icon end)
@@ -476,9 +485,10 @@ function Deserializer.restore_entity_state(entity, entity_data)
 
   if entity.type == "item-request-proxy" then
     if data.insert_plan then
-      entity.insert_plan = data.insert_plan
+      safe_call(string.format("insert_plan for item-request-proxy targeting %s", tostring(data.target_name)),
+        function() entity.insert_plan = data.insert_plan end)
     end
-    
+
     return
   end
 

@@ -43,6 +43,71 @@ const rules = extractRules();
 
 const fieldOf = rule => (rule.match(/field\s*=\s*"([^"]+)"/) || [])[1];
 
+const TYPE_BRANCH_START = "if entity.type == \"entity-ghost\" then";
+const TYPE_BRANCH_END = "local IS_CRAFTER";
+const TYPE_BRANCH_MARKERS = ["tile-ghost", "display-panel", "item-request-proxy"];
+const TYPE_BRANCH_WRITE_CONTROLS = ["insert_plan", "display_panel_text"];
+const MIN_TYPE_BRANCH_WRITES = 4;
+
+function onlyIndexOf(marker) {
+	const start = source.indexOf(marker);
+	assert.notEqual(start, -1, `the type-branch region marker "${marker}" must exist in deserializer.lua`);
+	assert.equal(source.lastIndexOf(marker), start,
+		`the type-branch region marker "${marker}" must be unique — a duplicate silently shrinks the `
+		+ "scanned region, and a region of nothing has no offenders");
+	return start;
+}
+
+function typeBranchRegion() {
+	const start = onlyIndexOf(TYPE_BRANCH_START);
+	const end = onlyIndexOf(TYPE_BRANCH_END);
+	assert.ok(end > start, "the type-branch region must end after it begins");
+	const region = source.slice(start, end);
+	for (const marker of TYPE_BRANCH_MARKERS) {
+		assert.ok(region.includes(marker), `the type-branch region must still cover the ${marker} branch`);
+	}
+	return region;
+}
+
+function closingParen(region, openIndex) {
+	let depth = 0;
+	let quote = null;
+	for (let i = openIndex; i < region.length; i++) {
+		const ch = region[i];
+		if (quote) {
+			if (ch === "\\") i++;
+			else if (ch === quote) quote = null;
+			continue;
+		}
+		if (ch === "\"" || ch === "'") { quote = ch; continue; }
+		if (ch === "-" && region[i + 1] === "-") {
+			const newline = region.indexOf("\n", i);
+			if (newline === -1) break;
+			i = newline;
+			continue;
+		}
+		if (ch === "(") depth++;
+		else if (ch === ")" && --depth === 0) return i;
+	}
+	throw new Error(`a safe_call( in the type-branch region never closes at offset ${openIndex} — the `
+		+ "paren lexer desynced, and a desynced lexer must fail loud rather than report a merged span "
+		+ "that swallows every write");
+}
+
+function safeCallSpans(region) {
+	const spans = [];
+	for (let at = region.indexOf("safe_call("); at !== -1; at = region.indexOf("safe_call(", at + 1)) {
+		const open = at + "safe_call".length;
+		spans.push([open, closingParen(region, open)]);
+	}
+	return spans;
+}
+
+function entityWrites(region) {
+	return [...region.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)]
+		.map(match => ({ property: match[1], index: match.index }));
+}
+
 test("the rule table parses into plausible rows (a broken parser must not pass vacuously)", () => {
 	assert.ok(rules.length >= 20, `expected the rule table to carry many rows, parsed ${rules.length}`);
 	const named = rules.filter(rule => fieldOf(rule) !== undefined);
@@ -83,6 +148,47 @@ test("the inventory-bar branch performs its entity call inside safe_call", () =>
 		+ "here kills the instance. The vacuous `and entity.get_inventory` clause that used to head this "
 		+ "branch was removed as dead (it is a truthy method reference, never a guard); the safe_call is "
 		+ "what actually makes the call survivable");
+});
+
+test("the type-branch scan sees its own writes and spans (a broken scanner must not pass vacuously)", () => {
+	const region = typeBranchRegion();
+	const writes = entityWrites(region);
+	const spans = safeCallSpans(region);
+
+	assert.ok(writes.length >= MIN_TYPE_BRANCH_WRITES,
+		`the type-branch region yielded ${writes.length} entity writes, floor is ${MIN_TYPE_BRANCH_WRITES}`);
+	const properties = new Set(writes.map(write => write.property));
+	for (const control of TYPE_BRANCH_WRITE_CONTROLS) {
+		assert.ok(properties.has(control),
+			`the write detector lost the known type-branch write entity.${control} — it is scanning the `
+			+ "wrong region or the write pattern drifted");
+	}
+	assert.equal(spans.length, region.split("safe_call(").length - 1,
+		"every safe_call( in the region must yield exactly one span: a matcher that collapses them into "
+		+ "one range covering the whole region leaves every bare write reading guarded");
+	assert.deepEqual(spans.filter(([open, close]) => region[open] !== "(" || region[close] !== ")"), [],
+		"every span must be delimited by the parens of its own safe_call( — a matcher that keeps the span "
+		+ "COUNT honest while widening each span to the whole region passes the count check above and "
+		+ "still swallows every bare write");
+	const ordered = [...spans].sort((a, b) => a[0] - b[0]);
+	assert.deepEqual(ordered.filter(([open], index) => index > 0 && open <= ordered[index - 1][1]), [],
+		"safe_call spans must not overlap: overlap means the matcher widened a span past its own closing "
+		+ "paren. A genuinely nested safe_call would also land here — it would need this control revisited "
+		+ "rather than deleted");
+});
+
+test("every entity write in the deserializer type branches is inside safe_call", () => {
+	const region = typeBranchRegion();
+	const spans = safeCallSpans(region);
+	const guarded = write => spans.some(([open, close]) => write.index > open && write.index < close);
+
+	const offenders = entityWrites(region).filter(write => !guarded(write)).map(write => write.property);
+	assert.deepEqual(offenders, [],
+		"a type-branch write reaches the entity unguarded on the on_tick import path (control.lua on_tick "
+		+ "-> AsyncProcessor.process_tick -> entity_creation.lua -> restore_entity_state), and that chain "
+		+ "contains no pcall, so a throw there kills the instance. These branches sit outside "
+		+ "SIMPLE_RESTORE_RULES, so no rule-row check reaches them. Wrap in safe_call: "
+		+ offenders.join(", "));
 });
 
 test("override_logistic_mode is restored before the saved_* rows it would otherwise consume", () => {
