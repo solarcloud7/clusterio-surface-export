@@ -4,12 +4,12 @@
 //
 // requires: a running surface-export cluster (host-1); debug_mode togglable via the configure remote
 // produces: exit 0 when test_import_entity re-exports a no-handler entity (solar-panel), and when a
-//           real force-paste over a real blocker still replaces and guards nothing
-// does not: exercise force_execute's blocker-snapshot branch (not entered — see the PIN check), cover
-//           the arming at selection-lab.lua AT ALL (deleting it leaves this suite green), measure any
-//           record shape other than a plain entity record (item-on-ground, item-request-proxy and
-//           entity-ghost recs reach force_execute unexempted and are UNMEASURED here), perform a
-//           transfer, assert fluid AMOUNTS, or exercise the interactive selection-lab tool
+//           real force-paste over a real blocker replaces that blocker — which is what serializes the
+//           blocker and so exercises the arming at selection-lab.lua
+// does not: measure any record shape other than a plain entity record (item-on-ground,
+//           item-request-proxy and entity-ghost recs are measured in tests/integration/lab-paste-conflict),
+//           assert what the blocker snapshot CONTAINS, perform a transfer, assert fluid AMOUNTS, or
+//           exercise the interactive selection-lab tool
 
 import { execFileSync } from "node:child_process";
 
@@ -127,9 +127,11 @@ try {
 			"selection-lab copies the source chest (this path already arms the registry)",
 			`ok=${copy.ok} outcome=${copy.outcome} records=${copy.records} ${copy.err}`);
 
-		// These can_place_entity calls EXPLAIN the outcome; they do not stand in for it. They re-type
-		// their own build_check_type, so they cannot see a change to the one place_spec passes. The
-		// assertion that protects the invariant is blockers_replaced, read back off a real force-paste.
+		// These can_place_entity calls are RECORDED, not relied on: measured at 2.1.11 in
+		// tests/integration/lab-paste-conflict, no build_check_type discriminates on a space-platform
+		// surface (the non-script types answer false even on clear foundation), so none of them can
+		// stand in for "the blocker blocks". The physical control is at_target; the assertion that
+		// protects the invariant is blockers_replaced, read back off a real force-paste.
 		const gate = lua(`
 			local s = game.surfaces['${setup.surface}']
 			local bct = defines.build_check_type
@@ -164,11 +166,10 @@ try {
 		note(`fallback fixture (panel at 21.5 overhanging the x=21 foundation edge): placed=${gate.overhang_placed} `
 			+ `can_place(22.5,2.5) script=${gate.can_overhang} `
 			+ `entities in (22,2)-(23,3): ${asArray(gate.overhang_hits).join(", ") || "(none)"}`);
-		check(gate.can_manual === false && asArray(gate.at_target).some(e => e.startsWith("solar-panel@14.50,2.50")),
-			"CONTROL: the blocker is really there and really blocks — can_place_entity says false for the "
-			+ "target under the ordinary build_check_type.manual, so a force-paste that replaces nothing "
-			+ "cannot be explained by an absent or non-colliding fixture",
-			`manual=${gate.can_manual} default=${gate.can_default} at_target=${asArray(gate.at_target).join(", ")}`);
+		check(asArray(gate.at_target).some(e => e.startsWith("solar-panel@14.50,2.50")),
+			"CONTROL: the blocker is physically at the paste target, so a force-paste that replaces "
+			+ "nothing cannot be explained by an absent fixture",
+			`at_target=${asArray(gate.at_target).join(", ")}`);
 
 		const forced = lua(`
 			local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'force',
@@ -186,12 +187,11 @@ try {
 		check(forced.raised !== true && forced.outcome === "force_pasted",
 			"the force-paste completes",
 			`outcome=${forced.outcome || "(none)"} ${forced.error_detail || ""}`);
-		check(forced.raised !== true && forced.blockers_replaced === 0 && forced.blockers_guarded === 0,
-			"PIN (read through the production path, so it sees the build_check_type place_spec actually "
-			+ "passes): the force-paste replaces and guards NOTHING, i.e. force_execute's can_place_entity "
-			+ "gate did not fire on a blocker the ordinary check calls blocking, so the blocker-snapshot "
-			+ "branch is not entered. Change place_spec's check type and this goes red, which is when the "
-			+ "real blocker assertions have to come back.",
+		check(forced.raised !== true && forced.blockers_replaced === 1 && forced.blockers_guarded === 0,
+			"PIN (read through the production path): the force-paste REPLACES the solar-panel blocker, so "
+			+ "force_execute's blocker-snapshot branch is entered and EntityScanner.serialize_entity runs "
+			+ "on a no-handler entity — which is what makes the arming at selection-lab.lua load-bearing "
+			+ "here. Break that arming and this suite goes red on the raise.",
 			`blockers_replaced=${forced.blockers_replaced} blockers_guarded=${forced.blockers_guarded}`);
 	}
 } catch (probeError) {
