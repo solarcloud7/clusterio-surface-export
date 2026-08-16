@@ -1,4 +1,24 @@
 #!/usr/bin/env node
+// ghost-item-requests — an entity-ghost's pending item requests must survive a real host-1 -> host-2
+// transfer, with the item-request-proxy alongside it as the control arm
+//
+// requires: the cluster up, host-1 able to export, host-2 able to receive, debug_mode togglable on
+//           host-2 via the configure remote (this runner ARMS it and restores the prior value,
+//           because the gate verdict is read from a debug_import_result file never written with it off)
+// produces: a measured ROUTE table naming which of four create/write routes the engine actually
+//           accepts for arming a fresh entity-ghost at this pin (the fixture is then built with the
+//           first route that measurably lands, so a pin change reports as a route change rather than
+//           as a silent empty fixture), SOURCE physical reads of item_requests on two armed ghosts
+//           and one armed proxy, the export payload's per-ghost insert_plan, the destination gate
+//           verdict, and DESTINATION physical reads of item_requests and #insert_plan on all three
+// does not: see the per-slot in_inventory positions inside insert_plan — LuaEntity.item_requests is
+//           an aggregate of (name, quality, count), so two plans that request the same items into
+//           DIFFERENT inventory slots read identical here and pass; the plan-length check added
+//           alongside catches a dropped or duplicated plan ENTRY, not a moved slot index. Also does
+//           not assert item or fluid fidelity (the gate does that), touch the protected fixtures (it
+//           builds and sweeps its own throwaway platform), or prove the proxy's restore path — the
+//           proxy is armed through create_entity's modules param, which lands at creation time, so a
+//           green proxy is a probe control and not coverage of the post-creation proxy write
 
 import {
 	lua, rcon, instanceIds, createBatchLifecycle,
@@ -177,7 +197,6 @@ async function main() {
 			+ "(item_requests is read-only at this pin, so a payload without insert_plan cannot restore)",
 			JSON.stringify(ghostRecords.map(e => ({
 				insert_plan: e.specific_data && e.specific_data.insert_plan,
-				item_requests: e.specific_data && e.specific_data.item_requests,
 			}))));
 
 		const marker = L.dropMarker(2, "transfer");
@@ -206,6 +225,12 @@ async function main() {
 		check(!!dstGhostB && requestsOf(dstGhostB) === EXPECT_B,
 			"dest: ghost B's item requests survive the transfer, quality included",
 			`want=${EXPECT_B} dst=${dstGhostB ? requestsOf(dstGhostB) : "ghost B missing"}`);
+
+		for (const [label, src, dst] of [["A", srcGhostA, dstGhostA], ["B", srcGhostB, dstGhostB]]) {
+			check(!!src && !!dst && dst.plan_len === src.plan_len,
+				`dest: ghost ${label} arrived with the same number of insert_plan entries as its source`,
+				`src=${src ? src.plan_len : "missing"} dst=${dst ? dst.plan_len : "missing"}`);
+		}
 
 		const sourceGone = lua(1, "for _,q in pairs(game.forces.player.platforms) do "
 			+ `if q.valid and q.name=='${PROBE}' then return {success=true,present=true} end end `
