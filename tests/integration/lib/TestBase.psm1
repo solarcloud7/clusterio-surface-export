@@ -7,7 +7,6 @@ $script:OneOfEachStagingPlatform = 'oneofeach-staging-v1'
 
 function Get-TransferFixturePlatform { return $script:TransferFixturePlatform }
 function Get-PadGridPlatform { return $script:PadGridPlatform }
-function Get-OneOfEachStagingPlatform { return $script:OneOfEachStagingPlatform }
 
 $script:ProtectedFixtures = @(
 	$script:TransferFixturePlatform, $script:PadGridPlatform, $script:OneOfEachStagingPlatform,
