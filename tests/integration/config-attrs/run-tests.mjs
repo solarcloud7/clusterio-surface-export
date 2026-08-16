@@ -1481,7 +1481,7 @@ function checkProxiesLinkedWire(host) {
 	say("\n=== CONTROL: the relink count the destination reported is the count the store persisted ===");
 	const answer = lua(host, `${platformLua(CLONE)}
 local linked = 0
-for _, e in pairs(s.find_entities_filtered{ name = 'proxy-container' }) do
+for _, e in pairs(s.find_entities_filtered{ type = 'proxy-container' }) do
   if e.valid and e.proxy_target_entity and e.proxy_target_entity.valid then linked = linked + 1 end
 end
 return { success = true, linked = linked }`);
@@ -1516,7 +1516,9 @@ return { success = true, linked = linked }`);
 		fail(`summary.import.proxies_linked reads ${JSON.stringify(stored.proxies_linked)}, but the `
 			+ `destination physically holds ${physical} proxy-container(s) with a live target — the stored `
 			+ "number is the only copy that outlives the instance log, so a disagreement here is the number "
-			+ "every later reader gets");
+			+ "every later reader gets. Both sides key on TYPE: restore_proxy_targets returns 0 unless "
+			+ "entity.type == 'proxy-container', so a probe filtered by NAME would be a different set and "
+			+ "this equality would be measuring two questions");
 		return;
 	}
 	if (dotted !== physical) {

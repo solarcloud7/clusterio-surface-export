@@ -919,7 +919,7 @@
 			]
 		},
 		{
-			"receiver": "entity.get_or_create_control_behavior()",
+			"receiver": "entity.get_control_behavior()",
 			"property": "parameters",
 			"files": [
 				"core/deserializer.lua"

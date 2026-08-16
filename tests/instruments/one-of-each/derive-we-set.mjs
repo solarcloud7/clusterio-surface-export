@@ -51,7 +51,8 @@ const DIRECT_WRITE_CONTROLS = ["last_user", "health", "color", "orientation", "t
 const BRACKET_WRITE_CONTROLS = ["providing_to_other_platforms", "request_from_buffers",
 	"mining_progress", "bonus_mining_progress"];
 const RECEIVER_WRITE_CONTROLS = [["entity.burner", "currently_burning"], ["entity.train", "schedule"],
-	["entity.segmented_unit", "activity_mode"], ["entity.segmented_unit", "minimum_activity_mode"]];
+	["entity.segmented_unit", "activity_mode"], ["entity.segmented_unit", "minimum_activity_mode"],
+	["entity.get_control_behavior()", "parameters"]];
 const WE_SET_EXCLUDED_CONTROLS = ["currently_burning", "schedule", "activity_mode",
 	"minimum_activity_mode"];
 
@@ -184,12 +185,21 @@ export function extractHandlerCaptures(source) {
 		.sort((a, b) => a.category.localeCompare(b.category));
 }
 
-function entityAliases(source) {
-	const aliases = new Map();
+export function entityAliases(source) {
+	const aliases = [];
 	for (const m of source.matchAll(/\blocal\s+([a-z_][a-z0-9_]*)\s*=\s*(entity\.[a-z_][a-z0-9_]*)(\()?/g)) {
-		aliases.set(m[1], m[3] ? `${m[2]}()` : m[2]);
+		aliases.push({ name: m[1], receiver: m[3] ? `${m[2]}()` : m[2], index: m.index });
 	}
 	return aliases;
+}
+
+export function aliasAt(aliases, name, index) {
+	let nearest = null;
+	for (const alias of aliases) {
+		if (alias.name !== name || alias.index >= index) continue;
+		if (nearest === null || alias.index > nearest.index) nearest = alias;
+	}
+	return nearest && nearest.receiver;
 }
 
 function indexLiterals(source) {
@@ -217,13 +227,14 @@ export function scanWrites(source) {
 	for (const m of source.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) {
 		writes.push({ receiver: `entity.${m[1]}`, property: m[2] });
 	}
-	for (const [alias, receiver] of aliases) {
-		for (const m of source.matchAll(new RegExp(`\\b${alias}\\.([a-z_][a-z0-9_]*)\\s*=(?!=)`, "g"))) {
-			writes.push({ receiver, property: m[1] });
+	for (const name of new Set(aliases.map(alias => alias.name))) {
+		for (const m of source.matchAll(new RegExp(`\\b${name}\\.([a-z_][a-z0-9_]*)\\s*=(?!=)`, "g"))) {
+			const receiver = aliasAt(aliases, name, m.index);
+			if (receiver) writes.push({ receiver, property: m[1] });
 		}
 	}
 	for (const m of source.matchAll(/\b([a-z_][a-z0-9_.]*)\[([a-z_][a-z0-9_]*)\]\s*=(?!=)/g)) {
-		const receiver = isEntityReceiver(m[1]) ? m[1] : aliases.get(m[1]);
+		const receiver = isEntityReceiver(m[1]) ? m[1] : aliasAt(aliases, m[1], m.index);
 		if (!receiver) continue;
 		for (const property of bound.get(m[2]) || []) writes.push({ receiver, property });
 	}

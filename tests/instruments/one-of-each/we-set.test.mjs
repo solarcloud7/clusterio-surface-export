@@ -100,6 +100,20 @@ test("a bracket-index write resolves through the ipairs literal list that binds 
 	}
 });
 
+test("a re-bound alias resolves to the binding nearest ABOVE the write, not the last one in the file", () => {
+	const source = [
+		"local cb = entity.get_control_behavior()",
+		"cb.parameters = data.parameters",
+		"local cb = entity.get_or_create_control_behavior()",
+		"cb.operation = data.operation",
+	].join("\n");
+	assert.deepEqual(extractReceiverWrites([{ rel: "synthetic.lua", source }]).map(row =>
+		`${row.receiver}.${row.property}`),
+	["entity.get_control_behavior().parameters", "entity.get_or_create_control_behavior().operation"],
+	"each write belongs to the binding in scope where it sits — a whole-file map keeps only the last "
+		+ "binding and mislabels every earlier write through that name");
+});
+
 test("an unresolvable bracket index contributes nothing, rather than a guessed name", () => {
 	const rows = extractDirectWrites([{
 		rel: "synthetic.lua",
@@ -120,7 +134,7 @@ test("writes through a non-entity receiver are recorded, and stay OUT of the WE-
 	const through = new Set(artifact.receiver_writes.map(row => `${row.receiver}.${row.property}`));
 	for (const write of ["entity.segmented_unit.activity_mode", "entity.segmented_unit.minimum_activity_mode",
 		"entity.burner.currently_burning", "entity.burner.remaining_burning_fuel", "entity.train.schedule",
-		"entity.get_or_create_control_behavior().parameters"]) {
+		"entity.get_control_behavior().parameters"]) {
 		assert.ok(through.has(write), `${write} is a write the pipeline performs — the derivation must see it`);
 	}
 	for (const leaf of ["activity_mode", "minimum_activity_mode", "currently_burning", "schedule"]) {
@@ -128,6 +142,11 @@ test("writes through a non-entity receiver are recorded, and stay OUT of the WE-
 			`${leaf} is written on a LuaSegmentedUnit/LuaBurner/LuaTrain, not on the entity, so the WE-SET `
 			+ "must not claim it: the differ would assert it on every entity and report it unwalked forever");
 	}
+	assert.equal(through.has("entity.get_or_create_control_behavior().parameters"), false,
+		"deserializer.lua binds `cb` twice — get_control_behavior() at :540, which governs the parameters "
+		+ "write two lines later, and get_or_create_control_behavior() at :1039. Resolving an alias to the "
+		+ "LAST binding in the file rather than the nearest one preceding the write records a receiver the "
+		+ "write never had, and the control above would pin that as measured fact");
 	assert.equal(artifact.direct_writes.some(row => row.property === "parameters"), false,
 		"cb.parameters is the sharpest case for deciding membership by RECEIVER and never by leaf name: "
 		+ "LuaEntity really does have a parameters attribute, so a leaf-name rule would admit a "
