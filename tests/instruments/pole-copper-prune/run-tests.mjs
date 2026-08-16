@@ -9,7 +9,10 @@
 // does not: transfer anything (no payload crosses an instance here — the prune is called directly
 //           on a hand-built entities_to_create/entity_map), assert any config attribute survives a
 //           transfer, or measure a producer of script-origin copper in production (none exists with
-//           this mod-set; the rows arm the wire themselves)
+//           this mod-set; the rows arm the wire themselves); arm a GHOST connector at an origin
+//           holding no wire — that one cell of the origin x connector-kind cross product is not
+//           measured, only its real-pole twin is, and a throw there would be contained by
+//           prune_pole_copper's per-pole pcall and named by its THREW line
 
 import { execFileSync } from "node:child_process";
 

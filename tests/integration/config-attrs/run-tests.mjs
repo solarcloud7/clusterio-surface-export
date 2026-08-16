@@ -710,7 +710,7 @@ const ATTRS = [
 			+ "(measured 2026-08-15 at 2.1.11 with LuaEntityPrototype.get_max_wire_distance), so the engine "
 			+ "will not auto-connect them at create_entity and the payload is the only thing that can put "
 			+ "this wire on the destination. connect_to's reach_check argument is false at the restore site "
-			+ "(deserializer.lua:1269), which is what lets an out-of-reach wire arm and restore. That "
+			+ "(deserializer.lua:1374), which is what lets an out-of-reach wire arm and restore. That "
 			+ "distance is the whole point: measured 2026-08-15 in CI run 31918880538, an IN-reach pair "
 			+ "arrives wired even when the restore is stopped from making pole-to-pole copper, so a row on "
 			+ "a reachable pair cannot go red on loss. restore_circuit_connections is what restores this "
@@ -792,7 +792,7 @@ const ATTRS = [
 		describe: "two pole ghosts 4.0 apart, INSIDE the 7.5 reach, left unwired by the source — and "
 			+ "create_entity hands them a wire on the destination, which the GHOST WIRE FACTS section of this "
 			+ "run measures as the copper set create_entity alone produced. What removes it is the ghost pass "
-			+ "of Deserializer.prune_pole_copper (deserializer.lua:1374-1402): it visits pole-like entities — "
+			+ "of Deserializer.prune_pole_copper (deserializer.lua:1509-1536): it visits pole-like entities — "
 			+ "an electric-pole, or an entity-ghost whose ghost_type is electric-pole — and takes from "
 			+ "connector.connections the wires with a ghost connector at either end, which is the set "
 			+ "real_connections cannot contain. A red here is that pass not running or not reaching this "
@@ -815,7 +815,7 @@ const ATTRS = [
 			+ "pole's real_connections is empty here too, and the far-end control below reads that at the "
 			+ "real end. This is the ghost pass's OVER-prune arm: the payload carries this wire and both ends "
 			+ "capture it, so a pass that stopped consulting each pole's own circuit_connections "
-			+ "(payload_copper_peers, deserializer.lua:1315-1326) would take it and this row would read an "
+			+ "(payload_copper_peers, deserializer.lua:1420-1431) would take it and this row would read an "
 			+ "empty all= set",
 	},
 	{
@@ -829,7 +829,7 @@ const ATTRS = [
 		describe: "a pole ghost 4.0 from a REAL pole, INSIDE the 7.5 reach, left unwired by the source, and "
 			+ "wired by create_entity on the destination. The real end is visited by the prune's real pass as "
 			+ "an electric-pole, but a wire to a ghost never appears in the real_connections that pass "
-			+ "iterates; the ghost pass (deserializer.lua:1374-1402) is what removes it, from whichever end "
+			+ "iterates; the ghost pass (deserializer.lua:1509-1536) is what removes it, from whichever end "
 			+ "reaches it first. The far-end control below reads that real end",
 	},
 	{
@@ -1249,7 +1249,7 @@ function reportGhostWireFacts(facts) {
 	say(`  pole ghosts carrying a unit_number: ${numbered.length}/${ghosts.length} — the export keys a wire `
 		+ "target by unit_number and falls back to pos_<x>_<y> (connection-scanner.lua:24-28) while the "
 		+ "entity's own id falls back to name@x,y#dir (game-utils.lua:121-129), so a ghost with no "
-		+ "unit_number can be matched only by the restore's position fallback (deserializer.lua:1247-1261)");
+		+ "unit_number can be matched only by the restore's position fallback (deserializer.lua:1352-1366)");
 }
 
 const POLE_TYPE = "electric-pole";
