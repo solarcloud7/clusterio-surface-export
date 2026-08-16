@@ -538,6 +538,13 @@
 			]
 		},
 		{
+			"category": "segmented-unit",
+			"fields": [
+				"fluidboxes",
+				"segmented_unit"
+			]
+		},
+		{
 			"category": "space-platform-hub",
 			"fields": [
 				"providing_to_other_platforms",
@@ -1373,8 +1380,8 @@
 	"counts": {
 		"restore_rules": 37,
 		"types_gated_rules": 22,
-		"handler_categories": 39,
-		"handler_fields": 91,
+		"handler_categories": 40,
+		"handler_fields": 92,
 		"direct_writes": 35,
 		"we_set": 70
 	}

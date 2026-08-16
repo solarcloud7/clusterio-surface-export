@@ -388,6 +388,27 @@ function Deserializer.create_entity(surface, entity_data)
   return entity
 end
 
+function Deserializer.restore_segmented_unit_state(entity, wanted)
+  local unit = entity.segmented_unit
+  if not (unit and unit.valid) then
+    log(string.format("[Deserializer] segmented_unit activity state DROPPED for %s: no unit on the entity",
+      entity.name))
+    return false
+  end
+
+  if wanted.minimum_activity_mode ~= nil then
+    safe_call(string.format("minimum_activity_mode for %s", entity.name),
+      function() unit.minimum_activity_mode = wanted.minimum_activity_mode end)
+  end
+
+  if wanted.activity_mode ~= nil then
+    safe_call(string.format("activity_mode for %s", entity.name),
+      function() unit.activity_mode = wanted.activity_mode end)
+  end
+
+  return true
+end
+
 function Deserializer.restore_entity_state(entity, entity_data)
   if not entity.valid then
     return
@@ -675,6 +696,10 @@ function Deserializer.restore_entity_state(entity, entity_data)
   if data.temperature ~= nil then
     safe_call(string.format("temperature for %s", entity.name),
       function() entity.temperature = data.temperature end)
+  end
+
+  if data.segmented_unit then
+    Deserializer.restore_segmented_unit_state(entity, data.segmented_unit)
   end
 end
 

@@ -1,4 +1,5 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local Deserializer = require("modules/surface_export/core/deserializer")
 
 local ActiveStateRestoration = {}
 
@@ -175,10 +176,24 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
     end
     
     log(string.format("[Import] Active state restoration complete: %d activated, %d kept inactive, %d skipped, held items: %d restored / %d failed",
-        activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))    
-    
+        activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))
+
     if activated_count > 0 then
         game.print(string.format("[Import] Activated %d entities (restored to original state)", activated_count), {0, 1, 0})
+    end
+
+    local segmented_units = 0
+    for _, entity_data in ipairs(entities_to_create) do
+        local wanted = entity_data.specific_data and entity_data.specific_data.segmented_unit
+        local entity = wanted and entity_map[entity_data.entity_id]
+        if wanted and entity and entity.valid
+           and Deserializer.restore_segmented_unit_state(entity, wanted) then
+            segmented_units = segmented_units + 1
+        end
+    end
+    if segmented_units > 0 then
+        log(string.format("[Import] Segmented-unit activity mode re-asserted after activation for %d unit(s)",
+            segmented_units))
     end
 end
 

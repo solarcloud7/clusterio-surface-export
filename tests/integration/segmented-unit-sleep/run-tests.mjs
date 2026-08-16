@@ -9,8 +9,10 @@
 //           minimum_activity_mode, then activity_mode=asleep LAST) — a source read-back taken
 //           twice so a broken staging cannot masquerade as a broken transfer, the gate verdict
 //           parsed from debug_import_result before any destination read, and a DESTINATION read of
-//           LuaEntity.destructible + LuaSegmentedUnit.activity_mode taken twice 120 ticks apart so
-//           a unit between steps cannot read as asleep
+//           LuaEntity.destructible + LuaSegmentedUnit.activity_mode taken twice 180 ticks apart so
+//           a unit between steps cannot read as asleep, plus the arrived unit's distance from the
+//           position it was captured at, which is what separates a unit that slept through the
+//           import from one that was awake until the post-activation write
 // does not: touch a protected fixture or the shared config-attrs rig (an awake demolisher eats its
 //           platform, so it gets its own throwaway and the throwaway is swept unconditionally);
 //           read the export payload (payload presence is not restoration); assert item or fluid
@@ -151,8 +153,10 @@ for _, name in ipairs({ ${CANDIDATE_LUA} }) do
               pos[1] or pos.x, pos[2] or pos.y)
           else
             placed = res
-            tried[#tried + 1] = string.format('%s PLACED (collision box %.1f x %.1f)', name,
-              box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y)
+            local boxes = 0
+            for _ in pairs(proto.fluidbox_prototypes or {}) do boxes = boxes + 1 end
+            tried[#tried + 1] = string.format('%s PLACED (collision box %.1f x %.1f, %d fluidbox prototype(s))',
+              name, box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y, boxes)
           end
         end
       end
@@ -170,12 +174,14 @@ local su = placed.segmented_unit
 if not (su and su.valid) then
   return { success = false, error = 'the placed ' .. placed.name .. ' exposes no segmented_unit' }
 end
+local default_mode, default_minimum = su.activity_mode, su.minimum_activity_mode
 local asleep = defines.segmented_unit_activity_mode.asleep
 local minimum_write_ok = pcall(function() su.minimum_activity_mode = asleep end)
 local mode_write_ok = pcall(function() su.activity_mode = asleep end)
 return { success = true, name = placed.name, tried = tried,
   disabled_write_ok = disabled_write_ok,
   disabled_read = (disabled_read_ok and disabled_read or 'read threw'),
+  default_mode = default_mode, default_minimum = default_minimum,
   minimum_write_ok = minimum_write_ok, mode_write_ok = mode_write_ok }`);
 }
 
@@ -235,6 +241,12 @@ async function main() {
 		const armed = readState(SOURCE_HOST, PROBE);
 		const asleep = armed.modes.asleep;
 		say(`  defines.segmented_unit_activity_mode: ${JSON.stringify(armed.modes)}`);
+		say(`  a freshly created ${staged.name} defaults to activity_mode=${staged.default_mode} `
+			+ `minimum_activity_mode=${staged.default_minimum}`);
+		if (staged.default_minimum === asleep) {
+			say("  NOTE: minimum_activity_mode defaults to asleep at this pin, so the destination "
+				+ "assertion on it passes with or without a restore — activity_mode carries the teeth");
+		}
 		say(`  source after staging: ${describe(armed)}`);
 		if (armed.heads.length !== 1) {
 			fail(`staging left ${armed.heads.length} segmented-unit(s) on the probe — the transfer below `
@@ -319,6 +331,17 @@ async function main() {
 			destinationRed = true;
 		} else {
 			pass("minimum_activity_mode=asleep survived the transfer");
+		}
+		const sourceHead = settled.heads[0];
+		const drift = Math.abs(first.heads[0].x - sourceHead.x) + Math.abs(first.heads[0].y - sourceHead.y);
+		if (drift > 1.0) {
+			fail(`the arrived unit sits ${drift.toFixed(3)} tiles from the position it was captured at `
+				+ `(${sourceHead.x},${sourceHead.y}) — it was awake and moving during the import, so only a `
+				+ "post-activation write can have put it back to sleep");
+			destinationRed = true;
+		} else {
+			pass(`the arrived unit is ${drift.toFixed(3)} tiles from its captured source position — it never `
+				+ "woke in flight");
 		}
 		const moved = Math.abs(head.x - first.heads[0].x) + Math.abs(head.y - first.heads[0].y);
 		if (moved > 0.001) {
