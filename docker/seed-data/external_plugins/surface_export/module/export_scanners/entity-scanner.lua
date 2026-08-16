@@ -129,11 +129,6 @@ function EntityScanner.serialize_entity(entity)
     entity_data.circuit_connections = circuit_connections
   end
 
-  local power_connections = ConnectionScanner.extract_power_connections(entity)
-  if #power_connections > 0 then
-    entity_data.power_connections = power_connections
-  end
-
   local control_behavior = ConnectionScanner.extract_control_behavior(entity)
   if control_behavior then
     entity_data.control_behavior = control_behavior

@@ -290,6 +290,7 @@ function ImportCompletion.run_phase1(job)
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
 	PhaseRecorder.stop(job, "state")
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
+	job.metrics.copper_pruned = state_result and state_result.copper_pruned or 0
 	job.metrics.proxies_linked = state_result and state_result.proxies_linked or 0
 	job.created_logistic_groups = state_result and state_result.created_logistic_groups or nil
 
@@ -796,6 +797,7 @@ function ImportCompletion.run_phase2(job)
 				belt_state_merge_discarded = job.metrics.belt_state_merge_discarded or 0,
 				belt_state_declined = job.metrics.belt_state_declined or 0,
 				circuits_connected = job.metrics.circuits_connected or 0,
+				copper_pruned = job.metrics.copper_pruned or 0,
 				total_items = job.total_items or 0,
 				total_fluids = job.total_fluids or 0,
 				phase_spans = phase_spans,

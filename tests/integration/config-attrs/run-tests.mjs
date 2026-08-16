@@ -14,8 +14,9 @@
 // does not: read the export payload (payload presence is not restoration); assert item/fluid
 //           fidelity (the gate does that); touch the protected fixtures (it transfers a CLONE);
 //           tolerate a destination roster missing the armed last_user name (that row goes
-//           UNEXERCISED red, never expects nil); say WHICH pass restores pole-to-pole copper, or
-//           read an IN-reach wired pair (create_entity auto-connects one, so it cannot go red)
+//           UNEXERCISED red, never expects nil); read an IN-reach WIRED pair (create_entity
+//           auto-connects one, so it could not go red on loss); assert the pruned count itself
+//           (summary.import.copper_pruned reports it; these rows measure the resulting topology)
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -485,8 +486,9 @@ const ATTRS = [
 			+ "pin), so the engine auto-connects neither them nor the copper-row poles below to this "
 			+ "switch's poles; checkPoleGeometry grades every pairwise distance among the rig's poles "
 			+ "against the live reach, on its own, whether or not those rows arm. An extra pole on the LEFT "
-			+ "set is the shared-id defect: restore_power_connections reaching a non-pole target "
-			+ "(deserializer.lua:1345-1347)",
+			+ "set was the shared-id defect #232 fixed with a target type guard; the pass that carried it is "
+			+ "deleted, so this row now guards restore_circuit_connections replaying each side's own "
+			+ "connector id",
 	},
 	{
 		key: "pole_copper", attribute: "pole_copper (wire present)", on: "polewire1",
@@ -501,15 +503,15 @@ const ATTRS = [
 		describe: "polewire1 and polewire2 stand 10.0 apart, PAST a small-electric-pole's 7.5 wire reach "
 			+ "(measured 2026-08-15 at 2.1.11 with LuaEntityPrototype.get_max_wire_distance), so the engine "
 			+ "will not auto-connect them at create_entity and the payload is the only thing that can put "
-			+ "this wire on the destination. connect_to's reach_check argument is false here and in both "
-			+ "restore passes (deserializer.lua:1269,1353), which is what lets an out-of-reach wire arm and "
-			+ "restore. That distance is the whole point: measured 2026-08-15 in CI run 31918880538, an "
-			+ "IN-reach pair arrives wired even when both passes are stopped from making pole-to-pole "
-			+ "copper, so a row on a reachable pair cannot go red on loss. This row carries no claim about "
-			+ "WHICH pass restores it: restore_circuit_connections replays the same pole_copper connector id "
-			+ "on both ends (extract_circuit_connections iterates get_wire_connectors unfiltered — measured "
-			+ "on a live pole pair at the same pin, connector id 5 with target connector id 5), and "
-			+ "disabling restore_power_connections alone changed no row in run 31918879699",
+			+ "this wire on the destination. connect_to's reach_check argument is false at the restore site "
+			+ "(deserializer.lua:1269), which is what lets an out-of-reach wire arm and restore. That "
+			+ "distance is the whole point: measured 2026-08-15 in CI run 31918880538, an IN-reach pair "
+			+ "arrives wired even when the restore is stopped from making pole-to-pole copper, so a row on "
+			+ "a reachable pair cannot go red on loss. restore_circuit_connections is what restores this "
+			+ "wire — it replays the same pole_copper connector id on both ends, extract_circuit_connections "
+			+ "iterating get_wire_connectors unfiltered (measured on a live pole pair at the same pin, "
+			+ "connector id 5 with target connector id 5); run 31919809131 disabled the since-deleted "
+			+ "restore_power_connections and changed no row",
 	},
 	{
 		key: "pole_copper_absent", attribute: "pole_copper (no wire)", on: "polenear1",

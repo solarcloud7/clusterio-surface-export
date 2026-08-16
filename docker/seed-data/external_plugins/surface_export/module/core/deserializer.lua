@@ -1312,61 +1312,71 @@ function Deserializer.restore_proxy_targets(entity, entity_data, entity_map)
   return linked and 1 or 0
 end
 
-function Deserializer.restore_power_connections(entity, entity_data, entity_map)
-  if not entity.valid or not entity_data.power_connections then
-    return 0
+local function payload_copper_peers(entity_data, entity_map, copper)
+  local peers = {}
+  for _, conn in ipairs(entity_data.circuit_connections or {}) do
+    if conn.source_circuit_id == copper and conn.target_circuit_id == copper then
+      local peer = entity_map[conn.target_entity_id]
+      if peer and peer.valid and peer.unit_number then
+        peers[peer.unit_number] = true
+      end
+    end
   end
+  return peers
+end
 
-  if entity.type ~= "electric-pole" then
-    return 0
+local function restored_unit_numbers(entity_map)
+  local restored = {}
+  for _, entity in pairs(entity_map) do
+    if entity and entity.valid and entity.unit_number then
+      restored[entity.unit_number] = true
+    end
   end
+  return restored
+end
 
-  local connected_count = 0
+function Deserializer.prune_pole_copper(entities_to_create, entity_map)
+  local copper = defines.wire_connector_id.pole_copper
+  local restored = restored_unit_numbers(entity_map)
+  local pruned = 0
 
-  for _, target_id in ipairs(entity_data.power_connections) do
-    local target = entity_map[target_id]
+  for _, entity_data in ipairs(entities_to_create) do
+    local entity = entity_map[entity_data.entity_id]
+    if entity and entity.valid and entity.type == "electric-pole" then
+      local peers = payload_copper_peers(entity_data, entity_map, copper)
+      local connector = entity.get_wire_connector(copper, false)
+      local foreign = {}
 
-    if not target and type(target_id) == "string" and target_id:find("^pos_") then
-      local x, y = target_id:match("pos_([%d%.%-]+)_([%d%.%-]+)")
-      if x and y then
-        x, y = tonumber(x), tonumber(y)
-        for _, candidate in pairs(entity_map) do
-          if candidate.valid and candidate.type == "electric-pole" then
-            local pos = candidate.position
-            if math.abs(pos.x - x) < 0.1 and math.abs(pos.y - y) < 0.1 then
-              target = candidate
-              break
-            end
+      if connector then
+        for _, conn in ipairs(connector.real_connections) do
+          local peer_connector = conn.target
+          local peer = peer_connector and peer_connector.owner
+          if peer and peer.valid and peer.type == "electric-pole" and peer.unit_number
+            and restored[peer.unit_number] and not peers[peer.unit_number] then
+            foreign[#foreign + 1] = {
+              connector = peer_connector,
+              name = peer.name,
+              x = peer.position.x,
+              y = peer.position.y,
+            }
           end
         end
       end
-    end
 
-    if target and target.valid and target.type == "power-switch" then
-      log(string.format("[Deserializer] power connection %s -> %s skipped: side-less pole_copper id; "
-        .. "restored from circuit_connections", entity.name, target.name))
-    elseif target and target.valid then
-      local ok, result = pcall(function()
-        local source_connector = entity.get_wire_connector(defines.wire_connector_id.pole_copper, true)
-        local target_connector = target.get_wire_connector(defines.wire_connector_id.pole_copper, true)
-        if source_connector and target_connector then
-          return source_connector.connect_to(target_connector, false)
+      for _, target in ipairs(foreign) do
+        local ok, removed = pcall(function() return connector.disconnect_from(target.connector) end)
+        if ok and removed then
+          pruned = pruned + 1
+        else
+          log(string.format("[Deserializer] pole copper prune FAILED %s (%.1f, %.1f) -> %s (%.1f, %.1f): %s",
+            entity.name, entity.position.x, entity.position.y, target.name, target.x, target.y,
+            ok and "disconnect_from declined" or tostring(removed)))
         end
-        return false
-      end)
-      if ok and result then
-        connected_count = connected_count + 1
-      elseif not ok then
-        log(string.format("[Deserializer] copper connect_to failed for pole %s -> %s: %s",
-          entity.name, tostring(target_id), tostring(result)))
       end
-    else
-      log(string.format("[FactorioSurfaceExport] Warning: Could not find target pole %s for power connection from %s",
-        tostring(target_id), entity.name))
     end
   end
 
-  return connected_count
+  return pruned
 end
 
 return Deserializer

@@ -41,43 +41,6 @@ function ConnectionScanner.extract_circuit_connections(entity)
   return connections
 end
 
-function ConnectionScanner.extract_power_connections(entity)
-  if not entity or not entity.valid then
-    return {}
-  end
-
-  if entity.type ~= "electric-pole" then
-    return {}
-  end
-
-  local connections = {}
-
-  local success, wire_connectors = pcall(function() return entity.get_wire_connectors(false) end)
-  if not success then log(string.format("[connection-scanner] get_wire_connectors failed on %s: %s", entity.name, tostring(wire_connectors))) end
-  if not success or not wire_connectors then
-    return {}
-  end
-
-  local copper_connector = wire_connectors[defines.wire_connector_id.pole_copper]
-  if not copper_connector or not copper_connector.connections then
-    return {}
-  end
-
-  for _, conn in ipairs(copper_connector.connections) do
-    local neighbour = conn.target and conn.target.owner
-    if neighbour and neighbour.valid then
-      local target_id = neighbour.unit_number
-      if target_id then
-        table.insert(connections, target_id)
-      else
-        log(string.format("[connection-scanner] copper neighbour of %s has no unit_number (type=%s) — skipped", entity.name, tostring(neighbour.type)))
-      end
-    end
-  end
-
-  return connections
-end
-
 function ConnectionScanner.extract_control_behavior(entity)
   if not entity or not entity.valid then
     return nil

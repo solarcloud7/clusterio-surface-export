@@ -3,7 +3,7 @@ local EntityStateRestoration = {}
 
 function EntityStateRestoration.restore_all(entities_to_create, entity_map)
     local circuits_connected = 0
-    local power_connected = 0
+    local copper_pruned = 0
     local proxies_linked = 0
 
     log("[Import] Restoring control behavior...")
@@ -55,15 +55,10 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
     
-    log("[Import] Restoring power connections...")
-    for _, entity_data in ipairs(entities_to_create) do
-      local entity = entity_map[entity_data.entity_id]
-      if entity and entity.valid then
-        local connected = Deserializer.restore_power_connections(entity, entity_data, entity_map)
-        power_connected = power_connected + (connected or 0)
-      end
-    end
-    
+    log("[Import] Pruning pole copper the payload does not carry...")
+    copper_pruned = Deserializer.prune_pole_copper(entities_to_create, entity_map)
+    log(string.format("[Import] Pole copper pruned: %d connection(s) the payload never carried", copper_pruned))
+
     log("[Import] Restoring proxy-container targets...")
     for _, entity_data in ipairs(entities_to_create) do
       local entity = entity_map[entity_data.entity_id]
@@ -74,7 +69,7 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
 
     return {
       circuits_connected = circuits_connected,
-      power_connected = power_connected,
+      copper_pruned = copper_pruned,
       proxies_linked = proxies_linked,
       created_logistic_groups = created_logistic_groups,
     }
