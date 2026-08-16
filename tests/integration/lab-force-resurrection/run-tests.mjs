@@ -76,7 +76,7 @@ try {
 		p.apply_starter_pack()
 		local s, force = p.surface, game.forces.player
 		local tiles = {}
-		for x = 4, 44 do for y = 0, 54 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
+		for x = 4, 44 do for y = 0, 60 do tiles[#tiles + 1] = { name = 'space-platform-foundation', position = { x, y } } end end
 		s.set_tiles(tiles)
 		local made = {}
 		local function put(spec)
@@ -128,6 +128,11 @@ try {
 		put{ name = 'wooden-chest', position = { 6.5, 50.5 }, force = force }
 		put{ name = 'wooden-chest', position = { 7.5, 50.5 }, force = force }
 		put{ name = 'solar-panel', position = { 15.5, 50.5 }, force = force }
+		put{ name = 'wooden-chest', position = { 6.5, 56.5 }, force = force }
+		local pair_target = put{ name = 'wooden-chest', position = { 14.5, 56.5 }, force = force }
+		put{ name = 'item-request-proxy', position = { 14.5, 56.5 }, force = force, target = pair_target,
+			modules = { { id = { name = 'iron-plate' },
+				items = { in_inventory = { { inventory = defines.inventory.chest, stack = 1, count = 10 } } } } } }
 		local run_head = belt_at(14.5, 44.5, defines.direction.east)
 		belt_at(15.5, 44.5, defines.direction.east)
 		belt_at(16.5, 44.5, defines.direction.east)
@@ -137,7 +142,8 @@ try {
 		local ghost = s.find_entities_filtered{ area = { { 14, 38 }, { 15, 39 } }, name = 'entity-ghost' }[1]
 		local proxy = s.find_entities_filtered{ area = { { 6, 32 }, { 7, 33 } }, name = 'item-request-proxy' }[1]
 		return { ok = true, surface = s.name, made = made,
-			filled = string.format('arm1=%d arm2=%d run=%d (run line_length %s)', filled_a, filled_b,
+			filled = string.format('arm1=%d arm2=%d belt-run=%d at fixture time (its line_length reads %s '
+				.. 'here; arm 8 tops it up across ticks and reports what it seated)', filled_a, filled_b,
 				filled_run, tostring(run_length)),
 			player = (pl ~= nil and pl.valid), player_force = (pl and pl.force.name) or '',
 			ghost_unit_number = (ghost and ghost.unit_number) or -1,
@@ -510,6 +516,63 @@ try {
 		"ARM 9 physical arm: exactly ONE solar-panel stands after undo — a duplicated journal entry "
 		+ "would stack a second panel on the first",
 		after9.filter(h => h.startsWith("solar-panel:")).join(", ") || "(none)");
+
+	// ---------------------------------------------------------------------------------------------
+	// Arm 10 — REDO of a force. redo re-enters force_execute, so the whole partition/snapshot/destroy
+	// path runs a second time against a world its own undo restored.
+	// ---------------------------------------------------------------------------------------------
+	const redo10 = lua(`
+		local ok, r = pcall(remote.call, 'surface_export', 'selection_lab_drive', 'redo',
+			${LAB_PLAYER}, nil, nil, nil, nil, '${SURF}')
+		if not ok then return { raised = true, err = tostring(r) } end
+		return { raised = false, ok = r.ok == true }
+	`);
+	const after10 = scanArea(13, 49, 18, 53);
+	note(`arm 10 after redo (raised=${redo10.raised}${redo10.err ? ` err=${redo10.err}` : ""}): `
+		+ `${after10.join(", ") || "(empty)"}`);
+	check(redo10.raised !== true,
+		"arm 10: redo does not raise out of the lab", String(redo10.err || ""));
+	check(after10.filter(h => h.startsWith("wooden-chest:")).length === 2
+		&& after10.filter(h => h.startsWith("solar-panel:")).length === 0,
+		"ARM 10 REDO: redoing a force re-runs the whole replace — both records are back and the "
+		+ "blocker its undo had resurrected is gone again",
+		after10.join(", ") || "(empty)");
+
+	// ---------------------------------------------------------------------------------------------
+	// Arm 11 — a chest and ITS proxy are both blockers on one tile, so both are destroyed and both
+	// are journaled. The proxy resolves its target by position at creation time, so resurrecting it
+	// before its chest drops it silently.
+	// ---------------------------------------------------------------------------------------------
+	const copy11 = drive("copy", 6, 56, 8, 58);
+	check(copy11.raised !== true && copy11.outcome === "copied" && copy11.records === 1,
+		"arm 11 setup: the lab copies a single plain chest record",
+		`outcome=${copy11.outcome} records=${copy11.records} ${copy11.err}`);
+	const before11 = scanArea(13, 55, 16, 58);
+	const force11 = drive("force", 14, 56, 16, 58);
+	const journal11 = lua(`
+		local st = storage.selection_lab and storage.selection_lab[${LAB_PLAYER}]
+		local entry = st and st.undo and st.undo[#st.undo]
+		if not entry then return { found = false } end
+		local kinds = {}
+		for _, rec in ipairs(entry.destroyed_records or {}) do kinds[#kinds + 1] = tostring(rec.type) end
+		return { found = true, order = table.concat(kinds, ',') }
+	`);
+	note(`arm 11 before force: ${before11.join(", ") || "(empty)"}`);
+	note(`arm 11 force report: outcome=${force11.outcome} replaced=${force11.blockers_replaced} `
+		+ `${force11.error_detail} | journal record order: ${journal11.order || "(none)"}`);
+	check(force11.raised !== true && force11.outcome === "force_pasted" && force11.blockers_replaced === 2,
+		"arm 11 setup: the force replaced BOTH the chest and its proxy — a proxy carries a unit_number, "
+		+ "so it is a blocker in its own right",
+		`outcome=${force11.outcome || "(none)"} replaced=${force11.blockers_replaced}`);
+	const undo11 = undo();
+	const after11 = scanArea(13, 55, 16, 58);
+	note(`arm 11 after undo (raised=${undo11.raised}): ${after11.join(", ") || "(empty)"}`);
+	check(after11.some(h => h.startsWith("wooden-chest:"))
+		&& after11.some(h => h.startsWith("item-request-proxy:")),
+		"ARM 11 PROXY ORDER: a chest and its proxy destroyed together both come back — the creation "
+		+ "loop places proxies LAST, so the proxy finds its target at target_position instead of being "
+		+ "dropped for having none",
+		after11.join(", ") || "(empty)");
 } catch (probeError) {
 	failures += 1;
 	process.exitCode = 1;
