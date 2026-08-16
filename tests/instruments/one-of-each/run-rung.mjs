@@ -10,11 +10,13 @@
 //           (destination physical read) with the source and destination samples behind each; plus the
 //           payload's own property_findings, the fixture-vs-clone staging delta, and a JSON report at
 //           ci-artifacts/one-of-each-sweep-report.json
-// does not: touch the banked fixture (it is read, cloned, and never transferred or deleted); resolve
-//           any destination entity by source unit_number (unit numbers do not survive a transfer);
-//           key any row on a payload type; write to a segmented unit (a write wakes it); grade a
-//           fidelity verdict as a test failure — LOST/WRONG/ABSENT rows are MEASUREMENTS, and only
-//           the infrastructure assertions (clone, gate, table completeness, quiescent hostiles, zero
+// does not: touch the banked fixture (it is read, cloned, and never transferred or deleted); read the
+//           destination at all before the gate verdict is adjudicated (every destination read passes
+//           through a latch that throws, so the ordering cannot be lost by moving a line); resolve any
+//           destination entity by source unit_number (unit numbers do not survive a transfer); key any
+//           row on a payload type; write to a segmented unit (a write wakes it); grade a fidelity
+//           verdict as a test failure — LOST/WRONG/ABSENT rows are MEASUREMENTS, and only the
+//           infrastructure assertions (clone, gate, table completeness, quiescent hostiles, zero
 //           leftovers) can turn this rung red
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -96,7 +98,12 @@ function resolvePlatform(host, name) {
 	return hits[0];
 }
 
+function guardDestinationRead(host, what) {
+	if (host === DEST_HOST) latch.require(what);
+}
+
 function readSurface(host, name) {
+	guardDestinationRead(host, `the physical read of '${name}'`);
 	const rows = [];
 	let total = null;
 	for (let from = 1; ; from += PAGE) {
@@ -126,6 +133,7 @@ function readSurface(host, name) {
 }
 
 function readSegmentedUnits(host, name) {
+	guardDestinationRead(host, `the segmented-unit read of '${name}'`);
 	const answer = lua(host, `${platformLua(name)}\n`
 		+ "local units = {}\n"
 		+ "for _, e in pairs(s.find_entities_filtered{ type = 'segmented-unit' }) do\n"
@@ -335,7 +343,6 @@ async function main() {
 		report.property_findings = printPropertyFindings(payload);
 
 		say("\n=== DESTINATION: physical read, taken only after the gate was adjudicated ===");
-		latch.require("the destination physical read");
 		const destRows = readSurface(DEST_HOST, CLONE);
 		say(`  the arrived '${CLONE}' carries ${destRows.length} entity(ies)`);
 		assertQuiescent(`the arrived ${CLONE}`, readSegmentedUnits(DEST_HOST, CLONE));
