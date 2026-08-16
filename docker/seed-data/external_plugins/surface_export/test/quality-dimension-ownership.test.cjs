@@ -113,10 +113,11 @@ const domains = [
 	},
 	{
 		id: "ghost-and-proxy-requests",
-		status: "base-restoration-gap",
-		producer: ["export_scanners/entity-handlers.lua", /item_requests[\s\S]*item\s*=\s*req\.name,\s*quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count/],
-		consumer: ["core/deserializer.lua", /item_requests and #data\.item_requests > 0[\s\S]*?requests\[item_with_quality\] = req\.count/],
-		gap: "request tables are reconstructed but never applied; this is broader than quality alone",
+		status: "static-owned",
+		producer: ["export_scanners/entity-handlers.lua",
+			/EntityHandlers\["entity-ghost"\][\s\S]{0,400}?quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count[\s\S]{0,200}?data\.insert_plan\s*=\s*entity\.insert_plan/],
+		consumer: ["core/deserializer.lua",
+			/if entity\.type == "entity-ghost" then[\s\S]{0,200}?entity\.insert_plan = data\.insert_plan/],
 	},
 ];
 
@@ -145,7 +146,6 @@ test("all non-owned rows state the exact unresolved boundary", () => {
 	assert.deepEqual(unresolved.map(row => [row.id, row.status]), [
 		["inserter-loader-wagon-filter", "live-pending"],
 		["constant-combinator-slot", "live-pending"],
-		["ghost-and-proxy-requests", "base-restoration-gap"],
 	]);
 	for (const row of unresolved.filter(row => row.status.endsWith("gap"))) {
 		assert.ok(row.gap && row.gap.length > 20, `${row.id} must explain why it is not owned`);
@@ -171,6 +171,17 @@ test("the logistic-request-slot physical evidence stays pinned to the sections s
 		"the fixture must keep writing a rare-quality request slot");
 	assert.match(suiteSource, /quality === "rare"/,
 		"the destination re-read must keep asserting the non-normal (rare) slot quality");
+});
+
+test("the ghost-and-proxy-requests physical evidence stays pinned to the ghost suite", { skip: repoSkip }, () => {
+	const suiteSource = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
+		"tests", "integration", "ghost-item-requests", "run-tests.mjs"), "utf8");
+	assert.match(suiteSource, /quality='uncommon'/,
+		"the fixture must keep arming a ghost with a non-normal quality request");
+	assert.match(suiteSource, /requestsOf\(dstGhostA\) === EXPECT_A/,
+		"the destination re-read must keep adjudicating the ghost's own item_requests");
+	assert.match(suiteSource, /CONTROL: the item-request-proxy's requests arrive intact/,
+		"the proxy control arm must stay, or a red ghost cannot be told from a broken probe");
 });
 
 test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", { skip: repoSkip }, () => {

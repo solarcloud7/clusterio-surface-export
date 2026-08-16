@@ -400,6 +400,7 @@
 			"category": "entity-ghost",
 			"fields": [
 				"ghost_quality",
+				"insert_plan",
 				"item_requests"
 			]
 		},

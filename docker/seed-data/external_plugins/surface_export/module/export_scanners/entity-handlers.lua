@@ -784,6 +784,10 @@ EntityHandlers["entity-ghost"] = function(entity)
     end
   end
 
+  if entity.insert_plan and #entity.insert_plan > 0 then
+    data.insert_plan = entity.insert_plan
+  end
+
   if entity.quality and entity.quality.name ~= GameUtils.QUALITY_NORMAL then
     data.ghost_quality = entity.quality.name
   end
