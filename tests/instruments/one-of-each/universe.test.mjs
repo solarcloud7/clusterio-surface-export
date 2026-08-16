@@ -5,9 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	EXPORT_SCANNER_EXCLUSIONS, assemble, checkControls, classifyTypes, conditionFailure,
-	conditionFailures, loadBonusInclusions, loadEphemera, loadTransientAnnex, luaTable,
-	selectRepresentative,
+	EXPORT_SCANNER_EXCLUSIONS, RAIL_TYPES, ROLLING_STOCK_TYPES, assemble, checkControls,
+	checkRailTaxonomy, classifyTypes, conditionFailure, conditionFailures, loadBonusInclusions,
+	loadEphemera, loadTransientAnnex, luaTable, railBuildability, selectRepresentative,
 } from "./derive-universe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -122,7 +122,7 @@ test("an ephemera entry that duplicates an is_exportable_entity exclusion is ref
 });
 
 const CONTROL_COUNTS = {
-	types: 132, player_buildable: 61, script_only: 20, bonus: 1, universe: 82,
+	types: 132, player_buildable: 60, script_only: 20, bonus: 2, universe: 82,
 	excluded: 50, excluded_ephemera: 18, excluded_transient_annex: 3,
 };
 
@@ -216,7 +216,7 @@ test("the vendored artifact carries a footprint and features for every universe 
 test("every vendored exclusion carries a reason that is not the type name restated", () => {
 	for (const row of VENDORED.exclusions) {
 		assert.equal(row.reason.trim().length > 20, true, `${row.type} has a stub reason`);
-		assert.equal(["export_scanner", "surface_conditions", "ephemera", "transient_annex"]
+		assert.equal(["export_scanner", "surface_conditions", "rail_dependency", "ephemera", "transient_annex"]
 			.includes(row.derivation), true);
 	}
 });
@@ -297,6 +297,80 @@ test("a bonus inclusion is refused when it is redundant, unplaceable, unknown, o
 		PLATFORM_VECTOR), /no reason/);
 });
 
+const wagon = extra => proto("infinity-cargo-wagon", "infinity-cargo-wagon", { pl: 1, ...extra });
+const blockedRail = proto("straight-rail", "straight-rail", { pl: 1, sc: [{ p: "gravity", mn: 1 }] });
+const openRail = proto("straight-rail", "straight-rail", { pl: 1 });
+
+test("rolling stock whose OWN conditions pass is still not player-buildable where no rail is", () => {
+	const { entries, exclusions } = classifyTypes({
+		rows: [wagon(), blockedRail], propertyVector: PLATFORM_VECTOR, ephemera: [],
+	});
+	assert.deepEqual(entries, [], "empty surface_conditions is not a build route when the rail under it is blocked");
+	const refused = exclusions.find(row => row.type === "infinity-cargo-wagon");
+	assert.equal(refused.derivation, "rail_dependency");
+	assert.match(refused.reason, /1 rail type\(s\) at this pin is placeable here/);
+	assert.match(refused.reason, /gravity >= 1 but the surface measures 0/,
+		"the reason must carry the rail's own failure, or the exclusion cannot be audited");
+	assert.match(refused.reason, /0 placeable for rolling stock/);
+	assert.match(refused.reason, /NOT isolated/,
+		"#248 measured the block and did not isolate its cause — the derivation must not invent one");
+	assert.doesNotMatch(refused.reason, /all 1 placeable/,
+		"the surface_conditions reason would be false here: this prototype fails no condition of its own");
+});
+
+test("the SAME rolling stock IS player-buildable where a rail is placeable — the rule is a dependency", () => {
+	const { entries, exclusions } = classifyTypes({
+		rows: [wagon(), openRail], propertyVector: PLATFORM_VECTOR, ephemera: [],
+	});
+	assert.deepEqual(exclusions, []);
+	assert.equal(entries.find(entry => entry.type === "infinity-cargo-wagon").class, "player_buildable");
+});
+
+test("the rail dependency is scoped to rolling stock — nothing else loses its class when rail is blocked", () => {
+	const { entries } = classifyTypes({
+		rows: [proto("lamp", "lamp", { pl: 1 }), blockedRail], propertyVector: PLATFORM_VECTOR, ephemera: [],
+	});
+	assert.equal(entries.find(entry => entry.type === "lamp").class, "player_buildable");
+});
+
+test("rolling stock that fails its OWN conditions keeps the surface_conditions derivation", () => {
+	const { exclusions } = classifyTypes({
+		rows: [proto("locomotive", "locomotive", { pl: 1, sc: [{ p: "gravity", mn: 1 }] }), blockedRail],
+		propertyVector: PLATFORM_VECTOR, ephemera: [],
+	});
+	assert.equal(exclusions.find(row => row.type === "locomotive").derivation, "surface_conditions",
+		"a type its own conditions already exclude must not be re-labelled with a dependency it never reached");
+});
+
+test("railBuildability reports the rail types it checked and the failures it found", () => {
+	const blocked = railBuildability([wagon(), blockedRail], PLATFORM_VECTOR);
+	assert.equal(blocked.buildable, false);
+	assert.deepEqual(blocked.types, ["straight-rail"], "the wagon is not a rail and must not be counted as one");
+	assert.deepEqual(blocked.failures, ["gravity >= 1 but the surface measures 0"]);
+	assert.equal(railBuildability([openRail], PLATFORM_VECTOR).buildable, true);
+	assert.equal(railBuildability([wagon()], PLATFORM_VECTOR).buildable, false,
+		"no rail prototype at all is not a rail a player can lay");
+});
+
+const taxonomyRows = () => [...ROLLING_STOCK_TYPES, ...RAIL_TYPES].map(type => proto(type, type, { pl: 1 }));
+
+test("checkRailTaxonomy refuses a pin that lost a rolling-stock or rail type, rather than disarming", () => {
+	assert.equal(checkRailTaxonomy(taxonomyRows()), undefined);
+	for (const gone of ["infinity-cargo-wagon", "straight-rail"]) {
+		assert.throws(() => checkRailTaxonomy(taxonomyRows().filter(row => row.t !== gone)),
+			new RegExp(`\\[${gone}\\] are named as rolling stock or rail but do not exist`));
+	}
+});
+
+test("a bonus inclusion carries a rolling-stock type only while the rail under it is blocked", () => {
+	const raw = { entries: [{ type: "infinity-cargo-wagon", reason: REASON }] };
+	assert.deepEqual(loadBonusInclusions(raw, [wagon(), blockedRail], PLATFORM_VECTOR),
+		[{ type: "infinity-cargo-wagon", reason: REASON }]);
+	assert.throws(() => loadBonusInclusions(raw, [wagon(), openRail], PLATFORM_VECTOR),
+		/already platform-legal/,
+		"once a player can lay rail the derivation carries the wagon itself, and the override must go");
+});
+
 test("an annexed type leaves the universe as its own derivation, carrying the measurement that annexed it", () => {
 	const rows = [proto("asteroid", "asteroid"), proto("character-corpse", "character-corpse")];
 	const { entries, exclusions } = classifyTypes({
@@ -354,10 +428,23 @@ test("the vendored annex holds exactly the three transients, each with a measure
 	}
 });
 
-test("the vendored universe carries straight-rail as the one bonus member", () => {
+test("the vendored universe carries the rail and the wagon that rides it as its two bonus members", () => {
 	const bonus = VENDORED.entries.filter(entry => entry.class === "bonus");
-	assert.deepEqual(bonus.map(entry => entry.type), ["straight-rail"]);
-	assert.equal(VENDORED.counts.bonus, 1);
+	assert.deepEqual(bonus.map(entry => entry.type), ["infinity-cargo-wagon", "straight-rail"]);
+	assert.equal(VENDORED.counts.bonus, 2);
 	assert.equal(VENDORED.counts.player_buildable + VENDORED.counts.script_only + VENDORED.counts.bonus,
 		VENDORED.counts.universe);
+});
+
+test("the vendored wagon is NOT player_buildable, and says why without inventing the cause", () => {
+	const wagon = VENDORED.entries.find(entry => entry.type === "infinity-cargo-wagon");
+	assert.equal(wagon.class, "bonus",
+		"empty surface_conditions plus items_to_place_this once read as player-buildable, and 0/4350 says it is not");
+	assert.equal(wagon.representative_surface_legal, true,
+		"its OWN conditions do pass — that field means the prototype's conditions, not the rail under it");
+	assert.match(wagon.representative_reason, /0 placeable for infinity-cargo-wagon/);
+	assert.match(wagon.representative_reason, /NOT isolated/,
+		"the residual cause beyond rail's own surface conditions was never isolated (#248)");
+	assert.equal(VENDORED.entries.some(entry => entry.type === "infinity-cargo-wagon"), true,
+		"the fixture still stages the wagon on its rail segment — reclassifying must not drop the cell");
 });
