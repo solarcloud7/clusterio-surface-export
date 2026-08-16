@@ -53,6 +53,9 @@ function parseHandlerAssignments() {
 		"an EntityHandlers key assignment escaped the line-anchored parse");
 	const tail = source.indexOf("\nreturn EntityHandlers");
 	assert.notEqual(tail, -1, "entity-handlers.lua must close by returning EntityHandlers");
+	assert.ok(assignments.length > 0, "entity-handlers.lua must assign at least one handler key");
+	assert.ok(tail > assignments.at(-1).index,
+		"the module tail must follow every handler assignment, or the last body slices empty");
 
 	const definitions = new Map();
 	const aliases = new Map();
