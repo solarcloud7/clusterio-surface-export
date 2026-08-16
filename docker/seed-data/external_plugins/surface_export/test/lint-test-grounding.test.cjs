@@ -150,6 +150,15 @@ test("Rule 3 fires on a renamed helper whose only verdict mention precedes the f
 	assert.match(violations[0].message, /never adjudicates validation_success/);
 });
 
+test("Rule 3 fires on the shared-helper path that fetches a result and never adjudicates it", async () => {
+	const violations = await mjsRule3(
+		"const { result } = await L.waitForImportResult(2, marker);\n"
+		+ "step('transfer.arrived', result.platform_name === PROBE);\n",
+	);
+	assert.equal(violations.length, 1);
+	assert.match(violations[0].message, /never adjudicates validation_success/);
+});
+
 test("Rule 3 still accepts the shared-helper path with the verdict before the board", async () => {
 	const violations = await mjsRule3(
 		"const { result } = await L.waitForImportResult(2, marker);\n"
