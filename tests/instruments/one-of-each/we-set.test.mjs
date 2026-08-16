@@ -13,8 +13,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	COMMON_CATEGORY, assemble, checkControls, extractDirectWrites, extractHandlerCaptures,
-	extractReceiverWrites, extractRestoreRules, matchedBlock, topLevelKeys,
+	BRACKET_WRITE_CONTROLS, COMMON_CATEGORY, RECEIVER_WRITE_CONTROLS, assemble, checkControls,
+	extractDirectWrites, extractHandlerCaptures, extractReceiverWrites, extractRestoreRules,
+	matchedBlock, topLevelKeys,
 } from "./derive-we-set.mjs";
 import { loadWeSet, weSetRow, writesProperty, capturesFor } from "./we-set.mjs";
 
@@ -112,6 +113,26 @@ test("a re-bound alias resolves to the binding nearest ABOVE the write, not the 
 	["entity.get_control_behavior().parameters", "entity.get_or_create_control_behavior().operation"],
 	"each write belongs to the binding in scope where it sits — a whole-file map keeps only the last "
 		+ "binding and mislabels every earlier write through that name");
+});
+
+test("EVERY member the new arms produce carries a control, so a loss is REFUSED not just noticed", () => {
+	const plain = new Set();
+	for (const { source } of [{ source: deserializerSource }, ...phaseFiles]) {
+		for (const m of source.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)) plain.add(m[1]);
+	}
+	const bracketDerived = artifact.direct_writes.map(row => row.property).filter(p => !plain.has(p));
+	assert.ok(bracketDerived.length > 0, "the bracket arm must contribute something, or this proves nothing");
+	assert.deepEqual(bracketDerived.filter(p => !BRACKET_WRITE_CONTROLS.includes(p)), [],
+		"a bracket-derived member with no control is a hole in the refuse-to-emit layer: dropping its "
+		+ "literal shortens the WE-SET, checkControls stays silent, and derive-we-set.mjs WRITES the "
+		+ "shortened artifact. The committed-artifact drift test still catches it afterwards, but only "
+		+ "after the loss is on disk, and its advice is to regenerate");
+
+	const controlled = new Set(RECEIVER_WRITE_CONTROLS.map(([receiver, property]) => `${receiver}.${property}`));
+	assert.deepEqual(artifact.receiver_writes
+		.map(row => `${row.receiver}.${row.property}`)
+		.filter(write => !controlled.has(write)), [],
+	"same hole, same layer: every receiver_writes row must be named in RECEIVER_WRITE_CONTROLS");
 });
 
 test("an unresolvable bracket index contributes nothing, rather than a guessed name", () => {

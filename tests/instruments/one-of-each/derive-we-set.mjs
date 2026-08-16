@@ -48,9 +48,11 @@ const HANDLER_CONTROLS = [["assembling-machine", "recipe"], ["inserter", "held_i
 const CONSTRUCTOR_CAPTURE_CONTROLS = [["entity-ghost", "ghost_name"], ["transport-belt", "items"],
 	["assembling-machine", "inventories"], ["underground-belt", "belt_to_ground_type"]];
 const DIRECT_WRITE_CONTROLS = ["last_user", "health", "color", "orientation", "tick_grown"];
-const BRACKET_WRITE_CONTROLS = ["providing_to_other_platforms", "request_from_buffers",
-	"mining_progress", "bonus_mining_progress"];
-const RECEIVER_WRITE_CONTROLS = [["entity.burner", "currently_burning"], ["entity.train", "schedule"],
+export const BRACKET_WRITE_CONTROLS = ["providing_to_other_platforms",
+	"request_missing_construction_materials", "request_from_buffers", "mining_progress",
+	"bonus_mining_progress"];
+export const RECEIVER_WRITE_CONTROLS = [["entity.burner", "currently_burning"],
+	["entity.burner", "remaining_burning_fuel"], ["entity.train", "schedule"],
 	["entity.segmented_unit", "activity_mode"], ["entity.segmented_unit", "minimum_activity_mode"],
 	["entity.get_control_behavior()", "parameters"]];
 const WE_SET_EXCLUDED_CONTROLS = ["currently_burning", "schedule", "activity_mode",
