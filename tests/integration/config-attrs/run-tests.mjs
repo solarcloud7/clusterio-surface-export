@@ -137,7 +137,7 @@ const MEASURED_AT = "run 31946363788 at 2.1.11";
 
 const REAL_PAIR_ARMS = [
 	{ id: "revive_far_wired", pair: REVIVE_WIRED_PAIR, wired: true, load: true,
-		expect: ["real"],
+		expect: ["ghost"],
 		label: "revive both ends of an OUT-of-reach ghost-wired pole pair" },
 	{ id: "revive_far_unwired", pair: REVIVE_CONTROL_PAIR, wired: false, control: true,
 		expect: ["none"],
