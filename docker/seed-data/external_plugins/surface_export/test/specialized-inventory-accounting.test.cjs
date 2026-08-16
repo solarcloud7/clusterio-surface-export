@@ -46,14 +46,42 @@ const ownership = new Map(categories.map(category => [category, {
 	fluidCapability: specializedFluidCapabilities.get(category) || null,
 }]));
 
+function parseHandlerAssignments() {
+	const assignments = [...source.matchAll(/^EntityHandlers\["([^"]+)"\]\s*=\s*([^\r\n]*)$/gm)];
+	const unanchored = [...source.matchAll(/EntityHandlers\["[^"]+"\]\s*=/g)].length;
+	assert.equal(assignments.length, unanchored,
+		"an EntityHandlers key assignment escaped the line-anchored parse");
+	const tail = source.indexOf("\nreturn EntityHandlers");
+	assert.notEqual(tail, -1, "entity-handlers.lua must close by returning EntityHandlers");
+
+	const definitions = new Map();
+	const aliases = new Map();
+	for (const [index, match] of assignments.entries()) {
+		const key = match[1];
+		const rhs = match[2].trim();
+		assert.ok(!definitions.has(key) && !aliases.has(key), `EntityHandlers["${key}"] is assigned twice`);
+		const alias = rhs.match(/^EntityHandlers\["([^"]+)"\]$/);
+		if (/^function\s*\([^)]*\)/.test(rhs)) {
+			const next = assignments[index + 1];
+			definitions.set(key, source.slice(match.index, next ? next.index : tail));
+		} else if (alias) {
+			aliases.set(key, alias[1]);
+		} else {
+			assert.fail(`EntityHandlers["${key}"] is neither a function definition nor a handler alias: ${rhs}`);
+		}
+	}
+	return { definitions, aliases };
+}
+
+const { definitions: handlerBodies, aliases: handlerAliases } = parseHandlerAssignments();
+const fluidboxOptOutDerived = new Set([...handlerBodies]
+	.filter(([, body]) => !body.includes("extract_fluidboxes"))
+	.map(([category]) => category));
+
 function extractFunctionBody(category) {
-	const marker = `EntityHandlers["${category}"] = function(entity)`;
-	const start = source.indexOf(marker);
-	assert.notEqual(start, -1, `handler ${category} must exist`);
-	const next = source.indexOf("\nEntityHandlers[\"", start + marker.length);
-	const end = next === -1 ? source.indexOf("\nreturn EntityHandlers", start) : next;
-	assert.notEqual(end, -1, `handler ${category} must have a bounded body`);
-	return source.slice(start, end);
+	const body = handlerBodies.get(category);
+	assert.ok(body, `handler ${category} must exist`);
+	return body;
 }
 
 const fluidboxOptOut = new Set([
@@ -64,11 +92,22 @@ const fluidboxOptOut = new Set([
 	"train-stop",
 ]);
 
+test("the handler parse found real definitions (a broken matcher must not pass vacuously)", () => {
+	assert.ok(handlerBodies.size >= 30,
+		`expected every specialized handler, parsed ${handlerBodies.size}`);
+	assert.ok(fluidboxOptOutDerived.size >= 20,
+		`expected the derived opt-out set to stay populated, derived ${fluidboxOptOutDerived.size}`);
+	assert.ok(fluidboxOptOutDerived.has("gate"),
+		"gate must stay derived: its handler body carries no extract_fluidboxes call");
+	assert.deepEqual(Object.fromEntries(handlerAliases), { "loader-1x1": "loader" },
+		"an alias handler runs another handler's body, so it is accounted here instead of in the category matrix");
+	for (const [alias, target] of handlerAliases) {
+		assert.ok(handlerBodies.has(target), `alias ${alias} must resolve to a parsed handler definition`);
+	}
+});
+
 test("adding a handler cannot silently drop a type's fluidbox capture", () => {
-	const actual = new Set([...source.matchAll(/EntityHandlers\["([^"]+)"\]\s*=\s*function\(entity\)/g)]
-		.map(match => match[1])
-		.filter(category => !extractFunctionBody(category).includes("extract_fluidboxes")));
-	assert.deepEqual([...actual].sort(), [...fluidboxOptOut].sort(),
+	assert.deepEqual([...fluidboxOptOutDerived].sort(), [...fluidboxOptOut].sort(),
 		"handle_entity attaches fluidboxes ONLY on the no-handler fallback, so giving a previously "
 		+ "unhandled type a handler silently stops its fluidbox capture. A change to this set means a "
 		+ "type crossed that line: either call InventoryScanner.extract_fluidboxes in the handler, or "
@@ -80,8 +119,7 @@ test("adding a handler cannot silently drop a type's fluidbox capture", () => {
 });
 
 test("every specialized handler has explicit inventory and fluid ownership", () => {
-	const actual = [...source.matchAll(/EntityHandlers\["([^"]+)"\]\s*=\s*function\(entity\)/g)]
-		.map(match => match[1]);
+	const actual = [...handlerBodies.keys()];
 	assert.deepEqual(actual.sort(), [...categories].sort(),
 		"new specialized handlers must declare inventory and fluid ownership in the matrix");
 	for (const category of categories) {
