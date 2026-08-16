@@ -168,8 +168,12 @@ node tools/clusterio/serve-admin-token.mjs                 # prints ONE line: th
 node tools/surface-export/probe-transfer.mjs --fixture 21 [--lua "<prep snippet>"] [--keep]
 
 # The mutate -> build -> test -> restore ritual with a restore that CANNOT be skipped (sidecar
-# backup; a killed run makes the next invocation refuse). Exit 0 = mutation KILLED >=1 test,
-# exit 1 = SURVIVED (missing teeth). module/ Lua is refused — use the package.loaded rebind:
+# backup; a killed run makes the next invocation refuse). Runs BOTH unit packages CI runs — the
+# plugin's test/*.test.cjs in the container AND the repo root's tests/**/*.test.mjs — so exit 0 =
+# KILLED >=1 test in EITHER; exit 1 = SURVIVED in both (the integration suite and the lint guards
+# are outside that verdict). Refuses unless run from the MAIN working tree (the one bind-mounted
+# into host-1: a mutation in a linked worktree is never the code under test) and that tree is
+# committed-clean. module/ Lua is refused — use the package.loaded rebind:
 node tools/tests/testkit/cli.mjs mutation --file <path> --find "<exact>" --replace "<mutant>" [--baseline]
 
 # Re-park a stacked branch after its base squash-merged; ends with the CI-orphaning reminder:
