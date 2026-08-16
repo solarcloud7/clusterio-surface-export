@@ -7,7 +7,7 @@ local EntityScanner = {}
 
 function EntityScanner.is_exportable_entity(entity)
   return entity ~= nil and entity.valid and entity.type ~= "item-entity" and entity.type ~= "character"
-    and entity.type ~= "spider-leg" and entity.type ~= "segment"
+    and entity.type ~= "spider-leg"
 end
 
 function EntityScanner.scan_surface(surface)
