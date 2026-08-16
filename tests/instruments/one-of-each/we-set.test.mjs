@@ -50,6 +50,11 @@ const rebuild = (sources = {}) => assemble({
 
 test("the extraction is non-vacuous and passes its own controls", () => {
 	assert.deepEqual(checkControls(artifact), []);
+	assert.deepEqual(checkControls(rebuild()), [],
+		"the controls must be run against a FRESH extraction too, not only against the committed artifact: "
+		+ "a parser arm that stops reading a shape leaves the committed JSON untouched, so every control "
+		+ "keyed on it stays green and the only red is a drift notice telling the next reader to "
+		+ "regenerate — which is the one action that would bake the loss in");
 	assert.ok(artifact.counts.restore_rules >= 20);
 	assert.ok(artifact.counts.types_gated_rules >= 10);
 	assert.ok(artifact.counts.handler_categories >= 25);
