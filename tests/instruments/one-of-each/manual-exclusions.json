@@ -1,0 +1,26 @@
+{
+	"schema": "one-of-each/manual-exclusions@1",
+	"entries": [
+		{
+			"class": "LuaEntity",
+			"member": "electric_network_id",
+			"classification": "exclude",
+			"assert_read_only": true,
+			"reason": "read-only at the pin (write=false in the vendored index), and the doc scopes it to the network the entity is connected to on the instance it was read from: 'Returns the id of the electric network that this entity is connected to, if any.'"
+		},
+		{
+			"class": "LuaEntity",
+			"member": "force_index",
+			"classification": "exclude",
+			"assert_read_only": true,
+			"reason": "read-only at the pin (write=false in the vendored index); the doc calls it an index associated with the force on this instance: 'Unique index (ID) associated with the force of this entity.'"
+		},
+		{
+			"class": "LuaEntity",
+			"member": "surface_index",
+			"classification": "exclude",
+			"assert_read_only": true,
+			"reason": "read-only at the pin (write=false in the vendored index); the doc calls it an index associated with the surface on this instance: 'Unique index (ID) associated with the surface this entity is currently on.'"
+		}
+	]
+}
