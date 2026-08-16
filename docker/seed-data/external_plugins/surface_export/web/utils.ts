@@ -132,6 +132,7 @@ export const OPERATION_COUNT_DEFINITIONS = [
 	{ key: "belt_items_restored",        source: "import", label: "Belt items restored" },
 	{ key: "fluids_restored",            source: "import", label: "Fluid segments restored" },
 	{ key: "circuits_connected",         source: "import", label: "Circuits connected" },
+	{ key: "copper_pruned",              source: "import", label: "Copper pruned" },
 	{ key: "scheduleRecordCount",        source: "export", label: "Schedule records" },
 	{ key: "scheduleInterruptCount",     source: "export", label: "Schedule interrupts" },
 	{ key: "atomicBeltEntitiesScanned",  source: "export", label: "Belt entities scanned" },

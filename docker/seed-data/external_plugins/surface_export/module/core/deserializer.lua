@@ -1335,11 +1335,11 @@ local function restored_unit_numbers(entity_map)
   return restored
 end
 
-local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label)
+local function prune_one_pole(entity, entity_data, entity_map, restored, copper, label, tally)
   local peers = payload_copper_peers(entity_data, entity_map, copper)
   local connector = entity.get_wire_connector(copper, false)
   if not connector then
-    return 0
+    return
   end
 
   local foreign = {}
@@ -1355,38 +1355,33 @@ local function prune_one_pole(entity, entity_data, entity_map, restored, copper,
     end
   end
 
-  local removed_count = 0
   for _, target in ipairs(foreign) do
     if connector.disconnect_from(target.connector) then
-      removed_count = removed_count + 1
+      tally.pruned = tally.pruned + 1
     else
       log(string.format("[Deserializer] pole copper prune DECLINED %s -> %s", label, target.label))
     end
   end
-
-  return removed_count
 end
 
 function Deserializer.prune_pole_copper(entities_to_create, entity_map)
   local copper = defines.wire_connector_id.pole_copper
   local restored = restored_unit_numbers(entity_map)
-  local pruned = 0
+  local tally = { pruned = 0 }
 
   for _, entity_data in ipairs(entities_to_create) do
     local entity = entity_map[entity_data.entity_id]
     if entity and entity.valid and entity.type == "electric-pole" then
       local label = string.format("%s (%.1f, %.1f)", entity.name, entity.position.x, entity.position.y)
-      local ok, result = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label)
-      if ok then
-        pruned = pruned + result
-      else
-        log(string.format("[Deserializer] pole copper prune THREW for %s: %s — pole keeps its copper, import continues",
-          label, tostring(result)))
+      local ok, err = pcall(prune_one_pole, entity, entity_data, entity_map, restored, copper, label, tally)
+      if not ok then
+        log(string.format("[Deserializer] pole copper prune THREW for %s: %s — that pole may keep copper the "
+          .. "payload does not carry, import continues", label, tostring(err)))
       end
     end
   end
 
-  return pruned
+  return tally.pruned
 end
 
 return Deserializer
