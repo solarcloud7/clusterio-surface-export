@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { readdirSync, existsSync, statSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runReadinessGate } from "./cluster-readiness.mjs";
+import { SKIP_EXIT_CODE, SKIP_REASON_ENV } from "./integration-skip.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const integrationDir = join(repoRoot, "tests", "integration");
@@ -87,21 +89,47 @@ for (const t of tests) {
 	const cmd = t.kind === "ps1"
 		? ["pwsh", ["-NoProfile", "-File", t.script, ...extra]]
 		: [process.execPath, [t.script, ...extra]];
+	const reasonFile = join(tmpdir(), `se-integration-skip-${process.pid}-${t.name}.txt`);
+	rmSync(reasonFile, { force: true });
 	const startedAt = Date.now();
-	const r = spawnSync(cmd[0], cmd[1], { stdio: "inherit", cwd: repoRoot });
+	const r = spawnSync(cmd[0], cmd[1], {
+		stdio: "inherit",
+		cwd: repoRoot,
+		env: { ...process.env, [SKIP_REASON_ENV]: reasonFile },
+	});
 	const durationS = ((Date.now() - startedAt) / 1000).toFixed(1);
 	if (r.error) console.error(`  spawn error: ${r.error.message}`);
-	const ok = r.status === 0;
+
+	let status = r.status === 0 ? "pass" : "fail";
+	let reason = "";
+	if (r.status === SKIP_EXIT_CODE) {
+		reason = existsSync(reasonFile) ? readFileSync(reasonFile, "utf8").trim() : "";
+		if (reason) {
+			status = "skip";
+		} else {
+			reason = `exited ${SKIP_EXIT_CODE} without writing a reason to $${SKIP_REASON_ENV} — `
+				+ "an unexplained skip is a failure";
+		}
+	}
+	rmSync(reasonFile, { force: true });
 
 	if (isCI) console.log("::endgroup::");
-	results.push({ name: t.name, ok, durationS });
-	if (!ok && failFast) { console.log("  (--fail-fast: stopping)"); break; }
+	results.push({ name: t.name, status, reason, durationS });
+	if (status === "fail" && failFast) { console.log("  (--fail-fast: stopping)"); break; }
 }
 
-const failed = results.filter((r) => !r.ok);
+const failed = results.filter((r) => r.status === "fail");
+const skippedRuns = results.filter((r) => r.status === "skip");
+const passed = results.filter((r) => r.status === "pass");
+const LABEL = { pass: "PASS", fail: "FAIL", skip: "SKIP" };
 console.log(`\n${"=".repeat(60)}\n  Integration suite summary\n${"=".repeat(60)}`);
-for (const r of results) console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${r.durationS}s)`);
+for (const r of results) console.log(`  ${LABEL[r.status]}  ${r.name}  (${r.durationS}s)${r.reason ? `  —  ${r.reason}` : ""}`);
 console.log("=".repeat(60));
-console.log(`  ${results.length - failed.length}/${results.length} passed` + (failed.length ? `  —  FAILED: ${failed.map((f) => f.name).join(", ")}` : ""));
+console.log(`  ${passed.length}/${results.length} passed`
+	+ (skippedRuns.length ? `  —  SKIPPED (did not run, did not pass): ${skippedRuns.map((s) => s.name).join(", ")}` : "")
+	+ (failed.length ? `  —  FAILED: ${failed.map((f) => f.name).join(", ")}` : ""));
 console.log("=".repeat(60));
+if (isCI) {
+	for (const s of skippedRuns) console.log(`::warning::integration suite SKIPPED — ${s.name}: ${s.reason}`);
+}
 process.exit(failed.length ? 1 : 0);
