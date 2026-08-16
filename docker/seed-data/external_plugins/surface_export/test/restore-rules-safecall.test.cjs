@@ -46,7 +46,7 @@ const fieldOf = rule => (rule.match(/field\s*=\s*"([^"]+)"/) || [])[1];
 const TYPE_BRANCH_START = "if entity.type == \"entity-ghost\" then";
 const TYPE_BRANCH_END = "local IS_CRAFTER";
 const TYPE_BRANCH_MARKERS = ["tile-ghost", "display-panel", "item-request-proxy"];
-const TYPE_BRANCH_WRITE_CONTROLS = ["insert_plan", "display_panel_text"];
+const TYPE_BRANCH_WRITE_CONTROLS = ["insert_plan", "display_panel_text", "records"];
 const MIN_TYPE_BRANCH_WRITES = 4;
 
 function onlyIndexOf(marker) {
@@ -104,8 +104,14 @@ function safeCallSpans(region) {
 }
 
 function entityWrites(region) {
-	return [...region.matchAll(/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g)]
-		.map(match => ({ property: match[1], index: match.index }));
+	const patterns = [
+		/\bentity\.([a-z_][a-z0-9_]*)\s*=(?!=)/g,
+		/\bentity\.(?:[a-z_][a-z0-9_]*\([^()]*\)\.)+([a-z_][a-z0-9_]*)\s*=(?!=)/g,
+	];
+	return patterns
+		.flatMap(pattern => [...region.matchAll(pattern)])
+		.map(match => ({ property: match[1], index: match.index }))
+		.sort((a, b) => a.index - b.index);
 }
 
 test("the rule table parses into plausible rows (a broken parser must not pass vacuously)", () => {

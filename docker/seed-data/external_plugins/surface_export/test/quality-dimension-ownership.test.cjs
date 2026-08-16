@@ -117,7 +117,7 @@ const domains = [
 		producer: ["export_scanners/entity-handlers.lua",
 			/EntityHandlers\["entity-ghost"\][\s\S]{0,300}?data\.insert_plan\s*=\s*entity\.insert_plan(?![\w.])/],
 		consumer: ["core/deserializer.lua",
-			/if entity\.type == "entity-ghost" then[\s\S]{0,200}?entity\.insert_plan = data\.insert_plan(?![\w.])/],
+			/if entity\.type == "entity-ghost" then[\s\S]{0,300}?entity\.insert_plan = data\.insert_plan(?![\w.])/],
 	},
 ];
 
