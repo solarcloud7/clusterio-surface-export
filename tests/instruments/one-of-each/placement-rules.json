@@ -12,8 +12,8 @@
 			"reason": "owner constraint: collectors sit at an edge with their arms facing outward, off the platform"
 		},
 		"entity-ghost": {
-			"inner_name": "chemical-plant",
-			"reason": "a ghost of WHAT is a coverage dimension: chemical-plant is the richest platform-legal crafting machine (fluidboxes plus module slots), so its ghost carries the most ghost-side state a payload could lose"
+			"inner_name": "cryogenic-plant",
+			"reason": "a ghost of WHAT is a coverage dimension: cryogenic-plant is the richest platform-legal crafting machine measured at this pin (6 fluidboxes, 8 module slots, against chemical-plant's 4 and 3), and it is the same prototype the derivation picked to represent assembling-machine, so the ghost mirrors the fixture's richest crafter"
 		},
 		"tile-ghost": {
 			"inner_name": "space-platform-foundation",
@@ -40,7 +40,8 @@
 		},
 		"space-platform-hub": {
 			"provided_by": "platform_hub",
-			"reason": "the staging platform's own hub IS the space-platform-hub cell; a platform holds exactly one hub, so creating a second would measure a refusal the pipeline never issues"
+			"attempted": false,
+			"reason": "the staging platform's own hub IS the space-platform-hub cell, and the surface census confirms exactly one hub stands on the platform, so the type is in any payload the fixture produces; the premise that a SECOND hub would be refused is NOT measured — creating one was never attempted, because a hub is what makes a platform a platform and a failed attempt could cost the staging surface"
 		}
 	}
 }
