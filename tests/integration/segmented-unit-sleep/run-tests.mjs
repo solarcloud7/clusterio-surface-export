@@ -109,12 +109,15 @@ return { success = true, heads = heads, modes = modes,
   paused = (p.paused == true) }`;
 
 function readState(host, name) {
-	return lua(host, `${platformLua(name)}\n${READ_LUA}`);
+	const state = lua(host, `${platformLua(name)}\n${READ_LUA}`);
+	state.heads = luaList(state.heads);
+	return state;
 }
 
 function describe(state) {
-	if (!state.heads || state.heads.length === 0) return "no segmented-unit on the surface";
-	return state.heads.map(h => `${h.name}#${h.unit_number} destructible=${h.destructible} `
+	const heads = luaList(state.heads);
+	if (heads.length === 0) return "no segmented-unit on the surface";
+	return heads.map(h => `${h.name}#${h.unit_number} destructible=${h.destructible} `
 		+ `activity_mode=${h.activity_mode} minimum=${h.minimum_activity_mode} `
 		+ `segments=${h.segments} at (${Number(h.x).toFixed(3)},${Number(h.y).toFixed(3)})`).join(" | ");
 }
@@ -344,7 +347,7 @@ async function main() {
 				+ "loss would need");
 		} else {
 			pass(`no type 'segment' among the ${failedRows.length} detailed failure row(s), while the source `
-				+ `carried ${settled.segment_entities} segment entities — the scanner excluded them`);
+				+ `carried ${settled.segment_entities} segment entities`);
 		}
 
 		say("\n=== DESTINATION: physical read of the arrived unit, after activation ===");

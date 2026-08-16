@@ -122,6 +122,19 @@ test("an ephemera entry that duplicates an is_exportable_entity exclusion is ref
 		/already excluded by is_exportable_entity/);
 });
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+	"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+	"nineteen", "twenty", "twenty-one", "twenty-two", "twenty-three", "twenty-four", "twenty-five"];
+
+test("the ephemera note's stated total is the number of entries it actually describes", () => {
+	const raw = JSON.parse(readFileSync(path.join(here, "ephemera-exclusions.json"), "utf8"));
+	const stated = /of these ([\w-]+) types/.exec(raw.measured.note);
+	assert.ok(stated, "the note no longer states its total as 'of these <word> types'");
+	assert.equal(stated[1], NUMBER_WORDS[raw.entries.length],
+		`the note says "${stated[1]}" but the list holds ${raw.entries.length} entries — loadEphemera reads `
+		+ "only type and reason, so a stale total in a MEASURED block survives every other check");
+});
+
 const CONTROL_COUNTS = {
 	types: 132, player_buildable: 60, script_only: 20, bonus: 2, universe: 82,
 	excluded: 50, excluded_ephemera: 17, excluded_transient_annex: 3,
