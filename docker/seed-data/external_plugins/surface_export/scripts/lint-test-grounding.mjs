@@ -11,6 +11,9 @@ const ALLOW_MARKER = "lint-test-grounding:allow";
 const SELF_REPORT_FIELDS = ["totalItemLoss", "expectedItemCounts", "actualItemCounts"];
 const PHYSICAL_COUNT = "get_item_count(";
 const DESTINATION_CENSUS_RE = /\bCount-[A-Za-z0-9_-]+\b[^\r\n]*(?:\$(?:dest|dst)\w*|-Destination(?:Instance|Host|Platform)?\b)/gi;
+const IMPORT_RESULT_FETCH_RE = /debug_import_result|\b\w*[Ii]mportResults?\b/;
+const VERDICT_FIELD = "validation_success";
+const DESTINATION_BOARD_MARKERS = ["runBoard(2", "runBoard(destHost", "Count-", "census"];
 
 function stripComments(source, dialect = "ps1") {
 	if (dialect === "mjs") {
@@ -45,26 +48,38 @@ function findTestFiles() {
 	return files;
 }
 
+function firstDestinationBoardAfter(code, startIndex) {
+	let earliest = -1;
+	for (const marker of DESTINATION_BOARD_MARKERS) {
+		const index = code.indexOf(marker, startIndex);
+		if (index !== -1 && (earliest === -1 || index < earliest)) earliest = index;
+	}
+	return earliest;
+}
+
 export function findMjsGroundingViolations(files) {
 	const violations = [];
 	for (const { dialect, path, source } of files) {
 		if (dialect !== "mjs" || source.includes(ALLOW_MARKER)) continue;
-		const code = source.replace(/^\s*\/\/.*$/gm, "");
-		const debugIndex = code.indexOf("waitForImportResult");
-		if (debugIndex === -1) continue;
-		const verdictIndex = code.indexOf("validation_success", debugIndex);
-		const destReadIndex = (() => {
-			for (const marker of ["runBoard(2", "runBoard(destHost", "Count-", "census"]) {
-				const i = code.indexOf(marker, debugIndex);
-				if (i !== -1) return i;
-			}
-			return -1;
-		})();
-		if (destReadIndex !== -1 && (verdictIndex === -1 || verdictIndex > destReadIndex)) {
+		const code = stripComments(source, "mjs");
+		const fetched = code.match(IMPORT_RESULT_FETCH_RE);
+		if (fetched === null) continue;
+		const fetchIndex = fetched.index;
+		const verdictIndex = code.indexOf(VERDICT_FIELD, fetchIndex);
+		if (verdictIndex === -1) {
 			violations.push({
 				path,
 				rule: 3,
-				message: "mjs runner must adjudicate validation_success before any destination board/census",
+				message: `mjs runner fetches an import result but never adjudicates ${VERDICT_FIELD}`,
+			});
+			continue;
+		}
+		const destReadIndex = firstDestinationBoardAfter(code, fetchIndex);
+		if (destReadIndex !== -1 && verdictIndex > destReadIndex) {
+			violations.push({
+				path,
+				rule: 3,
+				message: `mjs runner must adjudicate ${VERDICT_FIELD} before any destination board/census`,
 			});
 		}
 	}
