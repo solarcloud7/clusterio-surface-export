@@ -12,11 +12,15 @@
 //           LuaEntity.destructible + LuaSegmentedUnit.activity_mode taken twice 180 ticks apart so
 //           a unit between steps cannot read as asleep, plus the arrived unit's distance from the
 //           position it was captured at, which is what separates a unit that slept through the
-//           import from one that was awake until the post-activation write
+//           import from one that was awake until the post-activation write, plus the payload entity
+//           count and the destination's failed-entity rows read from the same debug_import_result,
+//           with the source's own segment count asserted non-zero first so the row assertion cannot
+//           pass on an empty universe
 // does not: touch a protected fixture or the shared config-attrs rig (an awake demolisher eats its
 //           platform, so it gets its own throwaway and the throwaway is swept unconditionally);
-//           read the export payload (payload presence is not restoration); assert item or fluid
-//           fidelity (the gate does that); prove anything about a segmented unit the engine
+//           read the export payload (payload presence is not restoration — the payload claim here is
+//           read from the destination's refusal record, not from the export file); assert item or
+//           fluid fidelity (the gate does that); prove anything about a segmented unit the engine
 //           refused to place (a refused staging is reported as a setup failure, never as a
 //           transfer verdict)
 
@@ -271,6 +275,15 @@ async function main() {
 		}
 		pass(`source held the freeze across ${HOLD_MS} ms (segments flat at ${settled.heads[0].segments})`);
 
+		if (settled.heads[0].segments < 1 || settled.segment_entities < 1) {
+			fail(`the source head reports ${settled.heads[0].segments} segment(s) and its surface carries `
+				+ `${settled.segment_entities} entity(ies) of type 'segment' — with none of either, the `
+				+ "payload assertion below would pass without measuring anything");
+			return;
+		}
+		pass(`the source carries ${settled.segment_entities} engine-owned 'segment' entities behind the `
+			+ `head's ${settled.heads[0].segments} segment(s) — the payload assertion has something to refuse`);
+
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
 		const marker = L.dropMarker(DEST_HOST, "transfer");
 		rcon(SOURCE_HOST, `/transfer-platform ${built.index} ${ids[DEST_HOST]}`);
@@ -281,6 +294,23 @@ async function main() {
 			return;
 		}
 		pass("the exact gate passed (destination debug_import_result: validation_success=true)");
+
+		say("\n=== PAYLOAD: the head's engine-owned segments must never have been exported ===");
+		const losses = result.validation_result && result.validation_result.failedEntityLosses;
+		const failedRows = (losses && losses.entities) || [];
+		const segmentRows = failedRows.filter(row => row.type === "segment");
+		say(`  payload carried ${result.total_entities} entities; the destination refused `
+			+ `${losses ? losses.entity_count : 0} of them and detailed ${failedRows.length} `
+			+ `(50-row cap), of which ${segmentRows.length} are type 'segment'`);
+		if (segmentRows.length > 0) {
+			fail(`the payload carried engine-owned segments (e.g. ${segmentRows[0].name}) and the destination `
+				+ `refused every one of them — ${segmentRows.length} of the ${failedRows.length} detailed `
+				+ "failure rows describe a child the head recreates on arrival, crowding out the rows a real "
+				+ "loss would need");
+		} else {
+			pass(`no type 'segment' among the ${failedRows.length} detailed failure row(s), while the source `
+				+ `carried ${settled.segment_entities} segment entities — the scanner excluded them`);
+		}
 
 		say("\n=== DESTINATION: physical read of the arrived unit, after activation ===");
 		let first;

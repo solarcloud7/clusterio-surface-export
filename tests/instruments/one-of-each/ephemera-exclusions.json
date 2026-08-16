@@ -60,10 +60,6 @@
 			"reason": "render-only shadow of a rocket-silo-rocket; it has no state of its own, and its parent is already excluded"
 		},
 		{
-			"type": "segment",
-			"reason": "engine-owned body segment of a segmented-unit, measured: create_entity threw 'big-demolisher-segment-x0_65 can not be created manually.' — the same relationship spider-leg has to its spider, and is_exportable_entity already refuses that one"
-		},
-		{
 			"type": "smoke-with-trigger",
 			"reason": "transient smoke cloud with its own lifetime and periodic trigger; it creates successfully at this pin but expires on a timer no payload can carry"
 		},
