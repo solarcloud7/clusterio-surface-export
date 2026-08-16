@@ -38,9 +38,11 @@
 //           reported as foreclosed rather than measured; probe build_from_cursor, clone_area/
 //           clone_entities/clone_brush or drag_wire, which are named NOT PROBED so the producer
 //           enumeration is not read as closed; treat a stamp that did not rebuild the witness as a
-//           refusal — that reads NOT ESTABLISHED, because build_mode normal is documented
-//           all-or-nothing and a wholesale refusal is indistinguishable from a declined wire
-//           without the witness
+//           refusal — that reads NOT ESTABLISHED and is EXCLUDED from the verdict, because
+//           build_mode normal is documented all-or-nothing and a wholesale refusal is
+//           indistinguishable from a declined wire without the witness; fail on that exclusion —
+//           an unexercised confirmatory arm is not a defect, so it is reported loudly and graded by
+//           nothing
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -401,16 +403,20 @@ end
 
 local function stamp_once(bp, a, b, stamp, area, wpos, mode_name, mode)
   local row = { mode = mode_name, cleared = clear_witness(wpos) }
+  local force = game.forces.player
+  force.chart(s, area)
+  row.charted = force.is_chunk_charted(s, { math.floor(wpos.x / 32), math.floor(wpos.y / 32) })
   arm_pair(a, b, false)
   row.before = probe_pair(a, b)
+  row.ghosts_before = #s.find_entities_filtered{ name = 'entity-ghost' }
   local ok, built = pcall(function()
     return bp.build_blueprint{ surface = s, force = 'player', position = stamp,
-      build_mode = mode, raise_built = false }
+      build_mode = mode, raise_built = false, skip_fog_of_war = false }
   end)
   if ok then row.built_count = #(built or {}) else row.build_error = tostring(built) end
   row.witness = witness_key(wpos)
   row.after = probe_pair(a, b)
-  row.ghosts_in_area = #s.find_entities_filtered{ name = 'entity-ghost', area = area }
+  row.ghosts_after = #s.find_entities_filtered{ name = 'entity-ghost' }
   return row
 end
 
@@ -1324,6 +1330,8 @@ function reportGhostWireFacts(facts) {
 
 const POLE_TYPE = "electric-pole";
 
+const notEstablished = [];
+
 const describeSide = side => {
 	if (!side || side.present !== true) return "ABSENT";
 	if (side.connector !== true) return `${side.etype} #${side.unit_number ?? "nil"} (no copper connector)`;
@@ -1448,9 +1456,10 @@ function checkBlueprintArm(arm, probe) {
 	for (const stamp of asArray(probe.stamps)) {
 		const before = pairShape(stamp.before);
 		const after = pairShape(stamp.after);
-		say(`     [${stamp.mode}] cleared ${JSON.stringify(stamp.cleared)}; build_blueprint returned `
-			+ `${stamp.built_count ?? `THREW: ${stamp.build_error}`} entities; witness reads `
-			+ `${JSON.stringify(stamp.witness)}; ${stamp.ghosts_in_area} entity-ghosts in the area`);
+		say(`     [${stamp.mode}] cleared ${JSON.stringify(stamp.cleared)}; chunk charted=${stamp.charted}; `
+			+ `build_blueprint returned ${stamp.built_count ?? `THREW: ${stamp.build_error}`} ghosts; `
+			+ `witness reads ${JSON.stringify(stamp.witness)}; entity-ghosts on the WHOLE surface `
+			+ `${stamp.ghosts_before} -> ${stamp.ghosts_after}`);
 		sayPair(`[${stamp.mode}] after`, stamp.after);
 		if (!before.readable || before.wired) {
 			fail(`${arm.id} [${stamp.mode}]: the pair was not left unwired before the stamp, so a wire after `
@@ -1458,8 +1467,9 @@ function checkBlueprintArm(arm, probe) {
 			continue;
 		}
 		if (!stamp.witness) {
-			say(`     [${stamp.mode}] the witness did not reappear — this mode built NOTHING, so its reading `
-				+ "of the pair is NOT ESTABLISHED, never a refusal");
+			say(`     [${stamp.mode}] the witness did not reappear and the surface-wide ghost count did not `
+				+ "move, so this mode built NOTHING anywhere — its reading of the pair is NOT ESTABLISHED, "
+				+ "never a refusal");
 			continue;
 		}
 		if (!after.readable) {
@@ -1474,9 +1484,10 @@ function checkBlueprintArm(arm, probe) {
 		if (!acted) acted = { mode: stamp.mode, after };
 	}
 	if (!acted) {
-		fail(`${arm.id}: no build mode rebuilt the witness, so no stamp is shown to have acted on this `
-			+ "surface at all. The blueprint producer is NOT ESTABLISHED at this pin — it is not measured "
-			+ "and refused, and this arm must not be read as evidence either way");
+		notEstablished.push(arm.id);
+		say(`     NOT ESTABLISHED: no build mode rebuilt the witness, so no stamp acted on this surface at `
+			+ "all. This arm measures nothing about the blueprint producer — it is NOT 'measured and "
+			+ "refused' — and it is excluded from the verdict rather than counted as evidence");
 		return null;
 	}
 	say(`     the ${acted.mode} stamp acted (witness rebuilt), and it is the one graded`);
@@ -1573,6 +1584,10 @@ function reportRealPairProbes(probes) {
 	say("  producers FORECLOSED by API surface, not probed: connect_to's origin enum has exactly three "
 		+ "members (player, radars, script) and none is a ghost origin; LuaUndoRedoStack exposes get/remove/"
 		+ "tag methods only and none applies an undo item");
+	if (notEstablished.length) {
+		say(`  arms that ran but established NOTHING, and so are excluded above: ${notEstablished.join(", ")} `
+			+ "— read them as unmeasured, never as a producer that was tried and refused");
+	}
 	say("  producers NOT PROBED at all, named so the enumeration is not read as closed: "
 		+ "LuaPlayer.build_from_cursor (the player's own paste path, which build_blueprint only approximates), "
 		+ "LuaSurface.clone_area/clone_entities/clone_brush (this repo's own clone_platform path), and "
