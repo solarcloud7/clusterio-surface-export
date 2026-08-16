@@ -269,40 +269,34 @@ local function translate(rec, offset)
 	return copy
 end
 
-local function place_spec(rec, player)
-	local spec = {
-		name = rec.name, position = rec.position, direction = rec.direction,
-		force = rec.force or (player and player.force) or "player",
-		build_check_type = defines.build_check_type.script,
-	}
-	if rec.specific_data and rec.specific_data.ghost_name then
-		spec.inner_name = rec.specific_data.ghost_name
+local UNBLOCKABLE_RECORD_TYPES = { ["item-request-proxy"] = true, ["item-on-ground"] = true }
+
+local function blocking_entities(surface, rec)
+	if UNBLOCKABLE_RECORD_TYPES[rec.type] then return {} end
+	local blockers = {}
+	for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
+		if e.valid and e.unit_number and e.type ~= "item-entity" then blockers[#blockers + 1] = e end
 	end
-	return spec
+	return blockers
 end
 
-local function plan_targets(surface, targets, player)
+local function plan_targets(surface, targets)
 	local plan = { clear = {}, conflict = {} }
 	for _, t in ipairs(targets) do
-		local placeable = t.type == "item-request-proxy" or t.type == "item-on-ground"
-			or surface.can_place_entity(place_spec(t, player))
-		if placeable then
+		local blockers = blocking_entities(surface, t)
+		if #blockers == 0 then
 			plan.clear[#plan.clear + 1] = { rec = t }
 		else
-			local blockers = {}
-			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(t) })) do
-				if e.valid and e.unit_number and e.type ~= "item-entity" then blockers[#blockers + 1] = e end
-			end
 			plan.conflict[#plan.conflict + 1] = { rec = t, blockers = blockers }
 		end
 	end
 	return plan
 end
 
-local function plan_paste(surface, cap, offset, player)
+local function plan_paste(surface, cap, offset)
 	local targets = {}
 	for _, rec in ipairs(cap.records) do targets[#targets + 1] = translate(rec, offset) end
-	return plan_targets(surface, targets, player)
+	return plan_targets(surface, targets)
 end
 
 local function apply_paste_activation(records, entity_map)
@@ -461,7 +455,7 @@ function SelectionLab.paste(event)
 	end
 	local surface = event.surface
 	local offset = paste_offset(cap, event)
-	local plan = plan_paste(surface, cap, offset, player)
+	local plan = plan_paste(surface, cap, offset)
 
 	if #plan.conflict > 0 then
 		if player then
@@ -527,7 +521,7 @@ function SelectionLab.preview(event)
 	end
 	local surface = event.surface
 	local offset = paste_offset(cap, event)
-	local plan = plan_paste(surface, cap, offset, player)
+	local plan = plan_paste(surface, cap, offset)
 	draw_plan_boxes(surface, plan.clear, PLACEABLE_GREEN, player.index)
 	draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
 	say(player, string.format(
@@ -544,21 +538,17 @@ local function force_execute(surface, recs, player, side_groups, fluid_segments)
 	InventoryScanner.fluid_registry = FluidRegistry.new()
 	local snapshot_ok, snapshot_err = pcall(function()
 	for _, rec in ipairs(recs) do
-		if not surface.can_place_entity(place_spec(rec, player)) then
-			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
-				if e.valid and e.unit_number and e.type ~= "item-entity" then
-					if e.type == "character" or e.name == "space-platform-hub" or e.force ~= player.force then
-						guarded = guarded + 1
-					else
-						draw_box(surface, rec.position, CONFLICT_RED, player.index)
-						local snapshot = EntityScanner.serialize_entity(e)
-						if snapshot then
-							snapshot.lab_active = e.active
-							destroyed_records[#destroyed_records + 1] = snapshot
-						end
-						e.destroy()
-					end
+		for _, e in ipairs(blocking_entities(surface, rec)) do
+			if e.type == "character" or e.name == "space-platform-hub" or e.force ~= player.force then
+				guarded = guarded + 1
+			else
+				draw_box(surface, rec.position, CONFLICT_RED, player.index)
+				local snapshot = EntityScanner.serialize_entity(e)
+				if snapshot then
+					snapshot.lab_active = e.active
+					destroyed_records[#destroyed_records + 1] = snapshot
 				end
+				e.destroy()
 			end
 		end
 	end
@@ -734,7 +724,7 @@ function SelectionLab.redo(event)
 		or ((entry.destroyed_records and #entry.destroyed_records > 0) and "force" or "paste")
 
 	if mode == "paste" then
-		local plan = plan_targets(surface, entry.plan_records, player)
+		local plan = plan_targets(surface, entry.plan_records)
 		if #plan.conflict > 0 then
 			for _, c in ipairs(plan.conflict) do
 				draw_box(surface, c.rec.position, CONFLICT_RED, player.index)

@@ -5,13 +5,15 @@
 // requires: a running surface-export cluster (host-1); debug_mode togglable via the configure remote;
 //           a player record at index 1 (force_execute dereferences player.force and player.index)
 // produces: exit 0 when a paste onto an occupied target is REFUSED and nothing lands there, when a
-//           force onto the same target replaces the blocker, and when the exempted record shapes keep
-//           their exemption; a measured defines.build_check_type x placement-case matrix, and a
-//           measured per-record-shape matrix, both printed as NOTE lines
-// does not: assert which build_check_type the code uses (it reads outcomes through the real
-//           selection_lab_drive remote, so the pin follows place_spec), measure the lab GUI tool
-//           itself, perform a transfer, exercise undo/redo, assert item or fluid amounts, or measure
-//           any surface other than a space platform
+//           force onto the same target replaces the blocker, and when the two exempted record shapes
+//           keep their exemption; a measured defines.build_check_type x placement-case matrix with a
+//           laid-tile control and a nauvis cross-surface control, plus a measured per-record-shape
+//           matrix, all printed as NOTE lines
+// does not: assert any terrain or off-foundation rule (the refusal predicate is an entity footprint
+//           scan and has no terrain component — pasting off the platform edge is left to fail at
+//           create_entity as it does today), assert what a blocker SNAPSHOT contains or that undo
+//           restores it, measure the interactive selection-lab GUI tool, perform a transfer, exercise
+//           undo/redo, or assert item or fluid amounts
 
 import { execFileSync } from "node:child_process";
 
@@ -139,7 +141,11 @@ try {
 			{ key = 'ground_item', pos = { 32.5, 2.5 } },
 			{ key = 'matching_ghost', pos = { 34.5, 2.5 } },
 		}
-		local out = {}
+		local tiles = {}
+		for _, c in ipairs(cases) do tiles[c.key] = s.get_tile(c.pos[1], c.pos[2]).name end
+		local nauvis = game.surfaces['nauvis']
+		local npos = nauvis and nauvis.find_non_colliding_position('wooden-chest', { 0, 0 }, 64, 1) or nil
+		local out, control = {}, {}
 		for _, tname in ipairs(types) do
 			for _, c in ipairs(cases) do
 				local ok, res = pcall(function()
@@ -148,22 +154,50 @@ try {
 				end)
 				out[tname .. '|' .. c.key] = ok and tostring(res) or ('RAISED ' .. tostring(res))
 			end
+			if npos then
+				local ok, res = pcall(function()
+					return nauvis.can_place_entity{ name = 'wooden-chest', position = npos, direction = 0,
+						force = 'player', build_check_type = defines.build_check_type[tname] }
+				end)
+				control[tname] = ok and tostring(res) or ('RAISED ' .. tostring(res))
+			end
 		end
-		return { types = types, out = out }
+		return { types = types, out = out, tiles = tiles, control = control,
+			nauvis_pos = npos and string.format('%.1f,%.1f', npos.x, npos.y) or '' }
 	`);
 	const TYPES = asArray(matrix.types);
 	const cell = (t, c) => matrix.out[`${t}|${c}`];
 	note(`defines.build_check_type members (enumerated at the pin): ${TYPES.join(", ")}`);
+	note(`tile under each case: clear_foundation=${matrix.tiles.clear_foundation} `
+		+ `entity_blocker=${matrix.tiles.entity_blocker} off_foundation=${matrix.tiles.off_foundation} `
+		+ `ground_item=${matrix.tiles.ground_item} matching_ghost=${matrix.tiles.matching_ghost}`);
+	check(matrix.tiles.clear_foundation === "space-platform-foundation"
+		&& matrix.tiles.off_foundation !== "space-platform-foundation",
+		"CONTROL: the 'clear foundation' case really is laid foundation and the 'off foundation' case "
+		+ "really is not — without this, a check type that answers false everywhere cannot be told apart "
+		+ "from a probe that never laid any tiles",
+		`clear=${matrix.tiles.clear_foundation} off=${matrix.tiles.off_foundation}`);
 	for (const t of TYPES) {
 		note(`can_place_entity(wooden-chest, ${t}): clear=${cell(t, "clear_foundation")} `
 			+ `blocker=${cell(t, "entity_blocker")} off_foundation=${cell(t, "off_foundation")} `
-			+ `ground_item=${cell(t, "ground_item")} matching_ghost=${cell(t, "matching_ghost")}`);
+			+ `ground_item=${cell(t, "ground_item")} matching_ghost=${cell(t, "matching_ghost")} `
+			+ `| nauvis clear control=${matrix.control[t]}`);
 	}
+	note(`nauvis control position (find_non_colliding_position for wooden-chest): ${matrix.nauvis_pos || "(none)"}`);
+	check(TYPES.some(t => matrix.control[t] === "true") && TYPES.some(t => matrix.control[t] === "false"),
+		"CONTROL: on an ordinary nauvis surface the same call form DISCRIMINATES — at least one check "
+		+ "type answers true at a non-colliding position and at least one answers false — so a matrix "
+		+ "that does not discriminate on the platform is a fact about the platform, not a malformed spec",
+		TYPES.map(t => `${t}=${matrix.control[t]}`).join(" "));
+
 	const usable = TYPES.filter(t => cell(t, "clear_foundation") === "true" && cell(t, "entity_blocker") === "false");
 	note(`build_check_types satisfying (clear=true, blocker=false): ${usable.join(", ") || "(NONE)"}`);
-	check(usable.length > 0,
-		"a build_check_type exists that both ADMITS a clear foundation target and REFUSES an "
-		+ "entity-occupied one — i.e. conflict refusal is implementable through can_place_entity at all",
+	check(usable.length === 0,
+		"PIN: NO defines.build_check_type both admits a clear space-platform foundation target and "
+		+ "refuses an entity-occupied one — the four non-script types answer false even on clear "
+		+ "foundation, the two script types answer true even off foundation. This is why conflict "
+		+ "refusal is built on the footprint scan and not on can_place_entity. If a future pin makes a "
+		+ "check type discriminate here, this goes red and the construction is worth revisiting.",
 		`candidates=${usable.join(",") || "none"}`);
 
 	// ---------------------------------------------------------------------------------------------
@@ -205,6 +239,15 @@ try {
 			+ `proxy_over_clear=${scell(t, "proxy_over_clear")} `
 			+ `ground_item_name=${String(scell(t, "ground_item_name_as_entity")).slice(0, 90)}`);
 	}
+	check(TYPES.every(t => scell(t, "proxy_over_clear") === "false"),
+		"PIN: an item-request-proxy is refused by can_place_entity under EVERY check type even over a "
+		+ "CLEAR tile — so the plan_targets proxy exemption is not about proxies overlapping their "
+		+ "targets, it is the only thing that stops every proxy-bearing paste being refused",
+		TYPES.map(t => `${t}=${scell(t, "proxy_over_clear")}`).join(" "));
+	check(TYPES.every(t => String(scell(t, "ground_item_name_as_entity")).startsWith("RAISED")),
+		"PIN: an item name handed to can_place_entity as an EntityID RAISES under every check type — "
+		+ "a ground-item record's name is an item prototype, so no check type makes that call safe",
+		String(scell(TYPES[0], "ground_item_name_as_entity")).slice(0, 120));
 
 	if (setup.player !== true) {
 		check(false, `production-path arms UNEXERCISED — no player record at index ${LAB_PLAYER} on `
