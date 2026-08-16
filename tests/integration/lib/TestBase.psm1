@@ -3,13 +3,13 @@ $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
 $script:TransferFixturePlatform = 'lab-transfer-fixture-v1'
 $script:PadGridPlatform         = 'lab-omnibus-state-v1'
-$script:OneOfEachStagingPlatform = 'oneofeach-staging-v1'
+$script:OneOfEachFixturePlatform = 'oneofeach-fixture-v1'
 
 function Get-TransferFixturePlatform { return $script:TransferFixturePlatform }
 function Get-PadGridPlatform { return $script:PadGridPlatform }
 
 $script:ProtectedFixtures = @(
-	$script:TransferFixturePlatform, $script:PadGridPlatform, $script:OneOfEachStagingPlatform,
+	$script:TransferFixturePlatform, $script:PadGridPlatform, $script:OneOfEachFixturePlatform,
 	'test', 'spikedoom08', 'ptB'
 )
 

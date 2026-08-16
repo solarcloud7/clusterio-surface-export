@@ -18,19 +18,23 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const EPHEMERA_PATH = path.join(here, "ephemera-exclusions.json");
+const BONUS_PATH = path.join(here, "bonus-inclusions.json");
+const ANNEX_PATH = path.join(here, "transient-annex.json");
 const OUT_PATH = path.join(here, "universe.json");
 
 export const SCHEMA = "one-of-each/universe@1";
 
 export const EXPORT_SCANNER_EXCLUSIONS = ["character", "item-entity", "spider-leg"];
 
-export const CLASSES = ["player_buildable", "script_only", "excluded"];
+export const CLASSES = ["player_buildable", "script_only", "bonus", "excluded"];
 
 const CONTROL_TYPE_COUNT = 132;
 const CONTROL_PLAYER_BUILDABLE = 61;
-const CONTROL_SCRIPT_ONLY = 23;
-const CONTROL_UNIVERSE = 84;
+const CONTROL_SCRIPT_ONLY = 20;
+const CONTROL_BONUS = 1;
+const CONTROL_UNIVERSE = 82;
 const CONTROL_EPHEMERA = 18;
+const CONTROL_ANNEX = 3;
 const CONTROL_MEMBER = "character-corpse";
 
 const CONTROLLER = "surface-export-controller";
@@ -90,14 +94,16 @@ export function richness(row) {
 	return [features.fluidboxes, features.inventories, features.inventorySlots, features.moduleSlots];
 }
 
-export function selectRepresentative(candidates) {
+export function selectRepresentative(candidates, preferred = null) {
 	if (candidates.length === 0) throw new Error("selectRepresentative called with no candidates");
+	const prefers = row => preferred !== null && preferred.has(row.n);
 	const ranked = [...candidates].sort((a, b) => {
 		const left = richness(a);
 		const right = richness(b);
 		for (let i = 0; i < left.length; i++) {
 			if (left[i] !== right[i]) return right[i] - left[i];
 		}
+		if (prefers(a) !== prefers(b)) return prefers(a) ? -1 : 1;
 		return a.n.localeCompare(b.n);
 	});
 	const winner = ranked[0];
@@ -110,14 +116,39 @@ export function selectRepresentative(candidates) {
 	return { row: winner, reason };
 }
 
-export function classifyTypes({ rows, propertyVector, ephemera }) {
+export function groupByType(rows) {
 	const byType = new Map();
 	for (const row of rows) {
 		if (!byType.has(row.t)) byType.set(row.t, []);
 		byType.get(row.t).push(row);
 	}
+	return byType;
+}
 
+export function buildEntry({ type, protos, candidates, klass, propertyVector, preferred = null, note = null }) {
+	const { row, reason } = selectRepresentative(candidates, preferred);
+	const failures = conditionFailures(row, propertyVector);
+	const parts = [reason];
+	if (failures.length) {
+		parts.push(`chosen regardless of surface legality — it fails ${failures.join("; ")} on the measured `
+			+ "platform vector, and create_entity places it anyway");
+	}
+	if (note) parts.push(note);
+	return {
+		type, class: klass, representative: row.n, representative_reason: parts.join("; "),
+		representative_surface_legal: failures.length === 0,
+		representative_surface_conditions: failures,
+		candidates: candidates.length, prototypes: protos.length,
+		footprint: { tile_width: row.tw, tile_height: row.th, collision_box: row.cb },
+		features: featuresOf(row),
+	};
+}
+
+export function classifyTypes({ rows, propertyVector, ephemera, bonus = [], annex = [] }) {
+	const byType = groupByType(rows);
 	const ephemeraById = new Map(ephemera.map(entry => [entry.type, entry]));
+	const bonusById = new Map(bonus.map(entry => [entry.type, entry]));
+	const annexById = new Map(annex.map(entry => [entry.type, entry]));
 	const entries = [];
 	const exclusions = [];
 
@@ -135,22 +166,35 @@ export function classifyTypes({ rows, propertyVector, ephemera }) {
 		}
 
 		if (legal.length > 0) {
-			const { row, reason } = selectRepresentative(legal);
-			entries.push({
-				type, class: "player_buildable", representative: row.n, representative_reason: reason,
-				candidates: legal.length, prototypes: protos.length,
-				footprint: { tile_width: row.tw, tile_height: row.th, collision_box: row.cb },
-				features: featuresOf(row),
-			});
+			entries.push(buildEntry({
+				type, protos, candidates: placeable, klass: "player_buildable", propertyVector,
+				preferred: new Set(legal.map(row => row.n)),
+			}));
 			continue;
 		}
 
 		if (placeable.length > 0) {
+			const bonusEntry = bonusById.get(type);
+			if (bonusEntry) {
+				entries.push(buildEntry({
+					type, protos, candidates: placeable, klass: "bonus", propertyVector, note: bonusEntry.reason,
+				}));
+				continue;
+			}
 			const failures = [...new Set(placeable.flatMap(row => conditionFailures(row, propertyVector)))];
 			exclusions.push({
 				type, prototypes: protos.length, derivation: "surface_conditions",
 				reason: `all ${placeable.length} placeable ${type} prototype(s) fail a surface condition on the `
 					+ `measured platform vector: ${failures.join("; ")}`,
+			});
+			continue;
+		}
+
+		const annexed = annexById.get(type);
+		if (annexed) {
+			exclusions.push({
+				type, prototypes: protos.length, derivation: "transient_annex",
+				reason: annexed.reason, measurement: annexed.measurement,
 			});
 			continue;
 		}
@@ -163,24 +207,16 @@ export function classifyTypes({ rows, propertyVector, ephemera }) {
 			continue;
 		}
 
-		const { row, reason } = selectRepresentative(protos);
-		entries.push({
-			type, class: "script_only", representative: row.n, representative_reason: reason,
-			candidates: protos.length, prototypes: protos.length,
-			footprint: { tile_width: row.tw, tile_height: row.th, collision_box: row.cb },
-			features: featuresOf(row),
-		});
+		entries.push(buildEntry({
+			type, protos, candidates: protos, klass: "script_only", propertyVector,
+		}));
 	}
 
 	return { entries, exclusions, typeCount: byType.size };
 }
 
 export function loadEphemera(raw, rows) {
-	const byType = new Map();
-	for (const row of rows) {
-		if (!byType.has(row.t)) byType.set(row.t, []);
-		byType.get(row.t).push(row);
-	}
+	const byType = groupByType(rows);
 	const entries = [];
 	for (const entry of raw.entries || []) {
 		if (!entry.type) throw new Error(`ephemera entry without a type: ${JSON.stringify(entry)}`);
@@ -203,11 +239,76 @@ export function loadEphemera(raw, rows) {
 	return entries;
 }
 
-export function assemble({ dump, ephemeraRaw }) {
+export function loadBonusInclusions(raw, rows, propertyVector) {
+	const byType = groupByType(rows);
+	const entries = [];
+	for (const entry of raw.entries || []) {
+		if (!entry.type) throw new Error(`bonus inclusion without a type: ${JSON.stringify(entry)}`);
+		if (typeof entry.reason !== "string" || entry.reason.trim().length < 20) {
+			throw new Error(`bonus inclusion ${entry.type} has no reason — it enters the universe against the `
+				+ "derivation, and an unreasoned override is indistinguishable from a mistake");
+		}
+		const protos = byType.get(entry.type);
+		if (!protos) throw new Error(`bonus inclusion ${entry.type} names a type that does not exist at this pin`);
+		const placeable = protos.filter(row => row.pl > 0);
+		if (!placeable.length) {
+			throw new Error(`bonus inclusion ${entry.type} names a type with no placeable prototype — a bonus cell `
+				+ "is a thing create_entity builds, not a reviewed script-only residue");
+		}
+		if (placeable.some(row => conditionFailures(row, propertyVector).length === 0)) {
+			throw new Error(`bonus inclusion ${entry.type} is already platform-legal, so the derivation carries it `
+				+ "on its own — a redundant override would hide the day it stops being derived");
+		}
+		entries.push({ type: entry.type, reason: entry.reason });
+	}
+	return entries;
+}
+
+export function loadTransientAnnex(raw, rows) {
+	const byType = groupByType(rows);
+	const entries = [];
+	for (const entry of raw.entries || []) {
+		if (!entry.type) throw new Error(`transient annex entry without a type: ${JSON.stringify(entry)}`);
+		if (typeof entry.reason !== "string" || entry.reason.trim().length < 20) {
+			throw new Error(`transient annex entry ${entry.type} has no reason — an exclusion the derivation does `
+				+ "not produce is a judgement, and an unreasoned judgement is indistinguishable from a mistake");
+		}
+		if (typeof entry.measurement !== "string" || entry.measurement.trim().length < 20) {
+			throw new Error(`transient annex entry ${entry.type} carries no measurement — a type is annexed for a `
+				+ "MEASURED despawn, and an annex with no measurement is a prediction wearing a measurement's name");
+		}
+		const protos = byType.get(entry.type);
+		if (!protos) {
+			throw new Error(`transient annex entry ${entry.type} names a type that does not exist at this pin`);
+		}
+		if (protos.some(row => row.pl > 0)) {
+			throw new Error(`transient annex entry ${entry.type} names a PLAYER-BUILDABLE type — the annex holds `
+				+ "script-only transients, or it silently shrinks the buildable universe");
+		}
+		if (EXPORT_SCANNER_EXCLUSIONS.includes(entry.type)) {
+			throw new Error(`transient annex entry ${entry.type} is already excluded by is_exportable_entity — two `
+				+ "reasons for one type means one of them is unreviewed");
+		}
+		entries.push({ type: entry.type, reason: entry.reason, measurement: entry.measurement });
+	}
+	return entries;
+}
+
+export function assemble({ dump, ephemeraRaw, bonusRaw = { entries: [] }, annexRaw = { entries: [] } }) {
 	const rows = dump.rows;
 	const ephemera = loadEphemera(ephemeraRaw, rows);
+	const bonus = loadBonusInclusions(bonusRaw, rows, dump.props);
+	const annex = loadTransientAnnex(annexRaw, rows);
+
+	const ephemeraTypes = new Set(ephemera.map(entry => entry.type));
+	const doubled = annex.filter(entry => ephemeraTypes.has(entry.type)).map(entry => entry.type);
+	if (doubled.length) {
+		throw new Error(`[${doubled}] are in both the reviewed ephemera list and the transient annex — two `
+			+ "reasons for one exclusion means one of them is unreviewed");
+	}
+
 	const { entries, exclusions, typeCount } = classifyTypes({
-		rows, propertyVector: dump.props, ephemera,
+		rows, propertyVector: dump.props, ephemera, bonus, annex,
 	});
 
 	const counts = {
@@ -216,9 +317,10 @@ export function assemble({ dump, ephemeraRaw }) {
 		universe: entries.length,
 		player_buildable: entries.filter(entry => entry.class === "player_buildable").length,
 		script_only: entries.filter(entry => entry.class === "script_only").length,
+		bonus: entries.filter(entry => entry.class === "bonus").length,
 		excluded: exclusions.length,
 	};
-	for (const derivation of ["export_scanner", "surface_conditions", "ephemera"]) {
+	for (const derivation of ["export_scanner", "surface_conditions", "ephemera", "transient_annex"]) {
 		counts[`excluded_${derivation}`] = exclusions.filter(row => row.derivation === derivation).length;
 	}
 
@@ -242,14 +344,21 @@ export function checkControls(artifact) {
 		["types", counts.types, CONTROL_TYPE_COUNT],
 		["player_buildable", counts.player_buildable, CONTROL_PLAYER_BUILDABLE],
 		["script_only", counts.script_only, CONTROL_SCRIPT_ONLY],
+		["bonus", counts.bonus, CONTROL_BONUS],
 		["universe", counts.universe, CONTROL_UNIVERSE],
 		["excluded_ephemera", counts.excluded_ephemera, CONTROL_EPHEMERA],
+		["excluded_transient_annex", counts.excluded_transient_annex, CONTROL_ANNEX],
 	];
 	for (const [name, actual, expected] of exact) {
 		if (actual !== expected) {
 			failures.push(`${name} derived ${actual}, the measured control is ${expected} — a mod change moves `
 				+ "these legitimately, but a derivation bug moves them too, so review before re-pinning");
 		}
+	}
+
+	if (counts.universe + counts.excluded !== counts.types) {
+		failures.push(`universe ${counts.universe} + excluded ${counts.excluded} is not the ${counts.types} types `
+			+ "at this pin — a type was classified twice or lost, which no per-count control would catch");
 	}
 
 	if (!artifact.entries.some(entry => entry.type === CONTROL_MEMBER)) {
@@ -302,7 +411,9 @@ function readDump(argv) {
 function main() {
 	const dump = readDump(process.argv);
 	const ephemeraRaw = JSON.parse(readFileSync(EPHEMERA_PATH, "utf8"));
-	const artifact = assemble({ dump, ephemeraRaw });
+	const bonusRaw = JSON.parse(readFileSync(BONUS_PATH, "utf8"));
+	const annexRaw = JSON.parse(readFileSync(ANNEX_PATH, "utf8"));
+	const artifact = assemble({ dump, ephemeraRaw, bonusRaw, annexRaw });
 
 	const failures = checkControls(artifact);
 	if (failures.length) {
@@ -314,9 +425,13 @@ function main() {
 	writeFileSync(OUT_PATH, JSON.stringify(artifact, null, "\t") + "\n");
 	const c = artifact.counts;
 	console.log(`wrote ${OUT_PATH}: ${c.universe} types in the universe at pin ${artifact.application_version} `
-		+ `(${c.player_buildable} player-buildable + ${c.script_only} script-only), out of ${c.types} types over `
-		+ `${c.prototypes} prototypes; excluded ${c.excluded} = ${c.excluded_surface_conditions} surface-conditions `
-		+ `+ ${c.excluded_ephemera} ephemera + ${c.excluded_export_scanner} export-scanner`);
+		+ `(${c.player_buildable} player-buildable + ${c.script_only} script-only + ${c.bonus} bonus), out of `
+		+ `${c.types} types over ${c.prototypes} prototypes; excluded ${c.excluded} = `
+		+ `${c.excluded_surface_conditions} surface-conditions + ${c.excluded_ephemera} ephemera + `
+		+ `${c.excluded_transient_annex} transient-annex + ${c.excluded_export_scanner} export-scanner`);
+	const illegal = artifact.entries.filter(entry => entry.representative_surface_legal === false);
+	console.log(`${illegal.length} representative(s) are surface-ILLEGAL at this pin and were chosen anyway: `
+		+ illegal.map(entry => `${entry.type}=${entry.representative}`).join(", "));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();

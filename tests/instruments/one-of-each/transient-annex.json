@@ -1,0 +1,26 @@
+{
+	"schema": "one-of-each/transient-annex@1",
+	"pin": "2.1.11",
+	"measured_on": "2026-08-16, throwaway clone of lab-omnibus-state-v1 on clusterio-host-1-instance-1",
+	"method": "create_entity on a platform surface, validity read on the CREATING tick, then repeated area censuses; a second run sampled the same three types over 7001 ticks in two arms (as created, and after an attempted freeze)",
+	"entries": [
+		{
+			"type": "asteroid",
+			"representative": "big-carbonic-asteroid",
+			"reason": "it does not survive long enough to be banked: a banked fixture is loaded and censused minutes to months after it was written, and this cell would be absent every time, so a MISSING verdict would report the fixture broken rather than the type transient; the sweep runner places it fresh and exports within its lifetime instead",
+			"measurement": "create_entity returned a valid entity on the creating tick (tick 31874068) and the type was absent from an area census 38 ticks later; it never reappeared across a 7001-tick window. LuaEntity.active is READ-ONLY at 2.1.11 ('LuaEntity::active is read only.'), so the cell cannot be frozen in place to outlive the window"
+		},
+		{
+			"type": "capture-robot",
+			"representative": "capture-robot",
+			"reason": "it does not survive long enough to be banked: same as the asteroid cell, a capture-robot is a mission-scoped flying unit that resolves or expires, so a banked cell for it would read as a permanently missing type",
+			"measurement": "create_entity returned a valid entity on the creating tick (tick 31874068) and the type was absent from an area census 38 ticks later; it never reappeared across a 7001-tick window. LuaEntity.active is READ-ONLY at 2.1.11 ('LuaEntity::active is read only.'), so the cell cannot be frozen in place to outlive the window"
+		},
+		{
+			"type": "temporary-container",
+			"representative": "cargo-pod-container",
+			"reason": "it does not survive long enough to be banked: the engine owns this container's lifetime as part of the cargo-pod delivery cycle and reclaims it, so a banked cell for it would read as a permanently missing type",
+			"measurement": "create_entity returned a valid entity on the creating tick (tick 31874068) and the type was absent from an area census 38 ticks later; it never reappeared across a 7001-tick window. LuaEntity.active is READ-ONLY at 2.1.11 ('LuaEntity::active is read only.'), so the cell cannot be frozen in place to outlive the window"
+		}
+	]
+}

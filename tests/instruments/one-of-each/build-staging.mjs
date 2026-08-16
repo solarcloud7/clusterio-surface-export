@@ -21,7 +21,7 @@ import { allocate, loadPlacementRules } from "./lattice.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const UNIVERSE = JSON.parse(readFileSync(path.join(here, "universe.json"), "utf8"));
 
-export const PLATFORM_NAME = "oneofeach-staging-v1";
+export const PLATFORM_NAME = "oneofeach-fixture-v1";
 export const ORIGIN = { x: -6, y: -7 };
 export const COLUMNS = 8;
 export const ROWS = 12;
@@ -75,14 +75,22 @@ export function outwardDirection(cell, columns, rows) {
 	throw new Error(`cell ${cell.column},${cell.row} is interior — it faces nothing outward`);
 }
 
+export const LITERAL_DIRECTIONS = ["north", "south"];
+
 export function specFor(placement, rules) {
 	const rule = placement.rule || {};
 	const spec = { t: placement.type, n: placement.name, x: placement.position.x, y: placement.position.y };
-	if (rule.direction === "south") spec.dir = "south";
-	else if (rule.direction === "outward") spec.dir = outwardDirection(placement.cell, COLUMNS, ROWS);
+	if (rule.direction === "outward") spec.dir = outwardDirection(placement.cell, COLUMNS, ROWS);
+	else if (LITERAL_DIRECTIONS.includes(rule.direction)) spec.dir = rule.direction;
+	else if (rule.direction) {
+		throw new Error(`placement rule for ${placement.type} names direction "${rule.direction}", which the `
+			+ "generator does not implement — an unenumerated direction would silently place unrotated");
+	}
 	if (rule.inner_name) spec.inner = rule.inner_name;
 	if (rule.inventory_size) spec.invsize = rule.inventory_size;
 	if (rule.stock) spec.stock = rule.stock;
+	if (freezes(rules, placement.type)) spec.freeze = 1;
+	if (rule.on_type) spec.on_type = rule.on_type;
 	if (rule.target_type) {
 		spec.target_type = rule.target_type;
 		spec.mod = rules.rules[placement.type].module_request;
@@ -90,12 +98,35 @@ export function specFor(placement, rules) {
 	return spec;
 }
 
+export function freezes(rules, type) {
+	return (rules.freeze?.types || []).includes(type);
+}
+
+export function specsFor(placement, rules) {
+	const spec = specFor(placement, rules);
+	const segment = placement.rule?.segment;
+	if (!segment) return [spec];
+	const span = (segment.count - 1) * segment.pitch;
+	return Array.from({ length: segment.count }, (_, index) => ({
+		...spec, y: spec.y - span / 2 + index * segment.pitch,
+	}));
+}
+
 export function partitionSpecs(placements, rules) {
-	const specs = placements.map(placement => specFor(placement, rules));
+	const specs = placements.flatMap(placement => specsFor(placement, rules));
+	const deferred = spec => Boolean(spec.target_type || spec.on_type);
 	return {
-		first: specs.filter(spec => !spec.target_type),
-		afterTargets: specs.filter(spec => spec.target_type),
+		first: specs.filter(spec => !deferred(spec)),
+		afterTargets: specs.filter(deferred),
 	};
+}
+
+export function resolveAgainstPlaced(spec, placedFirst) {
+	const wanted = spec.target_type || spec.on_type;
+	const candidates = placedFirst.filter(row => row.t === wanted && row.placed);
+	if (!candidates.length) return { ...spec, tn: " ", tx: 0, ty: 0 };
+	const anchor = candidates[Math.floor((candidates.length - 1) / 2)];
+	return { ...spec, tn: anchor.n, tx: anchor.px, ty: anchor.py };
 }
 
 export function censusRow(entity) {
@@ -115,6 +146,11 @@ const PLACE_LUA = `${PLATFORM}
 		local params={name=sp.n, position={sp.x,sp.y}, force='player'}
 		if sp.inner then params.inner_name=sp.inner end
 		if sp.invsize then params.inventory_size=sp.invsize end
+		if sp.on_type then
+			local under=s.find_entities_filtered{area={{sp.tx-0.6,sp.ty-0.6},{sp.tx+0.6,sp.ty+0.6}}, name=sp.tn}[1]
+			if not under then rec.reason='no '..tostring(sp.tn)..' was on the surface to sit on'
+			else params.position={sp.tx,sp.ty} end
+		end
 		if sp.target_type then
 			local tgt=s.find_entities_filtered{area={{sp.tx-0.6,sp.ty-0.6},{sp.tx+0.6,sp.ty+0.6}}, name=sp.tn}[1]
 			if not tgt then rec.reason='target '..tostring(sp.tn)..' was not on the surface to attach to'
@@ -145,6 +181,34 @@ const PLACE_LUA = `${PLATFORM}
 						local inv=res.get_inventory(defines.inventory[sp.stock.inventory])
 						if not inv then rec.stock_failed='no '..sp.stock.inventory..' inventory on the placed entity'
 						else rec.stocked=inv.insert({name=sp.stock.item, count=sp.stock.count}) end
+					end
+					if sp.freeze then
+						pcall(function() res.destructible=false end)
+						rec.destructible=res.destructible
+						rec.force=res.force.name
+						local dok,derr=pcall(function() res.disabled_by_script=true end)
+						local dread=nil
+						if dok then local rok,rv=pcall(function() return res.disabled_by_script end)
+							if rok then dread=rv end end
+						local sok,su=pcall(function() return res.segmented_unit end)
+						if dok and dread==true then
+							rec.freeze_lever='disabled_by_script'
+							rec.frozen=true
+						elseif sok and su then
+							local asleep=defines.segmented_unit_activity_mode.asleep
+							local mok=pcall(function() su.minimum_activity_mode=asleep end)
+							local aok=pcall(function() su.activity_mode=asleep end)
+							local mode=su.activity_mode
+							rec.freeze_lever='segmented_unit.activity_mode'
+							rec.frozen=(mok and aok and mode==asleep)
+							rec.freeze_detail='minimum_write='..tostring(mok)..' mode_write='..tostring(aok)
+								..' mode_read_back='..tostring(mode)
+						else
+							rec.freeze_lever='disabled_by_script'
+							rec.frozen=false
+							rec.freeze_detail='write='..tostring(dok)..' read_back='..tostring(dread)
+								..' err='..string.sub(tostring(derr),1,90)
+						end
 					end
 				end
 			end
@@ -268,14 +332,8 @@ async function main() {
 	const { first, afterTargets } = partitionSpecs(placements, rules);
 	const placedFirst = await batched(first, PLACE_LUA);
 
-	for (const spec of afterTargets) {
-		const target = placedFirst.find(row => row.t === spec.target_type && row.placed);
-		if (!target) { spec.tn = " "; spec.tx = 0; spec.ty = 0; continue; }
-		spec.tn = target.n;
-		spec.tx = target.px;
-		spec.ty = target.py;
-	}
-	const placedAfter = await batched(afterTargets, PLACE_LUA);
+	const resolved = afterTargets.map(spec => resolveAgainstPlaced(spec, placedFirst));
+	const placedAfter = await batched(resolved, PLACE_LUA);
 	const results = [...placedFirst, ...placedAfter];
 
 	const settle = lua("return {tick=game.tick}");
@@ -305,6 +363,8 @@ async function main() {
 			reason: `created, then absent at the rescan (checked by ${aliveByType.get(row.t).method})`,
 		}));
 	const wandered = alive.filter(row => row.moved).map(row => row.t);
+	const frozen = results.filter(row => row.frozen === true);
+	const unfrozen = results.filter(row => row.frozen === false);
 
 	const report = {
 		schema: "one-of-each/staging-report@1",
@@ -323,6 +383,13 @@ async function main() {
 		not_placed: notPlaced,
 		invalidated,
 		wandered,
+		freeze: {
+			policy: rules.freeze,
+			applied: frozen.map(row => ({
+				type: row.t, lever: row.freeze_lever, destructible: row.destructible, force: row.force,
+			})),
+			failed: unfrozen.map(row => ({ type: row.t, lever: row.freeze_lever, detail: row.freeze_detail })),
+		},
 		placement_census: { rows, hash, fields: CENSUS_FIELDS },
 		surface_census: surface,
 		strip,
@@ -338,6 +405,11 @@ async function main() {
 		console.log(`  FALLBACK    ${row.type}: ${row.fallback}`);
 	}
 	if (wandered.length) console.log(`  MOVED (alive, not where it was created): ${wandered.join(", ")}`);
+	console.log(`froze ${frozen.length}/${rules.freeze.types.length} mobile-or-hostile cell(s) via `
+		+ `${[...new Set(frozen.map(row => row.freeze_lever))].join(" + ") || "(none)"}`);
+	for (const row of unfrozen) {
+		console.log(`  NOT FROZEN  ${row.t} via ${row.freeze_lever}: ${row.freeze_detail}`);
+	}
 	console.log(`placement census: ${rows} rows, hash ${hash}`);
 	console.log(`placement census fields (no identity, no clocks): ${CENSUS_FIELDS.join(", ")}`);
 	console.log(`surface census (includes engine progeny, NOT an idempotency artifact): `

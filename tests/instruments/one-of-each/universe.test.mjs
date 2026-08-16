@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import {
 	EXPORT_SCANNER_EXCLUSIONS, assemble, checkControls, classifyTypes, conditionFailure,
-	conditionFailures, loadEphemera, luaTable, selectRepresentative,
+	conditionFailures, loadBonusInclusions, loadEphemera, loadTransientAnnex, luaTable,
+	selectRepresentative,
 } from "./derive-universe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,7 @@ const proto = (name, type, extra = {}) => ({
 });
 
 const REASON = "a reviewed reason long enough to be a reason and not a shrug";
+const MEASUREMENT = "valid on the creating tick 31874068, absent from an area census 38 ticks later";
 
 test("an empty Lua table deserializes to no conditions, not to a crash", () => {
 	assert.deepEqual(luaTable({}), []);
@@ -119,12 +121,14 @@ test("an ephemera entry that duplicates an is_exportable_entity exclusion is ref
 		/already excluded by is_exportable_entity/);
 });
 
+const CONTROL_COUNTS = {
+	types: 132, player_buildable: 61, script_only: 20, bonus: 1, universe: 82,
+	excluded: 50, excluded_ephemera: 18, excluded_transient_annex: 3,
+};
+
 test("checkControls refuses a universe that lost character-corpse — the founding blind spot", () => {
 	const artifact = {
-		counts: {
-			types: 132, player_buildable: 61, script_only: 23, universe: 84,
-			excluded_ephemera: 18,
-		},
+		counts: { ...CONTROL_COUNTS },
 		entries: [{ type: "lamp", representative: "small-lamp", representative_reason: "r" }],
 		exclusions: EXPORT_SCANNER_EXCLUSIONS.map(type => ({ type, derivation: "export_scanner", reason: "r" })),
 	};
@@ -134,23 +138,37 @@ test("checkControls refuses a universe that lost character-corpse — the foundi
 
 test("checkControls refuses every count that drifts, naming the measured control", () => {
 	const base = {
-		counts: { types: 132, player_buildable: 61, script_only: 23, universe: 84, excluded_ephemera: 18 },
+		counts: { ...CONTROL_COUNTS },
 		entries: [{ type: "character-corpse", representative: "character-corpse", representative_reason: "r" }],
 		exclusions: EXPORT_SCANNER_EXCLUSIONS.map(type => ({ type, derivation: "export_scanner", reason: "r" })),
 	};
 	assert.deepEqual(checkControls(base), []);
-	for (const [key, control] of [["types", 132], ["player_buildable", 61], ["script_only", 23],
-		["universe", 84], ["excluded_ephemera", 18]]) {
-		const drifted = { ...base, counts: { ...base.counts, [key]: control + 1 } };
-		const failures = checkControls(drifted);
-		assert.equal(failures.length, 1, `${key} drifted by one and no control fired`);
+	// The partition identity (universe + excluded == types) is its own control, so each drift here
+	// compensates it — otherwise a one-count drift would fire two controls and prove neither.
+	const compensation = { types: { excluded: 1 }, universe: { excluded: -1 } };
+	for (const [key, control] of Object.entries(CONTROL_COUNTS).filter(([name]) => name !== "excluded")) {
+		const counts = { ...base.counts, [key]: control + 1 };
+		for (const [other, delta] of Object.entries(compensation[key] || {})) counts[other] += delta;
+		const failures = checkControls({ ...base, counts });
+		assert.equal(failures.length, 1, `${key} drifted by one and fired ${failures.length} control(s)`);
 		assert.match(failures[0], new RegExp(`^${key} derived ${control + 1}, the measured control is ${control}`));
 	}
 });
 
+test("checkControls refuses a classification that loses or doubles a type, which no count catches", () => {
+	const base = {
+		counts: { ...CONTROL_COUNTS },
+		entries: [{ type: "character-corpse", representative: "character-corpse", representative_reason: "r" }],
+		exclusions: EXPORT_SCANNER_EXCLUSIONS.map(type => ({ type, derivation: "export_scanner", reason: "r" })),
+	};
+	const failures = checkControls({ ...base, counts: { ...base.counts, excluded: 49 } });
+	assert.equal(failures.length, 1, "a partition that does not add up must fire exactly the identity control");
+	assert.match(failures[0], /universe 82 \+ excluded 49 is not the 132 types/);
+});
+
 test("checkControls refuses an entry with no representative and an exclusion with no reason", () => {
 	const base = {
-		counts: { types: 132, player_buildable: 61, script_only: 23, universe: 84, excluded_ephemera: 18 },
+		counts: { ...CONTROL_COUNTS },
 		entries: [{ type: "character-corpse", representative: "character-corpse", representative_reason: "r" },
 			{ type: "lamp" }],
 		exclusions: [...EXPORT_SCANNER_EXCLUSIONS.map(type => ({ type, derivation: "export_scanner", reason: "r" })),
@@ -198,7 +216,8 @@ test("the vendored artifact carries a footprint and features for every universe 
 test("every vendored exclusion carries a reason that is not the type name restated", () => {
 	for (const row of VENDORED.exclusions) {
 		assert.equal(row.reason.trim().length > 20, true, `${row.type} has a stub reason`);
-		assert.equal(["export_scanner", "surface_conditions", "ephemera"].includes(row.derivation), true);
+		assert.equal(["export_scanner", "surface_conditions", "ephemera", "transient_annex"]
+			.includes(row.derivation), true);
 	}
 });
 
@@ -212,4 +231,133 @@ test("no type is both in the universe and excluded", () => {
 test("conditionFailures reports every failing condition, not just the first", () => {
 	const row = proto("x", "y", { sc: [{ p: "gravity", mn: 1 }, { p: "pressure", mn: 1000 }] });
 	assert.equal(conditionFailures(row, PLATFORM_VECTOR).length, 2);
+});
+
+test("the representative is the RICHEST placeable prototype even when it is surface-illegal", () => {
+	const rows = [
+		proto("bottomless-chest", "container", { pl: 1, ivn: 1, ivs: 1 }),
+		proto("steel-chest", "container", { pl: 1, ivn: 1, ivs: 48, sc: [{ p: "gravity", mn: 0.1 }] }),
+	];
+	const { entries } = classifyTypes({ rows, propertyVector: PLATFORM_VECTOR, ephemera: [] });
+	assert.equal(entries[0].representative, "steel-chest");
+	assert.equal(entries[0].representative_surface_legal, false);
+	assert.deepEqual(entries[0].representative_surface_conditions,
+		["gravity >= 0.1 but the surface measures 0"]);
+	assert.match(entries[0].representative_reason, /regardless of surface legality/);
+	assert.match(entries[0].representative_reason, /gravity >= 0\.1 but the surface measures 0/,
+		"the reason must carry the condition it knowingly broke, or the choice cannot be reviewed");
+});
+
+test("a type with no surface-legal prototype at all stays excluded — widening choice is not widening membership", () => {
+	const rows = [proto("locomotive", "locomotive", { pl: 1, sc: [{ p: "gravity", mn: 1 }] })];
+	const { entries, exclusions } = classifyTypes({ rows, propertyVector: PLATFORM_VECTOR, ephemera: [] });
+	assert.deepEqual(entries, []);
+	assert.equal(exclusions[0].derivation, "surface_conditions");
+});
+
+test("on an exact feature TIE the surface-legal candidate keeps the cell", () => {
+	const legal = proto("simple-entity-with-owner", "simple-entity-with-owner", { pl: 1 });
+	const illegal = proto("aaa-mod-collision-box", "simple-entity-with-owner",
+		{ pl: 1, sc: [{ p: "pressure", mn: 200000 }] });
+	const { entries } = classifyTypes({
+		rows: [illegal, legal], propertyVector: PLATFORM_VECTOR, ephemera: [],
+	});
+	assert.equal(entries[0].representative, "simple-entity-with-owner",
+		"an alphabetical tie-break would take the mod's collision placeholder, which is not RICHER by any feature");
+	assert.equal(entries[0].representative_surface_legal, true);
+	assert.equal(selectRepresentative([illegal, legal], new Set(["simple-entity-with-owner"])).row.n,
+		"simple-entity-with-owner");
+	assert.equal(selectRepresentative([illegal, legal]).row.n, "aaa-mod-collision-box",
+		"without a preference the tie-break is still alphabetical");
+});
+
+test("a bonus inclusion carries a surface-illegal type into the universe, with its own class and reason", () => {
+	const rows = [proto("straight-rail", "straight-rail", { pl: 1, sc: [{ p: "gravity", mn: 1 }] })];
+	const { entries, exclusions } = classifyTypes({
+		rows, propertyVector: PLATFORM_VECTOR, ephemera: [],
+		bonus: [{ type: "straight-rail", reason: REASON }],
+	});
+	assert.deepEqual(exclusions, []);
+	assert.equal(entries[0].class, "bonus");
+	assert.equal(entries[0].representative_surface_legal, false);
+	assert.match(entries[0].representative_reason, new RegExp(REASON));
+});
+
+test("a bonus inclusion is refused when it is redundant, unplaceable, unknown, or unreasoned", () => {
+	const legal = [proto("lamp", "lamp", { pl: 1 })];
+	const illegal = [proto("straight-rail", "straight-rail", { pl: 1, sc: [{ p: "gravity", mn: 1 }] })];
+	const scriptOnly = [proto("cliff", "cliff")];
+	assert.throws(() => loadBonusInclusions({ entries: [{ type: "lamp", reason: REASON }] }, legal, PLATFORM_VECTOR),
+		/already platform-legal/);
+	assert.throws(() => loadBonusInclusions({ entries: [{ type: "cliff", reason: REASON }] }, scriptOnly,
+		PLATFORM_VECTOR), /no placeable prototype/);
+	assert.throws(() => loadBonusInclusions({ entries: [{ type: "nope", reason: REASON }] }, illegal,
+		PLATFORM_VECTOR), /does not exist at this pin/);
+	assert.throws(() => loadBonusInclusions({ entries: [{ type: "straight-rail", reason: "meh" }] }, illegal,
+		PLATFORM_VECTOR), /no reason/);
+});
+
+test("an annexed type leaves the universe as its own derivation, carrying the measurement that annexed it", () => {
+	const rows = [proto("asteroid", "asteroid"), proto("character-corpse", "character-corpse")];
+	const { entries, exclusions } = classifyTypes({
+		rows, propertyVector: PLATFORM_VECTOR, ephemera: [],
+		annex: [{ type: "asteroid", reason: REASON, measurement: MEASUREMENT }],
+	});
+	assert.deepEqual(entries.map(entry => entry.type), ["character-corpse"]);
+	assert.equal(exclusions[0].derivation, "transient_annex");
+	assert.equal(exclusions[0].measurement, MEASUREMENT);
+});
+
+test("an annex entry with no MEASUREMENT is refused — the annex is a measured despawn, not a prediction", () => {
+	const rows = [proto("asteroid", "asteroid"), proto("lamp", "lamp", { pl: 1 })];
+	assert.throws(() => loadTransientAnnex({ entries: [{ type: "asteroid", reason: REASON }] }, rows),
+		/carries no measurement/);
+	assert.throws(() => loadTransientAnnex({
+		entries: [{ type: "asteroid", reason: REASON, measurement: "short" }],
+	}, rows), /carries no measurement/);
+	assert.throws(() => loadTransientAnnex({
+		entries: [{ type: "lamp", reason: REASON, measurement: MEASUREMENT }],
+	}, rows), /PLAYER-BUILDABLE/);
+});
+
+test("a type in both the reviewed ephemera list and the annex is refused, not silently double-reasoned", () => {
+	const rows = [proto("acid-cloud", "smoke-with-trigger")];
+	assert.throws(() => assemble({
+		dump: { rows, props: PLATFORM_VECTOR, version: "2.1.11", mods: {} },
+		ephemeraRaw: { entries: [{ type: "smoke-with-trigger", reason: REASON }] },
+		annexRaw: { entries: [{ type: "smoke-with-trigger", reason: REASON, measurement: MEASUREMENT }] },
+	}), /both the reviewed ephemera list and the transient annex/);
+});
+
+test("the vendored artifact records the legality of every representative it chose", () => {
+	for (const entry of VENDORED.entries) {
+		assert.equal(typeof entry.representative_surface_legal, "boolean",
+			`${entry.type} does not say whether its representative is surface-legal`);
+		assert.equal(Array.isArray(entry.representative_surface_conditions), true);
+		assert.equal(entry.representative_surface_legal,
+			entry.representative_surface_conditions.length === 0,
+			`${entry.type} disagrees with itself about surface legality`);
+	}
+	const illegal = VENDORED.entries.filter(entry => !entry.representative_surface_legal);
+	assert.ok(illegal.length > 0, "the whole point of the unconditional rule is that some winner is illegal");
+	assert.ok(illegal.some(entry => entry.type === "container" && entry.representative === "steel-chest"),
+		"container must carry a real chest, not the 1-slot bottomless-chest the surface-legal filter left");
+});
+
+test("the vendored annex holds exactly the three transients, each with a measurement", () => {
+	const annexed = VENDORED.exclusions.filter(row => row.derivation === "transient_annex");
+	assert.deepEqual(annexed.map(row => row.type).sort(),
+		["asteroid", "capture-robot", "temporary-container"]);
+	for (const row of annexed) {
+		assert.equal(typeof row.measurement, "string");
+		assert.match(row.measurement, /tick/, `${row.type} annexed without citing when it went`);
+	}
+});
+
+test("the vendored universe carries straight-rail as the one bonus member", () => {
+	const bonus = VENDORED.entries.filter(entry => entry.class === "bonus");
+	assert.deepEqual(bonus.map(entry => entry.type), ["straight-rail"]);
+	assert.equal(VENDORED.counts.bonus, 1);
+	assert.equal(VENDORED.counts.player_buildable + VENDORED.counts.script_only + VENDORED.counts.bonus,
+		VENDORED.counts.universe);
 });
