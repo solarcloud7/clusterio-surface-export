@@ -42,7 +42,8 @@
 //           build_mode normal is documented all-or-nothing and a wholesale refusal is
 //           indistinguishable from a declined wire without the witness; fail on that exclusion —
 //           an unexercised confirmatory arm is not a defect, so it is reported loudly and graded by
-//           nothing
+//           nothing; leave the offset control's ghosts standing — it sweeps them and fails on any
+//           residue
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
@@ -143,7 +144,8 @@ const REACHABLE_PAIRS = [COPPER_NEAR_PAIR, GHOST_NEAR_PAIR, GHOST_REAL_NEAR_PAIR
 const GHOST_WIRE_POLES = [...GHOST_WIRED_PAIR, ...GHOST_NEAR_PAIR, ...GHOST_REAL_WIRED_PAIR,
 	...GHOST_REAL_NEAR_PAIR];
 
-const MEASURED_AT = "run 31943113370 at 2.1.11";
+const MEASURED_AT = "run 31946363788 at 2.1.11";
+const OFFSET_STAMP_DX = 16;
 
 const REAL_PAIR_ARMS = [
 	{ id: "revive_far_wired", pair: REVIVE_WIRED_PAIR, kind: "revive", wired: true, load: true,
@@ -480,6 +482,29 @@ local function blueprint_body(out, a, b, apos, bpos, bp, wpos)
     stamp_once(bp, a, b, stamp, area, wpos, 'normal', defines.build_mode.normal),
     stamp_once(bp, a, b, stamp, area, wpos, 'forced', defines.build_mode.forced),
   }
+
+  local dx = ${OFFSET_STAMP_DX}
+  local off_area = { { area[1][1] + dx, area[1][2] }, { area[2][1] + dx, area[2][2] } }
+  local control = { landing = string.format('%.2f,%.2f', wpos.x + dx, wpos.y) }
+  control.occupied_before = #s.find_entities_filtered{ area = off_area }
+  control.ghosts_before = #s.find_entities_filtered{ name = 'entity-ghost' }
+  local ok, built = pcall(function()
+    return bp.build_blueprint{ surface = s, force = 'player', position = { x = stamp.x + dx, y = stamp.y },
+      build_mode = defines.build_mode.normal, raise_built = false, skip_fog_of_war = false }
+  end)
+  if ok then control.built_count = #(built or {}) else control.build_error = tostring(built) end
+  control.ghosts_after = #s.find_entities_filtered{ name = 'entity-ghost' }
+  control.landed = witness_key({ x = wpos.x + dx, y = wpos.y })
+  local swept = 0
+  for _, e in ipairs(s.find_entities_filtered{ area = off_area }) do
+    if e.valid then
+      e.destroy()
+      swept = swept + 1
+    end
+  end
+  control.swept = swept
+  control.occupied_after_sweep = #s.find_entities_filtered{ area = off_area }
+  out.offset_control = control
 end
 
 local function run_blueprint_arm(arm)
@@ -1483,11 +1508,33 @@ function checkBlueprintArm(arm, probe) {
 		}
 		if (!acted) acted = { mode: stamp.mode, after };
 	}
+	const control = probe.offset_control ?? {};
+	const controlBuilt = (control.built_count ?? 0) > 0 || control.ghosts_after > control.ghosts_before
+		|| Boolean(control.landed);
+	say(`     CONTROL — the same blueprint stamped ${OFFSET_STAMP_DX} tiles across onto EMPTY foundation `
+		+ `(${control.occupied_before} entities there first): returned `
+		+ `${control.built_count ?? `THREW: ${control.build_error}`} ghosts, surface ghosts `
+		+ `${control.ghosts_before} -> ${control.ghosts_after}, witness landing ${control.landing} reads `
+		+ `${JSON.stringify(control.landed)}; swept ${control.swept} entities, `
+		+ `${control.occupied_after_sweep} left`);
+	if (control.occupied_after_sweep !== 0) {
+		fail(`${arm.id}: the offset control left ${control.occupied_after_sweep} entities standing on `
+			+ "foundation the rig does not own — this probe owes zero leftovers");
+	}
+
 	if (!acted) {
 		notEstablished.push(arm.id);
-		say(`     NOT ESTABLISHED: no build mode rebuilt the witness, so no stamp acted on this surface at `
-			+ "all. This arm measures nothing about the blueprint producer — it is NOT 'measured and "
-			+ "refused' — and it is excluded from the verdict rather than counted as evidence");
+		if (controlBuilt) {
+			say("     the control DID build across empty foundation, so build_blueprint works here and its "
+				+ "inertness over the existing pair is specific to stamping onto existing entities. That is "
+				+ "a real refusal — but this arm still grades nothing, because a stamp that placed no ghost "
+				+ "over the pair never reached the wire question");
+		} else {
+			say("     the control built NOTHING either, so build_blueprint is inert on this surface by this "
+				+ "script path generally — nothing about the blueprint producer is established");
+		}
+		say(`     NOT ESTABLISHED: no build mode rebuilt the witness over the pair. This arm is excluded `
+			+ "from the verdict rather than counted as evidence");
 		return null;
 	}
 	say(`     the ${acted.mode} stamp acted (witness rebuilt), and it is the one graded`);
