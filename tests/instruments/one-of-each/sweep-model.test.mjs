@@ -37,6 +37,40 @@ test("rows are keyed on the staged type list, never on what the payload carried"
 	assert.equal(rows.some(r => r.type === "segment"), false);
 });
 
+test("engine progeny on the source is never a cell, so it cannot consume another type's match", () => {
+	const input = scenario();
+	input.sourceRows = [cell("segment", "demolisher-segment", 4.1, 0.1), ...input.sourceRows];
+	const table = buildTable(input);
+	const row = table.rows.find(r => r.type === "gate");
+	assert.equal(row.staged, 1);
+	assert.equal(row.capture, "CAPTURED",
+		"the unkeyed source row must not consume the gate's payload record");
+	assert.equal(row.restore, "RESTORED",
+		"the unkeyed source row must not consume the gate's destination entity");
+	assert.deepEqual(table.unkeyedSourceTypes, ["segment"]);
+});
+
+test("engine progeny cannot steal the substitute a real cell needs, turning its WRONG into a LOST", () => {
+	const input = scenario();
+	input.sourceRows = [cell("segment", "demolisher-segment", 4.2, 0), ...input.sourceRows];
+	input.destRows = input.destRows.map(row =>
+		row.type === "gate" ? cell("wall", "stone-wall", 4, 0) : row);
+	const row = buildTable(input).rows.find(r => r.type === "gate");
+	assert.equal(row.restore, "WRONG",
+		"the segment sits closer to the wall than the gate does; as a cell it would consume the wall first "
+		+ "and the gate would read LOST, hiding the substitution that actually happened");
+	assert.match(row.substitutions[0], /gate@4,0 -> wall\/stone-wall/);
+});
+
+test("a squatter is named in the WRONG sample, whatever its type, rather than silently ignored", () => {
+	const input = scenario();
+	input.destRows = input.destRows.map(row =>
+		row.type === "gate" ? cell("segment", "demolisher-segment", 4, 0) : row);
+	const row = buildTable(input).rows.find(r => r.type === "gate");
+	assert.equal(row.restore, "WRONG");
+	assert.match(row.substitutions[0], /gate@4,0 -> segment\/demolisher-segment/);
+});
+
 test("an engine-owned type seen only in the reads is reported alongside the table, not as a row", () => {
 	const input = scenario();
 	input.sourceRows = [...input.sourceRows, cell("segment", "big-demolisher-segment", 20, 20)];

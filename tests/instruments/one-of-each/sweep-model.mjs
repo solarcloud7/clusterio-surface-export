@@ -158,8 +158,10 @@ export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fix
 	const destByType = byType(destination);
 	const fixtureByType = byType(fixture);
 
-	const captureByType = groupOutcomes(matchCells(source, payload, tolerance).outcomes);
-	const restoreByType = groupOutcomes(matchCells(source, destination, tolerance).outcomes);
+	const known = new Set(types);
+	const staged = source.filter(row => known.has(row.type));
+	const captureByType = groupOutcomes(matchCells(staged, payload, tolerance).outcomes);
+	const restoreByType = groupOutcomes(matchCells(staged, destination, tolerance).outcomes);
 
 	const rows = types.map(type => {
 		const cells = sourceByType.get(type) || [];
@@ -186,7 +188,6 @@ export function buildTable({ types, sourceRows, payloadRows, gate, destRows, fix
 		};
 	});
 
-	const known = new Set(types);
 	const unkeyedSourceTypes = [...sourceByType.keys()].filter(type => !known.has(type)).sort();
 	const unkeyedDestTypes = [...destByType.keys()].filter(type => !known.has(type)).sort();
 
