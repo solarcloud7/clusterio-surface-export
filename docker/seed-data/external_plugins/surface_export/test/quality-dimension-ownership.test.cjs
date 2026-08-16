@@ -115,9 +115,9 @@ const domains = [
 		id: "ghost-and-proxy-requests",
 		status: "static-owned",
 		producer: ["export_scanners/entity-handlers.lua",
-			/EntityHandlers\["entity-ghost"\][\s\S]{0,400}?quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count[\s\S]{0,200}?data\.insert_plan\s*=\s*entity\.insert_plan/],
+			/EntityHandlers\["entity-ghost"\][\s\S]{0,300}?data\.insert_plan\s*=\s*entity\.insert_plan(?![\w.])/],
 		consumer: ["core/deserializer.lua",
-			/if entity\.type == "entity-ghost" then[\s\S]{0,200}?entity\.insert_plan = data\.insert_plan/],
+			/if entity\.type == "entity-ghost" then[\s\S]{0,200}?entity\.insert_plan = data\.insert_plan(?![\w.])/],
 	},
 ];
 
@@ -176,8 +176,11 @@ test("the logistic-request-slot physical evidence stays pinned to the sections s
 test("the ghost-and-proxy-requests physical evidence stays pinned to the ghost suite", { skip: repoSkip }, () => {
 	const suiteSource = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
 		"tests", "integration", "ghost-item-requests", "run-tests.mjs"), "utf8");
-	assert.match(suiteSource, /quality='uncommon'/,
-		"the fixture must keep arming a ghost with a non-normal quality request");
+	assert.match(suiteSource, /id=\{name='[^']+',quality='uncommon'\}/,
+		"the fixture must keep arming a ghost with a non-normal quality request, and the quality must "
+		+ "ride inside the plan entry's id: insert_plan[].id.quality is the only place a pending "
+		+ "request's quality exists, and the capture is wholesale, so this fixture shape is what makes "
+		+ "the producer anchor's rejection of a projecting capture mean anything");
 	assert.match(suiteSource, /requestsOf\(dstGhostA\) === EXPECT_A/,
 		"the destination re-read must keep adjudicating the ghost's own item_requests");
 	assert.match(suiteSource, /CONTROL: the item-request-proxy's requests arrive intact/,

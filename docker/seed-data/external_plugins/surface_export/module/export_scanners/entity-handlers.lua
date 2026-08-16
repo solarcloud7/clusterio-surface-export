@@ -744,17 +744,6 @@ EntityHandlers["entity-ghost"] = function(entity)
   local data = {
     ghost_name = entity.ghost_name
   }
-  
-  if entity.item_requests then
-    data.item_requests = {}
-    for _, req in pairs(entity.item_requests) do
-      table.insert(data.item_requests, {
-        item = req.name,
-        quality = req.quality,
-        count = req.count
-      })
-    end
-  end
 
   if entity.insert_plan and #entity.insert_plan > 0 then
     data.insert_plan = entity.insert_plan
@@ -778,18 +767,7 @@ end
 
 EntityHandlers["item-request-proxy"] = function(entity)
   local data = {}
-  
-  if entity.item_requests then
-    data.item_requests = {}
-    for _, req in pairs(entity.item_requests) do
-      table.insert(data.item_requests, {
-        item = req.name,
-        quality = req.quality,
-        count = req.count
-      })
-    end
-  end
-  
+
   if entity.insert_plan and #entity.insert_plan > 0 then
     data.insert_plan = entity.insert_plan
   end
