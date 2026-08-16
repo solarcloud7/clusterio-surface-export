@@ -498,6 +498,26 @@ const ATTRS = [
 			+ "90 ticks of the machine reaching a powered network)",
 	},
 	{
+		key: "display_panel_text", attribute: "display_panel_text", on: "display",
+		write: `e.display_panel_text = "${CLONE}-panel"`,
+		read: STRING_READ("display_panel_text"), expect: `${CLONE}-panel`,
+		describe: "this row and the two below sit under safe_call at the restore site "
+			+ "(deserializer.lua:462-473), where a write that throws becomes a logged skip rather than an "
+			+ "instance kill, and the pre-activation verdict compares items and fluids only — so a "
+			+ "destination read of the property itself is the only thing that can tell a restored panel "
+			+ "from a skipped write",
+	},
+	{
+		key: "display_panel_always_show", attribute: "display_panel_always_show", on: "display",
+		write: "e.display_panel_always_show = not e.display_panel_always_show",
+		read: BOOL_READ("display_panel_always_show"), dynamicExpect: true,
+	},
+	{
+		key: "display_panel_show_in_chart", attribute: "display_panel_show_in_chart", on: "display",
+		write: "e.display_panel_show_in_chart = not e.display_panel_show_in_chart",
+		read: BOOL_READ("display_panel_show_in_chart"), dynamicExpect: true,
+	},
+	{
 		key: "display_panel_icon", attribute: "display_panel_icon", on: "display",
 		write: 'e.display_panel_icon = { type = "item", name = "iron-plate" }',
 		read: "return signal_key(e.display_panel_icon)", expect: "item:iron-plate:normal",
