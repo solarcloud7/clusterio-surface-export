@@ -1,0 +1,2352 @@
+{
+	"schema": "one-of-each/universe@1",
+	"application_version": "2.1.11",
+	"mods": {
+		"base": "2.1.11",
+		"elevated-rails": "2.1.11",
+		"FluidMustFlow": "1.5.0",
+		"recycler": "2.1.11",
+		"SpidertronEnhancements": "1.11.0",
+		"quality": "2.1.11",
+		"space-age": "2.1.11",
+		"PlanetsLib": "1.22.0",
+		"SpidertronPatrols": "2.7.0",
+		"surfexp_gateways": "0.6.0",
+		"maraxsis": "1.34.51"
+	},
+	"property_vector": {
+		"day-night-cycle": 0,
+		"gravity": 0,
+		"is-freezing": 0,
+		"magnetic-field": 0,
+		"pressure": 0,
+		"robot-energy-usage": 1,
+		"solar-power": 100,
+		"planet-str": 0,
+		"parent-planet-str": 0
+	},
+	"export_scanner_exclusions": [
+		"character",
+		"item-entity",
+		"spider-leg"
+	],
+	"counts": {
+		"prototypes": 1106,
+		"types": 132,
+		"universe": 84,
+		"player_buildable": 61,
+		"script_only": 23,
+		"excluded": 48,
+		"excluded_export_scanner": 3,
+		"excluded_surface_conditions": 27,
+		"excluded_ephemera": 18
+	},
+	"entries": [
+		{
+			"type": "accumulator",
+			"class": "player_buildable",
+			"representative": "accumulator",
+			"representative_reason": "the only accumulator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.8984375,
+					-0.8984375,
+					0.8984375,
+					0.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "ammo-turret",
+			"class": "player_buildable",
+			"representative": "gun-turret",
+			"representative_reason": "richest of 3 ammo-turret prototypes by (fluidboxes 0, inventories 1, inventory slots 1, module slots 0), ahead of railgun-turret",
+			"candidates": 3,
+			"prototypes": 3,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.69921875,
+					-0.69921875,
+					0.69921875,
+					0.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 1,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "arithmetic-combinator",
+			"class": "player_buildable",
+			"representative": "arithmetic-combinator",
+			"representative_reason": "the only arithmetic-combinator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 2,
+				"collision_box": [
+					-0.34765625,
+					-0.6484375,
+					0.34765625,
+					0.6484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "artillery-turret",
+			"class": "player_buildable",
+			"representative": "artillery-turret",
+			"representative_reason": "the only artillery-turret prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.19921875,
+					-1.19921875,
+					1.19921875,
+					1.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 1,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "assembling-machine",
+			"class": "player_buildable",
+			"representative": "cryogenic-plant",
+			"representative_reason": "richest of 16 assembling-machine prototypes by (fluidboxes 6, inventories 1, inventory slots 8, module slots 8), ahead of oil-refinery",
+			"candidates": 16,
+			"prototypes": 23,
+			"footprint": {
+				"tile_width": 5,
+				"tile_height": 5,
+				"collision_box": [
+					-2.3984375,
+					-2.3984375,
+					2.3984375,
+					2.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 6,
+				"inventories": 1,
+				"inventorySlots": 8,
+				"moduleSlots": 8
+			}
+		},
+		{
+			"type": "asteroid",
+			"class": "script_only",
+			"representative": "big-carbonic-asteroid",
+			"representative_reason": "richest of 16 asteroid prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of big-metallic-asteroid",
+			"candidates": 16,
+			"prototypes": 16,
+			"footprint": {
+				"tile_width": 4,
+				"tile_height": 4,
+				"collision_box": [
+					-2,
+					-2,
+					2,
+					2
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "asteroid-collector",
+			"class": "player_buildable",
+			"representative": "asteroid-collector",
+			"representative_reason": "the only asteroid-collector prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.19921875,
+					-1.19921875,
+					1.19921875,
+					1.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 2,
+				"inventorySlots": 44,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "beacon",
+			"class": "player_buildable",
+			"representative": "maraxsis-conduit",
+			"representative_reason": "richest of 2 beacon prototypes by (fluidboxes 0, inventories 1, inventory slots 4, module slots 4), ahead of beacon",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.19921875,
+					-1.19921875,
+					1.19921875,
+					1.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 4,
+				"moduleSlots": 4
+			}
+		},
+		{
+			"type": "boiler",
+			"class": "player_buildable",
+			"representative": "heat-exchanger",
+			"representative_reason": "the only boiler prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 2,
+				"collision_box": [
+					-1.2890625,
+					-0.7890625,
+					1.2890625,
+					0.7890625
+				]
+			},
+			"features": {
+				"fluidboxes": 2,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "burner-generator",
+			"class": "player_buildable",
+			"representative": "burner-generator",
+			"representative_reason": "the only burner-generator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 5,
+				"collision_box": [
+					-1.34765625,
+					-2.34765625,
+					1.34765625,
+					2.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "capture-robot",
+			"class": "script_only",
+			"representative": "capture-robot",
+			"representative_reason": "the only capture-robot prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "cargo-bay",
+			"class": "player_buildable",
+			"representative": "cargo-bay",
+			"representative_reason": "the only cargo-bay prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 4,
+				"tile_height": 4,
+				"collision_box": [
+					-1.8984375,
+					-1.8984375,
+					1.8984375,
+					1.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "character-corpse",
+			"class": "script_only",
+			"representative": "character-corpse",
+			"representative_reason": "richest of 2 character-corpse prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of spidertron-enhancements-corpse",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "cliff",
+			"class": "script_only",
+			"representative": "cliff",
+			"representative_reason": "richest of 7 cliff prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of cliff-fulgora",
+			"candidates": 7,
+			"prototypes": 7,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 1,
+				"collision_box": [
+					-0.98828125,
+					-0.48828125,
+					0.98828125,
+					0.48828125
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "combat-robot",
+			"class": "script_only",
+			"representative": "defender",
+			"representative_reason": "richest of 3 combat-robot prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of destroyer",
+			"candidates": 3,
+			"prototypes": 3,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "constant-combinator",
+			"class": "player_buildable",
+			"representative": "constant-combinator",
+			"representative_reason": "the only constant-combinator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "construction-robot",
+			"class": "player_buildable",
+			"representative": "construction-robot",
+			"representative_reason": "the only construction-robot prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 2,
+				"inventorySlots": 2,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "container",
+			"class": "player_buildable",
+			"representative": "bottomless-chest",
+			"representative_reason": "the only container prototype in the universe",
+			"candidates": 1,
+			"prototypes": 17,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 1,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "corpse",
+			"class": "script_only",
+			"representative": "1x2-remnants",
+			"representative_reason": "richest of 177 corpse prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of accumulator-remnants",
+			"candidates": 177,
+			"prototypes": 177,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 1,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "decider-combinator",
+			"class": "player_buildable",
+			"representative": "decider-combinator",
+			"representative_reason": "the only decider-combinator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 2,
+				"collision_box": [
+					-0.34765625,
+					-0.6484375,
+					0.34765625,
+					0.6484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "deconstructible-tile-proxy",
+			"class": "script_only",
+			"representative": "deconstructible-tile-proxy",
+			"representative_reason": "the only deconstructible-tile-proxy prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "display-panel",
+			"class": "player_buildable",
+			"representative": "display-panel",
+			"representative_reason": "the only display-panel prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.2890625,
+					-0.2890625,
+					0.2890625,
+					0.2890625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "electric-energy-interface",
+			"class": "player_buildable",
+			"representative": "electric-energy-interface",
+			"representative_reason": "the only electric-energy-interface prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.8984375,
+					-0.8984375,
+					0.8984375,
+					0.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "electric-pole",
+			"class": "player_buildable",
+			"representative": "big-electric-pole",
+			"representative_reason": "richest of 4 electric-pole prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of medium-electric-pole",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.6484375,
+					-0.6484375,
+					0.6484375,
+					0.6484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "electric-turret",
+			"class": "player_buildable",
+			"representative": "laser-turret",
+			"representative_reason": "richest of 2 electric-turret prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of tesla-turret",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.69921875,
+					-0.69921875,
+					0.69921875,
+					0.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "entity-ghost",
+			"class": "script_only",
+			"representative": "entity-ghost",
+			"representative_reason": "richest of 5 entity-ghost prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of entity-unknown",
+			"candidates": 5,
+			"prototypes": 5,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "fish",
+			"class": "script_only",
+			"representative": "fish",
+			"representative_reason": "the only fish prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.75,
+					-0.75,
+					0.75,
+					0.75
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "furnace",
+			"class": "player_buildable",
+			"representative": "recycler",
+			"representative_reason": "richest of 2 furnace prototypes by (fluidboxes 0, inventories 3, inventory slots 17, module slots 4), ahead of electric-furnace",
+			"candidates": 2,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 4,
+				"collision_box": [
+					-0.69921875,
+					-1.69921875,
+					0.69921875,
+					1.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 3,
+				"inventorySlots": 17,
+				"moduleSlots": 4
+			}
+		},
+		{
+			"type": "fusion-generator",
+			"class": "player_buildable",
+			"representative": "fusion-generator",
+			"representative_reason": "richest of 2 fusion-generator prototypes by (fluidboxes 2, inventories 0, inventory slots 0, module slots 0), ahead of maraxsis-oversized-steam-turbine",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 5,
+				"collision_box": [
+					-1.3984375,
+					-2.3984375,
+					1.3984375,
+					2.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 2,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "fusion-reactor",
+			"class": "player_buildable",
+			"representative": "fusion-reactor",
+			"representative_reason": "the only fusion-reactor prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 6,
+				"tile_height": 6,
+				"collision_box": [
+					-2.8984375,
+					-2.8984375,
+					2.8984375,
+					2.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 2,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "gate",
+			"class": "player_buildable",
+			"representative": "gate",
+			"representative_reason": "the only gate prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.2890625,
+					-0.2890625,
+					0.2890625,
+					0.2890625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "generator",
+			"class": "player_buildable",
+			"representative": "steam-engine",
+			"representative_reason": "richest of 2 generator prototypes by (fluidboxes 1, inventories 0, inventory slots 0, module slots 0), ahead of steam-turbine",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 5,
+				"collision_box": [
+					-1.25,
+					-2.34765625,
+					1.25,
+					2.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "heat-interface",
+			"class": "player_buildable",
+			"representative": "heat-interface",
+			"representative_reason": "the only heat-interface prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "heat-pipe",
+			"class": "player_buildable",
+			"representative": "heat-pipe",
+			"representative_reason": "the only heat-pipe prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.296875,
+					-0.296875,
+					0.296875,
+					0.296875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "infinity-cargo-wagon",
+			"class": "player_buildable",
+			"representative": "infinity-cargo-wagon",
+			"representative_reason": "the only infinity-cargo-wagon prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 5,
+				"collision_box": [
+					-0.59765625,
+					-2.3984375,
+					0.59765625,
+					2.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 40,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "infinity-container",
+			"class": "player_buildable",
+			"representative": "infinity-chest",
+			"representative_reason": "the only infinity-container prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 48,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "infinity-pipe",
+			"class": "player_buildable",
+			"representative": "infinity-pipe",
+			"representative_reason": "the only infinity-pipe prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.2890625,
+					-0.2890625,
+					0.2890625,
+					0.2890625
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "inserter",
+			"class": "player_buildable",
+			"representative": "bulk-inserter",
+			"representative_reason": "richest of 5 inserter prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of fast-inserter",
+			"candidates": 5,
+			"prototypes": 6,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.1484375,
+					-0.1484375,
+					0.1484375,
+					0.1484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "item-request-proxy",
+			"class": "script_only",
+			"representative": "item-request-proxy",
+			"representative_reason": "the only item-request-proxy prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "lab",
+			"class": "player_buildable",
+			"representative": "lab",
+			"representative_reason": "the only lab prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.19921875,
+					-1.19921875,
+					1.19921875,
+					1.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 2,
+				"inventorySlots": 15,
+				"moduleSlots": 2
+			}
+		},
+		{
+			"type": "lamp",
+			"class": "player_buildable",
+			"representative": "small-lamp",
+			"representative_reason": "the only lamp prototype in the universe",
+			"candidates": 1,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.1484375,
+					-0.1484375,
+					0.1484375,
+					0.1484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "land-mine",
+			"class": "player_buildable",
+			"representative": "land-mine",
+			"representative_reason": "the only land-mine prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "lane-splitter",
+			"class": "player_buildable",
+			"representative": "lane-splitter",
+			"representative_reason": "the only lane-splitter prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "lightning-attractor",
+			"class": "player_buildable",
+			"representative": "lightning-collector",
+			"representative_reason": "richest of 2 lightning-attractor prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of lightning-rod",
+			"candidates": 2,
+			"prototypes": 3,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.69921875,
+					-0.69921875,
+					0.69921875,
+					0.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "linked-belt",
+			"class": "player_buildable",
+			"representative": "linked-belt",
+			"representative_reason": "the only linked-belt prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "linked-container",
+			"class": "player_buildable",
+			"representative": "linked-chest",
+			"representative_reason": "the only linked-container prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 16,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "loader",
+			"class": "player_buildable",
+			"representative": "express-loader",
+			"representative_reason": "richest of 4 loader prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of fast-loader",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 2,
+				"collision_box": [
+					-0.3984375,
+					-0.8984375,
+					0.3984375,
+					0.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "loader-1x1",
+			"class": "script_only",
+			"representative": "loader-1x1",
+			"representative_reason": "the only loader-1x1 prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "logistic-robot",
+			"class": "player_buildable",
+			"representative": "logistic-robot",
+			"representative_reason": "the only logistic-robot prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 0,
+				"tile_height": 0,
+				"collision_box": [
+					0,
+					0,
+					0,
+					0
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 1,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "market",
+			"class": "script_only",
+			"representative": "market",
+			"representative_reason": "the only market prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.3984375,
+					-1.3984375,
+					1.3984375,
+					1.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "mining-drill",
+			"class": "player_buildable",
+			"representative": "big-mining-drill",
+			"representative_reason": "richest of 3 mining-drill prototypes by (fluidboxes 1, inventories 1, inventory slots 4, module slots 4), ahead of electric-mining-drill",
+			"candidates": 3,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 5,
+				"tile_height": 5,
+				"collision_box": [
+					-2.34765625,
+					-2.34765625,
+					2.34765625,
+					2.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 1,
+				"inventorySlots": 4,
+				"moduleSlots": 4
+			}
+		},
+		{
+			"type": "offshore-pump",
+			"class": "player_buildable",
+			"representative": "offshore-pump",
+			"representative_reason": "the only offshore-pump prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.59765625,
+					-1.046875,
+					0.59765625,
+					0.296875
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "pipe",
+			"class": "player_buildable",
+			"representative": "pipe",
+			"representative_reason": "the only pipe prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.2890625,
+					-0.2890625,
+					0.2890625,
+					0.2890625
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "pipe-to-ground",
+			"class": "player_buildable",
+			"representative": "duct-underground",
+			"representative_reason": "richest of 2 pipe-to-ground prototypes by (fluidboxes 1, inventories 0, inventory slots 0, module slots 0), ahead of pipe-to-ground",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.7890625,
+					-0.7890625,
+					0.7890625,
+					0.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "plant",
+			"class": "player_buildable",
+			"representative": "jellystem",
+			"representative_reason": "richest of 2 plant prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of yumako-tree",
+			"candidates": 2,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.796875,
+					-0.796875,
+					0.796875,
+					0.796875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "power-switch",
+			"class": "player_buildable",
+			"representative": "power-switch",
+			"representative_reason": "the only power-switch prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.69921875,
+					-0.69921875,
+					0.69921875,
+					0.69921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "programmable-speaker",
+			"class": "player_buildable",
+			"representative": "programmable-speaker",
+			"representative_reason": "the only programmable-speaker prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.296875,
+					-0.296875,
+					0.296875,
+					0.296875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "proxy-container",
+			"class": "player_buildable",
+			"representative": "proxy-container",
+			"representative_reason": "richest of 2 proxy-container prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of sp-spidertron-dock",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "pump",
+			"class": "player_buildable",
+			"representative": "duct-exhaust",
+			"representative_reason": "richest of 4 pump prototypes by (fluidboxes 1, inventories 0, inventory slots 0, module slots 0), ahead of duct-intake",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.8984375,
+					-0.8984375,
+					0.8984375,
+					0.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "radar",
+			"class": "player_buildable",
+			"representative": "maraxsis-sonar",
+			"representative_reason": "richest of 2 radar prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of radar",
+			"candidates": 2,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 6,
+				"tile_height": 5,
+				"collision_box": [
+					-2.796875,
+					-2.296875,
+					2.796875,
+					2.296875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "rail-remnants",
+			"class": "script_only",
+			"representative": "curved-rail-a-remnants",
+			"representative_reason": "richest of 6 rail-remnants prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of curved-rail-b-remnants",
+			"candidates": 6,
+			"prototypes": 6,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 4,
+				"collision_box": [
+					-0.75,
+					-2.515625,
+					0.75,
+					2.515625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "reactor",
+			"class": "player_buildable",
+			"representative": "nuclear-reactor",
+			"representative_reason": "the only reactor prototype in the universe",
+			"candidates": 1,
+			"prototypes": 2,
+			"footprint": {
+				"tile_width": 5,
+				"tile_height": 5,
+				"collision_box": [
+					-2.19921875,
+					-2.19921875,
+					2.19921875,
+					2.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 2,
+				"inventorySlots": 2,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "resource",
+			"class": "script_only",
+			"representative": "calcite",
+			"representative_reason": "richest of 13 resource prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of coal",
+			"candidates": 13,
+			"prototypes": 13,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.09765625,
+					-0.09765625,
+					0.09765625,
+					0.09765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "segmented-unit",
+			"class": "script_only",
+			"representative": "big-demolisher",
+			"representative_reason": "richest of 3 segmented-unit prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of medium-demolisher",
+			"candidates": 3,
+			"prototypes": 3,
+			"footprint": {
+				"tile_width": 6,
+				"tile_height": 6,
+				"collision_box": [
+					-3,
+					-3,
+					3,
+					3
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "selector-combinator",
+			"class": "player_buildable",
+			"representative": "selector-combinator",
+			"representative_reason": "the only selector-combinator prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 2,
+				"collision_box": [
+					-0.34765625,
+					-0.6484375,
+					0.34765625,
+					0.6484375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "simple-entity",
+			"class": "script_only",
+			"representative": "big-demolisher-corpse",
+			"representative_reason": "richest of 53 simple-entity prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of big-fulgora-rock",
+			"candidates": 53,
+			"prototypes": 53,
+			"footprint": {
+				"tile_width": 7,
+				"tile_height": 7,
+				"collision_box": [
+					-3.5,
+					-3.5,
+					3.5,
+					3.5
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "simple-entity-with-force",
+			"class": "player_buildable",
+			"representative": "simple-entity-with-force",
+			"representative_reason": "the only simple-entity-with-force prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "simple-entity-with-owner",
+			"class": "player_buildable",
+			"representative": "simple-entity-with-owner",
+			"representative_reason": "the only simple-entity-with-owner prototype in the universe",
+			"candidates": 1,
+			"prototypes": 8,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.34765625,
+					-0.34765625,
+					0.34765625,
+					0.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "solar-panel",
+			"class": "player_buildable",
+			"representative": "solar-panel",
+			"representative_reason": "the only solar-panel prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.34765625,
+					-1.34765625,
+					1.34765625,
+					1.34765625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "space-platform-hub",
+			"class": "player_buildable",
+			"representative": "space-platform-hub",
+			"representative_reason": "the only space-platform-hub prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 8,
+				"tile_height": 8,
+				"collision_box": [
+					-3.8984375,
+					-3.8984375,
+					3.8984375,
+					3.8984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 2,
+				"inventorySlots": 69,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "spider-unit",
+			"class": "script_only",
+			"representative": "big-stomper-pentapod",
+			"representative_reason": "richest of 7 spider-unit prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of big-strafer-pentapod",
+			"candidates": 7,
+			"prototypes": 7,
+			"footprint": {
+				"tile_width": 5,
+				"tile_height": 5,
+				"collision_box": [
+					-2.3984375,
+					-2.3984375,
+					2.3984375,
+					2.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "splitter",
+			"class": "player_buildable",
+			"representative": "express-splitter",
+			"representative_reason": "richest of 4 splitter prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of fast-splitter",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 1,
+				"collision_box": [
+					-0.8984375,
+					-0.3984375,
+					0.8984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "storage-tank",
+			"class": "player_buildable",
+			"representative": "duct",
+			"representative_reason": "richest of 7 storage-tank prototypes by (fluidboxes 1, inventories 0, inventory slots 0, module slots 0), ahead of duct-cross",
+			"candidates": 7,
+			"prototypes": 9,
+			"footprint": {
+				"tile_width": 2,
+				"tile_height": 2,
+				"collision_box": [
+					-0.7890625,
+					-0.98828125,
+					0.7890625,
+					0.98828125
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "temporary-container",
+			"class": "script_only",
+			"representative": "cargo-pod-container",
+			"representative_reason": "the only temporary-container prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 2,
+				"collision_box": [
+					-0.5,
+					0,
+					0.5,
+					1.296875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 1,
+				"inventorySlots": 20,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "thruster",
+			"class": "player_buildable",
+			"representative": "thruster",
+			"representative_reason": "the only thruster prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 4,
+				"tile_height": 5,
+				"collision_box": [
+					-1.69921875,
+					-2.19921875,
+					1.69921875,
+					2.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 2,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "tile-ghost",
+			"class": "script_only",
+			"representative": "tile-ghost",
+			"representative_reason": "the only tile-ghost prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.48828125,
+					-0.48828125,
+					0.48828125,
+					0.48828125
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "transport-belt",
+			"class": "player_buildable",
+			"representative": "express-transport-belt",
+			"representative_reason": "richest of 4 transport-belt prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of fast-transport-belt",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "tree",
+			"class": "script_only",
+			"representative": "ashland-lichen-tree",
+			"representative_reason": "richest of 33 tree prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of ashland-lichen-tree-flaming",
+			"candidates": 33,
+			"prototypes": 33,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.5,
+					-0.59765625,
+					0.5,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "turret",
+			"class": "script_only",
+			"representative": "behemoth-worm-turret",
+			"representative_reason": "richest of 4 turret prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of big-worm-turret",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 3,
+				"tile_height": 3,
+				"collision_box": [
+					-1.3984375,
+					-1.19921875,
+					1.3984375,
+					1.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "underground-belt",
+			"class": "player_buildable",
+			"representative": "express-underground-belt",
+			"representative_reason": "richest of 4 underground-belt prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of fast-underground-belt",
+			"candidates": 4,
+			"prototypes": 4,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "unit",
+			"class": "script_only",
+			"representative": "behemoth-biter",
+			"representative_reason": "richest of 29 unit prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of behemoth-spitter",
+			"candidates": 29,
+			"prototypes": 29,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "unit-spawner",
+			"class": "script_only",
+			"representative": "biter-spawner",
+			"representative_reason": "richest of 5 unit-spawner prototypes by (fluidboxes 0, inventories 0, inventory slots 0, module slots 0), ahead of gleba-spawner",
+			"candidates": 5,
+			"prototypes": 5,
+			"footprint": {
+				"tile_width": 5,
+				"tile_height": 5,
+				"collision_box": [
+					-2.19921875,
+					-2.19921875,
+					2.19921875,
+					2.19921875
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "valve",
+			"class": "player_buildable",
+			"representative": "one-way-valve",
+			"representative_reason": "richest of 3 valve prototypes by (fluidboxes 1, inventories 0, inventory slots 0, module slots 0), ahead of overflow-valve",
+			"candidates": 3,
+			"prototypes": 3,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.3984375,
+					-0.3984375,
+					0.3984375,
+					0.3984375
+				]
+			},
+			"features": {
+				"fluidboxes": 1,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		},
+		{
+			"type": "wall",
+			"class": "player_buildable",
+			"representative": "stone-wall",
+			"representative_reason": "the only wall prototype in the universe",
+			"candidates": 1,
+			"prototypes": 1,
+			"footprint": {
+				"tile_width": 1,
+				"tile_height": 1,
+				"collision_box": [
+					-0.2890625,
+					-0.2890625,
+					0.2890625,
+					0.2890625
+				]
+			},
+			"features": {
+				"fluidboxes": 0,
+				"inventories": 0,
+				"inventorySlots": 0,
+				"moduleSlots": 0
+			}
+		}
+	],
+	"exclusions": [
+		{
+			"type": "agricultural-tower",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 2 placeable agricultural-tower prototype(s) fail a surface condition on the measured platform vector: pressure >= 1000 but the surface measures 0; pressure >= 200000 but the surface measures 0"
+		},
+		{
+			"type": "arrow",
+			"prototypes": 2,
+			"derivation": "ephemera",
+			"reason": "render-only direction marker driven by the GUI; the representative fake-selection-box-2x2 creates successfully at this pin, so the exclusion is the reviewed category — an arrow carries no world state a payload could restore"
+		},
+		{
+			"type": "artillery-flare",
+			"prototypes": 1,
+			"derivation": "ephemera",
+			"reason": "mandatory creation parameter, measured: create_entity threw 'Key \"movement\" not found in property tree at ROOT' — a flare is a targeting ephemeron that exists only between firing and impact"
+		},
+		{
+			"type": "artillery-projectile",
+			"prototypes": 2,
+			"derivation": "ephemera",
+			"reason": "in-flight ordnance with a mandatory target, measured: create_entity threw 'Can't create artillery-projectile, target not specified.' — its state is a trajectory, not a placement"
+		},
+		{
+			"type": "artillery-wagon",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable artillery-wagon prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "beam",
+			"prototypes": 7,
+			"derivation": "ephemera",
+			"reason": "attached weapon effect with a mandatory endpoint, measured: create_entity threw 'Can't create beam, target/target_position not specified.' — a beam exists only while its source fires"
+		},
+		{
+			"type": "car",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 2 placeable car prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "cargo-landing-pad",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable cargo-landing-pad prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "cargo-pod",
+			"prototypes": 1,
+			"derivation": "ephemera",
+			"reason": "engine-owned delivery vessel created and consumed by the rocket/platform cargo system; it is in transit by definition, so a payload that restored one would place a pod that belongs to no launch"
+		},
+		{
+			"type": "cargo-wagon",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable cargo-wagon prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "character",
+			"prototypes": 1,
+			"derivation": "export_scanner",
+			"reason": "is_exportable_entity refuses type \"character\" (entity-scanner.lua), so no payload can carry it and a fixture cell for it would measure the scanner, not the pipeline"
+		},
+		{
+			"type": "curved-rail-a",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable curved-rail-a prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "curved-rail-b",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable curved-rail-b prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "elevated-curved-rail-a",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable elevated-curved-rail-a prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "elevated-curved-rail-b",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable elevated-curved-rail-b prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "elevated-half-diagonal-rail",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable elevated-half-diagonal-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "elevated-straight-rail",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable elevated-straight-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "explosion",
+			"prototypes": 229,
+			"derivation": "ephemera",
+			"reason": "one-shot animation entity that destroys itself when its animation ends; it creates successfully at this pin but cannot outlive the tick range a transfer spans"
+		},
+		{
+			"type": "fire",
+			"prototypes": 14,
+			"derivation": "ephemera",
+			"reason": "transient spreading effect with its own lifetime and damage ticking; it creates successfully at this pin, but restoring one would fabricate an ongoing hazard rather than preserve state"
+		},
+		{
+			"type": "fluid-turret",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable fluid-turret prototype(s) fail a surface condition on the measured platform vector: pressure >= 10 but the surface measures 0"
+		},
+		{
+			"type": "fluid-wagon",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable fluid-wagon prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "half-diagonal-rail",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable half-diagonal-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "highlight-box",
+			"prototypes": 1,
+			"derivation": "ephemera",
+			"reason": "render-only GUI overlay, measured: create_entity threw 'highlight-box needs either a bounding_box, source or target' — it is drawn for a player, not owned by the surface"
+		},
+		{
+			"type": "item-entity",
+			"prototypes": 1,
+			"derivation": "export_scanner",
+			"reason": "is_exportable_entity refuses type \"item-entity\" (entity-scanner.lua), so no payload can carry it and a fixture cell for it would measure the scanner, not the pipeline"
+		},
+		{
+			"type": "legacy-curved-rail",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable legacy-curved-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "legacy-straight-rail",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable legacy-straight-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "lightning",
+			"prototypes": 1,
+			"derivation": "ephemera",
+			"reason": "transient weather effect owned by the surface's lightning system; it creates successfully at this pin but is a strike in progress, not a placed object"
+		},
+		{
+			"type": "locomotive",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable locomotive prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "logistic-container",
+			"prototypes": 5,
+			"derivation": "surface_conditions",
+			"reason": "all 5 placeable logistic-container prototype(s) fail a surface condition on the measured platform vector: gravity >= 0.1 but the surface measures 0"
+		},
+		{
+			"type": "particle-source",
+			"prototypes": 7,
+			"derivation": "ephemera",
+			"reason": "transient particle emitter; the representative blood-fountain creates successfully at this pin, so unlike the brief's other two mandatory-parameter ephemera this one is excluded on the reviewed category alone"
+		},
+		{
+			"type": "projectile",
+			"prototypes": 31,
+			"derivation": "ephemera",
+			"reason": "in-flight ordnance with a mandatory target, measured: create_entity threw 'Can't create projectile, target not specified.' — its state is a trajectory, not a placement"
+		},
+		{
+			"type": "rail-chain-signal",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable rail-chain-signal prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "rail-ramp",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable rail-ramp prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "rail-signal",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable rail-signal prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "rail-support",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable rail-support prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "roboport",
+			"prototypes": 3,
+			"derivation": "surface_conditions",
+			"reason": "all 3 placeable roboport prototype(s) fail a surface condition on the measured platform vector: pressure >= 10 but the surface measures 0; pressure >= 200000 but the surface measures 0"
+		},
+		{
+			"type": "rocket-silo",
+			"prototypes": 2,
+			"derivation": "surface_conditions",
+			"reason": "all 2 placeable rocket-silo prototype(s) fail a surface condition on the measured platform vector: pressure >= 1 but the surface measures 0"
+		},
+		{
+			"type": "rocket-silo-rocket",
+			"prototypes": 2,
+			"derivation": "ephemera",
+			"reason": "engine-owned rocket created by a rocket-silo launch and consumed on arrival; it creates successfully at this pin but belongs to a silo's launch sequence, not to the surface"
+		},
+		{
+			"type": "rocket-silo-rocket-shadow",
+			"prototypes": 2,
+			"derivation": "ephemera",
+			"reason": "render-only shadow of a rocket-silo-rocket; it has no state of its own, and its parent is already excluded"
+		},
+		{
+			"type": "segment",
+			"prototypes": 60,
+			"derivation": "ephemera",
+			"reason": "engine-owned body segment of a segmented-unit, measured: create_entity threw 'big-demolisher-segment-x0_65 can not be created manually.' — the same relationship spider-leg has to its spider, and is_exportable_entity already refuses that one"
+		},
+		{
+			"type": "smoke-with-trigger",
+			"prototypes": 103,
+			"derivation": "ephemera",
+			"reason": "transient smoke cloud with its own lifetime and periodic trigger; it creates successfully at this pin but expires on a timer no payload can carry"
+		},
+		{
+			"type": "speech-bubble",
+			"prototypes": 1,
+			"derivation": "ephemera",
+			"reason": "GUI bubble bound to an entity, measured: create_entity threw 'Need entity target' — it is chrome drawn over an entity, not a thing standing on the surface"
+		},
+		{
+			"type": "spider-leg",
+			"prototypes": 18,
+			"derivation": "export_scanner",
+			"reason": "is_exportable_entity refuses type \"spider-leg\" (entity-scanner.lua), so no payload can carry it and a fixture cell for it would measure the scanner, not the pipeline"
+		},
+		{
+			"type": "spider-vehicle",
+			"prototypes": 6,
+			"derivation": "surface_conditions",
+			"reason": "all 3 placeable spider-vehicle prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0; pressure >= 200000 but the surface measures 0"
+		},
+		{
+			"type": "sticker",
+			"prototypes": 22,
+			"derivation": "ephemera",
+			"reason": "status effect attached to a target, measured: create_entity threw 'Can't create sticker, target not specified.' — its identity is the target it modifies"
+		},
+		{
+			"type": "straight-rail",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable straight-rail prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		},
+		{
+			"type": "stream",
+			"prototypes": 14,
+			"derivation": "ephemera",
+			"reason": "in-flight fluid stream with a mandatory endpoint, measured: create_entity threw 'Can't create fluid stream, target/target_position not specified.' — it exists only between nozzle and impact"
+		},
+		{
+			"type": "train-stop",
+			"prototypes": 1,
+			"derivation": "surface_conditions",
+			"reason": "all 1 placeable train-stop prototype(s) fail a surface condition on the measured platform vector: gravity >= 1 but the surface measures 0"
+		}
+	]
+}

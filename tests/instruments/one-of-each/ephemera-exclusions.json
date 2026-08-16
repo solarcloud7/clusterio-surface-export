@@ -1,0 +1,83 @@
+{
+	"schema": "one-of-each/ephemera-exclusions@1",
+	"measured": {
+		"pin": "2.1.11",
+		"date": "2026-08-15",
+		"method": "surface.create_entity{name, position, force} inside pcall on a space-platform surface, one attempt per representative prototype, destroyed immediately; the quoted text is the thrown message",
+		"note": "nine of these eighteen types CREATE successfully with bare parameters at this pin — their exclusion rests on the reviewed category, not on an engine refusal"
+	},
+	"entries": [
+		{
+			"type": "arrow",
+			"reason": "render-only direction marker driven by the GUI; the representative fake-selection-box-2x2 creates successfully at this pin, so the exclusion is the reviewed category — an arrow carries no world state a payload could restore"
+		},
+		{
+			"type": "artillery-flare",
+			"reason": "mandatory creation parameter, measured: create_entity threw 'Key \"movement\" not found in property tree at ROOT' — a flare is a targeting ephemeron that exists only between firing and impact"
+		},
+		{
+			"type": "artillery-projectile",
+			"reason": "in-flight ordnance with a mandatory target, measured: create_entity threw 'Can't create artillery-projectile, target not specified.' — its state is a trajectory, not a placement"
+		},
+		{
+			"type": "beam",
+			"reason": "attached weapon effect with a mandatory endpoint, measured: create_entity threw 'Can't create beam, target/target_position not specified.' — a beam exists only while its source fires"
+		},
+		{
+			"type": "cargo-pod",
+			"reason": "engine-owned delivery vessel created and consumed by the rocket/platform cargo system; it is in transit by definition, so a payload that restored one would place a pod that belongs to no launch"
+		},
+		{
+			"type": "explosion",
+			"reason": "one-shot animation entity that destroys itself when its animation ends; it creates successfully at this pin but cannot outlive the tick range a transfer spans"
+		},
+		{
+			"type": "fire",
+			"reason": "transient spreading effect with its own lifetime and damage ticking; it creates successfully at this pin, but restoring one would fabricate an ongoing hazard rather than preserve state"
+		},
+		{
+			"type": "highlight-box",
+			"reason": "render-only GUI overlay, measured: create_entity threw 'highlight-box needs either a bounding_box, source or target' — it is drawn for a player, not owned by the surface"
+		},
+		{
+			"type": "lightning",
+			"reason": "transient weather effect owned by the surface's lightning system; it creates successfully at this pin but is a strike in progress, not a placed object"
+		},
+		{
+			"type": "particle-source",
+			"reason": "transient particle emitter; the representative blood-fountain creates successfully at this pin, so unlike the brief's other two mandatory-parameter ephemera this one is excluded on the reviewed category alone"
+		},
+		{
+			"type": "projectile",
+			"reason": "in-flight ordnance with a mandatory target, measured: create_entity threw 'Can't create projectile, target not specified.' — its state is a trajectory, not a placement"
+		},
+		{
+			"type": "rocket-silo-rocket",
+			"reason": "engine-owned rocket created by a rocket-silo launch and consumed on arrival; it creates successfully at this pin but belongs to a silo's launch sequence, not to the surface"
+		},
+		{
+			"type": "rocket-silo-rocket-shadow",
+			"reason": "render-only shadow of a rocket-silo-rocket; it has no state of its own, and its parent is already excluded"
+		},
+		{
+			"type": "segment",
+			"reason": "engine-owned body segment of a segmented-unit, measured: create_entity threw 'big-demolisher-segment-x0_65 can not be created manually.' — the same relationship spider-leg has to its spider, and is_exportable_entity already refuses that one"
+		},
+		{
+			"type": "smoke-with-trigger",
+			"reason": "transient smoke cloud with its own lifetime and periodic trigger; it creates successfully at this pin but expires on a timer no payload can carry"
+		},
+		{
+			"type": "speech-bubble",
+			"reason": "GUI bubble bound to an entity, measured: create_entity threw 'Need entity target' — it is chrome drawn over an entity, not a thing standing on the surface"
+		},
+		{
+			"type": "sticker",
+			"reason": "status effect attached to a target, measured: create_entity threw 'Can't create sticker, target not specified.' — its identity is the target it modifies"
+		},
+		{
+			"type": "stream",
+			"reason": "in-flight fluid stream with a mandatory endpoint, measured: create_entity threw 'Can't create fluid stream, target/target_position not specified.' — it exists only between nozzle and impact"
+		}
+	]
+}

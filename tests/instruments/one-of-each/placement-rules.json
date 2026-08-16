@@ -1,0 +1,46 @@
+{
+	"schema": "one-of-each/placement-rules@1",
+	"rules": {
+		"thruster": {
+			"edge": "south",
+			"direction": "south",
+			"reason": "owner constraint: thrusters sit at the platform's south/bottom edge, which is where a real platform mounts them"
+		},
+		"asteroid-collector": {
+			"edge": "outward",
+			"direction": "outward",
+			"reason": "owner constraint: collectors sit at an edge with their arms facing outward, off the platform"
+		},
+		"entity-ghost": {
+			"inner_name": "chemical-plant",
+			"reason": "a ghost of WHAT is a coverage dimension: chemical-plant is the richest platform-legal crafting machine (fluidboxes plus module slots), so its ghost carries the most ghost-side state a payload could lose"
+		},
+		"tile-ghost": {
+			"inner_name": "space-platform-foundation",
+			"reason": "a ghost of WHAT is a coverage dimension: foundation is the only tile a platform builds out of, so it is the sole tile ghost a real platform can hold"
+		},
+		"item-request-proxy": {
+			"target_type": "assembling-machine",
+			"module_request": {
+				"item": "speed-module",
+				"inventory": "crafter_modules",
+				"count": 1
+			},
+			"order": "after_targets",
+			"reason": "a proxy is created onto an existing entity, so it is placed after every other cell and shares its target's cell; the request shape is the one tests/integration/gateway-park-proxies proves the engine accepts"
+		},
+		"character-corpse": {
+			"inventory_size": 80,
+			"stock": {
+				"item": "iron-plate",
+				"count": 7,
+				"inventory": "character_corpse"
+			},
+			"reason": "core/deserializer.lua passes inventory_size when it restores a character-corpse, so the cell must carry a non-default inventory; the stock is load-bearing — measured 2026-08-16 at 2.1.11 on this platform, an EMPTY character-corpse is culled by the engine within ~400 ticks while a corpse holding seven iron plates survives, so an unstocked cell would be gone before any export scanned it"
+		},
+		"space-platform-hub": {
+			"provided_by": "platform_hub",
+			"reason": "the staging platform's own hub IS the space-platform-hub cell; a platform holds exactly one hub, so creating a second would measure a refusal the pipeline never issues"
+		}
+	}
+}
