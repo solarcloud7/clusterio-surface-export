@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [int[]]$Hosts = @(1, 2),
-    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe', 'hub-req-sections-', 'gwpark-probe', 'deleteprobe-', 'latchlive-', 'loaderfreeze-', 'beltfreeze-', 'cfgattr-', 'beltstate-', 'invstate-', 'no-tick-sync-lab-', 'belt-r14-scratch', 'belt-r15-scratch', 'belt-iso-scratch', 'latch-rung-', 'else-rung-', 'selab-armed-'),
+    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe', 'hub-req-sections-', 'gwpark-probe', 'deleteprobe-', 'latchlive-', 'loaderfreeze-', 'beltfreeze-', 'cfgattr-', 'beltstate-', 'invstate-', 'no-tick-sync-lab-', 'belt-r14-scratch', 'belt-r15-scratch', 'belt-iso-scratch', 'latch-rung-', 'else-rung-', 'selab-armed-', 'labconflict-'),
     [switch]$IncludeUnknown,
     [switch]$DryRun
 )
