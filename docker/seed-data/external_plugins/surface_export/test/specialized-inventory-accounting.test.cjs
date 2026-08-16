@@ -15,7 +15,7 @@ const handlerInventoryOwners = new Set([
 ]);
 const handlerFluidOwners = new Set([
 	"assembling-machine", "furnace", "fluid-storage", "pipe", "pipe-to-ground", "pump",
-	"mining-drill", "loader", "valve", "linked-belt", "plant",
+	"mining-drill", "loader", "valve", "linked-belt", "plant", "segmented-unit",
 ]);
 const categories = [
 	"assembling-machine", "furnace", "transport-belt", "underground-belt", "splitter",
@@ -24,6 +24,7 @@ const categories = [
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
 	"train-stop", "resource", "space-platform-hub", "loader", "valve", "linked-belt", "plant",
+	"segmented-unit",
 ];
 const specializedFluidCapabilities = new Map([
 	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],

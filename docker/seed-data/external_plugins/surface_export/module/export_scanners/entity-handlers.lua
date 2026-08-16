@@ -713,6 +713,22 @@ EntityHandlers["gate"] = function(entity)
   return nil
 end
 
+EntityHandlers["segmented-unit"] = function(entity)
+  local data = {}
+
+  data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
+
+  local unit = entity.segmented_unit
+  if unit and unit.valid then
+    data.segmented_unit = {
+      activity_mode = unit.activity_mode,
+      minimum_activity_mode = unit.minimum_activity_mode,
+    }
+  end
+
+  return next(data) and data or nil
+end
+
 EntityHandlers["power-switch"] = function(entity)
   local data = {}
   
