@@ -96,6 +96,15 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		if not schedule_ok then
 			return nil, "Transfer payload missing/invalid platform schedule: " .. tostring(schedule_err)
 		end
+		local verification = platform_data.verification
+		if type(verification) ~= "table"
+			or type(verification.item_counts) ~= "table"
+			or type(verification.fluid_counts) ~= "table" then
+			return nil, "Transfer payload missing required verification counts: a payload carrying "
+				.. "_transferId is gated at the destination by an exact item and fluid verdict, and this "
+				.. "one carries no verification.item_counts/fluid_counts to gate against. Re-export it "
+				.. "from the source instance, or upload it without _transferId to import it as an export."
+		end
 	end
 
 
