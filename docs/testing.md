@@ -137,6 +137,34 @@ Engine limitation: rendering texts (the pad name labels) are script state and ca
 tooling (`tests/lab-gallery/deliver-all-fixtures.mjs`) redraws them from the manifest after a pad platform
 is delivered.
 
+### Declarative reads — one verify list, every runner (2026-07-26)
+
+A fixture whose `lifecycle.verify` carries dest-end `physical_read` checks needs **no bespoke meter and no
+dispatch entry**: `/test-run` evaluates the same declared checks on both pad halves (left at dx 0, paste at
+dx 14) that the gallery suite (`tests/integration/gallery-suite/run-tests.mjs`) evaluates on a real transfer's
+destination. The `property` read takes a dotted path walked by INDEXING only (`temperature`,
+`burner.remaining_burning_fuel`, `force.bulk_inserter_capacity_bonus`); `item_count`/`held`/`fluid` cover the
+rest. Method-shaped reads (`get_recipe()`, `get_module_inventory()`, circuit sections) keep bespoke meters —
+extending the walk to call methods would trade away its injection-unrepresentability.
+
+**Promoting or adding a pad assertion is a `tests/lab-gallery/manifest.json` edit alone.** The workflow:
+
+```bash
+# 1. measure the live value first (never author an expected value from memory):
+node tools/tests/testkit/cli.mjs probe lab-omnibus-state-v1 'heat-pipe@43,-13:temperature'
+# 2. declare the same path in the fixture's lifecycle.verify (op eq, or approx for progress doubles)
+# 3. re-push the roster and run it:
+node tests/lab-gallery/push-roster.mjs --instance clusterio-host-1-instance-1
+./tools/clusterio/rcon.ps1 11 "/test-run <name-filter>"
+# 4. teeth: sabotage the expected value by one unit, confirm RED, restore (di-change discipline)
+```
+
+Fail-closed rules baked into the path: zero evaluated physical reads is a FAIL, never a vacuous green; a
+typo'd path fails the check carrying the engine's own message (pcall-caught; a nil resolution reports
+"resolved NIL", never a pass); an anchor that matches two entities is refused, not guessed. The check name
+carries the property path (`heat-pipe.property(temperature)`), so two reads on one pad are distinguishable in
+a failure.
+
 ### Single-use batch lifecycle
 
 A certified baked-fixture batch follows this lifecycle:
