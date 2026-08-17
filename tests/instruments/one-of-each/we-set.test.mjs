@@ -8,33 +8,31 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	BRACKET_WRITE_CONTROLS, COMMON_CATEGORY, RECEIVER_WRITE_CONTROLS, assemble, checkControls,
-	extractDirectWrites, extractHandlerCaptures, extractReceiverWrites, extractRestoreRules,
-	matchedBlock, returnDominatedKey, topLevelKeys,
+	BRACKET_WRITE_CONTROLS, COMMON_CATEGORY, DESERIALIZER_REL, HANDLERS_REL,
+	RECEIVER_WRITE_CONTROLS, assemble, checkControls, extractDirectWrites, extractHandlerCaptures,
+	extractReceiverWrites, extractRestoreRules, loadSources, matchedBlock, returnDominatedKey,
+	topLevelKeys,
 } from "./derive-we-set.mjs";
 import { loadWeSet, weSetRow, writesProperty, capturesFor } from "./we-set.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const MODULE_ROOT = path.join(here, "..", "..", "..",
-	"docker", "seed-data", "external_plugins", "surface_export", "module");
-const deserializerSource = readFileSync(path.join(MODULE_ROOT, "core", "deserializer.lua"), "utf8");
-const handlerSource = readFileSync(path.join(MODULE_ROOT, "export_scanners", "entity-handlers.lua"), "utf8");
-const phaseFiles = readdirSync(path.join(MODULE_ROOT, "import_phases")).filter(n => n.endsWith(".lua"))
-	.map(name => ({
-		rel: `import_phases/${name}`,
-		source: readFileSync(path.join(MODULE_ROOT, "import_phases", name), "utf8"),
-	}));
+const sources = loadSources();
+const sourceOf = rel => [...sources.captureFiles, ...sources.restoreFiles]
+	.find(file => file.rel === rel).source;
+const deserializerSource = sourceOf(DESERIALIZER_REL);
+const handlerSource = sourceOf(HANDLERS_REL);
+const phaseFiles = sources.restoreFiles.filter(file => file.rel.startsWith("import_phases/"));
 
 const artifact = loadWeSet();
 const LIVE_LEDGER = JSON.parse(readFileSync(path.join(here, "reachability-accounted.json"), "utf8"));
 
 test("the committed artifact still matches what the module source says today", () => {
-	const fresh = assemble({ deserializerSource, handlerSource, phaseFiles });
+	const fresh = assemble(sources);
 	assert.deepEqual(fresh.counts, artifact.counts,
 		"module source moved without regenerating we-set.json — run derive-we-set.mjs");
 	assert.deepEqual(fresh.we_set, artifact.we_set);
@@ -43,13 +41,24 @@ test("the committed artifact still matches what the module source says today", (
 	assert.deepEqual(fresh.direct_writes, artifact.direct_writes);
 	assert.deepEqual(fresh.receiver_writes, artifact.receiver_writes);
 	assert.deepEqual(fresh.reachability, artifact.reachability);
+	assert.deepEqual(fresh.join, artifact.join);
 });
 
-const rebuild = (sources = {}) => assemble({
-	deserializerSource: sources.deserializerSource ?? deserializerSource,
-	handlerSource: sources.handlerSource ?? handlerSource,
-	phaseFiles: sources.phaseFiles ?? phaseFiles,
-});
+function substitute(overrides) {
+	const pending = new Set(Object.keys(overrides));
+	const patch = files => files.map(file => {
+		if (!pending.has(file.rel)) return file;
+		pending.delete(file.rel);
+		return { rel: file.rel, source: overrides[file.rel] };
+	});
+	const patched = { captureFiles: patch(sources.captureFiles), restoreFiles: patch(sources.restoreFiles) };
+	assert.deepEqual([...pending], [],
+		"an override naming a file the source set does not carry is a mutation that never applied, and "
+		+ "every assertion built on it would pass by describing unmutated source");
+	return patched;
+}
+
+const rebuild = (overrides = {}) => assemble(substitute(overrides));
 
 const PROBE = [
 	"function Deserializer.mutation_probe(entity, entity_data)",
@@ -92,7 +101,7 @@ test("the extraction is non-vacuous and passes its own controls", () => {
 });
 
 test("a return-dominated write is ADDED to the artifact, never subtracted from the WE-SET", () => {
-	const flagged = rebuild({ deserializerSource: withReturnDominatedProbe(deserializerSource) });
+	const flagged = rebuild({ [DESERIALIZER_REL]: withReturnDominatedProbe(deserializerSource) });
 	const rows = flagged.reachability.return_dominated;
 	assert.ok(rows.length > 0, "the probe must produce a row, or this test proves nothing about a flagged write");
 	for (const row of rows) {
@@ -313,7 +322,7 @@ test("MUTATION KILL: removing a constructor-literal field is seen as a loss", ()
 	const captures = extractHandlerCaptures(mutated);
 	assert.equal(captures.find(row => row.category === "entity-ghost").fields.includes("ghost_name"), false,
 		"the derivation must SEE the removed constructor field disappear");
-	assert.ok(checkControls(rebuild({ handlerSource: mutated }))
+	assert.ok(checkControls(rebuild({ [HANDLERS_REL]: mutated }))
 		.some(failure => failure.includes("entity-ghost.ghost_name went missing")),
 		"and the control must go red, so main() refuses to write the shortened artifact");
 });
@@ -325,7 +334,7 @@ test("MUTATION KILL: removing a non-entity-receiver write is seen as a loss", ()
 	const writes = extractReceiverWrites([{ rel: "core/deserializer.lua", source: mutated }]);
 	assert.equal(writes.some(row => row.property === "activity_mode"), false,
 		"the derivation must SEE the removed alias-receiver write disappear");
-	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+	assert.ok(checkControls(rebuild({ [DESERIALIZER_REL]: mutated }))
 		.some(failure => failure.includes("entity.segmented_unit.activity_mode\" went missing")));
 });
 
@@ -336,7 +345,7 @@ test("MUTATION KILL: removing a nested-chain write is seen as a loss", () => {
 	assert.equal(writes.some(row => row.property === "currently_burning"), false,
 		"a nested `entity.a.b =` chain is the shape the direct-write scan was blind to — the arm must see "
 		+ "its removal, or it is not reading that shape at all");
-	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+	assert.ok(checkControls(rebuild({ [DESERIALIZER_REL]: mutated }))
 		.some(failure => failure.includes("entity.burner.currently_burning\" went missing")));
 });
 
@@ -346,12 +355,12 @@ test("MUTATION KILL: removing a bracket write's literal is seen as a loss", () =
 	const writes = extractDirectWrites([{ rel: "core/deserializer.lua", source: mutated }]);
 	assert.equal(writes.some(row => row.property === "providing_to_other_platforms"), false,
 		"the literal list IS the property list for a bracket write — dropping one must shrink the WE-SET");
-	assert.ok(checkControls(rebuild({ deserializerSource: mutated }))
+	assert.ok(checkControls(rebuild({ [DESERIALIZER_REL]: mutated }))
 		.some(failure => failure.includes('direct write "providing_to_other_platforms" went missing')));
 });
 
 test("MUTATION KILL: a NEW return-dominated write with no account refuses the artifact", () => {
-	const fresh = rebuild({ deserializerSource: withReturnDominatedProbe(deserializerSource) });
+	const fresh = rebuild({ [DESERIALIZER_REL]: withReturnDominatedProbe(deserializerSource) });
 	assert.deepEqual(fresh.reachability.return_dominated.map(row => row.property).sort(),
 		["mutation_probe"], "the arm must SEE the reintroduced shape");
 	const key = returnDominatedKey(fresh.reachability.return_dominated[0]);
@@ -435,7 +444,7 @@ test("MUTATION KILL: a refused scope that stops being refused turns its account 
 		.replaceAll("goto continue", "log(\"skip\")")
 		.replaceAll("::continue::", "");
 	assert.notEqual(mutated, deserializerSource, "the mutation must apply, or this test proves nothing");
-	const fresh = rebuild({ deserializerSource: mutated });
+	const fresh = rebuild({ [DESERIALIZER_REL]: mutated });
 	assert.equal(fresh.reachability.skipped.some(row => row.file === "core/deserializer.lua"), false,
 		"with no goto left, the arm analyzes that function again");
 	assert.ok(checkControls(fresh).some(failure =>

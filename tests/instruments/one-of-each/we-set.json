@@ -1,5 +1,5 @@
 {
-	"schema": "one-of-each/we-set@1",
+	"schema": "one-of-each/we-set@2",
 	"sources": {
 		"restore_rules": "module/core/deserializer.lua",
 		"handler_captures": "module/export_scanners/entity-handlers.lua",
@@ -14,7 +14,33 @@
 		"reachability": [
 			"module/core/deserializer.lua",
 			"module/import_phases/*.lua"
-		]
+		],
+		"join": {
+			"capture": [
+				"module/core/export-pipeline.lua",
+				"module/export_scanners/blueprint-diff.lua",
+				"module/export_scanners/census-accumulator.lua",
+				"module/export_scanners/connection-scanner.lua",
+				"module/export_scanners/entity-handlers.lua",
+				"module/export_scanners/entity-scanner.lua",
+				"module/export_scanners/fluid-registry.lua",
+				"module/export_scanners/inventory-scanner.lua",
+				"module/export_scanners/tile_scanner.lua"
+			],
+			"restore": [
+				"module/core/deserializer.lua",
+				"module/core/import-completion.lua",
+				"module/core/import-pipeline.lua",
+				"module/import_phases/active_state_restoration.lua",
+				"module/import_phases/belt_restoration.lua",
+				"module/import_phases/entity_creation.lua",
+				"module/import_phases/entity_state_restoration.lua",
+				"module/import_phases/fluid_restoration.lua",
+				"module/import_phases/latch_rearm.lua",
+				"module/import_phases/platform_hub_mapping.lua",
+				"module/import_phases/tile_restoration.lua"
+			]
+		}
 	},
 	"restore_rules": [
 		{
@@ -1024,6 +1050,862 @@
 		"return_dominated": [],
 		"evaluated": 9
 	},
+	"join": {
+		"global_roots": [
+			"entity_data"
+		],
+		"scoped_roots": [
+			{
+				"file": "import_phases/latch_rearm.lua",
+				"function": "LatchRearm.schedule",
+				"name": "record"
+			}
+		],
+		"alias_params": [
+			"ActiveStateRestoration.queue_mining_progress#1",
+			"apply_simple_restore_rules#1"
+		],
+		"entity_captures": [
+			{
+				"field": "backer_name",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "circuit_connections",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "control_behavior",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "count",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.scan_items_on_ground"
+				]
+			},
+			{
+				"field": "custom_status",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "destructible",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "direction",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "entity_filters",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "entity_id",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "force",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "health",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "infinity_filters",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "infinity_pipe_filter",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "infinity_remove_unfiltered",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "last_user",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "logistic_sections",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "mirror",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "name",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.scan_items_on_ground",
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "name_tag",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "orientation",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "position",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.scan_items_on_ground",
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "quality",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.scan_items_on_ground",
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "specific_data",
+				"sites": [
+					"core/export-pipeline.lua:ExportPipeline.complete",
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "tags",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			},
+			{
+				"field": "type",
+				"sites": [
+					"export_scanners/entity-scanner.lua:EntityScanner.scan_items_on_ground",
+					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
+				]
+			}
+		],
+		"payload_reads": [
+			{
+				"plane": "entity",
+				"field": "_beacon_placed",
+				"sites": [
+					"core/import-pipeline.lua:ImportPipeline.process_batch",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "backer_name",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "circuit_connections",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_circuit_connections",
+					"core/deserializer.lua:payload_copper_peers"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "control_behavior",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_control_behavior",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "count",
+				"sites": [
+					"import_phases/entity_creation.lua:EntityCreation.process_batch"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "custom_status",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "destructible",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "direction",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "entity_filters",
+				"sites": [
+					"core/deserializer.lua:restore_slot_filters"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "entity_id",
+				"sites": [
+					"core/deserializer.lua:Deserializer.prune_pole_copper",
+					"core/deserializer.lua:Deserializer.restore_circuit_connections",
+					"core/import-completion.lua:ImportCompletion.run_phase2",
+					"core/import-pipeline.lua:ImportPipeline.process_batch",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
+					"import_phases/belt_restoration.lua:BeltRestoration.attribute_lines",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/entity_state_restoration.lua:EntityStateRestoration.restore_all",
+					"import_phases/fluid_restoration.lua:FluidRestoration.restore",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule",
+					"import_phases/platform_hub_mapping.lua:PlatformHubMapping.process",
+					"import_phases/platform_hub_mapping.lua:PlatformHubMapping.restore_hub_inventories"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "force",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/import-completion.lua:bank_failure_black_box"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "health",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "infinity_filters",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_filters"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "infinity_pipe_filter",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_filters"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "infinity_remove_unfiltered",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_filters"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "last_user",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "logistic_requests",
+				"sites": [
+					"import_phases/entity_state_restoration.lua:EntityStateRestoration.restore_all"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "logistic_sections",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_logistic_sections"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "mirror",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "name",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/import-pipeline.lua:ImportPipeline.process_batch",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/platform_hub_mapping.lua:PlatformHubMapping.process"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "name_tag",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "orientation",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "position",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "quality",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "specific_data",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_control_behavior",
+					"core/deserializer.lua:Deserializer.restore_entity_state",
+					"core/deserializer.lua:Deserializer.restore_inventories",
+					"core/deserializer.lua:Deserializer.restore_proxy_targets",
+					"core/deserializer.lua:restore_slot_filters",
+					"core/import-completion.lua:ImportCompletion.run_phase1",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
+					"import_phases/active_state_restoration.lua:restore_inserter_held",
+					"import_phases/belt_restoration.lua:BeltRestoration.attribute_lines",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/entity_creation.lua:carries_fluids",
+					"import_phases/entity_creation.lua:carries_inventory_items",
+					"import_phases/fluid_restoration.lua:FluidRestoration.restore",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "tags",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "entity",
+				"field": "type",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/import-completion.lua:ImportCompletion.run_phase2",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "amount",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "bar",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "belt_to_ground_type",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "bonus_mining_progress",
+				"sites": [
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.queue_mining_progress"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "burner",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "color",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "copy_color_from_train_stop",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "corpse_death_ticks_ago",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "corpse_inventory_size",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "display_panel_always_show",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "display_panel_icon",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "display_panel_messages",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "display_panel_show_in_chart",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "display_panel_text",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "driver_is_gunner",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "drop_position",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "enable_logistics_while_moving",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "energy",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "equipment_grid",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "filter",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "filter_mode",
+				"sites": [
+					"core/deserializer.lua:restore_slot_filters"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "fluid_filter",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "fluidboxes",
+				"sites": [
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/entity_creation.lua:carries_fluids",
+					"import_phases/fluid_restoration.lua:FluidRestoration.restore"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "ghost_name",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "ghost_quality",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "grown_ticks_remaining",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "held_item",
+				"sites": [
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
+					"import_phases/active_state_restoration.lua:restore_inserter_held",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "ignore_unlisted_targets_condition",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_control_behavior"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "insert_plan",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "inventories",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_inventories",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch",
+					"import_phases/entity_creation.lua:carries_inventory_items"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "items",
+				"sites": [
+					"core/import-completion.lua:ImportCompletion.run_phase1",
+					"import_phases/belt_restoration.lua:BeltRestoration.attribute_lines",
+					"import_phases/entity_creation.lua:EntityCreation.process_batch"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "label",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "loader_type",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "manual_trains_limit",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "mining_progress",
+				"sites": [
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.queue_mining_progress",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "orientation",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "output_signals",
+				"sites": [
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "parameters",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state",
+					"import_phases/latch_rearm.lua:LatchRearm.schedule"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "pickup_position",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "priority",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "priority_targets",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "providing_to_other_platforms",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "proxy_target_id",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_proxy_targets"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "proxy_target_inventory",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_proxy_targets"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "read_ammo",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_control_behavior"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "recipe",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "recipe_quality",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "request_from_buffers",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "request_missing_construction_materials",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "schedule",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "segmented_unit",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state",
+					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "selected_gun_index",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "set_ignore_unlisted_targets",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_control_behavior"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "set_priority_list",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_control_behavior"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "target_name",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity",
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "target_position",
+				"sites": [
+					"core/deserializer.lua:Deserializer.create_entity"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "temperature",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_entity_state"
+				]
+			},
+			{
+				"plane": "specific_data",
+				"field": "use_filters",
+				"sites": [
+					"core/deserializer.lua:restore_slot_filters"
+				]
+			}
+		],
+		"captured_without_consumer": [],
+		"consumed_without_producer": [
+			{
+				"plane": "entity",
+				"site": "core/import-pipeline.lua:ImportPipeline.process_batch",
+				"field": "_beacon_placed"
+			},
+			{
+				"plane": "entity",
+				"site": "import_phases/entity_creation.lua:EntityCreation.process_batch",
+				"field": "_beacon_placed"
+			},
+			{
+				"plane": "entity",
+				"site": "import_phases/entity_state_restoration.lua:EntityStateRestoration.restore_all",
+				"field": "logistic_requests"
+			}
+		],
+		"counts": {
+			"scoped_roots": 1,
+			"alias_params": 2,
+			"entity_captures": 25,
+			"specific_data_captures": 91,
+			"entity_reads": 27,
+			"specific_data_reads": 58,
+			"captured_without_consumer": 0,
+			"consumed_without_producer": 3
+		}
+	},
 	"we_set": [
 		{
 			"property": "alert_parameters",
@@ -1610,6 +2492,11 @@
 		"we_set": 75,
 		"reachability_considered": 45,
 		"reachability_evaluated": 9,
-		"return_dominated_writes": 0
+		"return_dominated_writes": 0,
+		"entity_captures": 25,
+		"entity_reads": 27,
+		"specific_data_reads": 58,
+		"captured_without_consumer": 0,
+		"consumed_without_producer": 3
 	}
 }

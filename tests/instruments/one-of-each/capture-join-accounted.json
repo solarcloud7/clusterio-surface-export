@@ -1,0 +1,24 @@
+{
+	"schema": "one-of-each/capture-join-accounted@1",
+	"captured_without_consumer": [],
+	"consumed_without_producer": [
+		{
+			"plane": "entity",
+			"site": "core/import-pipeline.lua:ImportPipeline.process_batch",
+			"field": "_beacon_placed",
+			"reason": "read at core/import-pipeline.lua:423 and assigned at :431 inside the same loop; the name occurs three times in module/, all on the import side (this file twice, import_phases/entity_creation.lua:35 once), and no export scanner assigns it"
+		},
+		{
+			"plane": "entity",
+			"site": "import_phases/entity_creation.lua:EntityCreation.process_batch",
+			"field": "_beacon_placed",
+			"reason": "read at import_phases/entity_creation.lua:35; the only assignment in module/ is core/import-pipeline.lua:431, which runs on the import side"
+		},
+		{
+			"plane": "entity",
+			"site": "import_phases/entity_state_restoration.lua:EntityStateRestoration.restore_all",
+			"field": "logistic_requests",
+			"reason": "read at import_phases/entity_state_restoration.lua:28 to count the entities carrying it, and that count is logged at :32-35; the name occurs twice in module/ — that read and the log string — and nothing assigns it"
+		}
+	]
+}
