@@ -2,6 +2,8 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -245,7 +247,25 @@ async function unitViolations(files) {
 }
 
 function instrumentFile(fileName, source, unit = "tests/instruments/probe-fidelity") {
-	return { name: unit.split("/").at(-1), unit, dialect: "mjs", path: `${unit}/${fileName}`, source };
+	return {
+		name: unit.split("/").at(-1),
+		unit,
+		dischargeScope: "directory",
+		dialect: "mjs",
+		path: `${unit}/${fileName}`,
+		source,
+	};
+}
+
+function integrationFile(fileName, source, unit = "tests/integration/transfer-fidelity") {
+	return {
+		name: unit.split("/").at(-1),
+		unit,
+		dischargeScope: "file",
+		dialect: fileName.endsWith(".mjs") ? "mjs" : "ps1",
+		path: `${unit}/${fileName}`,
+		source,
+	};
 }
 
 test("Rule 1 is satisfied by a physical count anywhere in the instrument directory", async () => {
@@ -254,6 +274,26 @@ test("Rule 1 is satisfied by a physical count anywhere in the instrument directo
 		instrumentFile("probe.mjs", PHYSICAL),
 	]);
 	assert.deepEqual(violations, []);
+});
+
+test("the integration root keeps its per-FILE discharge — a sibling runner does not ground a runner", async () => {
+	const violations = (await unitViolations([
+		integrationFile("run-tests.ps1", `$c = Count-Items\n${PHYSICAL}`),
+		integrationFile("run-tests.mjs", "const board = await runBoard(2);\n"),
+	])).filter((entry) => entry.rule === 1);
+	assert.equal(violations.length, 1, "the ungrounded .mjs must still be flagged");
+	assert.equal(violations[0].path, "tests/integration/transfer-fidelity/run-tests.mjs");
+});
+
+test("the two roots discharge differently in one scan", async () => {
+	const violations = (await unitViolations([
+		integrationFile("run-tests.ps1", PHYSICAL),
+		integrationFile("run-tests.mjs", "const board = await runBoard(2);\n"),
+		instrumentFile("run-rung.mjs", "const board = await runBoard(2);\n"),
+		instrumentFile("probe.mjs", PHYSICAL),
+	])).filter((entry) => entry.rule === 1);
+	assert.equal(violations.length, 1);
+	assert.equal(violations[0].path, "tests/integration/transfer-fidelity/run-tests.mjs");
 });
 
 test("Rule 1 reports an ungrounded instrument directory once, not once per file", async () => {
@@ -281,4 +321,80 @@ test("same-named directories under the two roots are separate units", async () =
 	])).filter((entry) => entry.rule === 1);
 	assert.equal(violations.length, 1);
 	assert.equal(violations[0].path, "tests/instruments/shared-fidelity");
+});
+
+
+const FIXTURE_TREE = {
+	"tests/integration/alpha-fidelity/run-tests.ps1": "$c = Count-Items\nreturn s.get_item_count(\"x\")\n",
+	"tests/integration/alpha-fidelity/run-tests.mjs": "const board = await runBoard(2);\n",
+	"tests/integration/alpha-fidelity/helper.mjs": "export const UNSCANNED = 1;\n",
+	"tests/instruments/beta/run-rung.mjs": "const board = await runBoard(2);\n",
+	"tests/instruments/beta/model.test.mjs": "const fixture = { totalItemLoss: 3 };\n",
+	"tests/instruments/gamma/run-rung.mjs": "const board = await runBoard(2);\n",
+	"tests/instruments/gamma/nested/probe.mjs": "export const LUA = 'return 1';\n",
+	"tests/instruments/gamma/node_modules/vendored.mjs": "export const VENDORED = 1;\n",
+	"tests/instruments/loose.mjs": "export const LOOSE = 1;\n",
+};
+
+function withFixtureTree(run) {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "lint-grounding-"));
+	try {
+		for (const [relative, source] of Object.entries(FIXTURE_TREE)) {
+			const file = path.join(root, relative);
+			fs.mkdirSync(path.dirname(file), { recursive: true });
+			fs.writeFileSync(file, source);
+		}
+		return run(root);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+}
+
+test("the instruments collector assigns one unit per directory, from disk", async () => {
+	const { findInstrumentFiles } = await import(scriptUrl);
+	const records = withFixtureTree((root) => findInstrumentFiles(path.join(root, "tests", "instruments"), root));
+	const byPath = Object.fromEntries(records.map((entry) => [entry.path, entry.unit]));
+	assert.deepEqual(byPath, {
+		"tests/instruments/beta/run-rung.mjs": "tests/instruments/beta",
+		"tests/instruments/gamma/run-rung.mjs": "tests/instruments/gamma",
+		"tests/instruments/gamma/nested/probe.mjs": "tests/instruments/gamma",
+		"tests/instruments/loose.mjs": "tests/instruments/loose.mjs",
+	});
+	assert.equal(new Set(records.map((entry) => entry.unit)).size, 3, "collapsing every file into one unit is the mutant");
+	for (const entry of records) assert.equal(entry.dischargeScope, "directory");
+});
+
+test("the integration collector takes only the two runners, per-file discharge, from disk", async () => {
+	const { findTestFiles } = await import(scriptUrl);
+	const records = withFixtureTree((root) => findTestFiles(path.join(root, "tests", "integration"), root));
+	assert.deepEqual(records.map((entry) => entry.path).sort(), [
+		"tests/integration/alpha-fidelity/run-tests.mjs",
+		"tests/integration/alpha-fidelity/run-tests.ps1",
+	]);
+	for (const entry of records) {
+		assert.equal(entry.unit, "tests/integration/alpha-fidelity");
+		assert.equal(entry.dischargeScope, "file");
+	}
+});
+
+test("collected records drive the roots' discharge difference end to end", async () => {
+	const { findTestFiles, findInstrumentFiles, findGroundingViolations } = await import(scriptUrl);
+	const violations = withFixtureTree((root) => findGroundingViolations([
+		...findTestFiles(path.join(root, "tests", "integration"), root),
+		...findInstrumentFiles(path.join(root, "tests", "instruments"), root),
+	])).filter((entry) => entry.rule === 1);
+	assert.deepEqual(violations.map((entry) => entry.path), ["tests/integration/alpha-fidelity/run-tests.mjs"]);
+});
+
+test("the shipped instruments tree is scanned at its measured size", async (t) => {
+	const { findInstrumentFiles } = await import(scriptUrl);
+	const repoRoot = path.join(__dirname, "..", "..", "..", "..", "..");
+	if (!fs.existsSync(path.join(repoRoot, "tests", "instruments"))) {
+		t.skip("tests/instruments absent — plugin-only container mount, not a full checkout");
+		return;
+	}
+	const records = findInstrumentFiles();
+	assert.equal(records.length, 23);
+	assert.equal(records.filter((entry) => entry.path.endsWith(".test.mjs")).length, 0);
+	assert.equal(new Set(records.map((entry) => entry.unit)).size, 9);
 });

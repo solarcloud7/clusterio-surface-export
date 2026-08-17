@@ -124,19 +124,32 @@ destination, and the runner then misreported the missing destination as physical
 Two scan roots — tests/integration/<name>/run-tests.{ps1,mjs} and every .mjs/.ps1 file at any depth
 under tests/instruments outside *.test.mjs — with comments stripped (dialect-aware — `#` for
 PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
-  1. A fidelity test performs an independent physical item count.        [both dialects, per DIRECTORY]
+  1. A fidelity test performs an independent physical item count.        [both dialects]
   2. Validator fidelity self-reports are cross-grounded physically.      [both dialects, per FILE]
   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
      ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs a runner that FETCHES a transfer verdict must
      adjudicate validation_success after the fetch, and before any board/census read]
 
-Each rule is evaluated over whatever its trigger names. Rule 1's trigger is the directory name, so a
-physical count anywhere in that directory's scanned files satisfies it, reported once per directory.
-Rule 2's trigger is a self-report read inside one file, so that file owes its own corroboration — a
-sibling's physical count does not discharge it. Directories are keyed by root, so
-tests/integration/belt-freeze and tests/instruments/belt-freeze never merge — six names are shared
-across the two roots today (belt-freeze, engine-invariants, fluid-segment-law, loader-freeze,
-pole-copper-prune, selftests), and two of the six carry a one-sided physical count.
+Rule 1's TRIGGER has always been the directory name. What is scoped per root is its DISCHARGE — which
+files' physical counts satisfy it — and the two roots differ, set by a dischargeScope flag on each
+collector's records:
+
+| root | Rule 1 discharge | Rule 1 reports |
+|---|---|---|
+| tests/integration | per FILE (unchanged since the rule existed) | the file |
+| tests/instruments | per DIRECTORY | the directory, once |
+
+tests/integration keeps per-file discharge because tools/tests/run-integration-tests.mjs executes only
+ONE runner per directory (mjs preferred). A directory mid-migration holds a stale grounded run-tests.ps1
+beside the live run-tests.mjs, and per-directory discharge would let the DEAD file ground the LIVE one.
+No integration directory holds two runners today (29 runners, 29 directories, measured), so this is a
+guard against the migration shape, not a current fix.
+
+Rule 2's trigger is a self-report read inside one file, so that file owes its own corroboration in both
+roots — a sibling's physical count does not discharge it. Discharge keys are root-qualified, so
+tests/integration/belt-freeze and tests/instruments/belt-freeze never merge: six names are shared across
+the two roots today (belt-freeze, engine-invariants, fluid-segment-law, loader-freeze, pole-copper-prune,
+selftests), two of them carrying a one-sided physical count.
 
 Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
 runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
@@ -228,29 +241,32 @@ Reach and can-actually-fail, measured by blinding (the same method as the Rule 3
 The presence-arm row is MEASURED: blinding `validation_success` in one-of-each/run-rung.mjs turns the
 shipped `findMjsGroundingViolations` from 0 violations to 1. That file fetches at run-rung.mjs:399 and
 adjudicates at :410, and refuses to read the destination at all on gate failure. Rules 1 and 2 reach
-nothing today, exactly as their mjs coverage did in 2026-08-05; renaming each unit *-fidelity fires
-Rule 1 on 21 of 23 files, and injecting a self-report read fires Rule 2 on 21 of 23 — the two that
-stay green are the two carrying a real get_item_count( (engine-invariants/run-tests.ps1 and
-loader-freeze/run-rung.mjs).
+nothing today, exactly as their mjs coverage did in 2026-08-05. Renaming every instrument directory
+*-fidelity fires Rule 1, under the SHIPPED per-directory discharge, on 7 of the 9 directories; the two
+that stay green are the two holding a real get_item_count( (engine-invariants/run-tests.ps1 and
+loader-freeze/run-rung.mjs). Injecting a self-report read fires Rule 2, which is per file, on 21 of the
+23 files. The per-FILE counterfactual for Rule 1 — what the discharge would do if instruments were keyed
+like integration — is 21 of 23, and that number is why instruments discharge per directory: a single
+future tests/instruments/<x>-fidelity/ directory would otherwise demand a physical count from every pure
+model module in it, rather than one from the rung that talks to the cluster.
 
-Per-directory Rule 1 exists because of that 21-of-23 number: keyed per file, a single future
-tests/instruments/<x>-fidelity/ directory would demand a physical count from every pure model module
-in it. Keyed per directory it demands one, from the rung that talks to the cluster. This is a
-PASS/FAIL no-op for tests/integration, where no directory holds two runners (29 runners, 29
-directories, measured). It is not an OUTPUT no-op: a Rule 1 violation now names the directory rather
-than the file, in both roots. Unobservable on the current tree, where no integration directory is
-fidelity-named.
+The change is a full no-op for tests/integration, pass/fail AND output: its records carry
+dischargeScope "file", so Rule 1 still discharges per file and still reports the file path.
 
 Residuals the widening does NOT close:
 - Rule 2 stays per-file, so a future instrument model module that parses a self-report field with no
   physical count of its own is red even when its rung is grounded — today 0 instrument files read any
   self-report field, and the fix if it ever bites is an allow with a reason, not a scope retreat.
 - The per-directory physical count is computed over ALL scanned files including allow-marked ones, so
-  an allow-marked file's get_item_count( discharges Rule 1 for its directory. The alternative is
+  an allow-marked file's get_item_count( discharges Rule 1 for its directory. An allow's blast radius
+  therefore exceeds the file it annotates, which an approver should weigh. The alternative is
   non-monotonic (adding an allow to one file would turn a sibling red), and the path is reviewed
   rather than silent: an allow needs owner approval and a lint-allow-manifest.json entry.
-- Root-level directory names collide across the two roots but their units do not; nothing checks that
-  a future third root would be keyed the same way.
+- The container SKIP path fires when ANY scan root is missing, not only when all are. In the
+  plugin-only mount both are absent together, so there is no live difference; a hypothetical checkout
+  holding one root but not the other would skip both rather than check the one present.
+- Directory names collide across the two roots but their discharge keys do not; nothing checks that a
+  future third root would be keyed, or scoped, the same way.
 
 Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
 never a self-service response to a firing guard.

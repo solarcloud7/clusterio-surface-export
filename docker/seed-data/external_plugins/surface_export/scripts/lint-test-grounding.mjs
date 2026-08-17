@@ -29,11 +29,11 @@ function stripComments(source, dialect = "ps1") {
 		.join("\n");
 }
 
-function findTestFiles() {
-	if (!existsSync(TESTS_DIR)) return [];
+export function findTestFiles(testsDir = TESTS_DIR, repoRoot = REPO_ROOT) {
+	if (!existsSync(testsDir)) return [];
 	const files = [];
-	for (const name of readdirSync(TESTS_DIR)) {
-		const directory = join(TESTS_DIR, name);
+	for (const name of readdirSync(testsDir)) {
+		const directory = join(testsDir, name);
 		if (!statSync(directory).isDirectory()) continue;
 		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
 			const file = join(directory, runner);
@@ -41,8 +41,9 @@ function findTestFiles() {
 			files.push({
 				name,
 				unit: `tests/integration/${name}`,
+				dischargeScope: "file",
 				dialect: runner.endsWith(".mjs") ? "mjs" : "ps1",
-				path: relative(REPO_ROOT, file).replace(/\\/g, "/"),
+				path: relative(repoRoot, file).replace(/\\/g, "/"),
 				source: readFileSync(file, "utf8"),
 			});
 		}
@@ -68,16 +69,17 @@ export function instrumentUnitName(relativePath) {
 	return relativePath.slice("tests/instruments/".length).split("/")[0];
 }
 
-function findInstrumentFiles() {
-	if (!existsSync(INSTRUMENTS_DIR)) return [];
+export function findInstrumentFiles(instrumentsDir = INSTRUMENTS_DIR, repoRoot = REPO_ROOT) {
+	if (!existsSync(instrumentsDir)) return [];
 	const files = [];
-	for (const file of walkFiles(INSTRUMENTS_DIR)) {
+	for (const file of walkFiles(instrumentsDir)) {
 		if (!isScannedInstrumentFile(basename(file))) continue;
-		const path = relative(REPO_ROOT, file).replace(/\\/g, "/");
+		const path = relative(repoRoot, file).replace(/\\/g, "/");
 		const name = instrumentUnitName(path);
 		files.push({
 			name,
 			unit: `tests/instruments/${name}`,
+			dischargeScope: "directory",
 			dialect: file.endsWith(".mjs") ? "mjs" : "ps1",
 			path,
 			source: readFileSync(file, "utf8"),
@@ -133,11 +135,15 @@ function firstDestinationCensusAfter(source, startIndex) {
 	return -1;
 }
 
-function unitPhysicalCounts(files) {
+function dischargeKeyOf({ dischargeScope, unit, path }) {
+	return dischargeScope === "directory" && unit ? unit : path;
+}
+
+function dischargePhysicalCounts(files) {
 	const counted = new Map();
-	for (const { unit, path, dialect, source } of files) {
-		const key = unit ?? path;
-		const physical = stripComments(source, dialect).includes(PHYSICAL_COUNT);
+	for (const file of files) {
+		const key = dischargeKeyOf(file);
+		const physical = stripComments(file.source, file.dialect).includes(PHYSICAL_COUNT);
 		counted.set(key, (counted.get(key) ?? false) || physical);
 	}
 	return counted;
@@ -145,18 +151,19 @@ function unitPhysicalCounts(files) {
 
 export function findGroundingViolations(files) {
 	const violations = [];
-	const unitHasPhysical = unitPhysicalCounts(files);
-	const reportedUnits = new Set();
-	for (const { name, dialect, path, unit, source } of files) {
+	const dischargeHasPhysical = dischargePhysicalCounts(files);
+	const reportedKeys = new Set();
+	for (const file of files) {
+		const { name, dialect, path, source } = file;
 		if (source.includes(ALLOW_MARKER)) continue;
 		const code = stripComments(source, dialect);
 		const hasPhysical = code.includes(PHYSICAL_COUNT);
-		const unitKey = unit ?? path;
+		const dischargeKey = dischargeKeyOf(file);
 
-		if (/fidelity/i.test(name) && !unitHasPhysical.get(unitKey) && !reportedUnits.has(unitKey)) {
-			reportedUnits.add(unitKey);
+		if (/fidelity/i.test(name) && !dischargeHasPhysical.get(dischargeKey) && !reportedKeys.has(dischargeKey)) {
+			reportedKeys.add(dischargeKey);
 			violations.push({
-				path: unitKey,
+				path: dischargeKey,
 				rule: 1,
 				message: "a *fidelity* test must do an independent physical count (get_item_count(...))",
 			});
