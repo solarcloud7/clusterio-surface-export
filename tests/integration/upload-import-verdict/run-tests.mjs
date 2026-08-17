@@ -15,13 +15,14 @@
 //           transaction row's status and error text AND on a physical destination read
 // does not: assert item/fluid FIDELITY (no exact gate runs on a plain non-transfer import — the
 //           suite's config-attrs / gallery-suite runs are the fidelity control); perform a real
-//           cross-instance transfer; read the browser DOM (status and error are asserted at the
-//           controller record the list renders, not at the rendered pixels); sweep the transaction
-//           rows the arms create (they persist by design, like every transfer)
+//           cross-instance transfer; read the browser DOM (status, error and verdict are asserted at
+//           the controller record the drawer is built from, not at the rendered pixels); sweep the
+//           transaction rows the arms create (they persist by design, like every transfer)
 
 import { execFileSync } from "node:child_process";
 import { lua as luaRaw, ctl, docker, sleep, lastLine, instanceIds, instancePath,
 	fetchTransferSummaries, CONTROLLER, HOSTS } from "../../lab-gallery/batch-lifecycle.mjs";
+import { readTransactionLogStore } from "../../../tools/tests/testkit/log-query.mjs";
 
 const SOURCE_HOST = 1;
 const DEST_HOST = 2;
@@ -35,6 +36,7 @@ const CRAFTED_TRANSFER_ID = `${PREFIX}${TAG}`;
 const DUMP_FILE = `${PREFIX}${TAG}.json`;
 const EXPORT_WAIT_MS = 120_000;
 const ROW_WAIT_MS = 180_000;
+const SUMMARY_WAIT_MS = 30_000;
 const CHEST_ITEMS = 77;
 const BELT_ITEM = "iron-plate";
 const PHANTOM_ITEM = "copper-plate";
@@ -122,6 +124,36 @@ const describeRow = (row) => (row
 	? `status=${row.status} error=${JSON.stringify(row.error)}`
 	: "(no transaction row)");
 
+async function waitForPersistedSummary(transferId, timeoutMs) {
+	const deadline = Date.now() + timeoutMs;
+	let lastSeen = null;
+	while (Date.now() < deadline) {
+		let store = null;
+		try {
+			store = readTransactionLogStore();
+		} catch (readError) {
+			console.log(`  NOTE  transaction-log store not readable yet (${readError.message.split("\n")[0]})`);
+		}
+		const entry = (store || []).find(record => record.transferId === transferId) ?? null;
+		if (entry) {
+			lastSeen = entry;
+			if (entry.summary) return entry.summary;
+		}
+		await sleep(2000);
+	}
+	return lastSeen ? (lastSeen.summary ?? null) : undefined;
+}
+
+const describeVerdict = (summary) => {
+	if (summary === undefined) return "(no persisted detail entry — nothing was written for this row)";
+	if (summary === null) return "(detail entry present, summary absent)";
+	const validation = summary.validation ?? null;
+	if (!validation) return "validation=null";
+	return `validation.failedStage=${JSON.stringify(validation.failedStage ?? null)} `
+		+ `expectedItemTypes=${Object.keys(validation.expectedItemCounts ?? {}).length} `
+		+ `actualItemTypes=${Object.keys(validation.actualItemCounts ?? {}).length}`;
+};
+
 async function uploadArm({ label, platformName, payload, destInstanceId }) {
 	const containerPath = `/tmp/${PREFIX}${label}-${TAG}.json`;
 	putFileInController(containerPath, JSON.stringify(payload));
@@ -130,8 +162,12 @@ async function uploadArm({ label, platformName, payload, destInstanceId }) {
 	say(`  upload-import [${label}] exit=${attempt.status}: ${lastLine(attempt.output)}`);
 	const row = await waitForRow(platformName, ROW_WAIT_MS);
 	const arrival = readArrival(DEST_HOST, platformName);
+	const summary = row && row.transferId
+		? await waitForPersistedSummary(row.transferId, SUMMARY_WAIT_MS)
+		: undefined;
 	say(`  transaction row [${label}]: ${describeRow(row)}`);
-	return { attempt, row, arrival, containerPath };
+	say(`  drawer detail   [${label}]: ${describeVerdict(summary)}`);
+	return { attempt, row, arrival, summary, containerPath };
 }
 
 say(`=== upload-import-verdict: the transaction row reports the destination's verdict (${TAG}) ===`);
@@ -299,6 +335,11 @@ try {
 		+ "the success key entirely on this path, so a reader that demands success===true would flip "
 		+ "every good upload to failed",
 		describeRow(ok.row));
+	check(ok.summary !== undefined && ok.summary !== null && (ok.summary.validation ?? null) === null,
+		"NEGATIVE: the drawer detail for a plain upload carries NO verdict — no exact gate ran, and a "
+		+ "fabricated one would render expected/actual tables that read as 'checked and found nothing'. "
+		+ "The detail entry itself must exist, or this reads as absent when it is only unwritten",
+		describeVerdict(ok.summary));
 
 	say("\n=== BELTS: the destination REFUSED the belt restore and printed [Import FAILED] ===");
 	const belts = await uploadArm({ label: "belts", platformName: ARM_BELTS, payload: beltsPayload,
@@ -320,6 +361,12 @@ try {
 	check(belts.row !== null && typeof belts.row.error === "string" && belts.row.error.includes("belts"),
 		"the row's error names the failure stage the destination reported (belts)",
 		describeRow(belts.row));
+	check(belts.summary !== undefined && belts.summary !== null
+		&& (belts.summary.validation ?? null) === null,
+		"NEGATIVE: a FAILED plain upload still carries no verdict — import-completion.lua builds a "
+		+ "belt-anomaly validation_result locally but attaches it to the event only under "
+		+ "job.transfer_id, so the drawer shows the composed error and no comparison tables",
+		describeVerdict(belts.summary));
 
 	say("\n=== GATE: a transfer-shaped upload whose exact gate FAILS and whose destination is DISCARDED ===");
 	const gate = await uploadArm({ label: "gate", platformName: ARM_GATE, payload: gatePayload,
@@ -342,6 +389,30 @@ try {
 		`the row's error names the failure stage the gate reported (items — ${PHANTOM_COUNT} `
 		+ `${PHANTOM_ITEM} were expected and none exist)`,
 		describeRow(gate.row));
+
+	const gateVerdict = (gate.summary && gate.summary.validation) || null;
+	check(gateVerdict !== null,
+		"the drawer detail for the transfer-shaped upload carries the destination's REAL verdict — "
+		+ "import-completion.lua attaches it whenever job.transfer_id is set, and the operation branch "
+		+ "must consume it instead of discarding it into the composed error string",
+		describeVerdict(gate.summary));
+	check(gateVerdict !== null && gateVerdict.failedStage === "items",
+		"the verdict carries the failure stage on its own field — TransactionLogsTab renders its "
+		+ "dedicated 'Failure stage:' line from validation.failedStage, not from the error text",
+		`failedStage=${JSON.stringify(gateVerdict && gateVerdict.failedStage)}`);
+	check(gateVerdict !== null && Number(gateVerdict.expectedItemCounts?.[PHANTOM_ITEM]) === PHANTOM_COUNT,
+		`the verdict's expected counts carry the ${PHANTOM_COUNT} ${PHANTOM_ITEM} this arm injected — `
+		+ "the expected column of the drawer's comparison table",
+		`expected[${PHANTOM_ITEM}]=${JSON.stringify(gateVerdict && gateVerdict.expectedItemCounts?.[PHANTOM_ITEM])}`);
+	check(gateVerdict !== null && gateVerdict.actualItemCounts !== undefined
+		&& !(PHANTOM_ITEM in (gateVerdict.actualItemCounts ?? {})),
+		`the verdict's actual counts do NOT carry ${PHANTOM_ITEM} — the destination physically had none, `
+		+ "which is the comparison the drawer exists to show",
+		`actualItemTypes=${Object.keys((gateVerdict && gateVerdict.actualItemCounts) ?? {}).length}`);
+	check(gateVerdict !== null && Number(gateVerdict.actualItemCounts?.[BELT_ITEM]) > 0,
+		`the verdict's actual counts DO carry the ${BELT_ITEM} the payload really delivered, so the `
+		+ "table is a measurement and not an empty shell",
+		`actual[${BELT_ITEM}]=${JSON.stringify(gateVerdict && gateVerdict.actualItemCounts?.[BELT_ITEM])}`);
 } catch (probeError) {
 	failures += 1;
 	process.exitCode = 1;

@@ -580,6 +580,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 					? data.cleanup_error
 					: null;
 				const destinationPreserved = data.destination_preserved === true;
+				const reportedValidation = data.validation && typeof data.validation === "object"
+					&& !Array.isArray(data.validation)
+					? data.validation as messages.ValidationResult
+					: null;
 				const importError = importSucceeded ? null : [
 					`Import failed${failedStage ? ` at ${failedStage}` : ""}: `
 						+ `${reportedError ?? "the destination refused the import"}`,
@@ -607,6 +611,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
 						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
 						metrics: (metrics as Record<string, unknown> | null) || null,
+						validation: reportedValidation,
 					}));
 					await this.handlePlatformStateChanged({
 						platform_name: String(data.platform_name || ""),

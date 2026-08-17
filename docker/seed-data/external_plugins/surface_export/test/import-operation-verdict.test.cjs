@@ -8,7 +8,57 @@ const distNode = path.join(__dirname, "..", "dist", "node");
 const { InstancePlugin } = require(path.join(distNode, "instance.js"));
 const { ControllerPlugin } = require(path.join(distNode, "controller.js"));
 const { createOperationRecord } = require(path.join(distNode, "lib", "operation-record.js"));
+const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
+
+const GATE_VERDICT = Object.freeze({
+	success: false,
+	itemCountMatch: false,
+	fluidCountMatch: true,
+	failedStage: "items",
+	entityCount: 12,
+	mismatchDetails: "Item mismatches: copper-plate: loss - expected 5000, got 0",
+	expectedItemCounts: { "copper-plate": 5000, "iron-plate": 81 },
+	actualItemCounts: { "iron-plate": 81 },
+	expectedFluidCounts: {},
+	actualFluidCounts: {},
+	entityTypeBreakdown: { container: 1, inserter: 1, "transport-belt": 1 },
+	itemTypesExpected: 2,
+	itemTypesActual: 1,
+	fluidTypesExpected: 0,
+	fluidTypesActual: 0,
+	totalExpectedItems: 5081,
+	totalActualItems: 81,
+	totalExpectedFluids: 0,
+	totalActualFluids: 0,
+	itemLossByType: { "copper-plate": { expected: 5000, actual: 0, loss: 5000 } },
+	totalItemLoss: 5000,
+});
+
+const PASSING_VERDICT = Object.freeze({
+	success: true,
+	itemCountMatch: true,
+	fluidCountMatch: true,
+	entityCount: 12,
+	expectedItemCounts: { "iron-plate": 81 },
+	actualItemCounts: { "iron-plate": 81 },
+	expectedFluidCounts: {},
+	actualFluidCounts: {},
+	itemTypesExpected: 1,
+	itemTypesActual: 1,
+	totalExpectedItems: 81,
+	totalActualItems: 81,
+	totalItemLoss: 0,
+});
+
+function makeSummaryHarness() {
+	const logger = new TransactionLogger({
+		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
+		transactionLogs: new Map(),
+		platformStorage: new Map(),
+	});
+	return logger;
+}
 
 function makeInstanceHarness() {
 	const sent = [];
@@ -224,4 +274,157 @@ test("a successful completion event still completes the operation", async () => 
 	assert.equal(operation.status, "completed");
 	assert.equal(operation.error, null);
 	assert.ok(logged.some(entry => entry.eventType === "import_completed"));
+});
+
+test("the destination's real verdict rides the event, value for value", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		failed_stage: "items",
+		error: GATE_VERDICT.mismatchDetails,
+		validation: GATE_VERDICT,
+	});
+
+	assert.equal(sent.length, 1);
+	assert.deepEqual(sent[0].validation, GATE_VERDICT,
+		"the round-trip harness proves the field AGREES with the schema; only a value pin proves the "
+		+ "expected/actual counts the drawer tabulates are the destination's own numbers");
+	assert.equal(sent[0].validation.expectedItemCounts["copper-plate"], 5000);
+	assert.equal(sent[0].validation.actualItemCounts["copper-plate"], undefined);
+});
+
+test("a verdict survives the wire encoding, not just the constructor", () => {
+	const event = new messages.ImportOperationCompleteEvent({
+		operationId: "import:upload-1",
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: false,
+		validation: GATE_VERDICT,
+	});
+
+	const overWire = messages.ImportOperationCompleteEvent.fromJSON(JSON.parse(JSON.stringify(event.toJSON())));
+
+	assert.deepEqual(overWire.validation, GATE_VERDICT,
+		"instance and controller are separate processes — the verdict has to survive JSON, not just a "
+		+ "constructor call in one heap");
+	assert.ok(!messages.ImportOperationCompleteEvent.jsonSchema.required.includes("validation"),
+		"an old instance sends no validation key; making it required would reject every event it emits");
+});
+
+test("no verdict on the wire is no verdict on the event", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		entity_count: 12,
+	});
+
+	assert.equal(sent[0].validation, null,
+		"a plain upload runs no exact gate — import-completion.lua attaches validation only under "
+		+ "job.transfer_id, and a synthesized stand-in would render comparison tables that claim the "
+		+ "destination was checked");
+});
+
+test("a verdict that is not an object is refused rather than forwarded", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		error: "Import failed",
+		validation: [],
+	});
+
+	assert.equal(sent[0].validation, null,
+		"an empty Lua table serialises to [], not {} — and an array does not satisfy the field's "
+		+ "type: [object, null], so the controller's ajv check would reject the WHOLE completion "
+		+ "event, not merely mis-render a table: the row would hang at awaiting_completion");
+});
+
+test("a verdict that is a string is refused rather than forwarded", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		failed_stage: "items",
+		error: "Import failed",
+		validation: "items",
+	});
+
+	assert.equal(sent[0].validation, null,
+		"a bare string passes a truthiness check but fails the field's type: [object, null] at the "
+		+ "controller, dropping the whole completion event — the typeof guard, not the truthiness, "
+		+ "is what prevents that");
+});
+
+test("the real verdict lands on the operation record the drawer reads", async () => {
+	const { plugin, operation } = makeControllerHarness();
+
+	await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+		operationId: operation.transferId,
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: false,
+		error: `Import failed at items: ${GATE_VERDICT.mismatchDetails}`,
+		failedStage: "items",
+		validation: GATE_VERDICT,
+	}));
+
+	assert.deepEqual(operation.validationResult, GATE_VERDICT);
+
+	const summary = makeSummaryHarness().buildDetailedTransferSummary(operation.transferId, operation);
+	assert.deepEqual(summary.validation, GATE_VERDICT,
+		"web/utils.ts buildDetailedLogSummary reads summary.validation, and TransactionLogsTab renders "
+		+ "'Failure stage:' and the comparison tables from it");
+	assert.equal(summary.validation.failedStage, "items");
+	assert.deepEqual(summary.sourceVerification.itemCounts, GATE_VERDICT.expectedItemCounts,
+		"the expected-counts column falls back to sourceVerification, which is derived from the verdict");
+});
+
+test("a PASSING verdict reaches the record too, and still completes the operation", async () => {
+	const { plugin, operation } = makeControllerHarness();
+
+	await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+		operationId: operation.transferId,
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: true,
+		validation: PASSING_VERDICT,
+	}));
+
+	assert.equal(operation.status, "completed");
+	assert.deepEqual(operation.validationResult, PASSING_VERDICT,
+		"import-completion.lua attaches the verdict under job.transfer_id regardless of success, so a "
+		+ "transfer-shaped upload that PASSES its gate carries one too — consuming it only on the "
+		+ "failure path would leave the drawer empty for every successful gated upload");
+
+	const summary = makeSummaryHarness().buildDetailedTransferSummary(operation.transferId, operation);
+	assert.equal(summary.validation.itemCountMatch, true);
+});
+
+test("an operation with no verdict is given none", async () => {
+	const { plugin, operation } = makeControllerHarness();
+
+	await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+		operationId: operation.transferId,
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: true,
+	}));
+
+	assert.ok(!operation.validationResult,
+		"a plain upload has no gate; an empty verdict object would render empty comparison tables that "
+		+ "read as 'checked and found nothing'");
+
+	const summary = makeSummaryHarness().buildDetailedTransferSummary(operation.transferId, operation);
+	assert.equal(summary.validation, null,
+		"TransactionLogsTab gates on Boolean(validation) to show 'No validation data available yet'");
+	assert.equal(summary.sourceVerification, null);
 });
