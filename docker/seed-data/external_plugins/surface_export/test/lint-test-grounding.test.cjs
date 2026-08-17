@@ -217,3 +217,61 @@ test("the allow marker exempts an mjs runner from Rule 3", async () => {
 	);
 	assert.deepEqual(violations, []);
 });
+
+
+const PHYSICAL = "const n = await runBoard(2, 'return s.get_item_count(\"x\")');\n";
+const SELF_REPORT = "const loss = result.totalItemLoss;\n";
+
+test("the instruments scan takes every .mjs/.ps1 except the offline *.test.mjs unit tests", async () => {
+	const { isScannedInstrumentFile } = await import(scriptUrl);
+	for (const name of ["run-rung.mjs", "run-tests.mjs", "run-tests.ps1", "run-pause-rung.mjs", "sweep-model.mjs"]) {
+		assert.equal(isScannedInstrumentFile(name), true, `${name} must be scanned`);
+	}
+	for (const name of ["sweep-model.test.mjs", "registration.test.mjs", "universe.json", "prototype-dump.json"]) {
+		assert.equal(isScannedInstrumentFile(name), false, `${name} must not be scanned`);
+	}
+});
+
+async function unitViolations(files) {
+	const { findGroundingViolations } = await import(scriptUrl);
+	return findGroundingViolations(files);
+}
+
+function instrumentFile(fileName, source, unit = "tests/instruments/probe-fidelity") {
+	return { name: unit.split("/").at(-1), unit, dialect: "mjs", path: `${unit}/${fileName}`, source };
+}
+
+test("Rule 1 is satisfied by a physical count anywhere in the instrument directory", async () => {
+	const violations = await unitViolations([
+		instrumentFile("run-rung.mjs", "const board = await runBoard(2);\n"),
+		instrumentFile("probe.mjs", PHYSICAL),
+	]);
+	assert.deepEqual(violations, []);
+});
+
+test("Rule 1 reports an ungrounded instrument directory once, not once per file", async () => {
+	const violations = (await unitViolations([
+		instrumentFile("run-rung.mjs", "const board = await runBoard(2);\n"),
+		instrumentFile("probe.mjs", "export const LUA = 'return 1';\n"),
+	])).filter((entry) => entry.rule === 1);
+	assert.equal(violations.length, 1);
+	assert.equal(violations[0].path, "tests/instruments/probe-fidelity");
+});
+
+test("Rule 2 stays per-file — a sibling's physical count does not corroborate a self-report read", async () => {
+	const violations = (await unitViolations([
+		instrumentFile("run-rung.mjs", SELF_REPORT),
+		instrumentFile("probe.mjs", PHYSICAL),
+	])).filter((entry) => entry.rule === 2);
+	assert.equal(violations.length, 1);
+	assert.equal(violations[0].path, "tests/instruments/probe-fidelity/run-rung.mjs");
+});
+
+test("same-named directories under the two roots are separate units", async () => {
+	const violations = (await unitViolations([
+		instrumentFile("run-tests.mjs", PHYSICAL, "tests/integration/shared-fidelity"),
+		instrumentFile("run-rung.mjs", "const board = await runBoard(2);\n", "tests/instruments/shared-fidelity"),
+	])).filter((entry) => entry.rule === 1);
+	assert.equal(violations.length, 1);
+	assert.equal(violations[0].path, "tests/instruments/shared-fidelity");
+});
