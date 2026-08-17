@@ -1,0 +1,12 @@
+# requires: measure-rig.compose.yml as the first -f; applied by measure-rig.ps1 -PublishGamePorts
+# produces: host UDP 34400-34409 -> host-1 34100-34109, host UDP 34410-34419 -> host-2 34200-34209
+# does not: change any other service field, or serve the RCON path (that runs inside sx-measure-controller)
+
+services:
+  host-1:
+    ports:
+      - "34400-34409:34100-34109/udp"
+
+  host-2:
+    ports:
+      - "34410-34419:34200-34209/udp"

@@ -1,0 +1,96 @@
+# requires: SX_MEASURE_IMAGE_TAG, SX_MEASURE_SEED_DATA, SX_MEASURE_PLUGINS, SX_MEASURE_MOD_PACK,
+#           SX_MEASURE_CONTROLLER_PORT — all set by tools/tests/measure-rig.ps1
+# produces: sx-measure-{controller,host-1,host-2} on the isolated sx-measure_rig-net, volumes sx-measure_*
+# does not: mount any live-cluster or external volume, publish game ports (measure-rig.gameports.yml
+#           does, on request), install a game client, run export-data, or survive `down -v`
+
+name: sx-measure
+
+x-rig-host: &rig-host
+  image: ghcr.io/solarcloud7/clusterio-docker-host:${SX_MEASURE_IMAGE_TAG:?set by tools/tests/measure-rig.ps1}
+  networks:
+    - rig-net
+  depends_on:
+    controller:
+      condition: service_healthy
+  restart: "no"
+
+services:
+  controller:
+    image: ghcr.io/solarcloud7/clusterio-docker-controller:${SX_MEASURE_IMAGE_TAG:?set by tools/tests/measure-rig.ps1}
+    container_name: sx-measure-controller
+    hostname: clusterio-controller
+    networks:
+      - rig-net
+    restart: "no"
+    ports:
+      - "${SX_MEASURE_CONTROLLER_PORT:?set by tools/tests/measure-rig.ps1}:8080"
+    environment:
+      - INIT_CLUSTERIO_ADMIN=sx-measure-admin
+      - DEFAULT_MOD_PACK=${SX_MEASURE_MOD_PACK:?set by tools/tests/measure-rig.ps1}
+      - HOST_COUNT=2
+      - EXPORT_HOST=0
+    volumes:
+      - controller-data:/clusterio/data
+      - tokens:/clusterio/tokens
+      - type: bind
+        source: ${SX_MEASURE_SEED_DATA:?set by tools/tests/measure-rig.ps1}
+        target: /clusterio/seed-data
+        read_only: true
+      - type: bind
+        source: ${SX_MEASURE_PLUGINS:?set by tools/tests/measure-rig.ps1}
+        target: /clusterio/external_plugins
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 90s
+
+  host-1:
+    <<: *rig-host
+    container_name: sx-measure-host-1
+    hostname: clusterio-host-1
+    environment:
+      - HOST_NAME=clusterio-host-1
+      - SKIP_CLIENT=true
+      - EXPORT_HOST=0
+    volumes:
+      - host-1-data:/clusterio/data
+      - tokens:/clusterio/tokens:ro
+      - type: bind
+        source: ${SX_MEASURE_SEED_DATA:?set by tools/tests/measure-rig.ps1}/mods
+        target: /clusterio/seed-mods
+        read_only: true
+      - type: bind
+        source: ${SX_MEASURE_PLUGINS:?set by tools/tests/measure-rig.ps1}
+        target: /clusterio/external_plugins
+
+  host-2:
+    <<: *rig-host
+    container_name: sx-measure-host-2
+    hostname: clusterio-host-2
+    environment:
+      - HOST_NAME=clusterio-host-2
+      - SKIP_CLIENT=true
+      - EXPORT_HOST=0
+    volumes:
+      - host-2-data:/clusterio/data
+      - tokens:/clusterio/tokens:ro
+      - type: bind
+        source: ${SX_MEASURE_SEED_DATA:?set by tools/tests/measure-rig.ps1}/mods
+        target: /clusterio/seed-mods
+        read_only: true
+      - type: bind
+        source: ${SX_MEASURE_PLUGINS:?set by tools/tests/measure-rig.ps1}
+        target: /clusterio/external_plugins
+
+networks:
+  rig-net:
+    driver: bridge
+
+volumes:
+  controller-data:
+  host-1-data:
+  host-2-data:
+  tokens:

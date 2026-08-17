@@ -184,6 +184,15 @@ pwsh -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha-of-squashed-tip> [-P
 # powershell). Filter with --only <regex>; dry-run with --list.
 node tools/tests/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
 
+# DISPOSABLE MEASUREMENT RIG — a throwaway second cluster (sx-measure-*, controller :8070, isolated
+# network, no game ports unless -PublishGamePorts) on the SAME pinned images + seed-data convention,
+# mounting YOUR checkout's plugin source: an engine question answered on your branch, not on the live
+# cluster and not through CI. Refuses an unbuilt dist/, a plugin source another cluster mounts, and (for
+# `run`, which ends in a teardown) a rig that is RUNNING — someone may be mid-measurement. `down` always
+# destroys the rig's OWN volumes (a rig left up is a defect — `-Action status` finds it).
+pwsh -File tools/tests/measure-rig.ps1 -Action run -Command "/sc rcon.print(game.tick)"   # up, probe, down
+pwsh -File tools/tests/measure-rig.ps1 -Action up          # keep it for repeated probes, then -Action down
+
 # testkit — ask what the export payload ACTUALLY carries, and check cross-references resolve.
 # A property survives a transfer only if a handler put it in the payload, so `inspect --field` is
 # the cheapest screen for silent serializer omission (the class that dropped the infinity-pipe
