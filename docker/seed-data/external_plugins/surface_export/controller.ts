@@ -507,6 +507,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			importMetrics.entities_created = Number(event.entityCount);
 		}
 		operation.importMetrics = (importMetrics || null) as messages.ImportMetrics | null;
+		if (event.validation) {
+			operation.validationResult = event.validation;
+		}
 
 		if (event.success) {
 			operation.status = "completed";
