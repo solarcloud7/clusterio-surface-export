@@ -30,6 +30,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
+$BoundParams = $PSBoundParameters
 
 $RigProject = "sx-measure"
 $RigFilter = "sx-measure"
@@ -49,17 +50,17 @@ $DefaultProbe = "/sc local i = remote.interfaces['surface_export'] " +
 	"module_version=(i and i['get_module_version'] and remote.call('surface_export','get_module_version') or 'none')}))"
 
 function Assert-SwitchScope {
-	$upOnly = @{ Reuse = $Reuse; PublishGamePorts = $PublishGamePorts; AllowSharedPluginMount = $AllowSharedPluginMount }
-	$probeOnly = @{ Command = $Command; Instance = $Instance }
+	$upOnly = @("Reuse", "PublishGamePorts", "AllowSharedPluginMount", "ImageTag", "ControllerPort", "ReadyTimeoutSec")
+	$probeOnly = @("Command", "Instance")
 
 	if ($Action -notin @("up", "run")) {
-		foreach ($name in $upOnly.Keys) {
-			if ($upOnly[$name]) { throw "-$name belongs to -Action up/run, not -Action $Action. Refusing rather than ignoring it." }
+		foreach ($name in $upOnly) {
+			if ($BoundParams.ContainsKey($name)) { throw "-$name belongs to -Action up/run, not -Action $Action. Refusing rather than ignoring it." }
 		}
 	}
 	if ($Action -notin @("probe", "run")) {
-		foreach ($name in $probeOnly.Keys) {
-			if ($probeOnly[$name]) { throw "-$name belongs to -Action probe/run, not -Action $Action. Refusing rather than ignoring it." }
+		foreach ($name in $probeOnly) {
+			if ($BoundParams.ContainsKey($name)) { throw "-$name belongs to -Action probe/run, not -Action $Action. Refusing rather than ignoring it." }
 		}
 	}
 }
@@ -136,6 +137,14 @@ function Initialize-RigEnvironment {
 	Write-Host "Rig plugin src:  $env:SX_MEASURE_PLUGINS" -ForegroundColor Gray
 }
 
+function Initialize-RigTeardownEnvironment {
+	$env:SX_MEASURE_IMAGE_TAG = "unused-by-down"
+	$env:SX_MEASURE_MOD_PACK = "unused-by-down"
+	$env:SX_MEASURE_SEED_DATA = "/sx-measure-unused-by-down"
+	$env:SX_MEASURE_PLUGINS = "/sx-measure-unused-by-down"
+	$env:SX_MEASURE_CONTROLLER_PORT = "$ControllerPort"
+}
+
 function Get-ComposeArgs {
 	$composeArgs = @("compose", "-p", $RigProject, "-f", $ComposeFile)
 	if ($PublishGamePorts) { $composeArgs += @("-f", $GamePortsFile) }
@@ -165,6 +174,12 @@ function Get-SeededInstanceNames {
 function Get-RigContainerNames {
 	$names = docker ps -a --filter "name=$RigFilter" --format "{{.Names}}"
 	if ($LASTEXITCODE -ne 0) { throw "docker ps failed (exit $LASTEXITCODE) — cannot tell whether a rig is already up." }
+	return @($names | Where-Object { $_ })
+}
+
+function Get-RunningRigContainerNames {
+	$names = docker ps --filter "name=$RigFilter" --format "{{.Names}}"
+	if ($LASTEXITCODE -ne 0) { throw "docker ps failed (exit $LASTEXITCODE) — cannot tell whether a rig is running." }
 	return @($names | Where-Object { $_ })
 }
 
@@ -436,8 +451,7 @@ function Invoke-RigProbe {
 }
 
 function Invoke-RigDown {
-	$pluginRoot = Resolve-PluginRoot
-	Initialize-RigEnvironment -PluginRoot $pluginRoot
+	Initialize-RigTeardownEnvironment
 	$composeArgs = Get-ComposeArgs
 
 	Write-Host "Destroying the rig (containers, volumes, network)..." -ForegroundColor Cyan
@@ -472,6 +486,12 @@ switch ($Action) {
 	"down" { Invoke-RigDown }
 	"status" { Show-RigStatus }
 	"run" {
+		$live = Get-RunningRigContainerNames
+		if ($live -and -not $Reuse) {
+			throw ("A rig is RUNNING ($($live -join ', ')) and -Action run ends in a teardown that would destroy it " +
+				"mid-measurement. Probe it with -Action probe, destroy it deliberately with -Action down, or pass " +
+				"-Reuse if that rig is yours.")
+		}
 		$failure = $null
 		try {
 			Invoke-RigUp

@@ -187,8 +187,9 @@ node tools/tests/run-integration-tests.mjs                 # or:  --only 'gatewa
 # DISPOSABLE MEASUREMENT RIG — a throwaway second cluster (sx-measure-*, controller :8070, isolated
 # network, no game ports unless -PublishGamePorts) on the SAME pinned images + seed-data convention,
 # mounting YOUR checkout's plugin source: an engine question answered on your branch, not on the live
-# cluster and not through CI. Refuses an unbuilt dist/ and a plugin source another cluster mounts;
-# `down` always destroys the rig's OWN volumes (a rig left up is a defect — `-Action status` finds it).
+# cluster and not through CI. Refuses an unbuilt dist/, a plugin source another cluster mounts, and (for
+# `run`, which ends in a teardown) a rig that is RUNNING — someone may be mid-measurement. `down` always
+# destroys the rig's OWN volumes (a rig left up is a defect — `-Action status` finds it).
 pwsh -File tools/tests/measure-rig.ps1 -Action run -Command "/sc rcon.print(game.tick)"   # up, probe, down
 pwsh -File tools/tests/measure-rig.ps1 -Action up          # keep it for repeated probes, then -Action down
 
