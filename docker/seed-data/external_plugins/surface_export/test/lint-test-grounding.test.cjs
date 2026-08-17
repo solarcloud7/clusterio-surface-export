@@ -232,6 +232,13 @@ test("the instruments scan takes every .mjs/.ps1 except the offline *.test.mjs u
 	}
 });
 
+test("a file loose in the instruments root is its own unit, not silently unscanned", async () => {
+	const { instrumentUnitName } = await import(scriptUrl);
+	assert.equal(instrumentUnitName("tests/instruments/one-of-each/run-rung.mjs"), "one-of-each");
+	assert.equal(instrumentUnitName("tests/instruments/belt-freeze/nested/probe.mjs"), "belt-freeze");
+	assert.equal(instrumentUnitName("tests/instruments/loose-fidelity-probe.mjs"), "loose-fidelity-probe.mjs");
+});
+
 async function unitViolations(files) {
 	const { findGroundingViolations } = await import(scriptUrl);
 	return findGroundingViolations(files);

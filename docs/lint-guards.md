@@ -121,9 +121,9 @@ independent physical counts and adversarial review caught it. Rule 3 closes the 
 blind spot measured in W3: a success-path runner saw a failed verdict, Black-Box Discard removed the
 destination, and the runner then misreported the missing destination as physical item loss.
 
-Two scan roots — tests/integration/<name>/run-tests.{ps1,mjs} and every tests/instruments/<name>/**
-.mjs/.ps1 file outside *.test.mjs — with comments stripped (dialect-aware — `#` for PowerShell, `//`
-for JavaScript, so a commented-out marker never satisfies a rule):
+Two scan roots — tests/integration/<name>/run-tests.{ps1,mjs} and every .mjs/.ps1 file at any depth
+under tests/instruments outside *.test.mjs — with comments stripped (dialect-aware — `#` for
+PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
   1. A fidelity test performs an independent physical item count.        [both dialects, per DIRECTORY]
   2. Validator fidelity self-reports are cross-grounded physically.      [both dialects, per FILE]
   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
@@ -204,10 +204,11 @@ run-*rung*.mjs (11 files), and every .mjs/.ps1 (35 files). **All three reported 
 Classified flags: 0 true gaps, 0 legitimate-subject cases, 0 false positives — so no allow marker was
 added and lint-allow-manifest.json is unchanged.
 
-Scope shipped is every .mjs/.ps1 under tests/instruments/<name>/ except *.test.mjs — 23 of the 35
-files (11 run-* entrypoints + 12 model modules; the 12 excluded are *.test.mjs). Filename-glob
+Scope shipped is every .mjs/.ps1 at any depth under tests/instruments except *.test.mjs — 23 of the
+35 files (11 run-* entrypoints + 12 model modules; the 12 excluded are *.test.mjs). Filename-glob
 selection was rejected: it is the same silent-opt-out shape recorded above for Rule 3's old literal
-trigger, and a future probe-foo.mjs would escape it. The *.test.mjs exclusion is by dialect, not
+trigger, and a future probe-foo.mjs would escape it. A file loose in the instruments root is scanned
+too, as its own unit, for the same reason. The *.test.mjs exclusion is by dialect, not
 convenience — those are offline `node --test` unit tests over pure model modules with no cluster and
 no destination, so a physical count there is not absent but undefined, and a parser test that builds
 a fake totalItemLoss fixture would be a permanent false positive under Rule 2.

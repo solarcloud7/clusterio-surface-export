@@ -63,22 +63,24 @@ function walkFiles(directory, out = []) {
 	return out;
 }
 
+export function instrumentUnitName(relativePath) {
+	return relativePath.slice("tests/instruments/".length).split("/")[0];
+}
+
 function findInstrumentFiles() {
 	if (!existsSync(INSTRUMENTS_DIR)) return [];
 	const files = [];
-	for (const name of readdirSync(INSTRUMENTS_DIR)) {
-		const directory = join(INSTRUMENTS_DIR, name);
-		if (!statSync(directory).isDirectory()) continue;
-		for (const file of walkFiles(directory)) {
-			if (!isScannedInstrumentFile(basename(file))) continue;
-			files.push({
-				name,
-				unit: `tests/instruments/${name}`,
-				dialect: file.endsWith(".mjs") ? "mjs" : "ps1",
-				path: relative(REPO_ROOT, file).replace(/\\/g, "/"),
-				source: readFileSync(file, "utf8"),
-			});
-		}
+	for (const file of walkFiles(INSTRUMENTS_DIR)) {
+		if (!isScannedInstrumentFile(basename(file))) continue;
+		const path = relative(REPO_ROOT, file).replace(/\\/g, "/");
+		const name = instrumentUnitName(path);
+		files.push({
+			name,
+			unit: `tests/instruments/${name}`,
+			dialect: file.endsWith(".mjs") ? "mjs" : "ps1",
+			path,
+			source: readFileSync(file, "utf8"),
+		});
 	}
 	return files;
 }
