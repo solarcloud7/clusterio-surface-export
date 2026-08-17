@@ -412,6 +412,11 @@ const ITEM_READ = expression => 'local st = spider_stack(e)\n'
 	+ 'if st == nil then return "no-stack" end\n'
 	+ `return ${expression}`;
 
+const DISPLAY_PANEL_SKIP = "the display-panel restore writes sit under safe_call "
+	+ "(deserializer.lua:462-473), where a write that throws becomes a logged skip rather than an instance "
+	+ "kill, and the pre-activation verdict compares items and fluids only — so a destination read of the "
+	+ "property itself is the only thing that can tell a restored panel from a skipped write";
+
 const ATTRS = [
 	{
 		key: "pickup_from_left_lane", attribute: "pickup_from_left_lane", on: "inserter",
@@ -496,6 +501,24 @@ const ATTRS = [
 			+ "gone before any transfer can carry it (measured 2026-08-14 at 2.1.11 on a clone of "
 			+ "lab-transfer-fixture-v1: crafting_progress 0.5 -> 0 and result_quality rare -> nil within "
 			+ "90 ticks of the machine reaching a powered network)",
+	},
+	{
+		key: "display_panel_text", attribute: "display_panel_text", on: "display",
+		write: `e.display_panel_text = "${CLONE}-panel"`,
+		read: STRING_READ("display_panel_text"), expect: `${CLONE}-panel`,
+		describe: DISPLAY_PANEL_SKIP,
+	},
+	{
+		key: "display_panel_always_show", attribute: "display_panel_always_show", on: "display",
+		write: "e.display_panel_always_show = not e.display_panel_always_show",
+		read: BOOL_READ("display_panel_always_show"), dynamicExpect: true,
+		describe: DISPLAY_PANEL_SKIP,
+	},
+	{
+		key: "display_panel_show_in_chart", attribute: "display_panel_show_in_chart", on: "display",
+		write: "e.display_panel_show_in_chart = not e.display_panel_show_in_chart",
+		read: BOOL_READ("display_panel_show_in_chart"), dynamicExpect: true,
+		describe: DISPLAY_PANEL_SKIP,
 	},
 	{
 		key: "display_panel_icon", attribute: "display_panel_icon", on: "display",
