@@ -120,7 +120,7 @@ function luaTableKeys(table) {
 		const ch = body[i];
 		if (ch === "{" || ch === "(") depth++;
 		else if (ch === "}" || ch === ")") depth--;
-		else if (ch === "," && depth === 0) { take(i); start = i + 1; }
+		else if ((ch === "," || ch === ";") && depth === 0) { take(i); start = i + 1; }
 	}
 	take(body.length);
 	return keys;
@@ -222,4 +222,7 @@ test("MUTATION KILL: a desynced brace scan raises instead of returning a short r
 	assert.throws(() => matchedBlock("{ a: 1, b: { c: 2 }", 0), /unbalanced braces/);
 	assert.equal(matchedBlock("{ a: 1, b: { c: 2 } } tail", 0), "{ a: 1, b: { c: 2 } }");
 	assert.deepEqual(luaTableKeys("{ a = 1, b = { c = 2, d = 3 }, e = f(g, h) }"), ["a", "b", "e"]);
+	assert.deepEqual(luaTableKeys("{ a = 1; b = 2 }"), ["a", "b"],
+		"Lua separates table elements with `;` as readily as with `,`, and a scan that reads only commas "
+		+ "returns a SHORT key list, which the both-directions check then reports as a manifest drift");
 });
