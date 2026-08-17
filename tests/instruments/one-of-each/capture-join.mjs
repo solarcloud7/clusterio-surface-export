@@ -20,8 +20,10 @@
 //           or `validators/` as consumers, resolve an index whose variable no enclosing
 //           `for _, VAR in ipairs({"lit",...})` binds to literals, bind a callee parameter reached
 //           through a call whose base is not a resolvable declaration name in the scanned set,
-//           or refuse a function containing `goto` (a read needs no reachability, so refusing one
-//           would drop real reads)
+//           resolve an alias carried inside a table (`local ctx = { sd = entity_data.specific_data }`
+//           then `ctx.sd.field`), resolve an alias bound by a later AssignmentStatement rather than
+//           at its `local` (`local sd` then `sd = entity_data.specific_data`), or refuse a function
+//           containing `goto` (a read needs no reachability, so refusing one would drop real reads)
 
 import { createRequire } from "node:module";
 

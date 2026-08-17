@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // derive-we-set — what the pipeline WRITES and what it CAPTURES, read mechanically off module source
 //
-// requires: the capture-side and import-side module sources named in CAPTURE_FILES/RESTORE_FILES
+// requires: the module sources loadSources() reads — DESERIALIZER_REL, core/import-completion.lua,
+//           core/import-pipeline.lua and PHASES_DIR on the import side, core/export-pipeline.lua
+//           and SCANNERS_DIR (which carries HANDLERS_REL) on the capture side
 // produces: we-set.json — restore-rule rows (field, property, gating types), per-category handler
 //           capture field names (from `data.X =` assignments AND from the keys of a handler's
 //           `local data = {...}` / `return {...}` constructor), direct entity property writes
@@ -478,7 +480,8 @@ export function checkJoinControls(artifact, ledger = joinAccounted) {
 		new Set((ledger.captured_without_consumer || []).map(joinKey)),
 		"the export writes this field and no import-side read or restore rule names it, which is the "
 			+ "shape every strike in this class had: delete the capture, write the consumer, or record "
-			+ "what accounts for it",
+			+ "what accounts for it. A read the walk cannot see prints identically to a read that does "
+			+ "not exist, so go find the reader before writing an account",
 		"that field now has a consumer. That is right if one was written (delete the entry), and wrong "
 			+ "if the capture was deleted instead while the account stayed as standing permission",
 	));
@@ -488,7 +491,10 @@ export function checkJoinControls(artifact, ledger = joinAccounted) {
 		join.consumed_without_producer.map(joinKey),
 		new Set((ledger.consumed_without_producer || []).map(joinKey)),
 		"the import reads this field and no capture-side write produces it, which is the shape of a "
-			+ "restore arm waiting on a payload nobody exports",
+			+ "restore arm waiting on a payload nobody exports. A producer the walk cannot see prints "
+			+ "identically to a producer that does not exist, and the reason field is the only thing that "
+			+ "tells them apart afterwards: go find the write before writing an account, and if you find "
+			+ "one, the account is wrong and the walk is what needs fixing",
 		"that read now has a producer, or the read is gone — either way the account no longer describes "
 			+ "the source, and left standing it would cover the next unproduced read of that field",
 	));

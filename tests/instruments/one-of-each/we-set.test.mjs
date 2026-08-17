@@ -83,6 +83,10 @@ function withReturnDominatedProbe(source) {
 }
 
 test("the extraction is non-vacuous and passes its own controls", () => {
+	assert.equal(artifact.schema, "one-of-each/we-set@2",
+		"the schema string is the one thing that tells a reader of a committed artifact which SHAPE it "
+		+ "is — a bump nobody asserts is inert, and an artifact whose shape moved while the string "
+		+ "stayed is the drift this file exists to catch");
 	assert.deepEqual(checkControls(artifact), []);
 	assert.deepEqual(checkControls(rebuild()), [],
 		"the controls must be run against a FRESH extraction too, not only against the committed artifact: "
