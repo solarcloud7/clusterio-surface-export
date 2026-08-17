@@ -4,7 +4,10 @@
 // produces: loadWeSet() -> the artifact, plus lookups for the properties the pipeline writes and
 //           the payload fields each handler category captures
 // does not: derive anything, contact the cluster, or claim a WE-SET property SURVIVES — the set is
-//           what the pipeline tries to write, and only a diff of two arms says whether it landed
+//           what the pipeline tries to write, and only a diff of two arms says whether it landed;
+//           offer a reachability lookup — those rows are read straight off
+//           loadWeSet().reachability by whoever needs them, so that no accessor sits here without a
+//           caller whose own test would notice it returning nothing
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
