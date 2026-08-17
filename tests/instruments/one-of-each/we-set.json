@@ -10,6 +10,10 @@
 		"receiver_writes": [
 			"module/core/deserializer.lua",
 			"module/import_phases/*.lua"
+		],
+		"reachability": [
+			"module/core/deserializer.lua",
+			"module/import_phases/*.lua"
 		]
 	},
 	"restore_rules": [
@@ -947,6 +951,79 @@
 			]
 		}
 	],
+	"reachability": {
+		"considered": 45,
+		"evaluated_sites": [
+			{
+				"file": "core/deserializer.lua",
+				"line": 381,
+				"property": "mirroring",
+				"gates": 3
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 385,
+				"property": "health",
+				"gates": 3
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 418,
+				"property": "destructible",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 423,
+				"property": "name_tag",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 428,
+				"property": "custom_status",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 435,
+				"property": "last_user",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 445,
+				"property": "tags",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 1318,
+				"property": "infinity_container_filters",
+				"gates": 1
+			},
+			{
+				"file": "core/deserializer.lua",
+				"line": 1334,
+				"property": "remove_unfiltered_items",
+				"gates": 1
+			}
+		],
+		"skipped": [
+			{
+				"file": "core/deserializer.lua",
+				"function": "Deserializer.restore_inventories",
+				"line": 704
+			},
+			{
+				"file": "import_phases/active_state_restoration.lua",
+				"function": "ActiveStateRestoration.restore",
+				"line": 102
+			}
+		],
+		"return_dominated": [],
+		"evaluated": 9
+	},
 	"we_set": [
 		{
 			"property": "alert_parameters",
@@ -1530,6 +1607,9 @@
 		"handler_fields": 91,
 		"direct_writes": 40,
 		"receiver_writes": 6,
-		"we_set": 75
+		"we_set": 75,
+		"reachability_considered": 45,
+		"reachability_evaluated": 9,
+		"return_dominated_writes": 0
 	}
 }

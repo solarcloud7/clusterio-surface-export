@@ -1,0 +1,16 @@
+{
+	"schema": "one-of-each/reachability-accounted@2",
+	"return_dominated": [],
+	"skipped_functions": [
+		{
+			"file": "core/deserializer.lua",
+			"function": "Deserializer.restore_inventories",
+			"reason": "`goto continue` at :728 jumping to `::continue::` at :835 — a jump can enter the block below a gate without passing the gate, so statement order stops standing in for control flow and the whole function is refused rather than analyzed on a false assumption"
+		},
+		{
+			"file": "import_phases/active_state_restoration.lua",
+			"function": "ActiveStateRestoration.restore",
+			"reason": "`goto continue` at :116 and :132 jumping to `::continue::` at :175 — same refusal. Measured cost of this one: removing the goto/label raises the file's considered count from 2 to 4, so the refusal drops exactly the two `entity.disabled_by_script` writes at :137 and :166"
+		}
+	]
+}

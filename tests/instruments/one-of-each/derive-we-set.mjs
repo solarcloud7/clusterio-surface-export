@@ -8,20 +8,27 @@
 //           (bare `entity.X =`, plus `RECV[VAR] =` whose VAR an enclosing `for _, VAR in
 //           ipairs({"lit",...})` resolves to literals), receiver_writes (writes through a receiver
 //           that is NOT the entity: a nested `entity.a.b =` chain, or a local bound to an
-//           entity-derived value), and we_set: the union of properties the pipeline writes to an
-//           ENTITY
+//           entity-derived value), we_set: the union of properties the pipeline writes to an
+//           ENTITY, and reachability: the parsed-block arm that says which of those writes a return
+//           above them cannot reach (reachability.mjs), every row and every refused function scope
+//           matched against reachability-accounted.json in both directions — checkControls takes that
+//           ledger as an argument (defaulting to the committed file) so both directions stay testable
+//           whichever way the live ledger currently reads
 // does not: contact the cluster, read the API index, prove restoration (a property in the WE-SET is
 //           one the pipeline TRIES to set — the differ decides whether it landed), emit anything
 //           when a floor or a known-member control fails, resolve a bracket index the enclosing
 //           source does not bind to literals (`entity[prop]` driven by the restore-rule loop stays
-//           unresolved — those properties enter we_set as restore rules, not as writes), or admit a
+//           unresolved — those properties enter we_set as restore rules, not as writes), admit a
 //           receiver_writes leaf into we_set (the receiver decides, never the leaf name: `cb`'s
 //           `parameters` write is a LuaControlBehavior write even though LuaEntity also has a
-//           `parameters` attribute)
+//           `parameters` attribute), or drop a return-dominated write from direct_writes or from
+//           we_set — the reachability arm ADDS a row beside them and never subtracts one
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { analyzeSources } from "./reachability.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MODULE_ROOT = path.join(here, "..", "..", "..",
@@ -30,6 +37,9 @@ const DESERIALIZER = path.join(MODULE_ROOT, "core", "deserializer.lua");
 const HANDLERS = path.join(MODULE_ROOT, "export_scanners", "entity-handlers.lua");
 const PHASES_DIR = path.join(MODULE_ROOT, "import_phases");
 const OUT_PATH = path.join(here, "we-set.json");
+const ACCOUNTED_PATH = path.join(here, "reachability-accounted.json");
+
+const accounted = JSON.parse(readFileSync(ACCOUNTED_PATH, "utf8"));
 
 export const SCHEMA = "one-of-each/we-set@1";
 export const COMMON_CATEGORY = "*common*";
@@ -40,6 +50,8 @@ const MIN_HANDLER_CATEGORIES = 25;
 const MIN_HANDLER_FIELDS = 80;
 const MIN_DIRECT_WRITES = 20;
 const MIN_RECEIVER_WRITES = 3;
+const MIN_REACHABILITY_CONSIDERED = 35;
+const MIN_REACHABILITY_EVALUATED = 5;
 
 const RESTORE_RULE_CONTROLS = ["link_id", "override_logistic_mode", "crafting_progress",
 	"result_quality", "switch_state"];
@@ -281,6 +293,7 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 	const writeFiles = [{ rel: "core/deserializer.lua", source: deserializerSource }, ...phaseFiles];
 	const directWrites = extractDirectWrites(writeFiles);
 	const receiverWrites = extractReceiverWrites(writeFiles);
+	const reachability = analyzeSources(writeFiles);
 
 	const weSet = new Map();
 	for (const rule of restoreRules) {
@@ -307,11 +320,13 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			handler_captures: "module/export_scanners/entity-handlers.lua",
 			direct_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
 			receiver_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
+			reachability: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
 		},
 		restore_rules: restoreRules,
 		handler_captures: handlerCaptures,
 		direct_writes: directWrites,
 		receiver_writes: receiverWrites,
+		reachability,
 		we_set: [...weSet.values()].sort((a, b) => a.property.localeCompare(b.property)),
 		counts: {
 			restore_rules: restoreRules.length,
@@ -321,25 +336,50 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			direct_writes: directWrites.length,
 			receiver_writes: receiverWrites.length,
 			we_set: weSet.size,
+			reachability_considered: reachability.considered,
+			reachability_evaluated: reachability.evaluated,
+			return_dominated_writes: reachability.return_dominated.length,
 		},
 	};
 }
 
-export function checkControls(artifact) {
+export const returnDominatedKey = row => `${row.file}:${row.function}:${row.property}`;
+export const skippedKey = row => `${row.file}:${row.function}`;
+
+function ledgerFailures(label, derived, accountedKeys, unaccountedAdvice, staleAdvice) {
+	const failures = [];
+	const derivedKeys = new Set(derived);
+	for (const key of derivedKeys) {
+		if (accountedKeys.has(key)) continue;
+		failures.push(`${label} ${key} is not in reachability-accounted.json — ${unaccountedAdvice}`);
+	}
+	for (const key of accountedKeys) {
+		if (derivedKeys.has(key)) continue;
+		failures.push(`${label} ${key} is accounted in reachability-accounted.json but the derivation no `
+			+ `longer produces it — ${staleAdvice}`);
+	}
+	return failures;
+}
+
+export function checkControls(artifact, ledger = accounted) {
 	const failures = [];
 	const { counts } = artifact;
 
+	const LEXER_FLOOR = "a lexer that desyncs returns few rows, not zero, so the floor is the control";
+	const WALK_FLOOR = "a walk that stops descending examines nothing and finds nothing, which is the "
+		+ "same output as a tree with nothing to find — the floor is what separates them";
 	const floors = [
-		["restore_rules", counts.restore_rules, MIN_RESTORE_RULES],
-		["types_gated_rules", counts.types_gated_rules, MIN_TYPES_GATED_RULES],
-		["handler_categories", counts.handler_categories, MIN_HANDLER_CATEGORIES],
-		["handler_fields", counts.handler_fields, MIN_HANDLER_FIELDS],
-		["direct_writes", counts.direct_writes, MIN_DIRECT_WRITES],
-		["receiver_writes", counts.receiver_writes, MIN_RECEIVER_WRITES],
+		["restore_rules", counts.restore_rules, MIN_RESTORE_RULES, LEXER_FLOOR],
+		["types_gated_rules", counts.types_gated_rules, MIN_TYPES_GATED_RULES, LEXER_FLOOR],
+		["handler_categories", counts.handler_categories, MIN_HANDLER_CATEGORIES, LEXER_FLOOR],
+		["handler_fields", counts.handler_fields, MIN_HANDLER_FIELDS, LEXER_FLOOR],
+		["direct_writes", counts.direct_writes, MIN_DIRECT_WRITES, LEXER_FLOOR],
+		["receiver_writes", counts.receiver_writes, MIN_RECEIVER_WRITES, LEXER_FLOOR],
+		["reachability_considered", counts.reachability_considered, MIN_REACHABILITY_CONSIDERED, WALK_FLOOR],
+		["reachability_evaluated", counts.reachability_evaluated, MIN_REACHABILITY_EVALUATED, WALK_FLOOR],
 	];
-	for (const [name, actual, floor] of floors) {
-		if (!(actual >= floor)) failures.push(`${name} extracted ${actual}, floor is ${floor} — a lexer that `
-			+ "desyncs returns few rows, not zero, so the floor is the control");
+	for (const [name, actual, floor, why] of floors) {
+		if (!(actual >= floor)) failures.push(`${name} extracted ${actual}, floor is ${floor} — ${why}`);
 	}
 
 	const ruleFields = new Set(artifact.restore_rules.map(rule => rule.field));
@@ -376,6 +416,35 @@ export function checkControls(artifact) {
 		}
 	}
 
+	const reachability = artifact.reachability;
+	failures.push(...ledgerFailures(
+		"return-dominated write",
+		reachability.return_dominated.map(returnDominatedKey),
+		new Set(ledger.return_dominated.map(returnDominatedKey)),
+		"a write the pipeline cannot reach is a candidate silent loss, so the derivation refuses to write "
+			+ "we-set.json until someone has looked at it: report the finding, then record what accounts for it",
+		"that write is no longer return-dominated in that function. That is right if it was fixed (delete "
+			+ "the entry), and wrong if it moved to another function (move the entry) — the key ignores line "
+			+ "so a shift within the function will never produce this, only a real change will",
+	));
+
+	const skippedKeys = reachability.skipped.map(skippedKey);
+	if (new Set(skippedKeys).size !== skippedKeys.length) {
+		failures.push("two refused scopes share one ledger key — one account would silently cover both, and "
+			+ "fixing either would leave the other's refusal green. A closure's refusal is recorded under its "
+			+ "enclosing function's name, which is how two scopes collide");
+	}
+	failures.push(...ledgerFailures(
+		"refused function scope",
+		skippedKeys,
+		new Set(ledger.skipped_functions.map(skippedKey)),
+		"a function the arm refuses to analyze contributes zero findings, which is indistinguishable from "
+			+ "a clean one: record the refusal and its cause, or the arm's silence there reads as coverage",
+		"the arm no longer refuses that scope. That is right if the goto went away, wrong if the function "
+			+ "was renamed or deleted (move the entry), and actively wrong if the goto detection broke — "
+			+ "check which before deleting, because a lost refusal licenses rows from unanalyzable code",
+	));
+
 	const alias = artifact.handler_captures.find(row => row.category === "loader-1x1");
 	const target = artifact.handler_captures.find(row => row.category === "loader");
 	if (!alias || !target || alias.fields.join(",") !== target.fields.join(",")) {
@@ -407,7 +476,9 @@ function main() {
 	console.log(`wrote ${OUT_PATH}: ${c.restore_rules} restore rules (${c.types_gated_rules} types-gated), `
 		+ `${c.handler_categories} handler categories carrying ${c.handler_fields} distinct fields, `
 		+ `${c.direct_writes} direct writes, ${c.receiver_writes} writes through non-entity receivers, `
-		+ `WE-SET ${c.we_set} properties`);
+		+ `WE-SET ${c.we_set} properties, ${c.reachability_evaluated}/${c.reachability_considered} write sites `
+		+ `reachability-evaluated with ${c.return_dominated_writes} return-dominated `
+		+ `(${artifact.reachability.skipped.length} function scopes refused)`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
