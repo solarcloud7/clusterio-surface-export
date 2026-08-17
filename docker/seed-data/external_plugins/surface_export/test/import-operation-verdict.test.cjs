@@ -35,6 +35,22 @@ const GATE_VERDICT = Object.freeze({
 	totalItemLoss: 5000,
 });
 
+const PASSING_VERDICT = Object.freeze({
+	success: true,
+	itemCountMatch: true,
+	fluidCountMatch: true,
+	entityCount: 12,
+	expectedItemCounts: { "iron-plate": 81 },
+	actualItemCounts: { "iron-plate": 81 },
+	expectedFluidCounts: {},
+	actualFluidCounts: {},
+	itemTypesExpected: 1,
+	itemTypesActual: 1,
+	totalExpectedItems: 81,
+	totalActualItems: 81,
+	totalItemLoss: 0,
+});
+
 function makeSummaryHarness() {
 	const logger = new TransactionLogger({
 		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
@@ -325,8 +341,27 @@ test("a verdict that is not an object is refused rather than forwarded", async (
 	});
 
 	assert.equal(sent[0].validation, null,
-		"an empty Lua table serialises to [], not {} — forwarding it would put an array where the "
-		+ "drawer reads named count maps");
+		"an empty Lua table serialises to [], not {} — and an array does not satisfy the field's "
+		+ "type: [object, null], so the controller's ajv check would reject the WHOLE completion "
+		+ "event, not merely mis-render a table: the row would hang at awaiting_completion");
+});
+
+test("a verdict that is a string is refused rather than forwarded", async () => {
+	const { plugin, sent } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "uploaded platform",
+		operation_id: "import:upload-1",
+		success: false,
+		failed_stage: "items",
+		error: "Import failed",
+		validation: "items",
+	});
+
+	assert.equal(sent[0].validation, null,
+		"a bare string passes a truthiness check but fails the field's type: [object, null] at the "
+		+ "controller, dropping the whole completion event — the typeof guard, not the truthiness, "
+		+ "is what prevents that");
 });
 
 test("the real verdict lands on the operation record the drawer reads", async () => {
@@ -351,6 +386,27 @@ test("the real verdict lands on the operation record the drawer reads", async ()
 	assert.equal(summary.validation.failedStage, "items");
 	assert.deepEqual(summary.sourceVerification.itemCounts, GATE_VERDICT.expectedItemCounts,
 		"the expected-counts column falls back to sourceVerification, which is derived from the verdict");
+});
+
+test("a PASSING verdict reaches the record too, and still completes the operation", async () => {
+	const { plugin, operation } = makeControllerHarness();
+
+	await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+		operationId: operation.transferId,
+		platformName: "uploaded platform",
+		instanceId: 2,
+		success: true,
+		validation: PASSING_VERDICT,
+	}));
+
+	assert.equal(operation.status, "completed");
+	assert.deepEqual(operation.validationResult, PASSING_VERDICT,
+		"import-completion.lua attaches the verdict under job.transfer_id regardless of success, so a "
+		+ "transfer-shaped upload that PASSES its gate carries one too — consuming it only on the "
+		+ "failure path would leave the drawer empty for every successful gated upload");
+
+	const summary = makeSummaryHarness().buildDetailedTransferSummary(operation.transferId, operation);
+	assert.equal(summary.validation.itemCountMatch, true);
 });
 
 test("an operation with no verdict is given none", async () => {
