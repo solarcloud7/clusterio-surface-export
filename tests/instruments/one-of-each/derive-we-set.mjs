@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // derive-we-set — what the pipeline WRITES and what it CAPTURES, read mechanically off module source
 //
-// requires: module/core/deserializer.lua and module/export_scanners/entity-handlers.lua
+// requires: the module sources loadSources() reads — DESERIALIZER_REL, core/import-completion.lua,
+//           core/import-pipeline.lua and PHASES_DIR on the import side, core/export-pipeline.lua
+//           and SCANNERS_DIR (which carries HANDLERS_REL) on the capture side
 // produces: we-set.json — restore-rule rows (field, property, gating types), per-category handler
 //           capture field names (from `data.X =` assignments AND from the keys of a handler's
 //           `local data = {...}` / `return {...}` constructor), direct entity property writes
@@ -9,11 +11,13 @@
 //           ipairs({"lit",...})` resolves to literals), receiver_writes (writes through a receiver
 //           that is NOT the entity: a nested `entity.a.b =` chain, or a local bound to an
 //           entity-derived value), we_set: the union of properties the pipeline writes to an
-//           ENTITY, and reachability: the parsed-block arm that says which of those writes a return
+//           ENTITY, reachability: the parsed-block arm that says which of those writes a return
 //           above them cannot reach (reachability.mjs), every row and every refused function scope
 //           matched against reachability-accounted.json in both directions — checkControls takes that
 //           ledger as an argument (defaulting to the committed file) so both directions stay testable
-//           whichever way the live ledger currently reads
+//           whichever way the live ledger currently reads — and join: the capture/restore join
+//           (capture-join.mjs) over the specific_data and per-entity planes, whose one-sided rows are
+//           matched against capture-join-accounted.json in both directions the same way
 // does not: contact the cluster, read the API index, prove restoration (a property in the WE-SET is
 //           one the pipeline TRIES to set — the differ decides whether it landed), emit anything
 //           when a floor or a known-member control fails, resolve a bracket index the enclosing
@@ -21,28 +25,35 @@
 //           unresolved — those properties enter we_set as restore rules, not as writes), admit a
 //           receiver_writes leaf into we_set (the receiver decides, never the leaf name: `cb`'s
 //           `parameters` write is a LuaControlBehavior write even though LuaEntity also has a
-//           `parameters` attribute), or drop a return-dominated write from direct_writes or from
-//           we_set — the reachability arm ADDS a row beside them and never subtracts one
+//           `parameters` attribute), drop a return-dominated write from direct_writes or from
+//           we_set — the reachability arm ADDS a row beside them and never subtracts one — or join
+//           the top-level payload plane, whose consumers are split across Lua and TS
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { analyzeSources } from "./reachability.mjs";
+import { analyzeJoin, joinKey } from "./capture-join.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const MODULE_ROOT = path.join(here, "..", "..", "..",
 	"docker", "seed-data", "external_plugins", "surface_export", "module");
-const DESERIALIZER = path.join(MODULE_ROOT, "core", "deserializer.lua");
-const HANDLERS = path.join(MODULE_ROOT, "export_scanners", "entity-handlers.lua");
 const PHASES_DIR = path.join(MODULE_ROOT, "import_phases");
+const SCANNERS_DIR = path.join(MODULE_ROOT, "export_scanners");
 const OUT_PATH = path.join(here, "we-set.json");
 const ACCOUNTED_PATH = path.join(here, "reachability-accounted.json");
+const JOIN_ACCOUNTED_PATH = path.join(here, "capture-join-accounted.json");
+const REACHABILITY_LEDGER_NAME = "reachability-accounted.json";
+const JOIN_LEDGER_NAME = "capture-join-accounted.json";
 
 const accounted = JSON.parse(readFileSync(ACCOUNTED_PATH, "utf8"));
+const joinAccounted = JSON.parse(readFileSync(JOIN_ACCOUNTED_PATH, "utf8"));
 
-export const SCHEMA = "one-of-each/we-set@1";
+export const SCHEMA = "one-of-each/we-set@2";
 export const COMMON_CATEGORY = "*common*";
+export const DESERIALIZER_REL = "core/deserializer.lua";
+export const HANDLERS_REL = "export_scanners/entity-handlers.lua";
 
 const MIN_RESTORE_RULES = 20;
 const MIN_TYPES_GATED_RULES = 10;
@@ -52,6 +63,9 @@ const MIN_DIRECT_WRITES = 20;
 const MIN_RECEIVER_WRITES = 3;
 const MIN_REACHABILITY_CONSIDERED = 35;
 const MIN_REACHABILITY_EVALUATED = 5;
+const MIN_ENTITY_CAPTURES = 20;
+const MIN_ENTITY_READS = 20;
+const MIN_SPECIFIC_DATA_READS = 40;
 
 const RESTORE_RULE_CONTROLS = ["link_id", "override_logistic_mode", "crafting_progress",
 	"result_quality", "switch_state"];
@@ -69,6 +83,18 @@ export const RECEIVER_WRITE_CONTROLS = [["entity.burner", "currently_burning"],
 	["entity.get_control_behavior()", "parameters"]];
 const WE_SET_EXCLUDED_CONTROLS = ["currently_burning", "schedule", "activity_mode",
 	"minimum_activity_mode"];
+const ENTITY_CAPTURE_CONTROLS = ["infinity_pipe_filter", "last_user", "tags", "count"];
+export const SCOPED_ROOT_CONTROLS = [{
+	file: "import_phases/latch_rearm.lua",
+	function: "LatchRearm.schedule",
+	name: "record",
+}];
+export const READ_SITE_CONTROLS = [
+	["specific_data", "inventories", "core/deserializer.lua:Deserializer.restore_inventories"],
+	["specific_data", "bonus_mining_progress",
+		"import_phases/active_state_restoration.lua:ActiveStateRestoration.queue_mining_progress"],
+	["entity", "infinity_pipe_filter", "core/deserializer.lua:Deserializer.restore_entity_filters"],
+];
 
 export function matchedBlock(source, openIndex) {
 	let depth = 0;
@@ -287,13 +313,40 @@ export function extractReceiverWrites(files) {
 		.sort((a, b) => a.receiver.localeCompare(b.receiver) || a.property.localeCompare(b.property));
 }
 
-export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
+function pick(files, rel) {
+	const file = files.find(entry => entry.rel === rel);
+	if (!file) throw new Error(`${rel} is missing from the source set — an arm reading it would report `
+		+ "an empty extraction, which reads exactly like a file with nothing in it");
+	return file.source;
+}
+
+export function loadSources() {
+	const read = rel => ({ rel, source: readFileSync(path.join(MODULE_ROOT, rel), "utf8") });
+	const inDir = (dir, prefix) => readdirSync(dir).filter(name => name.endsWith(".lua"))
+		.map(name => read(`${prefix}/${name}`)).sort((a, b) => a.rel.localeCompare(b.rel));
+	return {
+		captureFiles: [read("core/export-pipeline.lua"), ...inDir(SCANNERS_DIR, "export_scanners")],
+		restoreFiles: [read(DESERIALIZER_REL), read("core/import-completion.lua"),
+			read("core/import-pipeline.lua"), ...inDir(PHASES_DIR, "import_phases")],
+	};
+}
+
+export function assemble({ captureFiles, restoreFiles }) {
+	const deserializerSource = pick(restoreFiles, DESERIALIZER_REL);
+	const handlerSource = pick(captureFiles, HANDLERS_REL);
+	const phaseFiles = restoreFiles.filter(file => file.rel.startsWith("import_phases/"));
 	const restoreRules = extractRestoreRules(deserializerSource);
 	const handlerCaptures = extractHandlerCaptures(handlerSource);
-	const writeFiles = [{ rel: "core/deserializer.lua", source: deserializerSource }, ...phaseFiles];
+	const writeFiles = [{ rel: DESERIALIZER_REL, source: deserializerSource }, ...phaseFiles];
 	const directWrites = extractDirectWrites(writeFiles);
 	const receiverWrites = extractReceiverWrites(writeFiles);
 	const reachability = analyzeSources(writeFiles);
+	const join = analyzeJoin({
+		captureFiles,
+		restoreFiles,
+		handlerCaptures,
+		restoreRuleFields: restoreRules.map(rule => rule.field),
+	});
 
 	const weSet = new Map();
 	for (const rule of restoreRules) {
@@ -321,12 +374,17 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			direct_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
 			receiver_writes: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
 			reachability: ["module/core/deserializer.lua", "module/import_phases/*.lua"],
+			join: {
+				capture: captureFiles.map(file => `module/${file.rel}`),
+				restore: restoreFiles.map(file => `module/${file.rel}`),
+			},
 		},
 		restore_rules: restoreRules,
 		handler_captures: handlerCaptures,
 		direct_writes: directWrites,
 		receiver_writes: receiverWrites,
 		reachability,
+		join,
 		we_set: [...weSet.values()].sort((a, b) => a.property.localeCompare(b.property)),
 		counts: {
 			restore_rules: restoreRules.length,
@@ -339,6 +397,11 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 			reachability_considered: reachability.considered,
 			reachability_evaluated: reachability.evaluated,
 			return_dominated_writes: reachability.return_dominated.length,
+			entity_captures: join.counts.entity_captures,
+			entity_reads: join.counts.entity_reads,
+			specific_data_reads: join.counts.specific_data_reads,
+			captured_without_consumer: join.counts.captured_without_consumer,
+			consumed_without_producer: join.counts.consumed_without_producer,
 		},
 	};
 }
@@ -346,18 +409,96 @@ export function assemble({ deserializerSource, handlerSource, phaseFiles }) {
 export const returnDominatedKey = row => `${row.file}:${row.function}:${row.property}`;
 export const skippedKey = row => `${row.file}:${row.function}`;
 
-function ledgerFailures(label, derived, accountedKeys, unaccountedAdvice, staleAdvice) {
+function ledgerFailures(ledgerName, label, derived, accountedKeys, unaccountedAdvice, staleAdvice) {
 	const failures = [];
 	const derivedKeys = new Set(derived);
 	for (const key of derivedKeys) {
 		if (accountedKeys.has(key)) continue;
-		failures.push(`${label} ${key} is not in reachability-accounted.json — ${unaccountedAdvice}`);
+		failures.push(`${label} ${key} is not in ${ledgerName} — ${unaccountedAdvice}`);
 	}
 	for (const key of accountedKeys) {
 		if (derivedKeys.has(key)) continue;
-		failures.push(`${label} ${key} is accounted in reachability-accounted.json but the derivation no `
+		failures.push(`${label} ${key} is accounted in ${ledgerName} but the derivation no `
 			+ `longer produces it — ${staleAdvice}`);
 	}
+	return failures;
+}
+
+export function checkJoinControls(artifact, ledger = joinAccounted) {
+	const failures = [];
+	const { join } = artifact;
+
+	const floors = [
+		["entity_captures", join.counts.entity_captures, MIN_ENTITY_CAPTURES],
+		["entity_reads", join.counts.entity_reads, MIN_ENTITY_READS],
+		["specific_data_reads", join.counts.specific_data_reads, MIN_SPECIFIC_DATA_READS],
+	];
+	for (const [name, actual, floor] of floors) {
+		if (!(actual >= floor)) {
+			failures.push(`join ${name} extracted ${actual}, floor is ${floor} — a read walk that stops `
+				+ "descending finds no reads, and every captured field then looks consumed by nobody or "
+				+ "every read looks unproduced, depending on which side went quiet");
+		}
+	}
+
+	const captured = new Set(join.entity_captures.map(row => row.field));
+	for (const control of ENTITY_CAPTURE_CONTROLS) {
+		if (!captured.has(control)) {
+			failures.push(`entity capture "${control}" went missing from the extraction`);
+		}
+	}
+
+	const readSites = new Map(join.payload_reads.map(row => [`${row.plane}\0${row.field}`, row.sites]));
+	for (const [plane, field, site] of READ_SITE_CONTROLS) {
+		if (!(readSites.get(`${plane}\0${field}`) || []).includes(site)) {
+			failures.push(`the ${plane} read of "${field}" at ${site} went missing from the extraction — a `
+				+ "read the walk stops seeing turns its captured field into a reported orphan");
+		}
+	}
+
+	const scoped = join.scoped_roots.map(row => `${row.file}:${row.function}:${row.name}`).sort();
+	const scopedControls = SCOPED_ROOT_CONTROLS
+		.map(row => `${row.file}:${row.function}:${row.name}`).sort();
+	if (scoped.join("\n") !== scopedControls.join("\n")) {
+		failures.push("the per-function payload roots moved: derived "
+			+ `[${scoped.join(", ")}], control says [${scopedControls.join(", ")}] — a root that appears `
+			+ "carries a whole function's reads into the join, and one that disappears takes them out");
+	}
+
+	for (const direction of ["captured_without_consumer", "consumed_without_producer"]) {
+		const rows = ledger[direction] || [];
+		for (const row of rows) {
+			if (typeof row.reason === "string" && row.reason.trim() !== "") continue;
+			failures.push(`${direction} account ${joinKey(row)} carries no reason — the ledger is read by `
+				+ "people, and an entry nobody had to justify is a permanent exemption nobody reviewed");
+		}
+	}
+	failures.push(...ledgerFailures(
+		JOIN_LEDGER_NAME,
+		"captured field",
+		join.captured_without_consumer.map(joinKey),
+		new Set((ledger.captured_without_consumer || []).map(joinKey)),
+		"the export writes this field and no import-side read or restore rule names it, which is the "
+			+ "shape every strike in this class had: delete the capture, write the consumer, or record "
+			+ "what accounts for it. A read the walk cannot see prints identically to a read that does "
+			+ "not exist, so go find the reader before writing an account",
+		"that field now has a consumer. That is right if one was written (delete the entry), and wrong "
+			+ "if the capture was deleted instead while the account stayed as standing permission",
+	));
+	failures.push(...ledgerFailures(
+		JOIN_LEDGER_NAME,
+		"consumed field",
+		join.consumed_without_producer.map(joinKey),
+		new Set((ledger.consumed_without_producer || []).map(joinKey)),
+		"the import reads this field and no capture-side write produces it, which is the shape of a "
+			+ "restore arm waiting on a payload nobody exports. A producer the walk cannot see prints "
+			+ "identically to a producer that does not exist, and the reason field is the only thing that "
+			+ "tells them apart afterwards: go find the write before writing an account, and if you find "
+			+ "one, the account is wrong and the walk is what needs fixing",
+		"that read now has a producer, or the read is gone — either way the account no longer describes "
+			+ "the source, and left standing it would cover the next unproduced read of that field",
+	));
+
 	return failures;
 }
 
@@ -418,6 +559,7 @@ export function checkControls(artifact, ledger = accounted) {
 
 	const reachability = artifact.reachability;
 	failures.push(...ledgerFailures(
+		REACHABILITY_LEDGER_NAME,
 		"return-dominated write",
 		reachability.return_dominated.map(returnDominatedKey),
 		new Set(ledger.return_dominated.map(returnDominatedKey)),
@@ -435,6 +577,7 @@ export function checkControls(artifact, ledger = accounted) {
 			+ "enclosing function's name, which is how two scopes collide");
 	}
 	failures.push(...ledgerFailures(
+		REACHABILITY_LEDGER_NAME,
 		"refused function scope",
 		skippedKeys,
 		new Set(ledger.skipped_functions.map(skippedKey)),
@@ -456,15 +599,9 @@ export function checkControls(artifact, ledger = accounted) {
 }
 
 function main() {
-	const phaseFiles = readdirSync(PHASES_DIR).filter(name => name.endsWith(".lua"))
-		.map(name => ({ rel: `import_phases/${name}`, source: readFileSync(path.join(PHASES_DIR, name), "utf8") }));
-	const artifact = assemble({
-		deserializerSource: readFileSync(DESERIALIZER, "utf8"),
-		handlerSource: readFileSync(HANDLERS, "utf8"),
-		phaseFiles,
-	});
+	const artifact = assemble(loadSources());
 
-	const failures = checkControls(artifact);
+	const failures = [...checkControls(artifact), ...checkJoinControls(artifact)];
 	if (failures.length) {
 		console.error("derive-we-set CONTROL FAILURE — refusing to write we-set.json:");
 		for (const failure of failures) console.error(`  ${failure}`);
@@ -478,7 +615,10 @@ function main() {
 		+ `${c.direct_writes} direct writes, ${c.receiver_writes} writes through non-entity receivers, `
 		+ `WE-SET ${c.we_set} properties, ${c.reachability_evaluated}/${c.reachability_considered} write sites `
 		+ `reachability-evaluated with ${c.return_dominated_writes} return-dominated `
-		+ `(${artifact.reachability.skipped.length} function scopes refused)`);
+		+ `(${artifact.reachability.skipped.length} function scopes refused); JOIN ${c.entity_captures} `
+		+ `entity captures and ${c.handler_fields} specific_data captures against ${c.entity_reads} + `
+		+ `${c.specific_data_reads} import-side reads — ${c.captured_without_consumer} captured without a `
+		+ `consumer, ${c.consumed_without_producer} consumed without a producer`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
