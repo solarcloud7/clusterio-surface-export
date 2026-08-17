@@ -20,8 +20,13 @@
 //           through the exact gate — the gate measures items and fluids only, so a
 //           SUCCESS verdict is not evidence about tags and only the destination physical read decides;
 //           exercise the production trigger (a blueprint carrying mod-authored tags), because the
-//           fixture arms tags by script; cover tag values the JSON transport cannot express (an empty
-//           table is ambiguous between object and array across it, and is deliberately absent from the
+//           fixture arms tags by script; distinguish a value's NUMBER FORM — canon formats every
+//           integral number with %d, so 3 and 3.0 compare equal and a lost integer/float distinction
+//           passes; distinguish a key's TYPE — both canonicalizers stringify keys, so the Lua array
+//           {10,20,30} and the string-keyed dict {["1"]=10,...} canonicalize identically and a shape
+//           change across the transport would false-PASS; cover deep nesting, non-ASCII keys, large
+//           tag payloads, or tag values the JSON transport cannot express (an empty table is
+//           ambiguous between object and array across it, and is deliberately absent from the
 //           fixture); prove item or fluid fidelity; or touch the protected fixtures (it builds and
 //           sweeps its own throwaway platform)
 
@@ -64,21 +69,29 @@ const ARMS = [
 	{ id: "entity_ghost_create_param", entity: "entity-ghost", inner: GHOST_INNER, createParam: true },
 	{ id: "chest_unarmed", entity: "steel-chest" },
 	{ id: "chest_post_write", entity: "steel-chest", postWrite: true },
+	{ id: "chest_create_param", entity: "steel-chest", createParam: true },
 	{ id: "tile_ghost_unarmed", entity: "tile-ghost", inner: TILE_INNER, offPlatform: true },
 	{ id: "tile_ghost_post_write", entity: "tile-ghost", inner: TILE_INNER, offPlatform: true, postWrite: true },
 	{ id: "tile_ghost_create_param", entity: "tile-ghost", inner: TILE_INNER, offPlatform: true, createParam: true },
 ];
 
-let onPlatformSlot = 0;
-let offPlatformSlot = 0;
+const ARM_STEP = { "entity-ghost": 4, "tile-ghost": 4, "steel-chest": 2 };
+
+let onPlatformX = 6.5;
+let offPlatformX = 6.5;
 for (const arm of ARMS) {
-	arm.at = arm.offPlatform
-		? { x: 6.5 + (offPlatformSlot++) * 4, y: OFF_PLATFORM_ARM_ROW_Y }
-		: { x: 6.5 + (onPlatformSlot++) * 4, y: ARM_ROW_Y };
+	if (arm.offPlatform) {
+		arm.at = { x: offPlatformX, y: OFF_PLATFORM_ARM_ROW_Y };
+		offPlatformX += ARM_STEP[arm.entity];
+	} else {
+		arm.at = { x: onPlatformX, y: ARM_ROW_Y };
+		onPlatformX += ARM_STEP[arm.entity];
+	}
 }
 
 const GHOST_ROUTES = ["entity_ghost_post_write", "entity_ghost_create_param"];
 const TILE_GHOST_ROUTES = ["tile_ghost_post_write", "tile_ghost_create_param"];
+const CHEST_ROUTES = ["chest_post_write", "chest_create_param"];
 
 const L = createBatchLifecycle({
 	goldenSourceSave: "unused.zip", goldenDestSave: "unused.zip",
@@ -200,20 +213,20 @@ async function main() {
 
 		const ghostRoutes = GHOST_ROUTES.filter(landed);
 		const tileGhostRoutes = TILE_GHOST_ROUTES.filter(landed);
-		const chestHoldsTags = landed("chest_post_write");
+		const chestRoutes = CHEST_ROUTES.filter(landed);
 		console.log(`  CLASS entity-ghost: ${ghostRoutes.length ? `holds tags via ${ghostRoutes.join(", ")}` : "NO ROUTE lands tags"}`);
 		console.log(`  CLASS tile-ghost: ${tileGhostRoutes.length ? `holds tags via ${tileGhostRoutes.join(", ")}` : "no route lands tags at this pin"}`);
-		console.log(`  CLASS steel-chest (non-ghost): ${chestHoldsTags ? "holds tags" : "cannot hold tags at this pin"}`);
+		console.log(`  CLASS steel-chest (non-ghost): ${chestRoutes.length ? `holds tags via ${chestRoutes.join(", ")}` : "no route lands tags at this pin"}`);
 
 		check(ghostRoutes.length > 0,
 			"engine: at least one route puts tags on a fresh entity-ghost at this pin",
 			JSON.stringify(arms.filter(arm => GHOST_ROUTES.includes(arm.arm))));
 		if (ghostRoutes.length === 0) throw new Error("no route can arm a ghost with tags — fixture cannot be built");
-		check(tileGhostRoutes.length === 0 && !chestHoldsTags,
+		check(tileGhostRoutes.length === 0 && chestRoutes.length === 0,
 			"class boundary: neither measured non-ghost class (tile-ghost, steel-chest) holds tags at this "
-			+ "pin, so the entity-ghost fixture covers every class this suite has measured — either of them "
-			+ "gaining tags needs a fixture arm and a destination check added here first",
-			`tile-ghost routes=[${tileGhostRoutes.join(",")}] steel-chest=${chestHoldsTags}`);
+			+ "pin by EITHER route, so the entity-ghost fixture covers every class this suite has measured — "
+			+ "either of them gaining tags needs a fixture arm and a destination check added here first",
+			`tile-ghost routes=[${tileGhostRoutes.join(",")}] steel-chest routes=[${chestRoutes.join(",")}]`);
 		const chosen = ghostRoutes[0];
 		console.log(`  ROUTE CHOSEN for the fixture: ${chosen}`);
 
