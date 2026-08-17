@@ -134,7 +134,9 @@ Each rule is evaluated over whatever its trigger names. Rule 1's trigger is the 
 physical count anywhere in that directory's scanned files satisfies it, reported once per directory.
 Rule 2's trigger is a self-report read inside one file, so that file owes its own corroboration — a
 sibling's physical count does not discharge it. Directories are keyed by root, so
-tests/integration/belt-freeze and tests/instruments/belt-freeze never merge.
+tests/integration/belt-freeze and tests/instruments/belt-freeze never merge — six names are shared
+across the two roots today (belt-freeze, engine-invariants, fluid-segment-law, loader-freeze,
+pole-copper-prune, selftests), and two of the six carry a one-sided physical count.
 
 Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
 runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
@@ -233,13 +235,22 @@ loader-freeze/run-rung.mjs).
 
 Per-directory Rule 1 exists because of that 21-of-23 number: keyed per file, a single future
 tests/instruments/<x>-fidelity/ directory would demand a physical count from every pure model module
-in it. Keyed per directory it demands one, from the rung that talks to the cluster. This is a no-op
-for tests/integration, where no directory holds two runners (29 runners, 29 directories, measured).
+in it. Keyed per directory it demands one, from the rung that talks to the cluster. This is a
+PASS/FAIL no-op for tests/integration, where no directory holds two runners (29 runners, 29
+directories, measured). It is not an OUTPUT no-op: a Rule 1 violation now names the directory rather
+than the file, in both roots. Unobservable on the current tree, where no integration directory is
+fidelity-named.
 
-Residual the widening does NOT close: Rule 2 stays per-file, so a future instrument model module that
-parses a self-report field with no physical count of its own is red even when its rung is grounded —
-today 0 instrument files read any self-report field, and the fix if it ever bites is an allow with a
-reason, not a scope retreat.
+Residuals the widening does NOT close:
+- Rule 2 stays per-file, so a future instrument model module that parses a self-report field with no
+  physical count of its own is red even when its rung is grounded — today 0 instrument files read any
+  self-report field, and the fix if it ever bites is an allow with a reason, not a scope retreat.
+- The per-directory physical count is computed over ALL scanned files including allow-marked ones, so
+  an allow-marked file's get_item_count( discharges Rule 1 for its directory. The alternative is
+  non-monotonic (adding an allow to one file would turn a sibling red), and the path is reviewed
+  rather than silent: an allow needs owner approval and a lint-allow-manifest.json entry.
+- Root-level directory names collide across the two roots but their units do not; nothing checks that
+  a future third root would be keyed the same way.
 
 Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
 never a self-service response to a firing guard.

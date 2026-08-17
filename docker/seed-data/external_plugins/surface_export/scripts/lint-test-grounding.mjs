@@ -56,6 +56,7 @@ export function isScannedInstrumentFile(fileName) {
 
 function walkFiles(directory, out = []) {
 	for (const name of readdirSync(directory)) {
+		if (name === "dist" || name === "node_modules") continue;
 		const file = join(directory, name);
 		if (statSync(file).isDirectory()) walkFiles(file, out);
 		else out.push(file);
