@@ -113,7 +113,7 @@ Escape hatch: append a `lint-webpack-cache:allow` comment on a line to suppress 
 - **Run:** `npm run lint:test-grounding`
 - **Escape hatch:** lint-test-grounding:allow
 
-lint-test-grounding.mjs - mechanical guard for integration-test grounding.
+lint-test-grounding.mjs - mechanical guard for integration-test and instrument-rung grounding.
 
 The recurring failure mode: a fidelity test that asserts on a value derived from the code under test
 proves nothing. The original transfer-fidelity incident would have gone green on a broken loss meter;
@@ -121,13 +121,35 @@ independent physical counts and adversarial review caught it. Rule 3 closes the 
 blind spot measured in W3: a success-path runner saw a failed verdict, Black-Box Discard removed the
 destination, and the runner then misreported the missing destination as physical item loss.
 
-Rules per tests/integration/<name>/run-tests.{ps1,mjs}, with comments stripped (dialect-aware —
-`#` for PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
+Two scan roots — tests/integration/<name>/run-tests.{ps1,mjs} and every .mjs/.ps1 file at any depth
+under tests/instruments outside *.test.mjs — with comments stripped (dialect-aware — `#` for
+PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
   1. A fidelity test performs an independent physical item count.        [both dialects]
-  2. Validator fidelity self-reports are cross-grounded physically.      [both dialects]
+  2. Validator fidelity self-reports are cross-grounded physically.      [both dialects, per FILE]
   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
      ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs a runner that FETCHES a transfer verdict must
      adjudicate validation_success after the fetch, and before any board/census read]
+
+Rule 1's TRIGGER has always been the directory name. What is scoped per root is its DISCHARGE — which
+files' physical counts satisfy it — and the two roots differ, set by a dischargeScope flag on each
+collector's records:
+
+| root | Rule 1 discharge | Rule 1 reports |
+|---|---|---|
+| tests/integration | per FILE (unchanged since the rule existed) | the file |
+| tests/instruments | per DIRECTORY | the directory, once |
+
+tests/integration keeps per-file discharge because tools/tests/run-integration-tests.mjs executes only
+ONE runner per directory (mjs preferred). A directory mid-migration holds a stale grounded run-tests.ps1
+beside the live run-tests.mjs, and per-directory discharge would let the DEAD file ground the LIVE one.
+No integration directory holds two runners today (29 runners, 29 directories, measured), so this is a
+guard against the migration shape, not a current fix.
+
+Rule 2's trigger is a self-report read inside one file, so that file owes its own corroboration in both
+roots — a sibling's physical count does not discharge it. Discharge keys are root-qualified, so
+tests/integration/belt-freeze and tests/instruments/belt-freeze never merge: six names are shared across
+the two roots today (belt-freeze, engine-invariants, fluid-segment-law, loader-freeze, pole-copper-prune,
+selftests), two of them carrying a one-sided physical count.
 
 Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
 runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
@@ -187,6 +209,64 @@ not that *each* transfer in a multi-transfer runner was. `gallery-suite` is that
 transfer adjudicated at run-tests.mjs:132 and a refusal arm at :156 — so a future runner that
 adjudicates only one of its two transfers satisfies the arm. Closing it needs per-call-site pairing,
 which the textual scan cannot do.
+
+### tests/instruments joined the scan surface 2026-08-16, and what it actually covers
+
+Instrument rungs sat outside the fence, so a rung could regress into asserting off a validator
+self-report unseen. A report-only pass over tests/instruments at e1503b5 ran the shipped predicates
+without failing anything, at three candidate scopes: run-tests.{ps1,mjs} only (4 files), plus
+run-*rung*.mjs (11 files), and every .mjs/.ps1 (35 files). **All three reported zero violations.**
+Classified flags: 0 true gaps, 0 legitimate-subject cases, 0 false positives — so no allow marker was
+added and lint-allow-manifest.json is unchanged.
+
+Scope shipped is every .mjs/.ps1 at any depth under tests/instruments except *.test.mjs — 23 of the
+35 files (11 run-* entrypoints + 12 model modules; the 12 excluded are *.test.mjs). Filename-glob
+selection was rejected: it is the same silent-opt-out shape recorded above for Rule 3's old literal
+trigger, and a future probe-foo.mjs would escape it. A file loose in the instruments root is scanned
+too, as its own unit, for the same reason. The *.test.mjs exclusion is by dialect, not
+convenience — those are offline `node --test` unit tests over pure model modules with no cluster and
+no destination, so a physical count there is not absent but undefined, and a parser test that builds
+a fake totalItemLoss fixture would be a permanent false positive under Rule 2.
+
+Reach and can-actually-fail, measured by blinding (the same method as the Rule 3 table above):
+
+| rule | instrument files reached | can actually fail today |
+|---|---|---|
+| 1 (fidelity name) | 0 — no instrument directory is *fidelity*-named | 0 (preventative) |
+| 2 (self-report read) | 0 — no instrument file reads a self-report field | 0 (preventative) |
+| 3 mjs presence arm | 1 — one-of-each/run-rung.mjs | 1 |
+| 3 mjs ordering arm | 1 (same file) | 0 — no board/census marker follows the fetch |
+| 3 ps1 arm | 0 — engine-invariants/run-tests.ps1 carries no debug_import_result | 0 |
+
+The presence-arm row is MEASURED: blinding `validation_success` in one-of-each/run-rung.mjs turns the
+shipped `findMjsGroundingViolations` from 0 violations to 1. That file fetches at run-rung.mjs:399 and
+adjudicates at :410, and refuses to read the destination at all on gate failure. Rules 1 and 2 reach
+nothing today, exactly as their mjs coverage did in 2026-08-05. Renaming every instrument directory
+*-fidelity fires Rule 1, under the SHIPPED per-directory discharge, on 7 of the 9 directories; the two
+that stay green are the two holding a real get_item_count( (engine-invariants/run-tests.ps1 and
+loader-freeze/run-rung.mjs). Injecting a self-report read fires Rule 2, which is per file, on 21 of the
+23 files. The per-FILE counterfactual for Rule 1 — what the discharge would do if instruments were keyed
+like integration — is 21 of 23, and that number is why instruments discharge per directory: a single
+future tests/instruments/<x>-fidelity/ directory would otherwise demand a physical count from every pure
+model module in it, rather than one from the rung that talks to the cluster.
+
+The change is a full no-op for tests/integration, pass/fail AND output: its records carry
+dischargeScope "file", so Rule 1 still discharges per file and still reports the file path.
+
+Residuals the widening does NOT close:
+- Rule 2 stays per-file, so a future instrument model module that parses a self-report field with no
+  physical count of its own is red even when its rung is grounded — today 0 instrument files read any
+  self-report field, and the fix if it ever bites is an allow with a reason, not a scope retreat.
+- The per-directory physical count is computed over ALL scanned files including allow-marked ones, so
+  an allow-marked file's get_item_count( discharges Rule 1 for its directory. An allow's blast radius
+  therefore exceeds the file it annotates, which an approver should weigh. The alternative is
+  non-monotonic (adding an allow to one file would turn a sibling red), and the path is reviewed
+  rather than silent: an allow needs owner approval and a lint-allow-manifest.json entry.
+- The container SKIP path fires when ANY scan root is missing, not only when all are. In the
+  plugin-only mount both are absent together, so there is no live difference; a hypothetical checkout
+  holding one root but not the other would skip both rather than check the one present.
+- Directory names collide across the two roots but their discharge keys do not; nothing checks that a
+  future third root would be keyed, or scoped, the same way.
 
 Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
 never a self-service response to a firing guard.

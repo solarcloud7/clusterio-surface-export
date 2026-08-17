@@ -2,11 +2,12 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(SCRIPT_DIR, "..", "..", "..", "..", "..");
 const TESTS_DIR = join(REPO_ROOT, "tests", "integration");
+const INSTRUMENTS_DIR = join(REPO_ROOT, "tests", "instruments");
 const ALLOW_MARKER = "lint-test-grounding:allow";
 const SELF_REPORT_FIELDS = ["totalItemLoss", "expectedItemCounts", "actualItemCounts"];
 const PHYSICAL_COUNT = "get_item_count(";
@@ -28,22 +29,61 @@ function stripComments(source, dialect = "ps1") {
 		.join("\n");
 }
 
-function findTestFiles() {
-	if (!existsSync(TESTS_DIR)) return [];
+export function findTestFiles(testsDir = TESTS_DIR, repoRoot = REPO_ROOT) {
+	if (!existsSync(testsDir)) return [];
 	const files = [];
-	for (const name of readdirSync(TESTS_DIR)) {
-		const directory = join(TESTS_DIR, name);
+	for (const name of readdirSync(testsDir)) {
+		const directory = join(testsDir, name);
 		if (!statSync(directory).isDirectory()) continue;
 		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
 			const file = join(directory, runner);
 			if (!existsSync(file)) continue;
 			files.push({
 				name,
+				unit: `tests/integration/${name}`,
+				dischargeScope: "file",
 				dialect: runner.endsWith(".mjs") ? "mjs" : "ps1",
-				path: relative(REPO_ROOT, file).replace(/\\/g, "/"),
+				path: relative(repoRoot, file).replace(/\\/g, "/"),
 				source: readFileSync(file, "utf8"),
 			});
 		}
+	}
+	return files;
+}
+
+export function isScannedInstrumentFile(fileName) {
+	return /\.(mjs|ps1)$/.test(fileName) && !fileName.endsWith(".test.mjs");
+}
+
+function walkFiles(directory, out = []) {
+	for (const name of readdirSync(directory)) {
+		if (name === "dist" || name === "node_modules") continue;
+		const file = join(directory, name);
+		if (statSync(file).isDirectory()) walkFiles(file, out);
+		else out.push(file);
+	}
+	return out;
+}
+
+export function instrumentUnitName(relativePath) {
+	return relativePath.slice("tests/instruments/".length).split("/")[0];
+}
+
+export function findInstrumentFiles(instrumentsDir = INSTRUMENTS_DIR, repoRoot = REPO_ROOT) {
+	if (!existsSync(instrumentsDir)) return [];
+	const files = [];
+	for (const file of walkFiles(instrumentsDir)) {
+		if (!isScannedInstrumentFile(basename(file))) continue;
+		const path = relative(repoRoot, file).replace(/\\/g, "/");
+		const name = instrumentUnitName(path);
+		files.push({
+			name,
+			unit: `tests/instruments/${name}`,
+			dischargeScope: "directory",
+			dialect: file.endsWith(".mjs") ? "mjs" : "ps1",
+			path,
+			source: readFileSync(file, "utf8"),
+		});
 	}
 	return files;
 }
@@ -95,16 +135,35 @@ function firstDestinationCensusAfter(source, startIndex) {
 	return -1;
 }
 
+function dischargeKeyOf({ dischargeScope, unit, path }) {
+	return dischargeScope === "directory" && unit ? unit : path;
+}
+
+function dischargePhysicalCounts(files) {
+	const counted = new Map();
+	for (const file of files) {
+		const key = dischargeKeyOf(file);
+		const physical = stripComments(file.source, file.dialect).includes(PHYSICAL_COUNT);
+		counted.set(key, (counted.get(key) ?? false) || physical);
+	}
+	return counted;
+}
+
 export function findGroundingViolations(files) {
 	const violations = [];
-	for (const { name, dialect, path, source } of files) {
+	const dischargeHasPhysical = dischargePhysicalCounts(files);
+	const reportedKeys = new Set();
+	for (const file of files) {
+		const { name, dialect, path, source } = file;
 		if (source.includes(ALLOW_MARKER)) continue;
 		const code = stripComments(source, dialect);
 		const hasPhysical = code.includes(PHYSICAL_COUNT);
+		const dischargeKey = dischargeKeyOf(file);
 
-		if (/fidelity/i.test(name) && !hasPhysical) {
+		if (/fidelity/i.test(name) && !dischargeHasPhysical.get(dischargeKey) && !reportedKeys.has(dischargeKey)) {
+			reportedKeys.add(dischargeKey);
 			violations.push({
-				path,
+				path: dischargeKey,
 				rule: 1,
 				message: "a *fidelity* test must do an independent physical count (get_item_count(...))",
 			});
@@ -138,26 +197,36 @@ export function findGroundingViolations(files) {
 	return violations;
 }
 
+const SCAN_ROOTS = [
+	{ dir: TESTS_DIR, label: "tests/integration", surface: "run-tests.{ps1,mjs} runners", collect: findTestFiles },
+	{ dir: INSTRUMENTS_DIR, label: "tests/instruments", surface: "*.{mjs,ps1} files outside *.test.mjs", collect: findInstrumentFiles },
+];
+
 function main() {
-	if (!existsSync(TESTS_DIR)) {
+	const missing = SCAN_ROOTS.filter((root) => !existsSync(root.dir));
+	if (missing.length > 0) {
+		const names = missing.map((root) => root.label).join(", ");
 		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
-			console.log(`lint:test-grounding - SKIPPED (plugin-only container mount; tests/integration not present at ${TESTS_DIR})`);
+			console.log(`lint:test-grounding - SKIPPED (plugin-only container mount; ${names} not present under ${REPO_ROOT})`);
 			return;
 		}
 		console.error(
-			`lint:test-grounding - FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
+			`lint:test-grounding - FAILED: ran 0 checks (${names} not found under ${REPO_ROOT}).\n` +
 				"A missing scan surface is not a pass. Run from a full repository checkout.",
 		);
 		process.exit(1);
 	}
-	const files = findTestFiles();
-	if (files.length === 0) {
+	const collected = SCAN_ROOTS.map((root) => ({ root, files: root.collect() }));
+	const empty = collected.filter((entry) => entry.files.length === 0);
+	if (empty.length > 0) {
 		console.error(
-			`lint:test-grounding - FAILED: ${TESTS_DIR} exists but contains zero run-tests.{ps1,mjs} runners.\n` +
-				"Ran 0 checks; refusing to report a pass on an empty scan surface.",
+			`lint:test-grounding - FAILED: ${empty.map((entry) => entry.root.label).join(", ")} exists but contains zero ` +
+				`${empty.map((entry) => entry.root.surface).join(" / ")}.\n` +
+				"Ran 0 checks on that root; refusing to report a pass on an empty scan surface.",
 		);
 		process.exit(1);
 	}
+	const files = collected.flatMap((entry) => entry.files);
 	const violations = [...findGroundingViolations(files), ...findMjsGroundingViolations(files)];
 	if (violations.length > 0) {
 		console.error("lint:test-grounding - FAILED\n");
@@ -169,7 +238,8 @@ function main() {
 		);
 		process.exit(1);
 	}
-	console.log(`lint:test-grounding - OK (${files.length} integration test(s) checked, 3 grounding rules enforced)`);
+	const counts = collected.map((entry) => `${entry.files.length} ${entry.root.label}`).join(" + ");
+	console.log(`lint:test-grounding - OK (${counts} file(s) checked, 3 grounding rules enforced)`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
