@@ -18,10 +18,10 @@ import {
 
 test("the LuaEntity walk roster is the READABLE attributes, and both counts are pinned", () => {
 	const roster = walkableAttributes("LuaEntity");
-	assert.equal(roster.pin, "2.1.11");
-	assert.equal(roster.total, 311, "LuaEntity carries 311 merged attributes at this pin");
-	assert.equal(roster.readable.length, 309,
-		"309 of those 311 are readable — crane_grappler_destination and crane_grappler_destination_3d are "
+	assert.equal(roster.pin, "2.1.17");
+	assert.equal(roster.total, 313, "LuaEntity carries 313 merged attributes at this pin (2.1.13 added local_effect and potential_effects)");
+	assert.equal(roster.readable.length, 311,
+		"311 of those 313 are readable — crane_grappler_destination and crane_grappler_destination_3d are "
 		+ "write-only, and walking them would manufacture THREW cells that mean nothing");
 	assert.equal(roster.readable.includes("crane_grappler_destination"), false);
 	assert.equal(roster.readable.includes("unit_number"), true);
