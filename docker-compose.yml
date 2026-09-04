@@ -96,7 +96,7 @@ services:
       - surface-export-host-1-data:/clusterio/data
       - surface-export-tokens:/clusterio/tokens:ro
       - ./docker/seed-data/mods:/clusterio/seed-mods:ro
-      - factorio-client-2111:/opt/factorio-client
+      - factorio-client-2117:/opt/factorio-client
       # Mount external plugins (auto-discovered by install-plugins.sh)
       - ./docker/seed-data/external_plugins:/clusterio/external_plugins
 
@@ -128,6 +128,6 @@ volumes:
   surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
   surface-export-host-2-data:        # Host 2 persistent data
   surface-export-tokens:             # Token exchange between controller and hosts
-  factorio-client-2111:              # Factorio 2.1.11 experimental client (external — survives down -v).
+  factorio-client-2117:              # Factorio 2.1.17 experimental client (external — survives down -v).
     external: true                   # The old shared `factorio-client` volume (2.0.77) is untouched —
                                      # it is shared with the clusterio-docker/atlas project; never mutate it.
