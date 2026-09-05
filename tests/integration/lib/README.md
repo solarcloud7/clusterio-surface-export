@@ -72,8 +72,8 @@ Step-Tick -Instance 1 -Ticks 60
 ### Test Infrastructure
 | Function | Description |
 |----------|-------------|
-| `Get-TestCases` | Load test-cases.json |
-| `Select-Tests` | Filter tests by ID/category |
+| `Get-TestCases` | Load a `test-cases.json` definitions file — no such file exists in the repo and no test calls this (legacy, unused) |
+| `Select-Tests` | Filter a loaded test suite by ID/category (legacy, unused — pairs with `Get-TestCases`) |
 | `Get-SafeProperty` | Safe property access |
 
 ### Output
@@ -97,10 +97,6 @@ Step-Tick -Instance 1 -Ticks 60
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 
-# Load and filter tests
-$TestSuite = Get-TestCases -Path "test-cases.json"
-$Tests = Select-Tests -TestSuite $TestSuite -Category "items"
-
 # Create isolated test surface
 $clone = New-TestPlatform -Instance 1 -SourcePlatform "test"
 
@@ -115,7 +111,10 @@ Write-TestSummary -Passed 1 -Failed 0
 ## Adding New Integration Tests
 
 1. Create a new directory under `tests/integration/`
-2. Create `test-cases.json` with your test definitions
-3. Create `run-tests.ps1` that imports `TestBase.psm1`
-4. Use `New-TestPlatform` to create isolated test surfaces
-5. Use the shared functions for RCON, tick stepping, and output
+2. Create `run-tests.mjs` or `run-tests.ps1` in it — `tools/tests/run-integration-tests.mjs`
+   auto-discovers both shapes; nothing else needs editing
+3. A `.ps1` runner may import `TestBase.psm1` for RCON, platform cloning, tick stepping, and
+   output helpers; `.mjs` runners are the majority shape, and 11 of the 30 share
+   `tests/lab-gallery/batch-lifecycle.mjs` for RCON/sleep helpers
+4. Use `New-TestPlatform` (or `clone_platform` via RCON) for isolated test surfaces, and register
+   any new surface-name prefix in `tools/tests/cleanup-test-surfaces.ps1`
