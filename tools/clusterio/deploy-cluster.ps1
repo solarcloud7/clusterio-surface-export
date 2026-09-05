@@ -170,6 +170,13 @@ if ($warmupSw.Elapsed.TotalSeconds -ge $warmupCeilingS) {
     throw "Host warm-up exceeded ${warmupCeilingS}s. The cluster is NOT deployed."
 }
 
+$expectedInstances = @(Get-ChildItem (Join-Path $PSScriptRoot '..\..\docker\seed-data\hosts\*\*') -Directory |
+    Select-Object -ExpandProperty Name)
+if ($expectedInstances.Count -eq 0) {
+    throw "No instance dirs under docker/seed-data/hosts — cannot know what 'all instances running' means."
+}
+Write-Host "Expecting $($expectedInstances.Count) instance(s): $($expectedInstances -join ', ')" -ForegroundColor Cyan
+
 $instanceTimeout = 300
 $instanceSw = [System.Diagnostics.Stopwatch]::StartNew()
 $lastStates = @{}
@@ -204,8 +211,8 @@ while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTi
         }
     }
 
-    $nonRunning = @($stateMap.Values | Where-Object { $_ -ne "running" })
-    if ($stateMap.Count -gt 0 -and $nonRunning.Count -eq 0) {
+    $missing = @($expectedInstances | Where-Object { -not $stateMap.ContainsKey($_) -or $stateMap[$_] -ne "running" })
+    if ($missing.Count -eq 0) {
         $instancesDone = $true
     }
 }
