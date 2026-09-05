@@ -4,8 +4,7 @@
 // requires: the cluster up, host-2 reachable and NOT already tick_paused (an instance-wide pause someone
 //           else holds is refused, never cleared); game.ticks_to_run steering on host-2; the production
 //           module reachable through package.loaded so the budget constant and the queue function are
-//           the shipped ones, never hand-copies; STEP_TICKS = budget + 60 so a give-up is graded a full
-//           margin past the deadline
+//           the shipped ones, never hand-copies; each arm steps budget + SLACK_TICKS
 // produces: GATE — one PAUSED platform carrying four drills (fuelled over ore, fuel-starved over ore,
 //           fuelled over bare foundation, DEACTIVATED over ore), tick-stepped past the budget, each
 //           drill's mining_target binding read off the entity and graded, with the platform's paused
@@ -91,7 +90,8 @@ function platformLua(name) {
 function drillAtLua(spec) {
 	return `local target\n`
 		+ `for _, e in pairs(s.find_entities_filtered{ type = 'mining-drill' }) do\n`
-		+ `  if e.valid and math.abs(e.position.x - (${spec.x})) < 1.5 and math.abs(e.position.y - (${spec.y})) < 1.5 then\n`
+		+ `  if e.valid and math.abs(e.position.x - (${spec.x})) < 1.5\n`
+		+ `    and math.abs(e.position.y - (${spec.y})) < 1.5 then\n`
 		+ `    target = e\n`
 		+ `  end\n`
 		+ `end\n`
@@ -159,7 +159,9 @@ function readTick() {
 
 function readBudget() {
 	const r = lua(HOST, `local M = package.loaded['${MODULE_KEY}']\n`
-		+ `if type(M) ~= 'table' then return { success = false, error = 'module not in package.loaded: ${MODULE_KEY}' } end\n`
+		+ `if type(M) ~= 'table' then\n`
+		+ `  return { success = false, error = 'module not in package.loaded: ${MODULE_KEY}' }\n`
+		+ `end\n`
 		+ `return { success = true, budget = M.MINING_PROGRESS_BUDGET_TICKS, `
 		+ `has_queue = (type(M.queue_mining_progress) == 'function') }`);
 	if (typeof r.budget !== "number" || r.has_queue !== true) {
@@ -355,9 +357,9 @@ async function budgetArm(budgetTicks, stepTicksUsed) {
 
 	const dormant = pendingFor(held, disabledDrill);
 	if (dormant.length !== 1) {
-		fail(`${DISABLED.id}: the record for the DEACTIVATED drill was ${dormant.length === 0 ? "given up" : "duplicated"} `
-			+ `${stepTicksUsed} ticks after queueing — a record whose drill is deactivated must stay dormant, because `
-			+ "reactivating the drill opens the gate and the captured value is still restorable");
+		const fate = dormant.length === 0 ? "given up" : "duplicated";
+		fail(`${DISABLED.id}: the record for the DEACTIVATED drill was ${fate} ${stepTicksUsed} ticks after `
+			+ "queueing — a record whose drill is deactivated must stay dormant");
 	} else {
 		pass(`${DISABLED.id}: the record outlived ${stepTicksUsed} ticks (${(stepTicksUsed / budgetTicks).toFixed(1)}x `
 			+ "the budget) while its drill stayed deactivated");
@@ -372,7 +374,8 @@ async function budgetArm(budgetTicks, stepTicksUsed) {
 			+ "measuring the wrong entity");
 	} else {
 		pass(`${BARE.id}: the record was given up within ${stepTicksUsed} ticks and the drill still reads `
-			+ `mining_progress=0 — a value with no resource under it is not restorable, and the budget is bounded there`);
+			+ "mining_progress=0 — a value with no resource under it is not restorable, and the budget is "
+			+ "bounded there");
 	}
 	if (problems.length) return;
 
@@ -432,8 +435,8 @@ async function main() {
 			return;
 		}
 
-		lua(HOST, "game.tick_paused = true\nreturn { success = true }");
 		pausedByUs = true;
+		lua(HOST, "game.tick_paused = true\nreturn { success = true }");
 		await stepTicks(stepTicksUsed);
 		if (gateArm(readState(), stepTicksUsed)) await budgetArm(budgetTicks, stepTicksUsed);
 		else say("\n  the budget arm did not run: the gate did not behave as measured, so which state leaves "

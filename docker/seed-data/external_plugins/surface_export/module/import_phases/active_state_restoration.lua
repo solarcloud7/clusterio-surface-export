@@ -59,16 +59,34 @@ function ActiveStateRestoration.queue_mining_progress(entity, sd)
     }
 end
 
+function ActiveStateRestoration.has_resource_in_mining_area(entity)
+    local ok, found = pcall(function()
+        local radius = entity.prototype.mining_drill_radius or 0
+        local pos = entity.position
+        return entity.surface.count_entities_filtered{
+            type = "resource",
+            area = { { pos.x - radius, pos.y - radius }, { pos.x + radius, pos.y + radius } },
+        } > 0
+    end)
+    if not ok then
+        log(string.format("[Import] resource scan under '%s' failed (record kept): %s",
+            tostring(entity.name), tostring(found)))
+        return true
+    end
+    return found
+end
+
 function ActiveStateRestoration.service_pending_mining_progress()
     local pending = storage.pending_mining_progress
     if not pending or #pending == 0 then return end
+    local budget = ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS
     local keep = {}
     for _, rec in ipairs(pending) do
         local done = true
         if not (rec.entity and rec.entity.valid) then
             log(string.format("[Import] deferred mining_progress DROPPED: entity invalid (captured %s)",
                 tostring(rec.mining_progress)))
-        elseif rec.entity and rec.entity.valid then
+        else
             local ok, bound = pcall(function() return rec.entity.mining_target ~= nil end)
             if ok and bound then
                 for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
@@ -80,18 +98,23 @@ function ActiveStateRestoration.service_pending_mining_progress()
                         end
                     end
                 end
-            elseif game.tick < rec.expires_tick then
-                done = false
             else
                 local active_ok, is_active = pcall(function() return rec.entity.active end)
                 if active_ok and is_active == false then
-                    rec.expires_tick = game.tick + ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS
+                    if ActiveStateRestoration.has_resource_in_mining_area(rec.entity) then
+                        rec.expires_tick = game.tick + budget
+                        done = false
+                    else
+                        log(string.format(
+                            "[Import] deactivated '%s' on '%s' has no resource in its mining area — captured mining_progress %s DROPPED",
+                            tostring(rec.entity.name), tostring(rec.entity.surface.name), tostring(rec.mining_progress)))
+                    end
+                elseif game.tick < rec.expires_tick then
                     done = false
                 else
                     log(string.format(
                         "[Import] mining_target never bound for '%s' on '%s' within %d ticks — captured mining_progress %s DROPPED",
-                        tostring(rec.entity.name), tostring(rec.entity.surface.name),
-                        ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS, tostring(rec.mining_progress)))
+                        tostring(rec.entity.name), tostring(rec.entity.surface.name), budget, tostring(rec.mining_progress)))
                 end
             end
         end

@@ -6,7 +6,7 @@
 //           suite run and is restored in a finally
 
 import { spawnSync } from "node:child_process";
-import { lua } from "../../lab-gallery/batch-lifecycle.mjs";
+import { lua, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 
 const HOST = 2;
 const MODULE_KEY = "__level__/modules/surface_export/import_phases/active_state_restoration.lua";
@@ -19,7 +19,9 @@ const MUTANTS = {
 	},
 	"never-expire": {
 		expectRed: /the record for the ACTIVE drill over bare foundation is still pending/,
-		deadline: "\n      elseif true then\n        rec.expires_tick = game.tick + M.MINING_PROGRESS_BUDGET_TICKS\n        done = false",
+		deadline: "\n      elseif true then\n"
+			+ "        rec.expires_tick = game.tick + M.MINING_PROGRESS_BUDGET_TICKS\n"
+			+ "        done = false",
 	},
 };
 const mutantName = process.argv[2] ?? "drop-at-deadline";
@@ -64,34 +66,46 @@ return { success = true }`;
 
 function runSuite(label) {
 	console.log(`\n##### ${label}: ${SUITE}`);
-	const r = spawnSync(process.execPath, [SUITE], { encoding: "utf8" });
-	process.stdout.write(r.stdout);
-	process.stderr.write(r.stderr);
+	const r = spawnSync(process.execPath, [SUITE], { cwd: REPO_ROOT, encoding: "utf8" });
+	if (r.error) throw new Error(`could not spawn the suite: ${r.error.message}`);
+	process.stdout.write(r.stdout ?? "");
+	process.stderr.write(r.stderr ?? "");
 	console.log(`##### ${label}: exit ${r.status}`);
-	return { status: r.status, output: r.stdout };
+	return { status: r.status, output: r.stdout ?? "" };
 }
 
 let mutantRun = null;
 let restoredRun = null;
+let armed = false;
 try {
-	const armed = lua(HOST, MUTANT);
-	if (!armed || armed.success !== true || armed.rebound !== true) {
-		throw new Error(`mutant did not arm: ${JSON.stringify(armed)}`);
+	const arm = lua(HOST, MUTANT);
+	if (!arm || arm.success !== true || arm.rebound !== true) {
+		throw new Error(`mutant did not arm: ${JSON.stringify(arm)}`);
 	}
+	armed = true;
 	console.log(`mutant '${mutantName}' armed on service_pending_mining_progress`);
 	mutantRun = runSuite(`MUTANT ${mutantName} (expect RED)`);
 } finally {
-	const restored = lua(HOST, RESTORE);
-	console.log(`restore: ${JSON.stringify(restored)}`);
-	if (!restored || restored.success !== true) {
-		console.error("RESTORE FAILED — redeploy Lua before trusting host-2");
-		process.exit(2);
+	if (armed) {
+		let restored = null;
+		try {
+			restored = lua(HOST, RESTORE);
+		} catch (restoreErr) {
+			console.error(`restore threw: ${restoreErr.message}`);
+		}
+		console.log(`restore: ${JSON.stringify(restored)}`);
+		if (!restored || restored.success !== true) {
+			console.error(`RESTORE FAILED — host-2 is still running mutant '${mutantName}' in package.loaded; `
+				+ "redeploy Lua (deploy.ps1 -Scope lua) before trusting host-2");
+			process.exit(2);
+		}
+		restoredRun = runSuite("RESTORED (expect GREEN)");
 	}
-	restoredRun = runSuite("RESTORED (expect GREEN)");
 }
 
 const redForTheRightReason = mutantRun !== null && mutantRun.status !== 0 && mutant.expectRed.test(mutantRun.output);
 const killed = redForTheRightReason && restoredRun.status === 0;
 console.log(`\nteeth '${mutantName}': mutant exit=${mutantRun && mutantRun.status} `
-	+ `red-for-the-right-reason=${redForTheRightReason} restored exit=${restoredRun.status} -> ${killed ? "KILLED" : "SURVIVED"}`);
+	+ `red-for-the-right-reason=${redForTheRightReason} restored exit=${restoredRun.status} `
+	+ `-> ${killed ? "KILLED" : "SURVIVED"}`);
 process.exit(killed ? 0 : 1);
