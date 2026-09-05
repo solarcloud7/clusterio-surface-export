@@ -273,6 +273,12 @@ if ($LASTEXITCODE -eq 0 -and $tokenJson) {
     Write-Host "  docker exec surface-export-controller cat /clusterio/tokens/config-control.json" -ForegroundColor DarkGray
 }
 
+try {
+    & (Join-Path $PSScriptRoot 'sync-client-mods.ps1')
+} catch {
+    Write-Warning "sync-client-mods failed — the cluster is deployed and unaffected; run it by hand: $_"
+}
+
 Write-Host ""
 $httpPort = (Get-Content $EnvFile | Where-Object { $_ -match '^CONTROLLER_HTTP_PORT=(\d+)' } | ForEach-Object { $Matches[1] } | Select-Object -First 1) ?? "8080"
 Write-Host "Web UI: http://localhost:$httpPort" -ForegroundColor Green
