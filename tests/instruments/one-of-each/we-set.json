@@ -1044,7 +1044,7 @@
 			{
 				"file": "import_phases/active_state_restoration.lua",
 				"function": "ActiveStateRestoration.restore",
-				"line": 102
+				"line": 126
 			}
 		],
 		"return_dominated": [],

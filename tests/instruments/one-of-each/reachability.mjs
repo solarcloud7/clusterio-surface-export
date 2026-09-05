@@ -244,7 +244,9 @@ function visitExpression(node, ctx, out) {
 	if (CALL_TYPES.has(node.type)) {
 		visitExpression(node.base, ctx, out);
 		const transparent = IMMEDIATE.has(memberPath(node.base)?.split(".").pop());
-		const args = node.arguments || (node.argument ? [node.argument] : []);
+		const args = Array.isArray(node.arguments) ? node.arguments
+			: node.arguments ? [node.arguments]
+				: node.argument ? [node.argument] : [];
 		for (const argument of args) {
 			if (argument && argument.type === "FunctionDeclaration" && argument.identifier === null) {
 				enterFunction(argument, ctx, out, transparent);
