@@ -111,11 +111,14 @@ Load-bearing rules (each is a hard constraint, not a preference):
    MUST originate at the source (the in-game path has no controller at lock time); the controller adopts the
    export's source-generated id and persists it before awaiting export-complete. Still open.
 2. **Destination hold primitive — PROVEN.** The hold mechanism is `platform.paused = true` +
-   `force.set_surface_hidden(surface, true)` + per-entity deactivation for activatable entities, keyed by the
+   `force.set_surface_hidden(surface, true)` + `platform.hidden = true` + per-entity deactivation for activatable entities, keyed by the
    destination platform's stable `surface.index`; `DestinationHold.stage()` also completes in-flight cargo pods
    through `SurfaceLock.complete_cargo_pods` after pause/hidden/deactivation takes ownership. Proven with
    physically counted items and fluids across stage → 600 held ticks → docker restart of the destination host →
-   go-live (paused, hidden, inactive, restart-durable, fidelity-preserving), and the discard path is safe when
+   go-live (paused, surface-hidden, inactive, restart-durable, fidelity-preserving). That historical proof did
+   not establish remote-view list visibility: the connected-player check on 2.1.17 found the separate
+   `platform.hidden` flag necessary, including for an admin. Both flags are now restored independently on
+   release; `hold_aware_unlock_selftest` exercises their combinations. The discard path is safe when
    the held platform was already externally deleted. One historical CI-only fluid delta (1120→1100) remains
    **UNEXPLAINED, not solved** — eliminated by fixture determinism and meter hardening, never root-caused.
 3. **D1 — hold owns the platform's FULL not-live state** (visibility, entity activation, platform pause):
@@ -145,11 +148,13 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   request↔lock correlation) + cargo-pod awaiting_launch zero-loss recovery + in-game double-transfer refuse
   guard + expiry-scan failure counter + derived TTL floor. The controller has no auto-delete or boot-reconcile
   spine; the Phase-2 reconcile loop will be built fresh against the handshake-or-discard contract.
-- **Follow-ups:** dest-side `flight_data` re-key off name (collision); a true live `descending`/`parking`
-  cargo-pod overflow specimen (the shared helper routes those states through recover-and-spill; the live-proven
-  specimen is `awaiting_launch`); a full controller/web-route behavior test for the double-transfer reject (the
+- **Follow-ups:** dest-side `flight_data` re-key off name (collision); a full controller/web-route behavior test for the double-transfer reject (the
   decision is unit-tested via `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight
   TTL self-unlock on a >10-min transfer (a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
+- **Descending pod overflow:** `tests/instruments/descending-pod-overflow/run-tests.mjs` constructs real
+  `descending` pods and compares empty/full hub arms through the shared completion helper. On 2.1.17,
+  100 incoming copper plates landed in the empty hub; with the hub full, all 100 were read on the ground
+  and the hub's 5,900 iron plates remained. This does not measure the `parking` state or natural flight timing.
 - **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol wiring, gated on the canonical-id
   prerequisite and PR-1 hold-aware unlock. The destination-hold primitive proof and hold-completeness gate are
   closed.

@@ -390,12 +390,14 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     end
 
     local original_hidden = force.get_surface_hidden(surface)
+    local original_platform_hidden = platform.hidden
     local original_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
     if not original_schedule then
         return false, "Failed to capture original platform schedule: " .. tostring(schedule_err)
     end
 
     force.set_surface_hidden(surface, true)
+    platform.hidden = true
 
     local hub = platform.hub
     local descending, ascending, items = complete_cargo_pods(surface, hub)
@@ -413,6 +415,7 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
         surface_index = surface.index,
         force_name = force.name,
         original_hidden = original_hidden,
+        original_platform_hidden = original_platform_hidden,
         original_schedule = original_schedule,
         locked_tick = game.tick,
         kind = lock_opts and lock_opts.kind or nil,
@@ -479,6 +482,9 @@ function SurfaceLock.unlock_platform(platform_index, expected_name)
 
     local restored = unfreeze_entities(surface, lock_data.frozen_states)
     force.set_surface_hidden(surface, lock_data.original_hidden)
+    if lock_data.original_platform_hidden ~= nil then
+        platform.hidden = lock_data.original_platform_hidden
+    end
     if lock_data.original_schedule then
         local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
         if not schedule_restore_ok then

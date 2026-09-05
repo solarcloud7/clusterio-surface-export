@@ -129,6 +129,7 @@ function DestinationHold.stage(transfer_id, platform, force)
 	end
 
 	local original_hidden = force.get_surface_hidden(surface)
+	local original_platform_hidden = platform.hidden
 	local original_paused = platform.paused == true
 	local active_states = {}
 	local deactivated = 0
@@ -136,6 +137,7 @@ function DestinationHold.stage(transfer_id, platform, force)
 	local staged_ok, staged_err = pcall(function()
 		platform.paused = true
 		force.set_surface_hidden(surface, true)
+		platform.hidden = true
 		deactivated = capture_and_deactivate(surface, active_states)
 		local hub = find_hub(surface)
 		local descending, ascending, items_recovered = SurfaceLock.complete_cargo_pods(surface, hub)
@@ -147,6 +149,7 @@ function DestinationHold.stage(transfer_id, platform, force)
 		local restore_ok, restore_err = pcall(function()
 			restore_active_states(surface, active_states)
 			force.set_surface_hidden(surface, original_hidden == true)
+			platform.hidden = original_platform_hidden
 			platform.paused = original_paused == true
 		end)
 		if not restore_ok then
@@ -163,6 +166,7 @@ function DestinationHold.stage(transfer_id, platform, force)
 		platform_name = platform.name,
 		surface_index = surface.index,
 		original_hidden = original_hidden,
+		original_platform_hidden = original_platform_hidden,
 		original_paused = original_paused,
 		active_states = active_states,
 		deactivated_count = deactivated,
@@ -183,6 +187,9 @@ function DestinationHold.go_live(transfer_id)
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
 	force.set_surface_hidden(surface, hold.original_hidden == true)
+	if hold.original_platform_hidden ~= nil then
+		platform.hidden = hold.original_platform_hidden
+	end
 	platform.paused = hold.original_paused == true
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d)",
