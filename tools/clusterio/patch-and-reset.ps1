@@ -131,7 +131,7 @@ $controllerStatus = docker ps --filter "name=surface-export-controller" --format
 if (-not $controllerStatus) {
     Write-Host "ERROR: Clusterio controller is not running. Start cluster first with:" -ForegroundColor Red
     Write-Host "  docker compose up -d" -ForegroundColor Red
-    exit 1
+    throw "Clusterio controller is not running — start the cluster first (docker compose up -d)."
 }
 Write-Host "✓ Controller running" -ForegroundColor Green
 
