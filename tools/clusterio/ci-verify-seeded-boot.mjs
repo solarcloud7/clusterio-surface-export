@@ -8,6 +8,7 @@
 // does not: read any world, assert save CONTENT, decide readiness when the loaded save cannot be
 //           determined (tools/tests/cluster-readiness.mjs stays the gate), or mutate cluster state
 
+import { seededInstances } from "../shared/seeded-instances.mjs";
 import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -24,25 +25,12 @@ export const EXIT_GENERATED_WORLD = 40;
 const LIST_TIMEOUT_MS = 30_000;
 
 export function seedExpectations(root = repoRoot) {
-	const hostsDir = join(root, "docker", "seed-data", "hosts");
-	const expectations = [];
-	for (const host of readdirSync(hostsDir).sort()) {
-		const hostDir = join(hostsDir, host);
-		if (!statSync(hostDir).isDirectory()) continue;
-		for (const instance of readdirSync(hostDir).sort()) {
-			const instanceDir = join(hostDir, instance);
-			if (!statSync(instanceDir).isDirectory()) continue;
-			const seededSaves = readdirSync(instanceDir).filter(f => f.endsWith(".zip")).sort();
-			if (!seededSaves.length) {
-				throw new Error(`${instanceDir} ships no .zip — this check would accept any world on ${instance}`);
-			}
-			expectations.push({ instance, seededSaves });
+	return seededInstances(root).map(({ host, instance, seededSaves }) => {
+		if (!seededSaves.length) {
+			throw new Error(`${join(root, "docker", "seed-data", "hosts", host, instance)} ships no .zip — this check would accept any world on ${instance}`);
 		}
-	}
-	if (!expectations.length) {
-		throw new Error(`${hostsDir} names no seeded instance — this check would accept any cluster`);
-	}
-	return expectations;
+		return { instance, seededSaves };
+	});
 }
 
 export function parseSaveList(raw) {

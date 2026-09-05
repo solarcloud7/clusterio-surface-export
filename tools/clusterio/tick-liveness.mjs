@@ -12,7 +12,8 @@ import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-const DEFAULT_INSTANCES = ["clusterio-host-1-instance-1", "clusterio-host-2-instance-1"];
+import { seededInstanceNames } from "../shared/seeded-instances.mjs";
+const DEFAULT_INSTANCES = seededInstanceNames();
 const RCON_TIMEOUT_MS = 15_000;
 const SAMPLE_GAP_MS = 400;
 

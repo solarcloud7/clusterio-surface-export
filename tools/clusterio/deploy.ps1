@@ -34,9 +34,9 @@ $here = $PSScriptRoot
 
 switch ($Scope) {
     'artifacts' {
-        $childArgs = @($Target)
-        if ($Fresh) { $childArgs += '-Fresh' }
-        if ($RestartHosts) { $childArgs += '-RestartHosts' }
+        $childArgs = @{ Target = $Target }
+        if ($Fresh) { $childArgs.Fresh = $true }
+        if ($RestartHosts) { $childArgs.RestartHosts = $true }
         & (Join-Path $here 'build-plugin.ps1') @childArgs
 
         Sync-ControllerWebBundle -Force:$RestartController
@@ -48,9 +48,9 @@ switch ($Scope) {
         & (Join-Path $here 'patch-and-reset.ps1')
     }
     'cluster' {
-        $childArgs = @()
-        if ($SkipIncrement) { $childArgs += '-SkipIncrement' }
-        if ($KeepData) { $childArgs += '-KeepData' }
+        $childArgs = @{}
+        if ($SkipIncrement) { $childArgs.SkipIncrement = $true }
+        if ($KeepData) { $childArgs.KeepData = $true }
         & (Join-Path $here 'deploy-cluster.ps1') @childArgs
     }
 }

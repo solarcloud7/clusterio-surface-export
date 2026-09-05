@@ -128,7 +128,7 @@ jobs:
       - name: Create external factorio-client volume
         run: |
           # compose declares this volume `external`, so `up` fails unless it already exists.
-          docker volume create factorio-client-2111
+          docker volume create factorio-client-2117
 
       - name: Pull Docker images
         run: |

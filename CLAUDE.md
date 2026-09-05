@@ -21,8 +21,6 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Ghost entities, tile ghosts, and item request proxies preserved
 - Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist)
 
-**Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
-
 **Current Cluster Configuration:**
 - Uses pre-built images from `ghcr.io/solarcloud7/clusterio-docker-controller` and `ghcr.io/solarcloud7/clusterio-docker-host`
 - **`docker exec` takes the CONTAINER name (`surface-export-*`), NOT the hostname.** The `clusterio-*` names are `hostname:` values — how services find each other on the Docker network and how Clusterio derives host IDs. `docker exec clusterio-host-1 …` fails with "No such container".
@@ -30,7 +28,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 1: container `surface-export-host-1`, hostname `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
 - Host 2: container `surface-export-host-2`, hostname `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
-- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2111` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
+- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2117` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
 - Host-2 uses `SKIP_CLIENT=true` (no game client needed)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
 - **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.
@@ -43,7 +41,7 @@ drifted (it named the wrong client volume and recommended sharing it), so it was
 re-curated. The constraints worth repeating here are the ones that fail SILENTLY:
 - the controller's hostname must stay `clusterio-controller` — hosts default `CONTROLLER_URL` to it
 - the `external_plugins` mount must NOT be `:ro` — the entrypoint runs `npm install` inside it
-- pin the immutable `:<version>-rN` image tag; `:latest` and the bare `:<version>` MOVE on rebuild
+- pin the immutable rN image tag (`-rN` through r4, `.rN` from r6); `:latest` and the bare `:<version>` MOVE on rebuild
 
 ## RCON Commands (PowerShell Profile Aliases)
 
@@ -337,7 +335,7 @@ isolated is UNEXPLAINED, not fixed.
 
 ## Clusterio Core Development
 
-This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable `-rN` tag; the bare version and `:latest` MOVE). To change Clusterio core
+This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable rN tag; the bare version and `:latest` MOVE). To change Clusterio core
 itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
 workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
 via `./tools/clusterio/rebuild-clusterio.ps1`) and the promotion paths are in

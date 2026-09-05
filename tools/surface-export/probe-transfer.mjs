@@ -10,10 +10,8 @@ import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-const HOSTS = {
-	1: { instance: "clusterio-host-1-instance-1", container: "surface-export-host-1" },
-	2: { instance: "clusterio-host-2-instance-1", container: "surface-export-host-2" },
-};
+import { seededHosts } from "../shared/seeded-instances.mjs";
+const HOSTS = seededHosts();
 
 const args = process.argv.slice(2);
 const valueOf = (name, fallback) => {

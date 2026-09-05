@@ -72,12 +72,12 @@ This project is designed for Clusterio 2.0 clusters. It uses pre-built Docker im
 1. Clone this repository
 2. Copy `.env.example` to `.env` and set `INIT_CLUSTERIO_ADMIN`
 3. Place save files in `docker/seed-data/hosts/<hostname>/<instance>/` directories
-4. Create external volume: `docker volume create factorio-client-2111`
+4. Create external volume: `docker volume create factorio-client-2117`
 5. Run `docker compose up -d`
 
 **Factorio Game Client** (optional — needed for export-data / icon spritesheets):
 
-The cluster uses its own `factorio-client-2111` external Docker volume to persist the Factorio game client across restarts and `docker compose down -v`. External volume names are GLOBAL to the Docker host, so each cluster on a machine needs its OWN name — two sharing one clobber each other's client install. To populate it:
+The cluster uses its own `factorio-client-2117` external Docker volume to persist the Factorio game client across restarts and `docker compose down -v`. External volume names are GLOBAL to the Docker host, so each cluster on a machine needs its OWN name — two sharing one clobber each other's client install. To populate it:
 - Set `FACTORIO_USERNAME` and `FACTORIO_TOKEN` in `.env` — host-1 downloads the client automatically on first startup
 - Or verify an existing install: `docker exec <host> /opt/factorio-client/bin/x64/factorio --version`
 
@@ -91,7 +91,7 @@ The plugin is bind-mounted from `seed-data/external_plugins/surface_export/` and
 
 ```powershell
 # Create external volume for Factorio game client (one-time)
-docker volume create factorio-client-2111
+docker volume create factorio-client-2117
 
 # Pull pre-built images and start the cluster
 docker compose pull
@@ -104,7 +104,7 @@ docker logs -f surface-export-host-1
 # Stop the cluster
 docker compose down
 
-# Clean restart (wipe all data — factorio-client-2111 persists, it's external)
+# Clean restart (wipe all data — factorio-client-2117 persists, it's external)
 docker compose down -v
 docker compose up -d
 ```
@@ -318,7 +318,7 @@ Item count discrepancies of ~5-6% are expected due to items in non-scannable loc
 ### Docker containers won't start
 - Ensure Docker Desktop is running
 - Check port availability (8080, 34100-34109, 34200-34209)
-- Ensure external volume exists: `docker volume create factorio-client-2111`
+- Ensure external volume exists: `docker volume create factorio-client-2117`
 - Review logs: `docker compose logs`
 - Ensure GHCR images are accessible: `docker pull ghcr.io/solarcloud7/clusterio-docker-controller`
 

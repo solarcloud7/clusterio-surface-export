@@ -45,8 +45,9 @@ if (-not $SkipClientSync) {
 			Write-Host "Client sync SKIPPED: no Factorio user data ($where)" -ForegroundColor Yellow
 			Write-Host "  Headless/CI has no local game install; the cluster copy is unaffected." -ForegroundColor Gray
 		} else {
-			Copy-Item -Path $zipPath -Destination (Join-Path $clientMods "${folder}.zip") -Force
-			Write-Host "Client sync: ${folder}.zip -> $clientMods" -ForegroundColor Green
+			$syncArgs = @{}
+			if ($PruneOldClientVersions) { $syncArgs.PruneShadowing = $true }
+			& (Join-Path $RepoRoot "tools/clusterio/sync-client-mods.ps1") @syncArgs
 
 			$listPath = Join-Path $clientMods "mod-list.json"
 			if (-not (Test-Path $listPath)) {
@@ -78,20 +79,12 @@ if (-not $SkipClientSync) {
 
 			$others = Get-ChildItem $clientMods -Filter "${modName}_*.zip" |
 				Where-Object { $_.Name -ne "${folder}.zip" }
-			if ($others) {
-				$parse = { param($n) if ($n -match "^${modName}_(.+)\.zip$") { [version]$Matches[1] } else { $null } }
-				$built = & $parse "${folder}.zip"
-				$newer = @($others | Where-Object { $v = & $parse $_.Name; $v -and $built -and $v -gt $built })
-				if ($PruneOldClientVersions) {
-					$others | Remove-Item -Force
-					Write-Host "  pruned $($others.Count) other client copy/copies: $($others.Name -join ', ')" -ForegroundColor Yellow
-				} elseif ($newer.Count -gt 0) {
-					Write-Host "  WARNING: $($newer.Count) NEWER copy/copies present — Factorio will load those, NOT the build you just made: $($newer.Name -join ', ')" -ForegroundColor Red
-					Write-Host "  re-run with -PruneOldClientVersions to remove them" -ForegroundColor Red
-				} else {
-					Write-Host "  $($others.Count) older copy/copies left in place (Factorio loads the newest): $($others.Name -join ', ')" -ForegroundColor Gray
-					Write-Host "  re-run with -PruneOldClientVersions to delete them" -ForegroundColor Gray
-				}
+			if ($others -and $PruneOldClientVersions) {
+				$others | Remove-Item -Force
+				Write-Host "  pruned $($others.Count) other client copy/copies: $($others.Name -join ', ')" -ForegroundColor Yellow
+			} elseif ($others) {
+				Write-Host "  $($others.Count) older copy/copies left in place (sync-client-mods refuses NEWER ones): $($others.Name -join ', ')" -ForegroundColor Gray
+				Write-Host "  re-run with -PruneOldClientVersions to delete them" -ForegroundColor Gray
 			}
 			Write-Host "  Factorio reads mods at startup — restart the client if it is open." -ForegroundColor Gray
 		}

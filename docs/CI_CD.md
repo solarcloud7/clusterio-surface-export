@@ -37,7 +37,7 @@ Two jobs:
 4. **Verify the pins** — `CLUSTERIO_IMAGE_TAG` is set in `.env`, and both instances pin the same
    Factorio version (see [Version pinning](#version-pinning-single-source-of-truth)). Both are guards
    only; nothing consumes the values since the bake was removed.
-5. **Create `factorio-client-2111` volume** — compose declares it `external: true`; CI has no
+5. **Create `factorio-client-2117` volume** — compose declares it `external: true`; CI has no
    game client, but the volume must exist or `docker compose up` fails with
    "external volume not found".
 6. **Start cluster** — `docker compose up -d`, then wait for controller health.
@@ -102,8 +102,7 @@ so far, no less reliable.
 
 ### Version pinning (single source of truth)
 
-Both instances pin `factorio.version` in `docker/seed-data/hosts/.../instance.json` (currently
-`2.1.11`). Clusterio's host resolves the install by version (`findVersion` in `@clusterio/host`'s
+Both instances pin `factorio.version` in `docker/seed-data/hosts/.../instance.json` . Clusterio's host resolves the install by version (`findVersion` in `@clusterio/host`'s
 `server.js`); because `/opt/factorio` is a **multi-version parent** and not a direct install, an
 absent version is **downloaded** rather than a hard `"Unable to find Factorio version X"`.
 
@@ -162,7 +161,7 @@ node tests/integration/gallery-suite/run-tests.mjs
 
 Locally you rarely hit the Factorio-download cost at all: with `FACTORIO_USERNAME` /
 `FACTORIO_TOKEN` set, host-1 caches the game client in the persistent external
-`factorio-client-2111` volume (which survives `down -v`), and you rarely `down -v`.
+`factorio-client-2117` volume (which survives `down -v`), and you rarely `down -v`.
 
 There is nothing to layer any more — `docker compose up -d` is the whole story, same as CI. The
 old recipe here built a `clusterio-docker-host:factorio-baked` image and stacked

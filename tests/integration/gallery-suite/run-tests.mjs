@@ -92,6 +92,11 @@ function platformPresent(host, name) {
 async function main() {
 	const manifest = loadGalleryManifest(repoRootUrl);
 	validateGalleryManifest(manifest);
+	const liveEngine = L.lua(1, "return {success=true, base=script.active_mods.base}").base;
+	if (liveEngine !== manifest.engineVersion) {
+		console.log(`WARN: golden saves banked at ${manifest.engineVersion}, running engine ${liveEngine} — loaded by forward migration; `
+			+ "re-bank per docker/seed-data/lab-saves/README.md to re-measure at this pin");
+	}
 	const platformName = "lab-omnibus-state-v1";
 
 	for (const roleKey of ["source", "destination"]) {

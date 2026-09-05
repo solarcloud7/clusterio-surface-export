@@ -148,6 +148,14 @@ try {
 			console.error(`  FAIL cleanup sweep on ${instance} threw: ${sweepErr && sweepErr.message ? sweepErr.message : sweepErr}`);
 		}
 	}
+	try {
+		const relocked = rconJson(SRC_INSTANCE,
+			`(function() return {unlocks=remote.call('surface_export','reapply_gateway_locks')} end)()`);
+		console.log(`  cleanup(${SRC_INSTANCE}): gateway locks reapplied from the stored active set (${relocked.unlocks} unlock(s))`);
+	} catch (relockErr) {
+		failed++;
+		console.error(`  FAIL gateway lock restore on ${SRC_INSTANCE} threw: ${relockErr && relockErr.message ? relockErr.message : relockErr}`);
+	}
 }
 
 if (failed) {

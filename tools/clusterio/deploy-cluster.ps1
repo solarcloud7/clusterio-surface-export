@@ -53,6 +53,7 @@ if (-not $SkipIncrement) {
 }
 
 . "$PSScriptRoot/../shared/version-utils.ps1"
+. "$PSScriptRoot/../shared/cluster-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
 
@@ -63,9 +64,29 @@ $EnvFile = Join-Path $WorkspaceRoot ".env"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "Creating .env from example..." -ForegroundColor Yellow
     Copy-Item (Join-Path $WorkspaceRoot ".env.example") $EnvFile
-    Write-Warning "Please edit .env and set INIT_CLUSTERIO_ADMIN before running again."
-    exit 1
+    throw "Created .env from .env.example — set INIT_CLUSTERIO_ADMIN (and FACTORIO_CLIENT_TAG if the client downloads) and run again."
 }
+
+$envValues = @{}
+foreach ($envLine in Get-Content $EnvFile) {
+    if ($envLine -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') { $envValues[$Matches[1]] = $Matches[2] }
+}
+$seeded = Get-SeededInstances
+$expectedInstances = @($seeded | Select-Object -ExpandProperty Instance)
+$expectedHostContainers = @($seeded | Select-Object -ExpandProperty Container -Unique)
+$pinnedFactorioVersions = @($seeded | ForEach-Object {
+    (Get-Content (Join-Path $WorkspaceRoot "docker/seed-data/hosts/$($_.Host)/$($_.Instance)/instance.json") -Raw | ConvertFrom-Json).'factorio.version'
+} | Sort-Object -Unique)
+if ($pinnedFactorioVersions.Count -ne 1) { throw "instance.json files disagree on factorio.version: $($pinnedFactorioVersions -join ', ')" }
+$pinnedFactorioVersion = $pinnedFactorioVersions[0]
+if ($envValues['FACTORIO_USERNAME'] -and $envValues['FACTORIO_TOKEN']) {
+    $clientTag = if ($envValues['FACTORIO_CLIENT_TAG']) { $envValues['FACTORIO_CLIENT_TAG'] } else { 'stable' }
+    if ($clientTag -ne $pinnedFactorioVersion) {
+        throw "FACTORIO_CLIENT_TAG is '$clientTag' but instance.json pins factorio.version $pinnedFactorioVersion — the client download would fill the client volume with the wrong engine. Set FACTORIO_CLIENT_TAG=$pinnedFactorioVersion in .env."
+    }
+}
+$exportHostNumber = if ($envValues['EXPORT_HOST']) { $envValues['EXPORT_HOST'] } else { '1' }
+$clientContainer = "surface-export-host-$exportHostNumber"
 
 Write-Host "Stopping existing cluster..." -ForegroundColor Cyan
 Set-Location $WorkspaceRoot
@@ -89,10 +110,19 @@ Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
 Write-Host "Pulling latest base images..." -ForegroundColor Cyan
 docker compose pull
 
+$composeText = Get-Content (Join-Path $WorkspaceRoot "docker-compose.yml") -Raw
+$externalVolumes = @([regex]::Matches($composeText, '(?m)^  ([A-Za-z0-9_.-]+):[^\r\n]*\r?\n\s+external:\s*true') | ForEach-Object { $_.Groups[1].Value })
+if ($externalVolumes.Count -eq 0) { throw "docker-compose.yml declares no external volume — the client-volume convention moved; update this script." }
+foreach ($volume in $externalVolumes) {
+    docker volume create $volume | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "docker volume create $volume failed (exit $LASTEXITCODE)" }
+    Write-Host "External volume ready: $volume" -ForegroundColor Green
+}
+
 Write-Host "Starting cluster..." -ForegroundColor Cyan
 docker compose up -d
-docker compose up -d
 if ($LASTEXITCODE -ne 0) { throw "docker compose up -d failed (exit $LASTEXITCODE) — refusing to report a started cluster." }
+$deploySw = [System.Diagnostics.Stopwatch]::StartNew()
 
 Write-Host ""
 
@@ -138,12 +168,56 @@ Write-Host ""
 Write-Host "Waiting for instances to start..." -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor DarkGray
 
+$hostBootStallS = 300
+$deployCeilingS = 3600
+$pollS = 5
+$lastHostStatuses = ""
+$lastClientMb = 0
+$lastProgressS = $deploySw.Elapsed.TotalSeconds
+while ($true) {
+    $elapsedS = [int]$deploySw.Elapsed.TotalSeconds
+    if ($elapsedS -ge $deployCeilingS) { throw "Host warm-up exceeded ${deployCeilingS}s. The cluster is NOT deployed." }
+    $statuses = @{}
+    foreach ($container in $expectedHostContainers) {
+        # Deliberately quiet: this is a POLL — a container that does not exist yet reads as absent.
+        $status = docker inspect --format "{{.State.Health.Status}}" $container 2>$null
+        $statuses[$container] = if ($LASTEXITCODE -eq 0 -and $status) { "$status".Trim() } else { "absent" }
+    }
+    $statusLine = ($expectedHostContainers | ForEach-Object { "$_=$($statuses[$_])" }) -join " "
+    if (@($statuses.Values | Where-Object { $_ -ne "healthy" }).Count -eq 0) {
+        Write-Host "  [+${elapsedS}s] hosts healthy: $statusLine" -ForegroundColor Green
+        break
+    }
+    if ($statusLine -ne $lastHostStatuses) {
+        Write-Host "  [+${elapsedS}s] hosts: $statusLine" -ForegroundColor Yellow
+        $lastHostStatuses = $statusLine
+        $lastProgressS = $deploySw.Elapsed.TotalSeconds
+    }
+    # Deliberately quiet: this is a POLL — the client host may not exist yet.
+    $clientOut = docker exec $clientContainer sh -c 'if [ -x /opt/factorio-client/bin/x64/factorio ]; then echo ready; else a=$(du -sm /opt/factorio-client 2>/dev/null | cut -f1); b=$(du -sm /tmp/factorio-client.tar.xz 2>/dev/null | cut -f1); echo $(( ${a:-0} + ${b:-0} )); fi' 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$clientOut" -match '^\d+') {
+        $mb = [int]$Matches[0]
+        if ($mb -gt $lastClientMb) {
+            Write-Host "  [+${elapsedS}s] client volume filling: ${mb} MB" -ForegroundColor Yellow
+            $lastClientMb = $mb
+            $lastProgressS = $deploySw.Elapsed.TotalSeconds
+        }
+    }
+    if (($deploySw.Elapsed.TotalSeconds - $lastProgressS) -gt $hostBootStallS) {
+        throw "Host boot stalled for ${hostBootStallS}s with no health change and no client-volume growth: $statusLine (client: $clientOut). The cluster is NOT deployed."
+    }
+    Start-Sleep -Seconds $pollS
+}
+
+Write-Host "Expecting $($expectedInstances.Count) instance(s): $($expectedInstances -join ', ')" -ForegroundColor Cyan
 $instanceTimeout = 300
-$instanceSw = [System.Diagnostics.Stopwatch]::StartNew()
+$stoppedFailFastS = 30
+$phaseStartS = $deploySw.Elapsed.TotalSeconds
 $lastStates = @{}
+$stoppedSince = @{}
 $instancesDone = $false
 
-while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTimeout) {
+while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) -lt $instanceTimeout) {
     Start-Sleep -Seconds 3
 
     # Deliberately quiet: this is a POLL. The controller legitimately refuses while still booting,
@@ -152,11 +226,12 @@ while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTi
 
     $stateMap = @{}
     foreach ($line in ($listOut -split "`n")) {
-        if ($line -match '(clusterio-\S+-instance-\d+).*\b(running|starting|stopped|stopping|creating_save|unassigned)\b') {
+        if ($line -match '(clusterio-\S+-instance-\d+).*\b(running|starting|stopped|stopping|creating_save|exporting_data|unassigned|unknown|deleted)\b') {
             $stateMap[$Matches[1]] = $Matches[2]
         }
     }
 
+    $nowS = $deploySw.Elapsed.TotalSeconds
     foreach ($name in ($stateMap.Keys | Sort-Object)) {
         $state = $stateMap[$name]
         if ($lastStates[$name] -ne $state) {
@@ -166,34 +241,44 @@ while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTi
                 "creating_save" { "Cyan"   }
                 default         { "Yellow" }
             }
-            $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
-            Write-Host "  [+${elapsed}s] $name -> $state" -ForegroundColor $stateColor
+            Write-Host "  [+$([int]$nowS)s] $name -> $state" -ForegroundColor $stateColor
             $lastStates[$name] = $state
+        }
+        if ($state -eq "stopped") {
+            if (-not $stoppedSince.ContainsKey($name)) {
+                $stoppedSince[$name] = $nowS
+            } elseif (($nowS - $stoppedSince[$name]) -ge $stoppedFailFastS -and $expectedInstances -contains $name) {
+                throw "$name has been 'stopped' for ${stoppedFailFastS}s — a save-load failure, not a slow boot. Read /clusterio/data/instances/$name/factorio-current.log on its host. The cluster is NOT deployed."
+            }
+        } else {
+            $stoppedSince.Remove($name)
         }
     }
 
-    $nonRunning = @($stateMap.Values | Where-Object { $_ -ne "running" })
-    if ($stateMap.Count -gt 0 -and $nonRunning.Count -eq 0) {
+    $missing = @($expectedInstances | Where-Object { -not $stateMap.ContainsKey($_) -or $stateMap[$_] -ne "running" })
+    if ($missing.Count -eq 0) {
         $instancesDone = $true
     }
 }
 
 Write-Host "================================================" -ForegroundColor DarkGray
 if ($instancesDone) {
-    $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
+    $elapsed = [int]$deploySw.Elapsed.TotalSeconds
     Write-Host "All instances running! (+${elapsed}s)" -ForegroundColor Green
 } else {
-    Write-Host "X Instance startup TIMED OUT after ${instanceTimeout}s" -ForegroundColor Red
-    throw "Instances did not reach running within ${instanceTimeout}s. The cluster is NOT deployed; do not trust a later success message."
+    $holdouts = @($expectedInstances | Where-Object { -not $lastStates.ContainsKey($_) -or $lastStates[$_] -ne "running" } |
+        ForEach-Object { "$_=$(if ($lastStates.ContainsKey($_)) { $lastStates[$_] } else { 'never registered' })" }) -join ", "
+    Write-Host "X Instance startup TIMED OUT after ${instanceTimeout}s: $holdouts" -ForegroundColor Red
+    throw "Instances did not reach running within ${instanceTimeout}s ($holdouts). The cluster is NOT deployed; do not trust a later success message."
 }
 
 Write-Host ""
-Write-Host "Verifying the save-patched module VERSION on both instances..." -ForegroundColor Cyan
+Write-Host "Verifying the save-patched module VERSION on every seeded instance..." -ForegroundColor Cyan
 $versionProbe = "/sc local i = remote.interfaces['surface_export'] " +
     "if not i then rcon.print('plugin-missing') " +
     "elseif not i['get_module_version'] then rcon.print('stale-module-no-version-oracle') " +
     "else rcon.print(remote.call('surface_export','get_module_version')) end"
-foreach ($probeInstance in @("clusterio-host-1-instance-1", "clusterio-host-2-instance-1")) {
+foreach ($probeInstance in $expectedInstances) {
     $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
         --log-level error instance send-rcon $probeInstance $versionProbe 2>&1
     $probeText = ($probe | Out-String).Trim()
@@ -232,6 +317,12 @@ if ($LASTEXITCODE -eq 0 -and $tokenJson) {
 } else {
     Write-Host "Token not available yet. Retrieve later with:" -ForegroundColor Yellow
     Write-Host "  docker exec surface-export-controller cat /clusterio/tokens/config-control.json" -ForegroundColor DarkGray
+}
+
+try {
+    & (Join-Path $PSScriptRoot 'sync-client-mods.ps1')
+} catch {
+    Write-Warning "sync-client-mods failed — the cluster is deployed and unaffected; run it by hand: $_"
 }
 
 Write-Host ""

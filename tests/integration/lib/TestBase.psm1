@@ -63,7 +63,7 @@ function Invoke-Lua {
 
 
 
-$script:ExpectedFactorioVersion = "2.1.11"
+$script:ExpectedFactorioVersion = "2.1.17"
 
 function Assert-FactorioVersion {
     param(

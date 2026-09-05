@@ -3,10 +3,8 @@ import { fileURLToPath } from "node:url";
 
 export const CONTROLLER = "surface-export-controller";
 export const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-export const HOSTS = {
-	1: { container: "surface-export-host-1", instance: "clusterio-host-1-instance-1" },
-	2: { container: "surface-export-host-2", instance: "clusterio-host-2-instance-1" },
-};
+import { seededHosts } from "../../tools/shared/seeded-instances.mjs";
+export const HOSTS = seededHosts();
 export const RESTORE_SAVES = { 1: "lab-gallery-source.zip", 2: "lab-gallery-destination.zip" };
 export const RESTORE_SOURCE_PLATFORM = "lab-omnibus-state-v1";
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));

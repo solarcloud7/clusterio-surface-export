@@ -29,7 +29,7 @@
 ## Session prep (5 min)
 
 1. Cluster up, both instances green: `./tools/clusterio/show-cluster-status.ps1`
-2. Client connects to host-1 (the `factorio-client-2111` install).
+2. Client connects to host-1 (the `factorio-client-2117` install).
 3. A throwaway platform on host-1 with a hub and starter kit — make it in-game or:
    `./tools/clusterio/rcon.ps1 11 "/sc local p=game.forces.player.create_space_platform{name='l2-session', planet='nauvis', starter_pack='space-platform-starter-pack'}; p.apply_starter_pack(); p.paused=false"`
 4. Keep a second terminal on `./tools/clusterio/check-cluster-logs.ps1 -Grep "transfer|evacuat"`.
