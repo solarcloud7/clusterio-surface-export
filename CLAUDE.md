@@ -21,8 +21,6 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Ghost entities, tile ghosts, and item request proxies preserved
 - Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist)
 
-**Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
-
 **Current Cluster Configuration:**
 - Uses pre-built images from `ghcr.io/solarcloud7/clusterio-docker-controller` and `ghcr.io/solarcloud7/clusterio-docker-host`
 - **`docker exec` takes the CONTAINER name (`surface-export-*`), NOT the hostname.** The `clusterio-*` names are `hostname:` values — how services find each other on the Docker network and how Clusterio derives host IDs. `docker exec clusterio-host-1 …` fails with "No such container".
