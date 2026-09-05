@@ -28,7 +28,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 1: container `surface-export-host-1`, hostname `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
 - Host 2: container `surface-export-host-2`, hostname `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
-- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2111` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
+- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2117` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
 - Host-2 uses `SKIP_CLIENT=true` (no game client needed)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
 - **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.

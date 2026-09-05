@@ -12,7 +12,7 @@ import path from "node:path";
 
 const PIN = process.argv[2];
 if (!PIN) {
-	console.error("usage: node scripts/extract-factorio-api-index.mjs <factorio-version>   e.g. 2.1.11");
+	console.error("usage: node scripts/extract-factorio-api-index.mjs <factorio-version>   e.g. 2.1.17");
 	process.exit(1);
 }
 

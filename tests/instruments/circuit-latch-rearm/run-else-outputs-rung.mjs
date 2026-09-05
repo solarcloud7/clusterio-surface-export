@@ -56,7 +56,7 @@ async function main() {
 		const r = lua(BUILD_PROBE);
 		say(`probe -> ${JSON.stringify(r)}`);
 		if (r.write_accepted === false) {
-			record("E0", "cb.parameters write REFUSES else_outputs at 2.1.11", r.write_err);
+			record("E0", "cb.parameters write REFUSES else_outputs at this pin", r.write_err);
 		} else {
 			record("E1", `cb.parameters getter emits else_outputs: ${r.e1_emitted ? "YES" : "NO"}`,
 				`set else_outputs={signal-R}; readback else_outputs[1].signal.name=${r.e1_signal}`);
