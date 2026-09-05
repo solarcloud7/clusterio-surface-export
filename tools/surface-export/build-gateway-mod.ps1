@@ -45,7 +45,7 @@ if (-not $SkipClientSync) {
 			Write-Host "Client sync SKIPPED: no Factorio user data ($where)" -ForegroundColor Yellow
 			Write-Host "  Headless/CI has no local game install; the cluster copy is unaffected." -ForegroundColor Gray
 		} else {
-			$syncArgs = @{}
+			$syncArgs = @{ ModName = $modName; ModVersion = $version }
 			if ($PruneOldClientVersions) { $syncArgs.PruneShadowing = $true }
 			& (Join-Path $RepoRoot "tools/clusterio/sync-client-mods.ps1") @syncArgs
 
@@ -77,8 +77,9 @@ if (-not $SkipClientSync) {
 				Write-Host "  mod-list.json written (previous copy at $(Split-Path $backup -Leaf))" -ForegroundColor Gray
 			}
 
-			$others = Get-ChildItem $clientMods -Filter "${modName}_*.zip" |
-				Where-Object { $_.Name -ne "${folder}.zip" }
+			$exactModPattern = '^' + [regex]::Escape($modName) + '_\d+\.\d+\.\d+\.zip$'
+			$others = @(Get-ChildItem -LiteralPath $clientMods -Filter '*.zip' -File |
+				Where-Object { $_.Name -cmatch $exactModPattern -and $_.Name -cne "${folder}.zip" })
 			if ($others -and $PruneOldClientVersions) {
 				$others | Remove-Item -Force
 				Write-Host "  pruned $($others.Count) other client copy/copies: $($others.Name -join ', ')" -ForegroundColor Yellow
