@@ -1,34 +1,23 @@
 #!/usr/bin/env node
-// mining-progress-gate — what opens the deferred mining-progress write, and what the budget does in
-// the one state where it stays shut
+// mining-progress-gate — what opens the deferred mining-progress write, and what its budget waits for
 //
-// requires: the cluster up, host-2 reachable, and game.ticks_to_run steering on host-2 (tick_paused
-//           is cleared in a finally and asserted false at the end); STEP_TICKS - BUDGET_TICKS = 60
-//           ticks of slack, which is load-bearing for the running arm: under a deadline that re-arms
-//           on every paused tick, the record's deadline at resume is one full BUDGET_TICKS ahead, so
-//           the running step must exceed BUDGET_TICKS or the give-up assertion fails on the margin
-//           rather than on the behaviour; BUDGET_TICKS is a hand-copy of the production literal at
-//           active_state_restoration.lua:56 and is not read from it
-// produces: GATE — one PAUSED platform carrying four drills (fuelled over ore, fuel-starved over
-//           ore, fuelled over bare foundation, and DEACTIVATED over ore), tick-stepped past the
-//           300-tick budget, each drill's mining_target binding read off the entity, with the
-//           platform's own paused and state_paused re-read at the same sample so a platform that
-//           quietly un-paused cannot be misread as a pause that does nothing; BUDGET — a
-//           production-shaped record injected into storage.pending_mining_progress for the one drill
-//           whose gate stays shut, then stepped past the budget while paused and again while
-//           running, so the give-up path at active_state_restoration.lua:91 is exercised where it is
-//           reachable, and the drill's own mining_progress is read to show what the give-up costs
-// does not: transfer anything (the gate and the budget are destination-local; a payload would add
-//           confounds to a question about one entity); claim anything about a drill created by the
-//           importer on a platform in flight — every drill here is script-created on a never-launched
-//           platform; PIN the deactivated drill's binding — that row is measured and reported this
-//           round, not graded, because its value is the input to a pending decision rather than a
-//           contract; grade WHICH branch keeps a paused record alive (a boundary re-arm and a
-//           dormant deadline are both "still pending", so this suite is neutral across the DORMANT
-//           family only — it is NOT neutral against a cap-N variant, under which the paused-survival
-//           assertion is designed to go red); read the injected record's field names from production
-//           (they are hand-built here, so a rename of expires_tick or mining_progress at the queue
-//           site leaves this suite green or red for the wrong reason)
+// requires: the cluster up, host-2 reachable and NOT already tick_paused (an instance-wide pause someone
+//           else holds is refused, never cleared); game.ticks_to_run steering on host-2; the production
+//           module reachable through package.loaded so the budget constant and the queue function are
+//           the shipped ones, never hand-copies; each arm steps budget + SLACK_TICKS
+// produces: GATE — one PAUSED platform carrying five drills (fuelled over ore, fuel-starved over ore,
+//           fuelled over bare foundation, DEACTIVATED over ore, DEACTIVATED over bare foundation),
+//           tick-stepped past the budget, each drill's mining_target binding read off the entity and
+//           graded, with the platform's paused and state_paused re-read at the same sample; BUDGET — on
+//           the same platform RUNNING, three records queued through the production
+//           queue_mining_progress: the deactivated drill over ore (must OUTLIVE the budget while
+//           deactivated, then be consumed and land on the entity once reactivated), the active drill
+//           over bare foundation (must be given up past the budget) and the deactivated drill over bare
+//           foundation (must be given up — dormancy ends when nothing is under the drill); platform
+//           paused=false and each drill's active flag are asserted at every sample the grade depends on
+// does not: transfer anything; claim anything about a drill created by the importer on a platform in
+//           flight (every drill here is script-created on a never-launched platform); grade WHICH
+//           branch keeps a dormant record alive — only that it is still pending, then consumed
 
 import {
 	lua as luaRaw, sleep, instanceIds,
@@ -37,6 +26,7 @@ import {
 const HOST = 2;
 const RUN_TAG = Date.now().toString(36);
 const PROBE = `mpgate-${RUN_TAG}`;
+const MODULE_KEY = "__level__/modules/surface_export/import_phases/active_state_restoration.lua";
 const DRILL = "burner-mining-drill";
 const ORE = "iron-ore";
 const PAD = { x0: -10, x1: 18, y0: -14, y1: 14 };
@@ -47,16 +37,21 @@ const SPECS = [
 		why: "a drill over ore with no fuel at all" },
 	{ id: "fuelled-over-bare", x: 14, y: 0, fuel: true, ore: false, disabled: false, expectBound: false,
 		why: "a fuelled drill over bare foundation" },
-	{ id: "disabled-over-ore", x: 14, y: 12, fuel: true, ore: true, disabled: true, expectBound: null,
-		why: "a deactivated (disabled_by_script) drill over ore — the state selection-lab.lua:307 sets "
-			+ "immediately before it queues a record at :315" },
+	{ id: "disabled-over-ore", x: 14, y: 12, fuel: true, ore: true, disabled: true, expectBound: false,
+		why: "a deactivated (disabled_by_script) drill over ore — the state apply_paste_activation sets "
+			+ "immediately before it queues a record" },
+	{ id: "disabled-over-bare", x: 14, y: -12, fuel: true, ore: false, disabled: true, expectBound: false,
+		why: "a deactivated drill over bare foundation — nothing under it to restore progress against" },
 ];
 const BARE = SPECS.find(spec => spec.id === "fuelled-over-bare");
+const DISABLED = SPECS.find(spec => spec.id === "disabled-over-ore");
+const DISABLED_BARE = SPECS.find(spec => spec.id === "disabled-over-bare");
 const EXPECTED_RESOURCES = SPECS.filter(spec => spec.ore).length * 4;
-const BUDGET_TICKS = 300;
-const STEP_TICKS = BUDGET_TICKS + 60;
+const SLACK_TICKS = 60;
+const REACTIVATE_TICKS = 5;
 const INJECTED_MINING = 0.55;
 const INJECTED_BONUS = 0.62;
+const LANDED_TOLERANCE = 0.1;
 
 const say = (...a) => console.log(...a);
 const problems = [];
@@ -94,6 +89,17 @@ function platformLua(name) {
 		+ `  return { success = false, error = "platform '${name}' has no valid surface" }\n`
 		+ `end\n`
 		+ `local s = p.surface`;
+}
+
+function drillAtLua(spec) {
+	return `local target\n`
+		+ `for _, e in pairs(s.find_entities_filtered{ type = 'mining-drill' }) do\n`
+		+ `  if e.valid and math.abs(e.position.x - (${spec.x})) < 1.5\n`
+		+ `    and math.abs(e.position.y - (${spec.y})) < 1.5 then\n`
+		+ `    target = e\n`
+		+ `  end\n`
+		+ `end\n`
+		+ `if not (target and target.valid) then return { success = false, error = 'no drill for ${spec.id}' } end`;
 }
 
 const READ_LUA = `local statuses = {}
@@ -136,6 +142,10 @@ function drillFor(state, spec) {
 	return state.drills.find(d => Math.abs(d.x - spec.x) < 1.5 && Math.abs(d.y - spec.y) < 1.5) || null;
 }
 
+function pendingFor(state, drill) {
+	return drill ? state.pending.filter(rec => rec.unit_number === drill.unit_number) : [];
+}
+
 function describeDrill(drill) {
 	if (!drill) return "no drill at that position";
 	return `${drill.name}#${drill.unit_number} active=${drill.active} fuel=${drill.fuel} `
@@ -149,6 +159,20 @@ function describePlatform(state) {
 
 function readTick() {
 	return lua(HOST, "return { success = true, tick = game.tick, tick_paused = game.tick_paused == true }");
+}
+
+function readBudget() {
+	const r = lua(HOST, `local M = package.loaded['${MODULE_KEY}']\n`
+		+ `if type(M) ~= 'table' then\n`
+		+ `  return { success = false, error = 'module not in package.loaded: ${MODULE_KEY}' }\n`
+		+ `end\n`
+		+ `return { success = true, budget = M.MINING_PROGRESS_BUDGET_TICKS, `
+		+ `has_queue = (type(M.queue_mining_progress) == 'function') }`);
+	if (typeof r.budget !== "number" || r.has_queue !== true) {
+		throw new Error(`production module exposes budget=${r.budget} queue=${r.has_queue} — this suite reads both `
+			+ "from the shipped module and refuses to hand-copy them");
+	}
+	return r.budget;
 }
 
 function buildLua() {
@@ -216,11 +240,11 @@ async function stepTicks(ticks) {
 		+ "do what this suite assumes");
 }
 
-function gateArm(after) {
+function gateArm(after, stepTicksUsed) {
 	say(`\n=== GATE: what opens the deferred write's mining_target check ===`);
-	say(`  after ${STEP_TICKS} stepped ticks — ${describePlatform(after)}`);
+	say(`  after ${stepTicksUsed} stepped ticks — ${describePlatform(after)}`);
 	if (after.paused !== true) {
-		fail(`the platform reads paused=${after.paused} after ${STEP_TICKS} ticks — the pause this suite set `
+		fail(`the platform reads paused=${after.paused} after ${stepTicksUsed} ticks — the pause this suite set `
 			+ "did not hold, so no reading below can be attributed to a pause (CONTROL failed)");
 		return false;
 	}
@@ -229,11 +253,10 @@ function gateArm(after) {
 			+ "engine means, so the readings below are not readings about a paused platform (CONTROL failed)");
 		return false;
 	}
-	pass(`the platform held paused=true AND state=paused across ${STEP_TICKS} stepped ticks — every reading `
+	pass(`the platform held paused=true AND state=paused across ${stepTicksUsed} stepped ticks — every reading `
 		+ "below is a reading about a genuinely paused platform");
 
 	let ok = true;
-	let unpinnedDrill = null;
 	for (const spec of SPECS) {
 		const drill = drillFor(after, spec);
 		say(`  ${spec.id}: ${describeDrill(drill)}`);
@@ -244,128 +267,184 @@ function gateArm(after) {
 		}
 		if (spec.fuel === false && !(drill.fuel === 0 || drill.status === "no_fuel")) {
 			fail(`${spec.id}: reads fuel=${drill.fuel} status=${drill.status} — the starvation this suite set `
-				+ "did not take, so its binding is not a reading about a drill that cannot mine");
+				+ "did not take, so its binding is not a reading about a drill that cannot mine (CONTROL failed)");
 			ok = false;
 			continue;
 		}
 		if (spec.disabled && drill.active !== false) {
 			fail(`${spec.id}: reads active=${drill.active} — the disabled_by_script write did not take, so `
-				+ "its binding is not a reading about a deactivated drill");
+				+ "its binding is not a reading about a deactivated drill (CONTROL failed)");
 			ok = false;
 			continue;
 		}
-		if (spec.expectBound === null) {
-			unpinnedDrill = drill;
-			note(`${spec.id}: ${spec.why} reads bound=${drill.bound} — UNPINNED: measured and reported, not `
-				+ "graded, because this value is the input to a pending decision rather than a contract");
-			continue;
-		}
 		if (drill.bound !== spec.expectBound) {
-			fail(`${spec.id}: ${spec.why} reads bound=${drill.bound} after ${STEP_TICKS} paused ticks, `
-				+ `expected ${spec.expectBound} — the deferred write's gate `
-				+ `(active_state_restoration.lua:70) does not behave as this suite and the code around it `
-				+ "assume, so the budget's reachability has to be re-derived");
+			fail(`${spec.id}: ${spec.why} reads bound=${drill.bound} after ${stepTicksUsed} paused ticks, `
+				+ `expected ${spec.expectBound} — the mining_target gate in service_pending_mining_progress does `
+				+ "not behave as this suite and the dormancy key assume");
 			ok = false;
 		} else {
 			pass(`${spec.id}: ${spec.why} reads bound=${drill.bound}`);
 		}
 	}
-	if (ok && unpinnedDrill) {
-		note("neither a platform pause nor an empty fuel inventory closes the gate: a drill binds "
-			+ "mining_target for the resource it stands on");
-		if (unpinnedDrill.bound) {
-			note(`IMPLICATION: a DEACTIVATED drill over ore also reads bound=true `
-				+ `(status=${unpinnedDrill.status}), so the record selection-lab.lua:315 queues for a pasted `
-				+ "lab_active=false drill has an open gate too. The only gate-shut state measured remains a "
-				+ "drill with no resource under it, which no amount of waiting can change, so no budget "
-				+ "policy can preserve a value that was restorable");
-		} else {
-			note(`IMPLICATION: a DEACTIVATED drill over ore reads bound=false `
-				+ `(status=${unpinnedDrill.status}) while its resource is still there — a state that ENDS `
-				+ "when the drill is reactivated. selection-lab.lua:307 sets exactly this state and :315 "
-				+ "queues a record against it, so the give-up path is reachable while the value is still "
-				+ "restorable, and how long the budget should wait is a live question rather than a moot one");
-		}
+	if (ok) {
+		note("neither a platform pause nor an empty fuel inventory closes the gate; a drill with no resource "
+			+ "under it and a DEACTIVATED drill over ore both read unbound — the deactivated state is the one "
+			+ "that ends when the drill is reactivated");
 	}
 	return ok;
 }
 
-async function budgetArm() {
-	say(`\n=== BUDGET: what the ${BUDGET_TICKS}-tick budget does where the gate stays shut ===`);
-	const injected = lua(HOST, `${platformLua(PROBE)}
-local target
-for _, e in pairs(s.find_entities_filtered{ type = 'mining-drill' }) do
-  if e.valid and math.abs(e.position.x - (${BARE.x})) < 1.5 and math.abs(e.position.y - (${BARE.y})) < 1.5 then
-    target = e
-  end
-end
-if not (target and target.valid) then return { success = false, error = 'no drill over bare foundation' } end
-storage.pending_mining_progress = storage.pending_mining_progress or {}
-storage.pending_mining_progress[#storage.pending_mining_progress + 1] = {
-  entity = target,
-  mining_progress = ${INJECTED_MINING},
-  bonus_mining_progress = ${INJECTED_BONUS},
-  expires_tick = game.tick + ${BUDGET_TICKS},
+function queueLua(spec) {
+	return `${platformLua(PROBE)}
+${drillAtLua(spec)}
+local M = package.loaded['${MODULE_KEY}']
+M.queue_mining_progress(target, { mining_progress = ${INJECTED_MINING}, bonus_mining_progress = ${INJECTED_BONUS} })
+local rec = storage.pending_mining_progress[#storage.pending_mining_progress]
+return { success = true, tick = game.tick, unit_number = target.unit_number, active = target.active,
+  expires_tick = rec.expires_tick, same_entity = (rec.entity == target) }`;
 }
-return { success = true, tick = game.tick, unit_number = target.unit_number,
-  expires_tick = game.tick + ${BUDGET_TICKS} }`);
-	say(`  injected a record for drill #${injected.unit_number} at tick ${injected.tick}, expiring at `
-		+ `${injected.expires_tick} — the same shape queue_mining_progress writes `
-		+ "(active_state_restoration.lua:50-58), serviced by the production on_tick");
+
+function assertRunningControl(state, label) {
+	if (state.paused !== false || state.state_paused !== false) {
+		fail(`${label}: ${describePlatform(state)} — the platform is paused, so a pending record here says nothing `
+			+ "about the dormancy key (CONTROL failed)");
+		return false;
+	}
+	return true;
+}
+
+async function budgetArm(budgetTicks, stepTicksUsed) {
+	say(`\n=== BUDGET: what the ${budgetTicks}-tick budget waits for, on a RUNNING platform ===`);
+	lua(HOST, `${platformLua(PROBE)}\np.paused = false\nreturn { success = true }`);
+
+	const queuedDisabled = lua(HOST, queueLua(DISABLED));
+	const queuedBare = lua(HOST, queueLua(BARE));
+	const queuedDisabledBare = lua(HOST, queueLua(DISABLED_BARE));
+	for (const [spec, q] of [[DISABLED, queuedDisabled], [BARE, queuedBare], [DISABLED_BARE, queuedDisabledBare]]) {
+		say(`  queued via production queue_mining_progress for ${spec.id}: drill #${q.unit_number} active=${q.active} `
+			+ `at tick ${q.tick}, expires_tick=${q.expires_tick}`);
+		if (q.same_entity !== true || q.expires_tick !== q.tick + budgetTicks) {
+			fail(`${spec.id}: the queued record does not name the drill or its deadline is not tick+${budgetTicks} `
+				+ `(expires_tick=${q.expires_tick}) — the production queue site changed shape under this suite`);
+			return;
+		}
+	}
+	for (const [spec, q] of [[DISABLED, queuedDisabled], [DISABLED_BARE, queuedDisabledBare]]) {
+		if (q.active !== false) {
+			fail(`${spec.id}: reads active=${q.active} at queue time — not a record against a deactivated drill `
+				+ "(CONTROL failed)");
+			return;
+		}
+	}
 
 	const before = readState();
-	if (before.pending.length !== 1) {
-		fail(`the injected record is not visible to a read of storage.pending_mining_progress `
-			+ `(pending=${before.pending.length}) — nothing below would be measuring the production record`);
+	if (before.pending.length !== 3) {
+		fail(`expected 3 pending records on the probe surface, read ${before.pending.length} — nothing below would `
+			+ "be measuring the production records");
 		return;
 	}
 
-	await stepTicks(STEP_TICKS);
+	await stepTicks(stepTicksUsed);
 	const held = readState();
-	say(`  after ${STEP_TICKS} PAUSED ticks: ${describePlatform(held)} pending=${JSON.stringify(held.pending)}`);
-	if (held.pending.length !== 1) {
-		fail(`the record was dropped after ${STEP_TICKS} ticks on a PAUSED platform — a record for a drill `
-			+ "that cannot bind is supposed to outlive the budget while the platform is paused");
+	const disabledDrill = drillFor(held, DISABLED);
+	const bareDrill = drillFor(held, BARE);
+	const disabledBareDrill = drillFor(held, DISABLED_BARE);
+	say(`  after ${stepTicksUsed} RUNNING ticks: ${describePlatform(held)} pending=${JSON.stringify(held.pending)}`);
+	say(`  ${DISABLED.id}: ${describeDrill(disabledDrill)}`);
+	say(`  ${BARE.id}: ${describeDrill(bareDrill)}`);
+	say(`  ${DISABLED_BARE.id}: ${describeDrill(disabledBareDrill)}`);
+	if (!assertRunningControl(held, "post-budget sample")) return;
+	if (!disabledDrill || !bareDrill || !disabledBareDrill) {
+		fail("a drill the records name is no longer readable — nothing below can be attributed to the budget");
 		return;
 	}
-	pass(`the record outlived ${STEP_TICKS} ticks (${(STEP_TICKS / BUDGET_TICKS).toFixed(1)}x the budget) `
-		+ "while the platform was paused");
+	for (const [spec, drill] of [[DISABLED, disabledDrill], [DISABLED_BARE, disabledBareDrill]]) {
+		if (drill.active !== false) {
+			fail(`${spec.id}: reads active=${drill.active} after the budget — the drill did not stay deactivated, `
+				+ "so its record's fate says nothing about dormancy (CONTROL failed)");
+			return;
+		}
+	}
 
-	lua(HOST, `${platformLua(PROBE)}\np.paused = false\nreturn { success = true }`);
-	await stepTicks(STEP_TICKS);
-	const ran = readState();
-	const bare = drillFor(ran, BARE);
-	say(`  after ${STEP_TICKS} RUNNING ticks: ${describePlatform(ran)} `
-		+ `pending=${JSON.stringify(ran.pending)}`);
-	say(`  ${BARE.id}: ${describeDrill(bare)}`);
-	if (!bare) {
-		fail(`the drill the record names is no longer readable at (${BARE.x},${BARE.y}) — the give-up below `
-			+ "cannot be attributed to the budget rather than to a vanished entity");
+	const nothingToRestore = pendingFor(held, disabledBareDrill);
+	if (nothingToRestore.length !== 0) {
+		fail(`${DISABLED_BARE.id}: the record for the DEACTIVATED drill over bare foundation is still pending `
+			+ `${stepTicksUsed} ticks after queueing — a dormant record with no resource in the drill's mining area `
+			+ "has nothing to restore and must end");
+	} else {
+		pass(`${DISABLED_BARE.id}: the record was given up within ${stepTicksUsed} ticks — dormancy ends when there `
+			+ "is no resource in the drill's mining area");
+	}
+
+	const dormant = pendingFor(held, disabledDrill);
+	if (dormant.length !== 1) {
+		const fate = dormant.length === 0 ? "given up" : "duplicated";
+		fail(`${DISABLED.id}: the record for the DEACTIVATED drill was ${fate} ${stepTicksUsed} ticks after `
+			+ "queueing — a record whose drill is deactivated must stay dormant");
+	} else {
+		pass(`${DISABLED.id}: the record outlived ${stepTicksUsed} ticks (${(stepTicksUsed / budgetTicks).toFixed(1)}x `
+			+ "the budget) while its drill stayed deactivated");
+	}
+
+	const permanent = pendingFor(held, bareDrill);
+	if (permanent.length !== 0) {
+		fail(`${BARE.id}: the record for the ACTIVE drill over bare foundation is still pending ${stepTicksUsed} ticks `
+			+ "after queueing — the budget no longer bounds the permanent case");
+	} else if (bareDrill.mining_progress > 0) {
+		fail(`${BARE.id}: reads mining_progress=${bareDrill.mining_progress} with no mining target — this suite is `
+			+ "measuring the wrong entity");
+	} else {
+		pass(`${BARE.id}: the record was given up within ${stepTicksUsed} ticks and the drill still reads `
+			+ "mining_progress=0 — a value with no resource under it is not restorable, and the budget is "
+			+ "bounded there");
+	}
+	if (problems.length) return;
+
+	lua(HOST, `${platformLua(PROBE)}\n${drillAtLua(DISABLED)}\ntarget.disabled_by_script = false\n`
+		+ "return { success = true, active = target.active }");
+	await stepTicks(REACTIVATE_TICKS);
+	const landed = readState();
+	const reactivated = drillFor(landed, DISABLED);
+	say(`  after reactivation + ${REACTIVATE_TICKS} ticks: ${describePlatform(landed)} `
+		+ `pending=${JSON.stringify(landed.pending)}`);
+	say(`  ${DISABLED.id}: ${describeDrill(reactivated)}`);
+	if (!assertRunningControl(landed, "post-reactivation sample")) return;
+	if (!reactivated || reactivated.active !== true) {
+		fail(`${DISABLED.id}: reads active=${reactivated && reactivated.active} after disabled_by_script=false — the `
+			+ "reactivation did not take (CONTROL failed)");
 		return;
 	}
-	if (ran.pending.length !== 0) {
-		fail(`the record is still pending ${STEP_TICKS} ticks after the platform was resumed — the give-up `
-			+ `path at active_state_restoration.lua:91 did not fire within ${STEP_TICKS} live ticks, so the `
-			+ "budget no longer bounds anything");
+	if (pendingFor(landed, reactivated).length !== 0) {
+		fail(`${DISABLED.id}: the record is still pending ${REACTIVATE_TICKS} ticks after reactivation — the gate `
+			+ "opened and the write did not happen");
 		return;
 	}
-	pass(`the record was given up within ${STEP_TICKS} live ticks of the platform running — the budget is `
-		+ "bounded exactly where the gate cannot open");
-	if (bare && bare.mining_progress > 0) {
-		fail(`the drill over bare foundation reads mining_progress=${bare.mining_progress} — it has no mining `
-			+ "target, so a non-zero progress means this suite is measuring the wrong entity");
+	const progress = Number(reactivated.mining_progress);
+	if (!(progress >= INJECTED_MINING - 1e-6 && progress < INJECTED_MINING + LANDED_TOLERANCE)) {
+		fail(`${DISABLED.id}: reads mining_progress=${progress.toFixed(4)} after the record was consumed — expected `
+			+ `the captured ${INJECTED_MINING} (plus at most ${REACTIVATE_TICKS} ticks of mining) to have LANDED`);
 		return;
 	}
-	note(`the given-up record carried mining_progress=${INJECTED_MINING}, and the drill it named reads `
-		+ `${Number(bare.mining_progress).toFixed(4)}: a record whose gate can never open carries a value `
-		+ "that was never restorable, which is what the give-up path is bounded for");
+	pass(`${DISABLED.id}: the dormant record was consumed once the drill ran and the drill reads `
+		+ `mining_progress=${progress.toFixed(4)} — the captured ${INJECTED_MINING} landed on the entity`);
 }
 
 async function main() {
-	say(`=== mining-progress-gate: what opens the deferred write, and what the budget bounds `
+	say(`=== mining-progress-gate: what opens the deferred write, and what the budget waits for `
 		+ `(run ${RUN_TAG}) ===`);
 	instanceIds();
+	let pausedByUs = false;
 	try {
+		const preflight = readTick();
+		if (preflight.tick_paused === true) {
+			fail(`host ${HOST} is already tick_paused at tick ${preflight.tick} — someone else holds that pause; `
+				+ "this suite refuses to step or clear it");
+			return;
+		}
+		const budgetTicks = readBudget();
+		const stepTicksUsed = budgetTicks + SLACK_TICKS;
+		say(`  production budget read from package.loaded: ${budgetTicks} ticks; stepping ${stepTicksUsed} per arm`);
+
 		const built = lua(HOST, buildLua());
 		say(`  probe platform '${PROBE}' index=${built.index}: ${built.resources} resource entity(ies) from `
 			+ `${built.placed_ore} placement(s), paused=${built.paused} state_paused=${built.state_paused}`);
@@ -377,9 +456,10 @@ async function main() {
 			return;
 		}
 
+		pausedByUs = true;
 		lua(HOST, "game.tick_paused = true\nreturn { success = true }");
-		await stepTicks(STEP_TICKS);
-		if (gateArm(readState())) await budgetArm();
+		await stepTicks(stepTicksUsed);
+		if (gateArm(readState(), stepTicksUsed)) await budgetArm(budgetTicks, stepTicksUsed);
 		else say("\n  the budget arm did not run: the gate did not behave as measured, so which state leaves "
 			+ "a record pending has to be re-derived before the budget can be probed");
 	} catch (error) {
@@ -387,11 +467,13 @@ async function main() {
 		fail(`the suite threw: ${error.message}`);
 	} finally {
 		say("\n=== CLEANUP ===");
-		try {
-			lua(HOST, "game.tick_paused = false\nreturn { success = true }");
-		} catch (error) {
-			console.error(error && error.stack ? error.stack : error);
-			fail(`could not clear tick_paused on host ${HOST}: ${error.message}`);
+		if (pausedByUs) {
+			try {
+				lua(HOST, "game.tick_paused = false\nreturn { success = true }");
+			} catch (error) {
+				console.error(error && error.stack ? error.stack : error);
+				fail(`could not clear tick_paused on host ${HOST}: ${error.message}`);
+			}
 		}
 		try {
 			const swept = lua(HOST, `local deleted, records = 0, 0\n`
@@ -411,7 +493,7 @@ async function main() {
 				+ `  end\n`
 				+ `end\n`
 				+ `return { success = true, deleted = deleted, records = records }`);
-			say(`  delete_surface issued for ${swept.deleted} platform(s); ${swept.records} injected record(s) `
+			say(`  delete_surface issued for ${swept.deleted} platform(s); ${swept.records} queued record(s) `
 				+ "cleared from storage.pending_mining_progress");
 		} catch (error) {
 			console.error(error && error.stack ? error.stack : error);
@@ -432,11 +514,13 @@ async function main() {
 			console.error(error && error.stack ? error.stack : error);
 			fail(`leftover check threw: ${error.message} — treating as a leftover`);
 		}
-		try {
-			if (readTick().tick_paused === true) fail(`host ${HOST} was left tick_paused`);
-		} catch (error) {
-			console.error(error && error.stack ? error.stack : error);
-			fail(`tick_paused check threw: ${error.message}`);
+		if (pausedByUs) {
+			try {
+				if (readTick().tick_paused === true) fail(`host ${HOST} was left tick_paused`);
+			} catch (error) {
+				console.error(error && error.stack ? error.stack : error);
+				fail(`tick_paused check threw: ${error.message}`);
+			}
 		}
 	}
 

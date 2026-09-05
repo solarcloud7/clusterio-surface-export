@@ -43,6 +43,13 @@ export const GLOBAL_PAYLOAD_ROOTS = ["entity_data"];
 const POSITION_KEYS = new Set(["loc", "range"]);
 const CALL_TYPES = new Set(["CallExpression", "StringCallExpression", "TableCallExpression"]);
 
+function callArguments(node) {
+	if (Array.isArray(node.arguments)) return node.arguments;
+	if (node.arguments) return [node.arguments];
+	if (node.argument) return [node.argument];
+	return [];
+}
+
 function* children(node) {
 	for (const [key, value] of Object.entries(node)) {
 		if (POSITION_KEYS.has(key)) continue;
@@ -179,7 +186,7 @@ function noteCall(node, scope, ctx) {
 	const label = memberPath(node.base);
 	const declaration = label === null ? null : ctx.declarations.get(label);
 	if (!declaration) return;
-	(node.arguments || []).forEach((argument, index) => {
+	callArguments(node).forEach((argument, index) => {
 		const isAlias = isSpecificDataMember(argument)
 			|| (argument.type === "Identifier" && lookup(scope, argument.name) === SPECIFIC_DATA_PLANE);
 		if (isAlias && declaration.params[index]) ctx.aliasParams.add(`${label}#${index}`);
@@ -376,7 +383,7 @@ export function extractConstructorCaptures(rel, source) {
 			}
 		}
 		if (CALL_TYPES.has(node.type) && memberPath(node.base) === "table.insert") {
-			for (const argument of node.arguments || []) {
+			for (const argument of callArguments(node)) {
 				if (argument.type === "TableConstructorExpression") add(tableKeys(argument), own);
 			}
 		}
