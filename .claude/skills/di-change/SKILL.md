@@ -87,10 +87,11 @@ Two failure classes #106 kept reproducing — check for them explicitly (memory:
 ## 8. Does the change rest on an UNTESTED engine belief? (lab gate)
 **There is no engine-notes doc to check against — it was DELETED 2026-08-11 by owner ruling, and
 recreating it is not the fix.** Measure the assumption yourself, now, on the running cluster, and let
-the measurement stand in the PR that needs it. The only evidence tiers are **upstream-documented**
-(link lua-api.factorio.com/<pin>/ at the point of use — never mirror it) and **[empirical, <current
-pin>, <citation>]** where the citation is a rung or a probe you can re-run. Anything else is an
-untested belief — measure it BEFORE designing on it (the old [API] and [hypothesis] tiers are
+the measurement stand in the PR that needs it. The only evidence forms are **upstream-documented**
+(link lua-api.factorio.com/<pin>/ at the point of use — never mirror it) and **a rung or probe you
+can re-run** (the `[empirical, <pin>, <citation>]` tag convention is RETIRED, owner ruling
+2026-09-05 — a tag on prose grants no authority; the rung itself is the evidence). Anything else is
+an untested belief — measure it BEFORE designing on it (the old [API] and [hypothesis] tiers are
 ABOLISHED, owner ruling 2026-07-31: mirrored docs rot, and an unprovable claim is deleted, not
 demoted; the archived lab runners live at git tag `labs-archive-2026-07-19` — restore from the tag or
 author a fresh probe). `tests/instruments/` holds the standing measurements; a fact worth keeping is

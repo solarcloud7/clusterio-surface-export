@@ -228,24 +228,19 @@ artifact for the replay payload, physical destination state, diffs, and availabl
 successful transfer uses its production validation and transaction analytics; it does not manufacture a failure
 black box for symmetry.
 
-Engine knowledge keeps the evidence tags defined in the "Testing discipline" section of [CLAUDE.md](../CLAUDE.md):
+Engine knowledge lives in executable form, not tagged prose. The `[empirical, <pin>]` tag convention is
+RETIRED (owner ruling 2026-09-05; the [API] and [hypothesis] tiers were abolished 2026-07-31): tags let
+prose certify itself — pins moved while tags stayed green, and audited tags cited probes that had not
+isolated the claimed variable. A prose engine claim is a lead. Authority is a rung in `tests/instruments/`
+that re-measures the fact, an upstream <https://lua-api.factorio.com/> page linked at the point of use
+(never mirrored — a mirror rots when upstream moves), or a fresh measurement in the PR that needs the fact.
+Tags remaining in older docs are historical markers, not certification — re-measure before relying on one,
+and mint no new ones. A negative result is evidence, and an eliminated symptom without an isolated mechanism
+remains unexplained rather than being retconned into a proven fix.
 
-- **[empirical, `<pin>`]** records behavior measured by a valid live rung at that engine pin. It covers exactly
-  one claim — a bullet whose measurement is followed by a "so/therefore" consequence is two claims sharing one
-  citation, and the consequence is uncited.
-- **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation. It is usable in design
-  notes and plans; it is not an evidence tier, and CLAUDE.md's evidence discipline deletes an unprovable
-  claim rather than demoting it to one.
-
-The **[API]** tier was abolished 2026-07-31 (owner ruling). If <https://lua-api.factorio.com/> documents
-something, we link it where the code needs it and never mirror it into our docs — a mirror rots when upstream
-moves, and an `[empirical]` claim that merely restates upstream is presumed copied from the docs rather than
-measured. API shape was never behavioral certification anyway. A negative result is evidence, and an eliminated
-symptom without an isolated mechanism remains unexplained rather than being retconned into a proven fix.
-
-**Citation-variable match.** An `[empirical]` tag on a MECHANISM claim must cite a rung that isolated **that
-claim's variable** — citation presence is not citation match. The refuted "set_stack fails while deactivated"
-lore wore a GROUNDED `[empirical]` stamp citing rungs that isolated force bonus, never activation. Corollary
+**Citation-variable match.** A measurement backing a MECHANISM claim must have isolated **that claim's
+variable** — citation presence is not citation match. The refuted "set_stack fails while deactivated"
+lore wore a GROUNDED empirical stamp citing rungs that isolated force bonus, never activation. Corollary
 for instruments: **a probe harness may not embed the ritual under test** — a probe that runs "briefly-active,
 mimicking production" is structurally blind to the activation variable it exists to examine. When a claim names
 a variable, at least one rung must hold everything else constant and flip exactly that variable.
