@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // requires: the cluster up with the fix deployed; run from the repo root
-// produces: exit 0 only if the suite goes RED under a live rebind of service_pending_mining_progress to
-//           drop-at-deadline (no dormancy) AND is GREEN again after the original is restored
+// produces: exit 0 only if the suite goes RED for the named reason under a live rebind of one production
+//           function (argv[2] picks the mutant: drop-at-deadline, never-expire, dormancy-never-ends) AND
+//           is GREEN again after the original is restored
 // does not: touch source files — the mutant lives in package.loaded on host-2 for the duration of one
 //           suite run and is restored in a finally
 
@@ -23,6 +24,11 @@ const MUTANTS = {
 			+ "        rec.expires_tick = game.tick + M.MINING_PROGRESS_BUDGET_TICKS\n"
 			+ "        done = false",
 	},
+	"dormancy-never-ends": {
+		expectRed: /the record for the DEACTIVATED drill over bare foundation is still pending/,
+		rebind: "has_resource_in_mining_area",
+		body: "return true",
+	},
 };
 const mutantName = process.argv[2] ?? "drop-at-deadline";
 const mutant = MUTANTS[mutantName];
@@ -31,7 +37,15 @@ if (!mutant) {
 	process.exit(2);
 }
 
-const MUTANT = `local M = package.loaded['${MODULE_KEY}']
+const TARGET = mutant.rebind ?? "service_pending_mining_progress";
+
+const MUTANT = mutant.rebind
+	? `local M = package.loaded['${MODULE_KEY}']
+if type(M) ~= 'table' then return { success = false, error = 'module not loaded' } end
+M._teeth_original = M._teeth_original or M.${TARGET}
+M.${TARGET} = function() ${mutant.body} end
+return { success = true, rebound = (M.${TARGET} ~= M._teeth_original) }`
+	: `local M = package.loaded['${MODULE_KEY}']
 if type(M) ~= 'table' then return { success = false, error = 'module not loaded' } end
 M._teeth_original = M._teeth_original or M.service_pending_mining_progress
 M.service_pending_mining_progress = function()
@@ -60,7 +74,7 @@ const RESTORE = `local M = package.loaded['${MODULE_KEY}']
 if type(M) ~= 'table' or type(M._teeth_original) ~= 'function' then
   return { success = false, error = 'nothing to restore' }
 end
-M.service_pending_mining_progress = M._teeth_original
+M.${TARGET} = M._teeth_original
 M._teeth_original = nil
 return { success = true }`;
 
@@ -83,7 +97,7 @@ try {
 		throw new Error(`mutant did not arm: ${JSON.stringify(arm)}`);
 	}
 	armed = true;
-	console.log(`mutant '${mutantName}' armed on service_pending_mining_progress`);
+	console.log(`mutant '${mutantName}' armed on ${TARGET}`);
 	mutantRun = runSuite(`MUTANT ${mutantName} (expect RED)`);
 } finally {
 	if (armed) {

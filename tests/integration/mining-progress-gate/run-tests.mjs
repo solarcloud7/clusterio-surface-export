@@ -5,15 +5,16 @@
 //           else holds is refused, never cleared); game.ticks_to_run steering on host-2; the production
 //           module reachable through package.loaded so the budget constant and the queue function are
 //           the shipped ones, never hand-copies; each arm steps budget + SLACK_TICKS
-// produces: GATE — one PAUSED platform carrying four drills (fuelled over ore, fuel-starved over ore,
-//           fuelled over bare foundation, DEACTIVATED over ore), tick-stepped past the budget, each
-//           drill's mining_target binding read off the entity and graded, with the platform's paused
-//           and state_paused re-read at the same sample; BUDGET — on the same platform RUNNING, two
-//           records queued through the production queue_mining_progress: one for the deactivated drill
-//           (must OUTLIVE the budget while the drill stays deactivated, then be consumed and land on the
-//           entity once the drill is reactivated) and one for the bare-foundation drill (must be given
-//           up past the budget — the permanent case still expires); platform paused=false and the
-//           drill's active flag are asserted at every sample the grade depends on
+// produces: GATE — one PAUSED platform carrying five drills (fuelled over ore, fuel-starved over ore,
+//           fuelled over bare foundation, DEACTIVATED over ore, DEACTIVATED over bare foundation),
+//           tick-stepped past the budget, each drill's mining_target binding read off the entity and
+//           graded, with the platform's paused and state_paused re-read at the same sample; BUDGET — on
+//           the same platform RUNNING, three records queued through the production
+//           queue_mining_progress: the deactivated drill over ore (must OUTLIVE the budget while
+//           deactivated, then be consumed and land on the entity once reactivated), the active drill
+//           over bare foundation (must be given up past the budget) and the deactivated drill over bare
+//           foundation (must be given up — dormancy ends when nothing is under the drill); platform
+//           paused=false and each drill's active flag are asserted at every sample the grade depends on
 // does not: transfer anything; claim anything about a drill created by the importer on a platform in
 //           flight (every drill here is script-created on a never-launched platform); grade WHICH
 //           branch keeps a dormant record alive — only that it is still pending, then consumed
@@ -39,9 +40,12 @@ const SPECS = [
 	{ id: "disabled-over-ore", x: 14, y: 12, fuel: true, ore: true, disabled: true, expectBound: false,
 		why: "a deactivated (disabled_by_script) drill over ore — the state apply_paste_activation sets "
 			+ "immediately before it queues a record" },
+	{ id: "disabled-over-bare", x: 14, y: -12, fuel: true, ore: false, disabled: true, expectBound: false,
+		why: "a deactivated drill over bare foundation — nothing under it to restore progress against" },
 ];
 const BARE = SPECS.find(spec => spec.id === "fuelled-over-bare");
 const DISABLED = SPECS.find(spec => spec.id === "disabled-over-ore");
+const DISABLED_BARE = SPECS.find(spec => spec.id === "disabled-over-bare");
 const EXPECTED_RESOURCES = SPECS.filter(spec => spec.ore).length * 4;
 const SLACK_TICKS = 60;
 const REACTIVATE_TICKS = 5;
@@ -315,7 +319,8 @@ async function budgetArm(budgetTicks, stepTicksUsed) {
 
 	const queuedDisabled = lua(HOST, queueLua(DISABLED));
 	const queuedBare = lua(HOST, queueLua(BARE));
-	for (const [spec, q] of [[DISABLED, queuedDisabled], [BARE, queuedBare]]) {
+	const queuedDisabledBare = lua(HOST, queueLua(DISABLED_BARE));
+	for (const [spec, q] of [[DISABLED, queuedDisabled], [BARE, queuedBare], [DISABLED_BARE, queuedDisabledBare]]) {
 		say(`  queued via production queue_mining_progress for ${spec.id}: drill #${q.unit_number} active=${q.active} `
 			+ `at tick ${q.tick}, expires_tick=${q.expires_tick}`);
 		if (q.same_entity !== true || q.expires_tick !== q.tick + budgetTicks) {
@@ -324,15 +329,17 @@ async function budgetArm(budgetTicks, stepTicksUsed) {
 			return;
 		}
 	}
-	if (queuedDisabled.active !== false) {
-		fail(`${DISABLED.id}: reads active=${queuedDisabled.active} at queue time — not a record against a `
-			+ "deactivated drill (CONTROL failed)");
-		return;
+	for (const [spec, q] of [[DISABLED, queuedDisabled], [DISABLED_BARE, queuedDisabledBare]]) {
+		if (q.active !== false) {
+			fail(`${spec.id}: reads active=${q.active} at queue time — not a record against a deactivated drill `
+				+ "(CONTROL failed)");
+			return;
+		}
 	}
 
 	const before = readState();
-	if (before.pending.length !== 2) {
-		fail(`expected 2 pending records on the probe surface, read ${before.pending.length} — nothing below would `
+	if (before.pending.length !== 3) {
+		fail(`expected 3 pending records on the probe surface, read ${before.pending.length} — nothing below would `
 			+ "be measuring the production records");
 		return;
 	}
@@ -341,18 +348,32 @@ async function budgetArm(budgetTicks, stepTicksUsed) {
 	const held = readState();
 	const disabledDrill = drillFor(held, DISABLED);
 	const bareDrill = drillFor(held, BARE);
+	const disabledBareDrill = drillFor(held, DISABLED_BARE);
 	say(`  after ${stepTicksUsed} RUNNING ticks: ${describePlatform(held)} pending=${JSON.stringify(held.pending)}`);
 	say(`  ${DISABLED.id}: ${describeDrill(disabledDrill)}`);
 	say(`  ${BARE.id}: ${describeDrill(bareDrill)}`);
+	say(`  ${DISABLED_BARE.id}: ${describeDrill(disabledBareDrill)}`);
 	if (!assertRunningControl(held, "post-budget sample")) return;
-	if (!disabledDrill || !bareDrill) {
+	if (!disabledDrill || !bareDrill || !disabledBareDrill) {
 		fail("a drill the records name is no longer readable — nothing below can be attributed to the budget");
 		return;
 	}
-	if (disabledDrill.active !== false) {
-		fail(`${DISABLED.id}: reads active=${disabledDrill.active} after the budget — the drill did not stay `
-			+ "deactivated, so its record's fate says nothing about dormancy (CONTROL failed)");
-		return;
+	for (const [spec, drill] of [[DISABLED, disabledDrill], [DISABLED_BARE, disabledBareDrill]]) {
+		if (drill.active !== false) {
+			fail(`${spec.id}: reads active=${drill.active} after the budget — the drill did not stay deactivated, `
+				+ "so its record's fate says nothing about dormancy (CONTROL failed)");
+			return;
+		}
+	}
+
+	const nothingToRestore = pendingFor(held, disabledBareDrill);
+	if (nothingToRestore.length !== 0) {
+		fail(`${DISABLED_BARE.id}: the record for the DEACTIVATED drill over bare foundation is still pending `
+			+ `${stepTicksUsed} ticks after queueing — a dormant record with no resource in the drill's mining area `
+			+ "has nothing to restore and must end");
+	} else {
+		pass(`${DISABLED_BARE.id}: the record was given up within ${stepTicksUsed} ticks — dormancy ends when there `
+			+ "is no resource in the drill's mining area");
 	}
 
 	const dormant = pendingFor(held, disabledDrill);
