@@ -1,6 +1,6 @@
 // snapshot-model.test — the walk roster, the pairing key, and the generated walker
 //
-// requires: the vendored scripts/factorio-api-index.json at the 2.1.11 pin
+// requires: the vendored scripts/factorio-api-index.json at the 2.1.17 pin
 // produces: pins on the readable-attribute roster, the cell states, the hash constants the emitted
 //           Lua must carry, and the fingerprint's sensitivity to what was walked
 // does not: execute the emitted Lua (no Lua runtime offline) — the constants are pinned in one

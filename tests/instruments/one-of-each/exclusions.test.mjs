@@ -21,7 +21,7 @@ const derivation = name => artifact.entries.filter(entry => entry.derivation ===
 
 test("the artifact is non-vacuous and matches the pin the rest of the repo is built on", () => {
 	assert.equal(artifact.schema, "one-of-each/derived-exclusions@1");
-	assert.equal(artifact.application_version, "2.1.11");
+	assert.equal(artifact.application_version, "2.1.17");
 	assert.ok(artifact.entries.length >= 50,
 		`only ${artifact.entries.length} entries — an empty or collapsed artifact excludes nothing and `
 		+ "every raw object cell then reads as a false agreement");

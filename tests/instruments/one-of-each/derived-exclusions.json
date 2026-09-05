@@ -1,7 +1,7 @@
 {
 	"schema": "one-of-each/derived-exclusions@1",
-	"source": "https://lua-api.factorio.com/2.1.11/runtime-api.json",
-	"application_version": "2.1.11",
+	"source": "https://lua-api.factorio.com/2.1.17/runtime-api.json",
+	"application_version": "2.1.17",
 	"api_version": 6,
 	"scope_classes": [
 		"LuaEntity",
