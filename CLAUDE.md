@@ -201,6 +201,7 @@ node tools/tests/testkit/cli.mjs api LuaEntity.driver_is_gunner   # does this me
 #   which is how game.create_profiler (it is on LuaHelpers) killed an instance.
 node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
 node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
+node tools/tests/testkit/cli.mjs probe <platform> '<entity>@<x>,<y>:<path>'   # live property from the running cluster
 node tools/tests/testkit/cli.mjs blackbox explain <bundle.json>   # offline forensics on a banked failure
 # QUERY-PATH ORACLE — a wrong path exits 2 and NAMES THE REAL PATH, instead of returning an empty
 # value that reads as "the field is absent" and then as "the feature is broken". `log` never exits 1.
