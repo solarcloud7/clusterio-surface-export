@@ -19,7 +19,7 @@ end
 
 function Gateway.is_active_gateway(name)
 	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
-	if type(active) ~= "table" or #active == 0 then
+	if type(active) ~= "table" then
 		return true
 	end
 	for _, active_name in ipairs(active) do

@@ -167,11 +167,6 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 end
             end
 
-            local sd = entity_data.specific_data
-            if sd and sd.mining_progress and entity.type == "mining-drill" then
-                ActiveStateRestoration.queue_mining_progress(entity, sd)
-            end
-
             local restored, failed = restore_inserter_held(entity, entity_data)
             held_items_restored = held_items_restored + restored
             held_items_failed = held_items_failed + failed
@@ -194,6 +189,11 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 end
             end
             kept_inactive_count = kept_inactive_count + 1
+        end
+
+        local sd = entity_data.specific_data
+        if sd and sd.mining_progress and entity.type == "mining-drill" then
+            ActiveStateRestoration.queue_mining_progress(entity, sd)
         end
         
         ::continue::
