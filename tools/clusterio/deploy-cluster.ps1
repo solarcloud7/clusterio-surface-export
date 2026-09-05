@@ -138,6 +138,37 @@ Write-Host ""
 Write-Host "Waiting for instances to start..." -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor DarkGray
 
+$warmupCeilingS = 3600
+$warmupStallS = 300
+$warmupSw = [System.Diagnostics.Stopwatch]::StartNew()
+$lastClientMb = -1
+$lastGrowthAt = Get-Date
+while ($warmupSw.Elapsed.TotalSeconds -lt $warmupCeilingS) {
+    # Deliberately quiet: this is a POLL over containers that may not exist yet.
+    $health = @(docker ps --filter "name=surface-export-host-" --format "{{.Names}} {{.State}}" 2>$null |
+        ForEach-Object { docker inspect --format "{{.State.Health.Status}}" ($_ -split " ")[0] 2>$null })
+    if ($health.Count -ge 2 -and (@($health | Where-Object { $_ -ne "healthy" }).Count -eq 0)) { break }
+
+    # Deliberately quiet: du fails while the entrypoint has not mounted or begun filling the volume.
+    $mbOut = docker exec surface-export-host-1 sh -c 'du -sm /opt/factorio-client 2>/dev/null | cut -f1' 2>$null
+    $mb = 0
+    if ($LASTEXITCODE -eq 0 -and $mbOut -match '^\d+') { $mb = [int]$Matches[0] }
+    if ($mb -gt $lastClientMb) {
+        if ($lastClientMb -ge 0) {
+            $elapsed = [int]$warmupSw.Elapsed.TotalSeconds
+            Write-Host "  [+${elapsed}s] cold client volume warming: ${mb} MB downloaded" -ForegroundColor Yellow
+        }
+        $lastClientMb = $mb
+        $lastGrowthAt = Get-Date
+    } elseif (((Get-Date) - $lastGrowthAt).TotalSeconds -gt $warmupStallS) {
+        throw "Host warm-up stalled: hosts not healthy and the client volume stopped growing at ${mb} MB for ${warmupStallS}s."
+    }
+    Start-Sleep -Seconds 15
+}
+if ($warmupSw.Elapsed.TotalSeconds -ge $warmupCeilingS) {
+    throw "Host warm-up exceeded ${warmupCeilingS}s. The cluster is NOT deployed."
+}
+
 $instanceTimeout = 300
 $instanceSw = [System.Diagnostics.Stopwatch]::StartNew()
 $lastStates = @{}
