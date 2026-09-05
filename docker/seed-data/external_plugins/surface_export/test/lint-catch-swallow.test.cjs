@@ -12,6 +12,18 @@ async function scan(source) {
 	return findCatchSwallows(source, "fixture.ts");
 }
 
+test("astral characters preserve mask offsets and catch locations", async () => {
+	const { maskNonCode } = await import(scriptUrl);
+	const comment = "/**\n * Café lifecycle 🚀 — batch → finalize.\n */\n";
+	const compliant = `${comment}try { a(); } catch (err) { console.error(\`failed: \${err.message}\`); }`;
+	const masked = maskNonCode(compliant);
+	assert.equal(masked.length, compliant.length);
+	assert.deepEqual(await scan(compliant), []);
+	const found = await scan(`${comment}try { a(); } catch (err) { fallback = []; }`);
+	assert.equal(found.length, 1);
+	assert.equal(found[0].line, 4);
+});
+
 test("catch-swallow guard flags fallback assignment with and without a binding", async () => {
 	assert.equal((await scan("try { read(); } catch (err) { allLogs = []; }" )).length, 1);
 	assert.equal((await scan("try { read(); } catch { allLogs = []; }" )).length, 1);

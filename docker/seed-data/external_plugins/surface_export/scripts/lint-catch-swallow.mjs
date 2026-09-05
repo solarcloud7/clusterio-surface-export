@@ -28,7 +28,7 @@ function startsRegex(out, index) {
 }
 
 export function maskNonCode(source, filename = "<source>") {
-	const out = [...source];
+	const out = source.split("");
 	const states = [{ kind: "code", templateDepth: null }];
 	const blank = (index) => { if (source[index] !== "\n" && source[index] !== "\r") out[index] = " "; };
 	const desync = (state, index) => {

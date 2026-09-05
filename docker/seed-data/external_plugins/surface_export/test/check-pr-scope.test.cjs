@@ -2,104 +2,104 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { execFileSync, spawnSync } = require("node:child_process");
-const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const { mkdtempSync, writeFileSync, readFileSync, rmSync, realpathSync, existsSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 
 const script = path.resolve(__dirname, "..", "..", "..", "..", "..", "tools", "check-pr-scope.ps1");
-const requiredToolsAvailable = spawnSync("git", ["--version"], { stdio: "ignore" }).status === 0
-	&& spawnSync("pwsh", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"], { stdio: "ignore" }).status === 0;
-const toolSkip = requiredToolsAvailable ? false : "requires git and pwsh";
+const toolSkip = spawnSync("pwsh", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+	{ stdio: "ignore" }).status === 0 ? false : "requires pwsh";
 
-function git(cwd, ...args) {
-	return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
+function run(t, overrides = {}) {
+	const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "check-pr-scope-")));
+	assert.ok(root.startsWith(realpathSync.native(tmpdir()) + path.sep));
+	t.after(() => rmSync(root, { recursive: true, force: true }));
+	const config = path.join(root, "responses.json");
+	const calls = path.join(root, "calls.jsonl");
+	writeFileSync(config, JSON.stringify({ root, head: "a".repeat(40), local: "b".repeat(40),
+		origin: "c".repeat(40), lockExit: 0, ancestorExit: 0, fetchExit: 0, ...overrides }));
+	const command = `
+$global:scopeResponses = Get-Content -LiteralPath $env:SCOPE_RESPONSES -Raw | ConvertFrom-Json
+$global:scopeFetched = $false
+function global:git {
+ $arguments = @($args)
+ ConvertTo-Json -InputObject $arguments -Compress | Add-Content -LiteralPath $env:SCOPE_CALLS
+ if ($arguments[0] -eq '-C') {
+  if ($arguments[1] -ne $global:scopeResponses.root) { throw 'wrong repository argument' }
+  $arguments = @($arguments | Select-Object -Skip 2)
+ }
+ $key = $arguments -join ' '
+ $global:LASTEXITCODE = 0
+ switch ($key) {
+  'rev-parse --show-toplevel' { $global:scopeResponses.root; return }
+  'fetch --prune origin' {
+   $global:scopeFetched = $true
+   $global:LASTEXITCODE = $global:scopeResponses.fetchExit
+   if ($global:LASTEXITCODE) { 'fixture fetch failure' }
+   return
+  }
+ }
+ if (-not $global:scopeFetched) { throw 'scope was read before fetching origin' }
+ switch ($key) {
+  'rev-parse HEAD' { $global:scopeResponses.head }
+  'rev-parse --verify --quiet main^{commit}' { $global:scopeResponses.local }
+  'rev-parse --verify --quiet origin/main^{commit}' { $global:scopeResponses.origin }
+  'merge-base origin/main HEAD' { $global:scopeResponses.origin }
+  'log --oneline origin/main..HEAD' { 'aaaaaaa fixture feature' }
+  'diff --stat origin/main...HEAD' { 'fixture.txt | 1 +' }
+  'diff --quiet origin/main...HEAD docker/seed-data/external_plugins/surface_export/package-lock.json' { $global:LASTEXITCODE = $global:scopeResponses.lockExit }
+  'merge-base --is-ancestor origin/main HEAD' { $global:LASTEXITCODE = $global:scopeResponses.ancestorExit }
+  default { throw "unexpected git call: $key" }
+ }
+}
+& $env:SCOPE_SCRIPT
+exit $LASTEXITCODE
+`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
+		{ cwd: root, encoding: "utf8", timeout: 15000,
+			env: { ...process.env, SCOPE_RESPONSES: config, SCOPE_CALLS: calls, SCOPE_SCRIPT: script } });
+	assert.equal(existsSync(path.join(root, ".git")), false);
+	return { ...result, calls: readFileSync(calls, "utf8").trim().split(/\r?\n/).map(line => JSON.parse(line)) };
 }
 
-function createFixture() {
-	const root = mkdtempSync(path.join(tmpdir(), "check-pr-scope-"));
-	const remote = path.join(root, "origin.git");
-	const repo = path.join(root, "repo");
-	mkdirSync(repo);
-	git(root, "init", "--bare", remote);
-	git(repo, "init", "-b", "main");
-	git(repo, "config", "user.email", "scope-test@example.invalid");
-	git(repo, "config", "user.name", "Scope Test");
-	writeFileSync(path.join(repo, "README.md"), "base\n");
-	mkdirSync(path.join(repo, "docker", "seed-data", "external_plugins", "surface_export"), { recursive: true });
-	writeFileSync(path.join(repo, "docker", "seed-data", "external_plugins", "surface_export", "package-lock.json"), "{}\n");
-	git(repo, "add", ".");
-	git(repo, "commit", "-m", "chore: seed");
-	git(repo, "remote", "add", "origin", remote);
-	git(repo, "push", "-u", "origin", "main");
-	return { repo };
-}
-
-function run(repo) {
-	return spawnSync("pwsh", ["-NoProfile", "-File", script], { cwd: repo, encoding: "utf8" });
-}
-
-test("scope check reports a fresh descendant branch without changing the working tree", { skip: toolSkip }, () => {
-	const { repo } = createFixture();
-	git(repo, "switch", "-c", "codex/feature");
-	writeFileSync(path.join(repo, "feature.txt"), "feature\n");
-	git(repo, "add", "feature.txt");
-	git(repo, "commit", "-m", "feat: add feature");
-	const before = git(repo, "status", "--porcelain=v1");
-
-	const result = run(repo);
-
+test("scope check reports freshly fetched refs and invokes only its read/fetch commands", { skip: toolSkip }, t => {
+	const result = run(t);
 	assert.equal(result.status, 0, result.stderr || result.stdout);
-	assert.match(result.stdout, /Local main:\s+[0-9a-f]{7,40}/);
-	assert.match(result.stdout, /Origin main:\s+[0-9a-f]{7,40}/);
-	assert.match(result.stdout, /Merge base:\s+[0-9a-f]{7,40}/);
+	assert.match(result.stdout, /Local main:\s+b{40}/);
+	assert.match(result.stdout, /Origin main:\s+c{40}/);
+	assert.match(result.stdout, /Merge base:\s+c{40}/);
 	assert.match(result.stdout, /package-lock\.json differs:\s+no/i);
 	assert.match(result.stdout, /Scope check: PASS/);
-	assert.equal(git(repo, "status", "--porcelain=v1"), before);
+	assert.equal(result.calls.length, 10);
+	assert.deepEqual(result.calls[1].slice(2), ["fetch", "--prune", "origin"]);
 });
 
-test("scope check fails when freshly fetched origin main is not an ancestor of HEAD", { skip: toolSkip }, () => {
-	const { repo } = createFixture();
-	git(repo, "switch", "-c", "codex/stale");
-	writeFileSync(path.join(repo, "stale.txt"), "stale\n");
-	git(repo, "add", "stale.txt");
-	git(repo, "commit", "-m", "feat: stale branch");
-	git(repo, "switch", "main");
-	writeFileSync(path.join(repo, "main.txt"), "advanced\n");
-	git(repo, "add", "main.txt");
-	git(repo, "commit", "-m", "feat: advance main");
-	git(repo, "push", "origin", "main");
-	git(repo, "switch", "codex/stale");
-
-	const result = run(repo);
-
+test("scope check fails when freshly fetched origin main is not an ancestor of HEAD", { skip: toolSkip }, t => {
+	const result = run(t, { ancestorExit: 1 });
 	assert.equal(result.status, 1, result.stderr || result.stdout);
-	const output = `${result.stdout}\n${result.stderr}`;
-	assert.match(output, /origin\/main is not an ancestor of HEAD/);
-	assert.doesNotMatch(output, /At .*check-pr-scope\.ps1:/);
+	assert.match(result.stderr, /origin\/main is not an ancestor of HEAD/);
+	assert.doesNotMatch(result.stderr, /At .*check-pr-scope\.ps1:/);
 });
 
-test("scope check reports a package-lock difference without treating it as an ancestry failure", { skip: toolSkip }, () => {
-	const { repo } = createFixture();
-	git(repo, "switch", "-c", "codex/dependency-shape");
-	const lock = path.join(repo, "docker", "seed-data", "external_plugins", "surface_export", "package-lock.json");
-	writeFileSync(lock, "{\"changed\":true}\n");
-	git(repo, "add", lock);
-	git(repo, "commit", "-m", "test: change lockfile");
-
-	const result = run(repo);
-
+test("scope check reports a package-lock difference without treating it as an ancestry failure", { skip: toolSkip }, t => {
+	const result = run(t, { lockExit: 1 });
 	assert.equal(result.status, 0, result.stderr || result.stdout);
 	assert.match(result.stdout, /package-lock\.json differs:\s+YES/);
 });
-test("scope check exits 2 with a clean message when origin cannot be fetched", { skip: toolSkip }, () => {
-	const { repo } = createFixture();
-	git(repo, "remote", "remove", "origin");
 
-	const result = run(repo);
-	const output = `${result.stdout}\n${result.stderr}`;
+test("scope check exits 2 with a clean message when origin cannot be fetched", { skip: toolSkip }, t => {
+	const result = run(t, { fetchExit: 128 });
+	assert.equal(result.status, 2, result.stderr || result.stdout);
+	assert.match(result.stderr, /Scope check: ERROR - git [\s\S]*fetch --prune origin failed:/);
+	assert.equal(result.calls.length, 2);
+});
 
-	assert.equal(result.status, 2, output);
-	assert.match(output, /Scope check: ERROR - git [\s\S]*fetch --prune origin failed:/);
-	assert.doesNotMatch(output, /At .*check-pr-scope\.ps1:/);
+test("scope check distinguishes Git command errors from ancestry and lock differences", { skip: toolSkip }, t => {
+	for (const overrides of [{ ancestorExit: 128 }, { lockExit: 128 }]) {
+		const result = run(t, overrides);
+		assert.equal(result.status, 2, result.stderr || result.stdout);
+		assert.match(result.stderr, /Scope check: ERROR/);
+		assert.doesNotMatch(result.stdout, /Scope check: PASS/);
+	}
 });
