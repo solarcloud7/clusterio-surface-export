@@ -110,7 +110,8 @@ Resolved findings:
 Remaining limits: the transfer fixture covers a burner drill on Factorio 2.1.17. An in-flight timeout
 can leave its uniquely named platform for operator inspection; cleanup reports an error instead of
 deleting a surface owned by an active transfer. Forced process termination can bypass `finally` in
-these local test tools. The new live fixtures are operator-run and are not added to CI's suite list.
+these local test tools. The integration runner discovers the new live fixtures automatically, so they
+also run in CI.
 
 ## Operator use
 

@@ -42,6 +42,7 @@ local function make_platform(label)
 	})
 	platform.apply_starter_pack()
 	platform.paused = false
+	platform.hidden = false
 	force.set_surface_hidden(platform.surface, false)
 	local surface = platform.surface
 	local anchor = platform.hub and platform.hub.valid and platform.hub.position or { x = 0, y = 0 }
@@ -66,6 +67,7 @@ local function install_lock(force, platform, entity, opts)
 		surface_index = platform.surface.index,
 		force_name = force.name,
 		original_hidden = false,
+		original_platform_hidden = false,
 		locked_tick = opts and opts.locked_tick or game.tick,
 		kind = opts and opts.kind or "transfer",
 		expires_tick = opts and opts.expires_tick or nil,
@@ -77,6 +79,7 @@ end
 local function read_state(force, platform, entity)
 	return {
 		hidden = force.get_surface_hidden(platform.surface),
+		platform_hidden = platform.hidden,
 		active = entity.active,
 		paused = platform.paused,
 		locked = storage.locked_platforms and storage.locked_platforms[platform.index] ~= nil or false,
@@ -94,6 +97,8 @@ local function check_state(details, prefix, state, expected)
 	local ok = true
 	ok = check(details, prefix .. "_hidden", state.hidden == expected.hidden,
 		"hidden=" .. tostring(state.hidden) .. " expected=" .. tostring(expected.hidden)) and ok
+	ok = check(details, prefix .. "_platform_hidden", state.platform_hidden == expected.hidden,
+		"platform_hidden=" .. tostring(state.platform_hidden) .. " expected=" .. tostring(expected.hidden)) and ok
 	ok = check(details, prefix .. "_active", state.active == expected.active,
 		"active=" .. tostring(state.active) .. " expected=" .. tostring(expected.active)) and ok
 	ok = check(details, prefix .. "_paused", state.paused == expected.paused,
@@ -192,6 +197,42 @@ local function hold_aware_unlock_selftest()
 		unlock_after_go_live(details)
 		double_unlock(details)
 		non_held_unlock_restores(details)
+		for _, platform_hidden in ipairs({ false, true }) do
+			for _, force_hidden in ipairs({ false, true }) do
+				local force, platform = make_platform("visibility")
+				platform.hidden = platform_hidden
+				force.set_surface_hidden(platform.surface, force_hidden)
+				local label = "visibility_" .. tostring(platform_hidden) .. "_" .. tostring(force_hidden)
+				local locked, lock_err = SurfaceLock.lock_platform(platform, force)
+				check(details, label .. "_lock", locked == true, tostring(lock_err))
+				check(details, label .. "_locked_hidden", platform.hidden and force.get_surface_hidden(platform.surface), "both flags must be hidden")
+				local unlocked, unlock_err = SurfaceLock.unlock_platform(platform.index)
+				check(details, label .. "_unlock", unlocked == true, tostring(unlock_err))
+				check(details, label .. "_lock_restored", platform.hidden == platform_hidden and force.get_surface_hidden(platform.surface) == force_hidden, "original flags not restored")
+				local id = stage_hold(label, force, platform)
+				check(details, label .. "_held_hidden", platform.hidden and force.get_surface_hidden(platform.surface), "both flags must be hidden")
+				local released, release_err = DestinationHold.go_live(id)
+				check(details, label .. "_go_live", released == true, tostring(release_err))
+				check(details, label .. "_hold_restored", platform.hidden == platform_hidden and force.get_surface_hidden(platform.surface) == force_hidden, "original flags not restored")
+				local paused = platform.paused
+				local complete = SurfaceLock.complete_cargo_pods
+				SurfaceLock.complete_cargo_pods = function() error("injected pod completion failure") end
+				local call_ok, staged = pcall(DestinationHold.stage, id, platform, force)
+				SurfaceLock.complete_cargo_pods = complete
+				check(details, label .. "_stage_failed", call_ok and staged == false, "failure was not returned")
+				check(details, label .. "_stage_rollback", platform.hidden == platform_hidden and force.get_surface_hidden(platform.surface) == force_hidden and platform.paused == paused and DestinationHold.get(id) == nil, "failed stage changed visibility or pause state")
+			end
+		end
+		local force, platform, entity = make_platform("legacy-visibility")
+		platform.hidden = true
+		install_lock(force, platform, entity)
+		storage.locked_platforms[platform.index].original_platform_hidden = nil
+		local unlocked = SurfaceLock.unlock_platform(platform.index)
+		check(details, "legacy_lock_preserves_platform_flag", unlocked and platform.hidden, "legacy lock changed unowned flag")
+		local id = stage_hold("legacy-visibility", force, platform)
+		storage.destination_holds[id].original_platform_hidden = nil
+		local released = DestinationHold.go_live(id)
+		check(details, "legacy_hold_preserves_platform_flag", released and platform.hidden, "legacy hold changed unowned flag")
 	end)
 	if not ok then
 		log("[hold-aware-unlock-selftest] exception: " .. tostring(err))

@@ -360,7 +360,7 @@ non-starters. Current policy, per family:
 | Cargo pods in flight | not frozen — **completed** by the lock before export scanning ("completes cargo pods", [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua)); a mover is retired, not paused | code |
 | Ground items (`item-entity`) | static entities; no freeze needed | code |
 | Beacons (import side) | deliberately kept **active** through restoration so `crafting_speed` propagates to crafters before inventory refill (see "Import Phase Ordering" in [CLAUDE.md](../CLAUDE.md)) | code |
-| Inserter held items (import side) | per-inserter brief active-toggle inside one synchronous pass — no tick elapses, so no swing occurs | measured |
+| Inserter held items (import side) | `restore_held_items_only` seats held stacks before exact validation; this helper does not toggle entity activation ([active_state_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/active_state_restoration.lua)) | code; `no_tick_sync_selftest` records tick and crafting-progress before/after |
 | Whole platform (`platform.paused`) | parks held destinations; does **not** stop belt drift on the held surface (the observation behind Black-Box Discard's snapshot-then-delete design) | measured |
 | Whole game (`game.tick_paused`) | labs and tests only; also halts the plugin's own async processing (`/step-tick` exists to step past it) | code |
 
@@ -686,6 +686,19 @@ instance's platform list, and the top-left **Import** button. Tick each feature:
 - [ ] Item / entity / fluid / planet icons render everywhere they appear (Logs details, tree, Import planet
       picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (the mod pack needs export-data, which requires the game client on the export host) and
       hard-refresh (the 404 is cached).
+
+The connected-player instrument is operator-only: with one consenting player in character or god mode
+on host-1, run `node tests/instruments/connected-player-access/run-tests.mjs view`, then `hide`,
+`leave`, and `hide-platform` as separate actions while recording the platform-list observations.
+Always finish with `cleanup`, which restores the player's controller, position, and preserved god inventory.
+The separate `measure` action checks script entry into a hidden platform and connected-character evacuation
+both with and without remote view; it restores the player and checks platform deletion after the call.
+`--fail-after-build` exercises cleanup (expected nonzero exit), and `--analyze <report.json>` checks a saved measurement without RCON.
+These API readings do not substitute for the operator's observation of the interface.
+
+The descending-pod overflow instrument runs through the integration suite. To run it independently:
+`node tests/instruments/descending-pod-overflow/run-tests.mjs --host 2` (default host: 1).
+It requires an idle instance and checks both platform entries and surfaces after cleanup.
 
 ### 12. Cleanup / reset
 
