@@ -14,9 +14,14 @@ const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const RCON_TIMEOUT_MS = 20_000;
 
+import { seededInstanceNames } from "../shared/seeded-instances.mjs";
+const SEEDED = seededInstanceNames();
+if (SEEDED.length !== 2) {
+	throw new Error(`cluster-readiness assigns source/destination roles to exactly two seeded instances; seed-data names ${SEEDED.length}: ${SEEDED.join(", ")}`);
+}
 export const INSTANCE_ROLES = Object.freeze([
-	Object.freeze({ instance: "clusterio-host-1-instance-1", role: "source" }),
-	Object.freeze({ instance: "clusterio-host-2-instance-1", role: "destination" }),
+	Object.freeze({ instance: SEEDED[0], role: "source" }),
+	Object.freeze({ instance: SEEDED[1], role: "destination" }),
 ]);
 
 export const CHECK_RCON = "rcon-probe";

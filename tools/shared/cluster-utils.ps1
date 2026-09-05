@@ -158,3 +158,27 @@ function Send-RCON {
     }
     return $out
 }
+
+function Get-SeededInstances {
+    $hostsDir = Join-Path $script:RepoRoot "docker/seed-data/hosts"
+    if (-not (Test-Path $hostsDir)) { throw "No seed-data hosts directory at $hostsDir." }
+    $records = @()
+    foreach ($hostDir in (Get-ChildItem $hostsDir -Directory | Sort-Object Name)) {
+        if ($hostDir.Name -notmatch '(\d+)$') { throw "$($hostDir.FullName) does not end in a host number — the container name cannot be derived." }
+        $hostNumber = [int]$Matches[1]
+        foreach ($instanceDir in (Get-ChildItem $hostDir.FullName -Directory | Sort-Object Name)) {
+            $records += [pscustomobject]@{
+                Host       = $hostDir.Name
+                HostNumber = $hostNumber
+                Container  = "surface-export-host-$hostNumber"
+                Instance   = $instanceDir.Name
+            }
+        }
+    }
+    if (-not $records) { throw "$hostsDir names no seeded instance — a gate over this set would gate on nothing." }
+    return $records
+}
+
+function Get-SeededInstanceNames {
+    return @(Get-SeededInstances | Select-Object -ExpandProperty Instance)
+}
