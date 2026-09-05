@@ -143,13 +143,15 @@ A fixture whose `lifecycle.verify` carries dest-end `physical_read` checks needs
 dispatch entry**: `/test-run` evaluates the same declared checks on both pad halves (left at dx 0, paste at
 dx 14) that the gallery suite (`tests/integration/gallery-suite/run-tests.mjs`) evaluates on a real transfer's
 destination. The `property` read takes a dotted path walked by INDEXING only (`temperature`,
-`burner.remaining_burning_fuel`, `force.bulk_inserter_capacity_bonus`); `item_count`/`held`/`fluid` cover the
-rest. Method-shaped reads (`get_recipe()`, `get_module_inventory()`, circuit sections) keep bespoke meters —
+`burner.remaining_burning_fuel`, `force.bulk_inserter_capacity_bonus`). The other declared reads are `item_count`,
+`held`, `crafting_progress`, `spoil_percent`, `fluid`, `fluid_stats`, `infinity_pipe_filter`, `belt_stats`,
+`entity_present`, `platform_present`, `surface_entity_count` and `surface_entity_count_stable` (the
+`PHYSICAL_READS` set in `tests/lab-gallery/manifest.mjs`). Method-shaped reads (`get_recipe()`, `get_module_inventory()`, circuit sections) keep bespoke meters —
 extending the walk to call methods would trade away its injection-unrepresentability.
 
 **Promoting or adding a pad assertion is a `tests/lab-gallery/manifest.json` edit alone.** The workflow:
 
-```bash
+```powershell
 # 1. measure the live value first (never author an expected value from memory):
 node tools/tests/testkit/cli.mjs probe lab-omnibus-state-v1 'heat-pipe@43,-13:temperature'
 # 2. declare the same path in the fixture's lifecycle.verify (op eq, or approx for progress doubles)
@@ -159,11 +161,16 @@ node tests/lab-gallery/push-roster.mjs --instance clusterio-host-1-instance-1
 # 4. teeth: sabotage the expected value by one unit, confirm RED, restore (di-change discipline)
 ```
 
-Fail-closed rules baked into the path: zero evaluated physical reads is a FAIL, never a vacuous green; a
-typo'd path fails the check carrying the engine's own message (pcall-caught; a nil resolution reports
-"resolved NIL", never a pass); an anchor that matches two entities is refused, not guessed. The check name
-carries the property path (`heat-pipe.property(temperature)`), so two reads on one pad are distinguishable in
-a failure.
+Fail-closed rules baked into the path for a fixture WITHOUT a bespoke `DISPATCH` entry: zero evaluated
+physical reads is a FAIL, never a vacuous green; a typo'd path fails the check carrying the engine's own message
+(pcall-caught; a nil resolution reports "resolved NIL", never a pass). A `DISPATCH` fixture's declared reads
+run once, at dx 14, through `run_verify` with no zero-read guard — its bespoke meter is what keeps it honest.
+Ambiguity is NOT refused by the runner: the anchor locator reads the first entity of the anchor's name inside a
+0.6-tile box (`find_at` in `module/utils/lifecycle-engine.lua`), so two same-name entities in that box read
+whichever the engine lists first; only `testkit probe` refuses a multi-match, and the "matches N anchors"
+refusal is about duplicate anchor NAMES in the manifest. Anchor entities that stand alone in their box. The
+check name carries the property path (`heat-pipe.property(temperature)`), so two reads on one pad are
+distinguishable in a failure.
 
 ### Single-use batch lifecycle
 
