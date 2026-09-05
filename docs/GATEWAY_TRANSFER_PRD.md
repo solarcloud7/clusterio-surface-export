@@ -74,7 +74,7 @@ parks at a gateway with no configured targets, so an unconfigured gateway is ine
 |---|---|---|
 | **Data-stage mod** | `mods-src/surfexp_gateways/` (built into `mods/`) | Prototypes only — gateway `space-location`s + `nauvis` connections + icon/locale. No control-stage code. |
 | **Save-patched plugin** | `module/core/gateway.lua`, `module/interfaces/{commands,gui}/` | Discovery + per-force unlock, arrival detection (extends the `on_space_platform_changed_state` handler), the transfer trigger + chooser GUI, passenger evacuation, schedule hop-strip. |
-| **Controller / web** | `controller.ts`, `web/GatewaysTab.tsx`, `messages.ts` | The Gateways config tab; controller is the source of truth; resolved links are pushed to instances. |
+| **Controller / web** | `controller.ts`, `web/gateway/GatewayCanvas.tsx`, `messages.ts` | The Gateways canvas tab; controller is the source of truth; resolved links are pushed to instances. |
 
 The split works because the save-patched module runs in the *same* Factorio game as the mod, so at runtime it
 sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
