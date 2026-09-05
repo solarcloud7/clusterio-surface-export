@@ -297,7 +297,7 @@ jobs:
 
       - name: Restore cached Playwright browsers
         id: playwright-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
@@ -328,7 +328,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true' && steps.playwright-install.outputs.installed == 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
@@ -343,7 +343,7 @@ jobs:
       # upload below would discard.
       - name: Upload instrument reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: instrument-reports
           path: ci-artifacts/*.json
@@ -457,7 +457,7 @@ jobs:
 
       - name: Upload failing repro artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failing-repro
           path: ci-artifacts/
