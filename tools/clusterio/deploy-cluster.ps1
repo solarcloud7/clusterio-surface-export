@@ -149,8 +149,9 @@ while ($warmupSw.Elapsed.TotalSeconds -lt $warmupCeilingS) {
         ForEach-Object { docker inspect --format "{{.State.Health.Status}}" ($_ -split " ")[0] 2>$null })
     if ($health.Count -ge 2 -and (@($health | Where-Object { $_ -ne "healthy" }).Count -eq 0)) { break }
 
-    # Deliberately quiet: du fails while the entrypoint has not mounted or begun filling the volume.
-    $mbOut = docker exec surface-export-host-1 sh -c 'du -sm /opt/factorio-client 2>/dev/null | cut -f1' 2>$null
+    # Deliberately quiet: du fails while neither path exists yet. Both paths are required — the
+    # entrypoint downloads to /tmp/factorio-client.tar.xz first and extracts into the volume after.
+    $mbOut = docker exec surface-export-host-1 sh -c 'a=$(du -sm /opt/factorio-client 2>/dev/null | cut -f1); b=$(du -sm /tmp/factorio-client.tar.xz 2>/dev/null | cut -f1); echo $(( ${a:-0} + ${b:-0} ))' 2>$null
     $mb = 0
     if ($LASTEXITCODE -eq 0 -and $mbOut -match '^\d+') { $mb = [int]$Matches[0] }
     if ($mb -gt $lastClientMb) {
