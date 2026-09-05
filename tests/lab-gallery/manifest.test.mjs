@@ -262,3 +262,15 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 		"the workhorse clean transfer must witness the source census ran + passed");
 	assert.ok(renderExpectFromLifecycle(workhorse).some(line => /source census ran \+ passed/.test(line)));
 });
+
+test("validateGalleryManifest accepts any x.y.z engine and refuses a malformed one", () => {
+	const manifest = loadGalleryManifest(repoRoot);
+	const repinned = JSON.parse(JSON.stringify(manifest));
+	repinned.engineVersion = "2.1.17";
+	repinned.mods.base = "2.1.17";
+	repinned.mods["space-age"] = "2.1.17";
+	for (const role of Object.keys(repinned.saves)) repinned.saves[role].mods = repinned.mods;
+	for (const fixture of repinned.fixtures) { fixture.engineVersion = repinned.engineVersion; fixture.mods = repinned.mods; }
+	assert.ok(validateGalleryManifest(repinned), "a re-banked gallery at a later pin must validate without a code change");
+	assert.throws(() => validateGalleryManifest({ ...manifest, engineVersion: "2.1" }), /unsupported gallery engine 2\.1$/);
+});
