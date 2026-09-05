@@ -89,9 +89,10 @@ export const plugin = {
 				+ "\"multi\" (\"Multi Cluster\", advanced) gives every instance FOUR colour-coded gateways, "
 				+ "each carrying exactly one destination and no two pointing at the same instance — so the "
 				+ "gateway a platform flies to decides where it lands, with nothing to choose on arrival. "
-				+ "Only the active mode's gateways are unlocked in game, so the others never appear on the "
-				+ "starmap. Switching is NOT destructive: each mode's links are kept while the other is "
-				+ "active and come back on switching back. Instances must be restarted to pick up the "
+				+ "Only the active mode's gateways are unlocked in game. Set the mod pack's startup setting "
+				+ "surfexp-gateway-layout to the same value to hide the other layout on the space map. "
+				+ "Switching is NOT destructive: each mode's links are kept while the other is "
+				+ "active and come back on switching back. Instances and clients must be restarted to pick up the "
 				+ "change, because the unlock happens at startup. Unrecognised values fall back to "
 				+ "\"one_gate\" and are logged.",
 			type: "string",

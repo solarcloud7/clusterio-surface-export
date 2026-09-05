@@ -1,5 +1,6 @@
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
+local multi = settings.startup["surfexp-gateway-layout"].value == "multi"
 
 local locations = {}
 local connections = {}
@@ -9,6 +10,8 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 	locations[#locations + 1] = {
 		type = "space-location",
 		name = name,
+		hidden = not multi,
+		draw_orbit = multi,
 		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
 		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
 		starmap_icon_size = 512,
@@ -36,6 +39,8 @@ local HUB_NAME = "surfexp_gateway_hub"
 locations[#locations + 1] = {
 	type = "space-location",
 	name = HUB_NAME,
+	hidden = multi,
+	draw_orbit = not multi,
 	icon = "__surfexp_gateways__/graphics/icons/gateway-hub.png",
 	starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
 	starmap_icon_size = 512,

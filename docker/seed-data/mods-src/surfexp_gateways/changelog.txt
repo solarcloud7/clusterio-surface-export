@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.1
+Date: 2026-09-05
+  Bugfixes:
+    - Hide the four numbered gateways and their orbital rings by default. Runtime locks left dim
+      portal icons on the space map in single-gateway mode.
+  Changes:
+    - Add the startup setting surfexp-gateway-layout, defaulting to one_gate. Set it to multi for
+      the advanced four-gateway map; it must match the controller's surface_export.gateway_mode.
+      Existing location and connection prototypes are retained for save compatibility.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.0
 Date: 2026-08-06
   Changes:

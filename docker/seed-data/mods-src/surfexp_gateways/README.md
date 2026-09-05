@@ -18,6 +18,19 @@ here. See `docs/GATEWAY_TRANSFER_PRD.md`.
 
 ## Graphics
 
+The startup setting `surfexp-gateway-layout` defaults to `one_gate`: only
+`surfexp_gateway_hub` appears on the space map, using the artwork in
+`docs/icons/gateway512.png`. The four numbered locations remain defined for save compatibility,
+but are hidden and have no orbital rings. Runtime locks alone leave dim icons on the map.
+
+For the advanced four-gateway layout, set both the mod pack startup setting
+`surfexp-gateway-layout` and the controller setting `surface_export.gateway_mode` to `multi`,
+then restart the instances and clients. Switch both back to `one_gate` for the single hub.
+Hidden locations and their connections retain their names; changing layout does not delete them.
+
+From the repository root, `lua tests/mods/gateway-layout.lua` checks both layouts, retained
+connections, and referenced map artwork without starting Factorio.
+
 `graphics/icons/` carries two files per gateway, the same split space-age uses for its own planets:
 
 | File | Size | Rendered by |
