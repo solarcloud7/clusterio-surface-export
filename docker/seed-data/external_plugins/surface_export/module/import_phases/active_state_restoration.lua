@@ -3,6 +3,8 @@ local Deserializer = require("modules/surface_export/core/deserializer")
 
 local ActiveStateRestoration = {}
 
+ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS = 300
+
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
 local function restore_inserter_held(entity, entity_data)
@@ -53,7 +55,7 @@ function ActiveStateRestoration.queue_mining_progress(entity, sd)
         entity = entity,
         mining_progress = sd.mining_progress,
         bonus_mining_progress = sd.bonus_mining_progress,
-        expires_tick = game.tick + 300,
+        expires_tick = game.tick + ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS,
     }
 end
 
@@ -81,16 +83,15 @@ function ActiveStateRestoration.service_pending_mining_progress()
             elseif game.tick < rec.expires_tick then
                 done = false
             else
-                local paused_ok, is_paused = pcall(function()
-                    return rec.entity.surface.platform and rec.entity.surface.platform.paused
-                end)
-                if paused_ok and is_paused then
-                    rec.expires_tick = game.tick + 300
+                local active_ok, is_active = pcall(function() return rec.entity.active end)
+                if active_ok and is_active == false then
+                    rec.expires_tick = game.tick + ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS
                     done = false
                 else
                     log(string.format(
-                        "[Import] mining_target never bound for '%s' within %d ticks — captured mining_progress %s DROPPED",
-                        tostring(rec.entity.name), 300, tostring(rec.mining_progress)))
+                        "[Import] mining_target never bound for '%s' on '%s' within %d ticks — captured mining_progress %s DROPPED",
+                        tostring(rec.entity.name), tostring(rec.entity.surface.name),
+                        ActiveStateRestoration.MINING_PROGRESS_BUDGET_TICKS, tostring(rec.mining_progress)))
                 end
             end
         end
