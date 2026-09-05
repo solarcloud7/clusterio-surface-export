@@ -41,7 +41,7 @@ drifted (it named the wrong client volume and recommended sharing it), so it was
 re-curated. The constraints worth repeating here are the ones that fail SILENTLY:
 - the controller's hostname must stay `clusterio-controller` — hosts default `CONTROLLER_URL` to it
 - the `external_plugins` mount must NOT be `:ro` — the entrypoint runs `npm install` inside it
-- pin the immutable `:<version>-rN` image tag; `:latest` and the bare `:<version>` MOVE on rebuild
+- pin the immutable rN image tag (`-rN` through r4, `.rN` from r6); `:latest` and the bare `:<version>` MOVE on rebuild
 
 ## RCON Commands (PowerShell Profile Aliases)
 
@@ -335,7 +335,7 @@ isolated is UNEXPLAINED, not fixed.
 
 ## Clusterio Core Development
 
-This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable `-rN` tag; the bare version and `:latest` MOVE). To change Clusterio core
+This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable rN tag; the bare version and `:latest` MOVE). To change Clusterio core
 itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
 workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
 via `./tools/clusterio/rebuild-clusterio.ps1`) and the promotion paths are in
