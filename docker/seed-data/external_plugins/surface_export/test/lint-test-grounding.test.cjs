@@ -394,7 +394,7 @@ test("the shipped instruments tree is scanned at its measured size", async (t) =
 		return;
 	}
 	const records = findInstrumentFiles();
-	assert.equal(records.length, 24);
+	assert.equal(records.length, 26);
 	assert.equal(records.filter((entry) => entry.path.endsWith(".test.mjs")).length, 0);
-	assert.equal(new Set(records.map((entry) => entry.unit)).size, 9);
+	assert.equal(new Set(records.map((entry) => entry.unit)).size, 11);
 });
