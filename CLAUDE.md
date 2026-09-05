@@ -321,10 +321,15 @@ The rules that governed that doc still govern any prose making an engine claim:
   The old **[API]** tier existed to do exactly that mirroring and is abolished.
 - **Documentation citing documentation is a feedback loop.** Evidence is a measurement or an upstream source,
   never another of our own docs. A claim whose support is "see our other doc" is deleted, not re-pointed.
-Surviving claims carry **[empirical, <pin>, <citation>]**, and the tag covers ONE claim — a bullet that bundles
-a measured fact with a "so/therefore" consequence is two claims wearing one citation, which is precisely how a
-false cap rationale rode a real `crafting_speed` measurement for months. There is NO [hypothesis] tier: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
-*predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
+- **A tag is not evidence — the `[empirical, <pin>, <citation>]` convention is RETIRED (owner ruling
+  2026-09-05).** Tagged prose granted itself authority it could not keep: the pin moved and the tags stayed
+  green, audits found tags citing probes that never isolated the claimed variable, and a false cap rationale
+  rode a real `crafting_speed` measurement for months by sharing its citation. An engine claim in prose is a
+  LEAD, never an authority, tagged or not. Authority is a rung in `tests/instruments/` that re-measures the
+  fact, an upstream page linked at the point of use, or a fresh measurement in the PR that needs it. Tags
+  still present in older docs are historical markers — re-measure before relying on one; do not mint new ones.
+There is NO [hypothesis] tier: a claim whose only evidence is an undocumented one-off probe is DELETED, not
+demoted (git history keeps it). A mechanism EXPLANATION is a lead until its *predictions* are tested, and an
 unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
 Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the
 archive tag. Record negative and unexplained results honestly — an eliminated failure whose root cause was never
