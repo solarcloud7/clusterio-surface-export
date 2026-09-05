@@ -14,7 +14,9 @@ import {
 	Typography,
 	message as antMessage,
 } from "antd";
-import { describeAttribution, TIMELINE_PALETTE, tickHatch } from "../shared/transfer-timeline";
+import {
+	describeAttribution, describeSourceExportAnomaly, describeImportGapAnomaly, TIMELINE_PALETTE, tickHatch,
+} from "../shared/transfer-timeline";
 import { formatMs } from "../shared/utils";
 import type { ColumnsType } from "antd/es/table";
 import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
@@ -76,7 +78,7 @@ function PhaseTimeline({ rows, totalMs, attribution }: {
 				return (
 					<div key={row.key} className="surface-export-timeline-row">
 						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={tooltip}>
-							<Text strong={isEvent} type={isGap ? "warning" : undefined} style={{ fontSize: 12 }}>
+							<Text strong={isEvent} type={row.kind === "residual" ? "warning" : isGap ? "secondary" : undefined} style={{ fontSize: 12 }}>
 								{label}
 							</Text>
 						</div>
@@ -296,6 +298,60 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const actualFluids = (validation ? getProp(validation, "actualFluidCounts", {}) as Record<string, number> : {});
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
+
+	const verdictLine = useMemo(() => {
+		if (!detailedSummary) return null;
+		const platformInfo = (detailedSummary.platform ?? null) as JsonObject | null;
+		const src = platformInfo ? getProp(platformInfo, "source", null) as JsonObject | null : null;
+		const dst = platformInfo ? getProp(platformInfo, "destination", null) as JsonObject | null : null;
+		const exp = (detailedSummary.export ?? null) as JsonObject | null;
+		const pay = (detailedSummary.payload ?? null) as JsonObject | null;
+		const num = (obj: JsonObject | null, key: string) => (obj ? Number(getProp(obj, key, NaN)) : NaN);
+		const verdictMark = (key: string) => {
+			const match = validation ? getProp(validation, key, null) : null;
+			return match === true ? " exact ✓" : match === false ? " MISMATCH ✗" : "";
+		};
+		const parts: string[] = [];
+		const srcName = src ? String(getProp(src, "instanceName", "") || getProp(src, "instanceId", "")) : "";
+		const dstName = dst ? String(getProp(dst, "instanceName", "") || getProp(dst, "instanceId", "")) : "";
+		if (srcName && dstName) parts.push(`${srcName} → ${dstName}`);
+		const entities = num(exp, "exportedEntityCount");
+		if (Number.isFinite(entities)) parts.push(`${entities.toLocaleString()} entities`);
+		const tiles = num(exp, "exportedTileCount");
+		if (Number.isFinite(tiles)) parts.push(`${tiles.toLocaleString()} tiles`);
+		const items = num(pay, "totalItemCount");
+		const itemTypes = num(pay, "uniqueItemTypes");
+		if (Number.isFinite(items)) {
+			parts.push(`${items.toLocaleString()} items${Number.isFinite(itemTypes) ? ` (${itemTypes} types)` : ""}${verdictMark("itemCountMatch")}`);
+		}
+		const fluidTypes = num(pay, "uniqueFluidTypes");
+		const fluidVolume = num(pay, "totalFluidVolume");
+		if (Number.isFinite(fluidTypes)) {
+			parts.push(fluidTypes === 0
+				? "no fluids"
+				: `${formatNumeric(fluidVolume, 0)} fluid (${fluidTypes} types)${verdictMark("fluidCountMatch")}`);
+		}
+		const compressed = num(exp, "compressedPayloadBytes");
+		const pct = num(exp, "compressionReductionPct");
+		if (Number.isFinite(compressed)) {
+			parts.push(`${formatBytes(compressed)} payload${Number.isFinite(pct) ? ` (${formatNumeric(pct, 0)}% compressed)` : ""}`);
+		}
+		return parts.length ? parts.join(" · ") : null;
+	}, [detailedSummary, validation]);
+
+	const failureDeltaLine = useMemo(() => {
+		const mismatched = itemRows.filter(row => row.delta !== 0).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+		if (mismatched.length === 0) return null;
+		const shown = mismatched.slice(0, 3).map(row => `${row.name} ${formatSigned(row.delta, 0)}`).join(", ");
+		const more = mismatched.length - 3;
+		return `Item mismatches: ${shown}${more > 0 ? ` (+${more} more)` : ""}`;
+	}, [itemRows]);
+
+	const wallClockAnomalies = useMemo(() => {
+		if (!flowTimeline?.attribution) return [];
+		return [describeSourceExportAnomaly(flowTimeline.attribution), describeImportGapAnomaly(flowTimeline.attribution)]
+			.filter((a): a is { headline: string; detail: string } => a !== null);
+	}, [flowTimeline]);
 	const fluidReconciliation = validation ? getProp(validation, "fluidReconciliation", null) as JsonObject | null : null;
 	const highTempThreshold = Number(fluidReconciliation ? getProp(fluidReconciliation, "highTempThreshold", 10000) : 10000);
 	const highTempAggregates = fluidReconciliation ? getProp(fluidReconciliation, "highTempAggregates", {}) as JsonObject : {};
@@ -512,10 +568,10 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		? "success"
 		: selectedResult === "FAILED" ? "error" : "info";
 	const summaryOutcomeText = selectedResult === "FAILED"
-		? "Transfer error"
+		? `Transfer failed after ${detailedSummary?.totalDurationStr ?? "?"}`
 		: selectedResult === "SUCCESS"
-			? "Transfer completed"
-			: "Transfer in progress";
+			? `Transfer completed in ${detailedSummary?.totalDurationStr ?? "?"}`
+			: `Transfer in progress (${detailedSummary?.totalDurationStr ?? "?"})`;
 	const detailLoaded = Boolean(selectedDetails && detailedSummary);
 	const hasValidation = Boolean(validation);
 
@@ -588,9 +644,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 							)}
 							description={(
 								<Space direction="vertical" size={2}>
-									<span>{summaryOutcomeText} {`(${detailedSummary.totalDurationStr}):`}</span>
+									<span>{summaryOutcomeText}</span>
+									{verdictLine ? <span className="surface-export-summary-verdict">{verdictLine}</span> : null}
 									{detailedSummary.error ? <span>{String(detailedSummary.error)}</span> : null}
 									{selectedResult === "FAILED" && failureStage ? <span>{`Failure stage: ${failureStage}`}</span> : null}
+									{selectedResult === "FAILED" && failureDeltaLine ? <span>{failureDeltaLine}</span> : null}
 									{failureBlackBoxFile ? <span>{`Failure evidence: ${failureBlackBoxFile}`}</span> : null}
 									{latchRearmScheduled > 0 ? (
 										<Tooltip title={"Queued after activation, outside the gate. Per-decider outcomes finalise later into storage.latch_rearm_results in-game and are not carried back to this log."}>
@@ -607,6 +665,15 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
+							{wallClockAnomalies.map(anomaly => (
+								<Alert
+									key={anomaly.headline}
+									type="error"
+									showIcon
+									message={anomaly.headline}
+									description={anomaly.detail}
+								/>
+							))}
 							<PhaseTimeline
 								rows={flowTimeline?.rows || []}
 								totalMs={flowTimeline?.totalMs || 0}

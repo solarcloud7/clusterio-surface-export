@@ -166,6 +166,14 @@ export class TransferOrchestrator {
 		if (!transfer) {
 			return { success: false, safeToUnlockSource: true, error: "Failed to initialize transfer state" };
 		}
+		const requestMs = mergedExportMetrics?.requestExportAndLockMs;
+		if (finiteMs(requestMs)) {
+			this.txLogger.logTransactionEvent(transferId, "export_requested",
+				`Export requested from ${transfer.sourceInstanceName || transfer.sourceInstanceId}`, {}, transfer.startedAt);
+			this.txLogger.logTransactionEvent(transferId, "export_returned",
+				`Source returned export ${sourceExportId} after ${requestMs} ms`,
+				{ requestExportAndLockMs: requestMs }, transfer.startedAt + requestMs);
+		}
 		this.txLogger.logTransactionEvent(transferId, "transfer_created",
 			`${transfer.platformName}: ${transfer.sourceInstanceName || transfer.sourceInstanceId} → ${transfer.targetInstanceName || targetInstanceId}`, {
 				exportMetrics: mergedExportMetrics,

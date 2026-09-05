@@ -174,7 +174,7 @@ test("the export tick estimate is drawn before transfer_created, not after the i
 	);
 });
 
-test("the understatement is stated, not left to be noticed", () => {
+test("the understatement is drawn, counted, and headlined by threshold — not by a blanket banner", () => {
 	const fixture = byLabel("workhorse-120kb");
 	const { rows, attribution } = buildTransferTimeline(fixture.events, null);
 
@@ -183,14 +183,17 @@ test("the understatement is stated, not left to be noticed", () => {
 	assert.ok(rows.some(r => r.kind === "detailGap"), "the gap must be drawn, not only counted");
 
 	const notice = describeAttribution(attribution);
-	assert.ok(notice, "a timeline that cannot break down its own dominant span must say so");
-	assert.match(notice.headline, /no phase detail/i);
+	assert.ok(notice === null || !/phase detail/i.test(notice.headline),
+		"the percentage banner is retired; quantization is a gray row, the finding is the threshold headline");
+	const anomaly = describeImportGapAnomaly(attribution);
+	assert.ok(anomaly, "a 21.6 s destination gap must still be reported — as a threshold headline");
+	assert.match(anomaly.headline, /Destination import/);
 
 	assert.ok(attribution.residualPct <= 5,
 		"the import window is measured, so its detail gap must not also count as unattributed");
 });
 
-test("describeAttribution stays silent when the timeline accounts for itself", () => {
+test("describeAttribution reports residual only; detail gaps are no longer its business", () => {
 	assert.equal(describeAttribution({
 		totalMs: 1000, attributedMs: 1000, residualMs: 0, residualPct: 0,
 		overlapTrimmedMs: 0, detailGapMs: 0, detailGapPct: 0,
@@ -200,7 +203,7 @@ test("describeAttribution stays silent when the timeline accounts for itself", (
 		overlapTrimmedMs: 0, detailGapMs: 21_000, detailGapPct: 98,
 	});
 	assert.match(both.headline, /unattributed/i);
-	assert.match(both.detail, /no phase detail/i, "the second finding must survive into the detail text");
+	assert.doesNotMatch(both.detail, /no phase detail/i, "the detail-gap notice is gone from this describer");
 });
 
 test("truncated timelines never fabricate wall clock from tick counts", () => {
@@ -227,7 +230,7 @@ test("a window with no phase breakdown gets no fabricated detail-gap row", () =>
 test("the export envelope owes a detail gap too, and the async bar sits inside it", () => {
 	const fixture = byLabel("workhorse-120kb");
 	const { rows, attribution } = buildTransferTimeline(fixture.events, null);
-	const lock = rows.find(r => r.key.startsWith("export:lock:"));
+	const lock = rows.find(r => r.key.startsWith("export:call:"));
 	const store = rows.find(r => r.key.startsWith("export:store:"));
 	const asyncBar = rows.find(r => r.key.startsWith("export:async:"));
 	assert.ok(lock && store && asyncBar, "workhorse fixture must carry the full export block");
@@ -270,7 +273,7 @@ test("detailedSummary.export supplies the export block when the event carries no
 	];
 	const summary = { export: { requestExportAndLockMs: 400, waitForControllerStoreMs: 1100, instanceAsyncExportMs: 450, instanceAsyncExportTicks: 27 } };
 	const { rows } = buildTransferTimeline(events, summary);
-	assert.ok(rows.some(r => r.key.startsWith("export:lock:")), "lock span must come from detailedSummary.export");
+	assert.ok(rows.some(r => r.key.startsWith("export:call:")), "call span must come from detailedSummary.export");
 	assert.ok(rows.some(r => r.key.startsWith("export:async:")), "async bar must come from detailedSummary.export");
 });
 
@@ -285,18 +288,18 @@ test("a failed transfer still attributes its time", () => {
 		"the post-settle wait for a late verdict is real empty time and must read as unattributed");
 });
 
-test("the detail-gap warning stays quiet on healthy sub-second transfers", () => {
+test("the destination-gap headline stays quiet on healthy sub-second transfers and fires on the workhorse", () => {
 	for (const label of ["tiny-2kb", "omnibus-87kb"]) {
 		const { attribution } = buildTransferTimeline(byLabel(label).events, null);
-		const notice = describeAttribution(attribution);
-		assert.ok(
-			notice === null || !/no phase detail/i.test(notice.headline),
-			`[${label}] warned about a ${Math.round(attribution.detailGapMs)}ms detail gap — `
-			+ "below the floor, this is tick resolution, not a finding",
+		assert.equal(
+			describeImportGapAnomaly(attribution), null,
+			`[${label}] headlined a ${Math.round(attribution.importDetailGapMs)}ms detail gap — `
+			+ "below the threshold, this is tick resolution, not a finding",
 		);
 	}
-	const workhorse = describeAttribution(buildTransferTimeline(byLabel("workhorse-120kb").events, null).attribution);
-	assert.match(workhorse.headline, /no phase detail/i, "a 21.6 s gap must still be reported");
+	const workhorse = describeImportGapAnomaly(buildTransferTimeline(byLabel("workhorse-120kb").events, null).attribution);
+	assert.ok(workhorse, "a 21.6 s gap must still be reported");
+	assert.match(workhorse.headline, /Destination import ran .* with only .* tick-attributed/);
 });
 
 test("an empty timeline is a zero, not a crash", () => {
@@ -306,4 +309,104 @@ test("an empty timeline is a zero, not a crash", () => {
 		assert.deepEqual(rows, []);
 		assert.equal(attribution.residualPct, 0, "0/0 must not become NaN");
 	}
+});
+
+
+const {
+	describeSourceExportAnomaly, describeImportGapAnomaly, SOURCE_EXPORT_ANOMALY_MS,
+} = require("../dist/node/shared/transfer-timeline");
+
+const STALL_METRICS = {
+	requestExportAndLockMs: 28126, waitForControllerStoreMs: 1404,
+	instanceAsyncExportMs: 450, instanceAsyncExportTicks: 27, controllerExportPrepTotalMs: 29530,
+};
+const FAST_METRICS = {
+	requestExportAndLockMs: 278, waitForControllerStoreMs: 1606,
+	instanceAsyncExportMs: 450, instanceAsyncExportTicks: 27, controllerExportPrepTotalMs: 1884,
+};
+
+function transferEvents({ metrics, anchored, returnedAt }) {
+	const createdAt = metrics.controllerExportPrepTotalMs;
+	const events = [];
+	if (anchored) {
+		events.push({ eventType: "export_requested", elapsedMs: 0 });
+		events.push({ eventType: "export_returned", elapsedMs: returnedAt ?? metrics.requestExportAndLockMs });
+	}
+	events.push(
+		{ eventType: "transfer_created", elapsedMs: createdAt, exportMetrics: metrics },
+		{ eventType: "import_started", elapsedMs: createdAt + 372, transmissionMs: 370 },
+		{ eventType: "validation_received", elapsedMs: createdAt + 1875, validationMs: 1503 },
+		{ eventType: "transfer_completed", elapsedMs: createdAt + 1971, phases: { cleanupMs: 95 } },
+	);
+	return events;
+}
+const rowNamed = (rows, label) => rows.find(r => r.label === label);
+
+test("anchored: the source export call spans exactly export_requested → export_returned", () => {
+	const { rows, attribution } = buildTransferTimeline(transferEvents({ metrics: STALL_METRICS, anchored: true }), null);
+	const call = rowNamed(rows, "Source export call");
+	assert.ok(call, "call row present");
+	assert.equal(call.startMs, 0);
+	assert.equal(call.endMs, 28126);
+	assert.equal(call.kind, "measured");
+	const store = rowNamed(rows, "Wait for store");
+	assert.equal(store.startMs, 28126);
+	assert.equal(store.endMs, 29530);
+	assert.equal(attribution.sourceExportAnchored, true);
+	assert.equal(attribution.sourceExportCallMs, 28126);
+	assert.equal(rows.some(r => r.kind === "event" && /export_requested|export_returned/.test(r.label)), false,
+		"anchor events become the span, not two more marker rows");
+});
+
+test("MUTATION KILL: when the anchor disagrees with the metric, the anchor wins", () => {
+	const { rows, attribution } = buildTransferTimeline(
+		transferEvents({ metrics: STALL_METRICS, anchored: true, returnedAt: 20000 }), null);
+	assert.equal(rowNamed(rows, "Source export call").endMs, 20000);
+	assert.equal(rowNamed(rows, "Wait for store").startMs, 20000);
+	assert.equal(attribution.sourceExportCallMs, 20000);
+});
+
+test("legacy log without anchor events back-computes the same call window from requestExportAndLockMs", () => {
+	const { rows, attribution } = buildTransferTimeline(transferEvents({ metrics: STALL_METRICS, anchored: false }), null);
+	const call = rowNamed(rows, "Source export call");
+	assert.equal(call.startMs, 0);
+	assert.equal(call.endMs, 28126);
+	assert.equal(attribution.sourceExportAnchored, false);
+	assert.equal(attribution.sourceExportCallMs, 28126);
+});
+
+test("the async export sits in the store-wait window, after the synchronous call returns", () => {
+	const { rows } = buildTransferTimeline(transferEvents({ metrics: STALL_METRICS, anchored: true }), null);
+	const asyncRow = rows.find(r => /^Async export/.test(r.label));
+	assert.equal(asyncRow.startMs, 28126);
+	assert.equal(asyncRow.endMs, 28576);
+	assert.equal(asyncRow.kind, "tickDerived");
+});
+
+test("source export anomaly: the 28.1 s call is headlined, the 278 ms call is silent", () => {
+	const stall = buildTransferTimeline(transferEvents({ metrics: STALL_METRICS, anchored: true }), null).attribution;
+	const anomaly = describeSourceExportAnomaly(stall);
+	assert.ok(anomaly, "28.1 s call must produce an anomaly");
+	assert.match(anomaly.headline, /28[.,]1/);
+	assert.match(anomaly.headline, /synchronous export call/);
+	assert.match(anomaly.detail, /27 ticks/);
+	const fast = buildTransferTimeline(transferEvents({ metrics: FAST_METRICS, anchored: true }), null).attribution;
+	assert.equal(describeSourceExportAnomaly(fast), null, "a 278 ms call is normal");
+	assert.ok(FAST_METRICS.requestExportAndLockMs < SOURCE_EXPORT_ANOMALY_MS && STALL_METRICS.requestExportAndLockMs >= SOURCE_EXPORT_ANOMALY_MS,
+		"the two pins straddle the threshold, so the test exercises both sides of it");
+});
+
+test("MUTATION KILL: a call exactly at the threshold is headlined; one millisecond under is not", () => {
+	const at = { ...FAST_METRICS, requestExportAndLockMs: SOURCE_EXPORT_ANOMALY_MS, controllerExportPrepTotalMs: SOURCE_EXPORT_ANOMALY_MS + 1606 };
+	const under = { ...FAST_METRICS, requestExportAndLockMs: SOURCE_EXPORT_ANOMALY_MS - 1, controllerExportPrepTotalMs: SOURCE_EXPORT_ANOMALY_MS + 1605 };
+	assert.ok(describeSourceExportAnomaly(buildTransferTimeline(transferEvents({ metrics: at, anchored: true }), null).attribution));
+	assert.equal(describeSourceExportAnomaly(buildTransferTimeline(transferEvents({ metrics: under, anchored: true }), null).attribution), null);
+});
+
+test("gap rows are labeled 'Not tick-attributed'; 'No phase detail' is gone and no longer raises a notice", () => {
+	const { rows, attribution } = buildTransferTimeline(transferEvents({ metrics: STALL_METRICS, anchored: true }), null);
+	assert.equal(rows.some(r => r.label === "No phase detail"), false);
+	assert.ok(rows.some(r => r.kind === "detailGap" && r.label === "Not tick-attributed"), "the synchronous call window is a gap row");
+	const notice = describeAttribution(attribution);
+	assert.equal(notice === null || !/no phase detail/i.test(notice.headline), true);
 });

@@ -1518,7 +1518,7 @@ export interface IControllerPlugin {
 	transferRevision: number;
 	logRevision: number;
 	txLogger: {
-		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
+		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>, atMs?: number | null): void;
 		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
 		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;
 		buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
