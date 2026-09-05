@@ -140,16 +140,21 @@ try {
 			const swept = rconJson(instance,
 				`(function() local n=0 for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
 				+ `pcall(remote.call, 'surface_export', 'unlock_platform', q.index) `
-				+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end `
-				+ `remote.call('surface_export','configure',{active_gateways_json=helpers.table_to_json(`
-				+ `(storage.surface_export_config and storage.surface_export_config.active_gateways) or {})}) `
-				+ `return {swept=n} end)()`,
+				+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end return {swept=n} end)()`,
 			);
 			if (swept.swept > 0) console.log(`  cleanup(${instance}): swept ${swept.swept} probe platform(s)`);
 		} catch (sweepErr) {
 			failed++;
 			console.error(`  FAIL cleanup sweep on ${instance} threw: ${sweepErr && sweepErr.message ? sweepErr.message : sweepErr}`);
 		}
+	}
+	try {
+		const relocked = rconJson(SRC_INSTANCE,
+			`(function() return {unlocks=remote.call('surface_export','reapply_gateway_locks')} end)()`);
+		console.log(`  cleanup(${SRC_INSTANCE}): gateway locks reapplied from the stored active set (${relocked.unlocks} unlock(s))`);
+	} catch (relockErr) {
+		failed++;
+		console.error(`  FAIL gateway lock restore on ${SRC_INSTANCE} threw: ${relockErr && relockErr.message ? relockErr.message : relockErr}`);
 	}
 }
 

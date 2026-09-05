@@ -19,7 +19,10 @@ import {
 test("the LuaEntity walk roster is the READABLE attributes, and both counts are pinned", () => {
 	const roster = walkableAttributes("LuaEntity");
 	assert.equal(roster.pin, "2.1.17");
-	assert.equal(roster.total, 313, "LuaEntity carries 313 merged attributes at this pin (2.1.13 added local_effect and potential_effects)");
+	assert.equal(roster.total, 313,
+		"LuaEntity carries 313 merged attributes at this pin (+2 vs the 2.1.11 index: local_effect, potential_effects)");
+	assert.ok(roster.readable.includes("local_effect") && roster.readable.includes("potential_effects"),
+		"the two attributes absent at 2.1.11 and present at 2.1.17 are on the roster");
 	assert.equal(roster.readable.length, 311,
 		"311 of those 313 are readable — crane_grappler_destination and crane_grappler_destination_3d are "
 		+ "write-only, and walking them would manufacture THREW cells that mean nothing");
@@ -85,7 +88,7 @@ test("the emitted walker carries the shared constants — no second copy to drif
 test("the emitted walker reads every attribute under pcall and never truncates", () => {
 	const lua = buildWalkerLua({ surface: "p", arm: "a", outputFile: "o.json" });
 	assert.ok(lua.includes("local ok, value = pcall(function() return entity[attr] end)"),
-		"an unguarded read on 309 attributes kills the instance");
+		"an unguarded read across the whole roster kills the instance");
 	assert.ok(lua.includes('state = "THREW"'));
 	assert.ok(lua.includes('state = "NIL"'));
 	assert.ok(lua.includes('state = "PRESENT"'));

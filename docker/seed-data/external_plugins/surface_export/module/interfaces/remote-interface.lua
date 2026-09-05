@@ -18,6 +18,7 @@ local configure = require("modules/surface_export/interfaces/remote/configure")
 local get_validation_result = require("modules/surface_export/interfaces/remote/get-validation-result")
 local lock_platform_for_transfer = require("modules/surface_export/interfaces/remote/lock-platform-for-transfer")
 local unlock_platform = require("modules/surface_export/interfaces/remote/unlock-platform")
+local reapply_gateway_locks = require("modules/surface_export/interfaces/remote/reapply-gateway-locks")
 local test_import_entity = require("modules/surface_export/interfaces/remote/test-import-entity")
 local test_runner = require("modules/surface_export/interfaces/remote/test-runner")
 local clone_platform = require("modules/surface_export/interfaces/remote/clone-platform")
@@ -57,6 +58,7 @@ RemoteInterface.configure = configure
 RemoteInterface.get_validation_result = get_validation_result
 RemoteInterface.lock_platform_for_transfer = lock_platform_for_transfer
 RemoteInterface.unlock_platform = unlock_platform
+RemoteInterface.reapply_gateway_locks = reapply_gateway_locks
 RemoteInterface.test_import_entity = test_import_entity
 RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
@@ -123,6 +125,7 @@ function RemoteInterface.register()
     
     lock_platform_for_transfer = lock_platform_for_transfer,
     unlock_platform = unlock_platform,
+    reapply_gateway_locks = reapply_gateway_locks,
     
     test_import_entity = test_import_entity,
     run_tests = test_runner.run_tests,
