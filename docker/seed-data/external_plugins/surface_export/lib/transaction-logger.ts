@@ -231,12 +231,12 @@ export class TransactionLogger {
 			.slice(0, limit);
 	}
 
-	logTransactionEvent(transferId: string, eventType: string, message: string, data: Record<string, unknown> = {}) {
+	logTransactionEvent(transferId: string, eventType: string, message: string, data: Record<string, unknown> = {}, atMs: number | null = null) {
 		if (!this.plugin.transactionLogs.has(transferId)) {
 			this.plugin.transactionLogs.set(transferId, []);
 		}
 
-		const now = Date.now();
+		const now = atMs ?? Date.now();
 		const events = this.plugin.transactionLogs.get(transferId) || [];
 		if (!this.plugin.transactionLogs.has(transferId)) {
 			this.plugin.transactionLogs.set(transferId, events);

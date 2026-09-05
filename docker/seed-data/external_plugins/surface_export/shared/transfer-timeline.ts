@@ -31,6 +31,12 @@ export type TimelineAttribution = {
 	overlapTrimmedMs: number;
 	detailGapMs: number;
 	detailGapPct: number;
+	sourceExportCallMs: number | null;
+	sourceExportAsyncMs: number | null;
+	sourceExportAsyncTicks: number | null;
+	sourceExportAnchored: boolean;
+	importWindowMs: number | null;
+	importDetailGapMs: number;
 };
 
 export type TransferTimeline = {
@@ -46,7 +52,7 @@ export const TIMELINE_PALETTE: Record<string, string> = {
 	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
 	transmission: "#13c2c2", cleanup: "#73d13d",
 	delivery: "#1d39c4", queue: "#adc6ff",
-	destImport: "#0958d9", residual: "#faad14", detailGap: "#d46b08",
+	destImport: "#0958d9", residual: "#faad14", detailGap: "#8c8c8c",
 	exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
 };
 
@@ -70,8 +76,6 @@ export function toGanttGeometry(row: { startMs: number; endMs: number }, totalMs
 
 const NOTICE_THRESHOLD_PCT = 5;
 
-const DETAIL_GAP_FLOOR_MS = 1000;
-
 import { formatMs } from "./utils";
 
 export function describeAttribution(attribution: TimelineAttribution): { headline: string; detail: string } | null {
@@ -83,19 +87,43 @@ export function describeAttribution(attribution: TimelineAttribution): { headlin
 			detail: "No measured span covers this time. It is bounded by the spans on either side of it.",
 		});
 	}
-	if (attribution.detailGapPct > NOTICE_THRESHOLD_PCT && attribution.detailGapMs >= DETAIL_GAP_FLOOR_MS) {
-		notices.push({
-			headline: `${formatMs(attribution.detailGapMs)} of measured work `
-				+ `(${attribution.detailGapPct.toFixed(0)}%) has no phase detail`,
-			detail: "The window is measured wall clock, but the spans inside it are game.tick deltas "
-				+ "scaled by a nominal 60 UPS. A tick that runs long does not widen them, so the "
-				+ "breakdown stops short of the window it sits in. The dark-orange bar is the difference, not idle time.",
-		});
-	}
 	if (notices.length === 0) return null;
 	return {
 		headline: notices[0].headline,
 		detail: notices.map(notice => notices.length > 1 ? `${notice.headline}: ${notice.detail}` : notice.detail).join(" "),
+	};
+}
+
+export const SOURCE_EXPORT_ANOMALY_MS = 5000;
+export const IMPORT_GAP_ANOMALY_MS = 5000;
+
+export function describeImportGapAnomaly(attribution: TimelineAttribution): { headline: string; detail: string } | null {
+	if (attribution.importWindowMs === null || attribution.importDetailGapMs < IMPORT_GAP_ANOMALY_MS) return null;
+	const attributed = Math.max(0, attribution.importWindowMs - attribution.importDetailGapMs);
+	return {
+		headline: `Destination import ran ${formatMs(attribution.importWindowMs)} of wall clock with only `
+			+ `${formatMs(attributed)} tick-attributed`,
+		detail: `The import phases are game.tick spans at a nominal 60 UPS; ${formatMs(attribution.importDetailGapMs)} `
+			+ "of the measured window is synchronous work inside ticks, or time below one tick of resolution. "
+			+ "Not idle time and not a missing measurement.",
+	};
+}
+
+export function describeSourceExportAnomaly(attribution: TimelineAttribution): { headline: string; detail: string } | null {
+	const callMs = attribution.sourceExportCallMs;
+	if (callMs === null || callMs < SOURCE_EXPORT_ANOMALY_MS) return null;
+	const asyncPart = attribution.sourceExportAsyncMs !== null
+		? ` The tick-measured async export that follows it took ${formatMs(attribution.sourceExportAsyncMs)}`
+			+ `${attribution.sourceExportAsyncTicks !== null ? ` (${attribution.sourceExportAsyncTicks.toLocaleString()} ticks)` : ""}.`
+		: "";
+	return {
+		headline: `Source instance spent ${formatMs(callMs)} inside one synchronous export call`,
+		detail: `The export request to the source returned after ${formatMs(callMs)} of controller wall clock. `
+			+ "That call locks the platform and scans it before the async export is queued, so no game tick "
+			+ `can attribute time inside it — the bar is the measurement, not a rendering gap.${asyncPart}`
+			+ (attribution.sourceExportAnchored
+				? " Anchored on the export_requested / export_returned events."
+				: " Back-computed from requestExportAndLockMs; this log predates the anchor events."),
 	};
 }
 
@@ -164,6 +192,10 @@ export function buildTransferTimeline(
 	let importWindow: DetailWindow | null = null;
 	const list = (events || []).filter(Boolean);
 	let totalMs = 0;
+	let sourceExportCallMs: number | null = null;
+	let sourceExportAsyncMs: number | null = null;
+	let sourceExportAsyncTicks: number | null = null;
+	let sourceExportAnchored = false;
 
 	const eventAt: Record<string, number> = {};
 	for (const ev of list) {
@@ -174,6 +206,8 @@ export function buildTransferTimeline(
 	for (const event of list) {
 		const at = finite(event.elapsedMs) ?? 0;
 		const type = String(event.eventType || "event");
+		totalMs = Math.max(totalMs, at);
+		if (type === "export_requested" || type === "export_returned") continue;
 		const isFailure = /failed|error|timeout/.test(type);
 		const isSuccess = /completed|success/.test(type);
 
@@ -182,46 +216,58 @@ export function buildTransferTimeline(
 			startMs: at, endMs: at, durationMs: null,
 			color: isFailure ? "red" : isSuccess ? "green" : "blue", kind: "event",
 		});
-		totalMs = Math.max(totalMs, at);
 
 		const exportMetrics = (event.exportMetrics
 			|| (type === "transfer_created" ? (detailedSummary?.export as Record<string, unknown>) : null)) as
 			Record<string, unknown> | null;
 		if (exportMetrics) {
-			const lockMs = finite(exportMetrics.requestExportAndLockMs) ?? 0;
-			const storeMs = finite(exportMetrics.waitForControllerStoreMs) ?? 0;
-			const lockEnd = at - storeMs;
-			const lockStart = lockEnd - lockMs;
-			if (lockMs > 0) {
+			const lockMsMetric = finite(exportMetrics.requestExportAndLockMs) ?? 0;
+			const storeMsMetric = finite(exportMetrics.waitForControllerStoreMs) ?? 0;
+			const requestedAt = finite(eventAt["export_requested"]);
+			const returnedAt = finite(eventAt["export_returned"]);
+			const anchored = requestedAt !== null && returnedAt !== null
+				&& requestedAt <= returnedAt && returnedAt <= at;
+			const callEnd = anchored ? returnedAt : at - storeMsMetric;
+			const callStart = anchored ? requestedAt : callEnd - lockMsMetric;
+			const callMs = callEnd - callStart;
+			const storeMs = at - callEnd;
+			const hasEnvelope = callMs > 0 || storeMs > 0;
+			if (callMs > 0) {
 				rows.push({
-					key: `export:lock:${at}`, label: "Request export + lock source", indent: 1,
-					startMs: lockStart, endMs: lockEnd, durationMs: lockMs, color: "exportQueue", kind: "measured",
-					note: "Controller wall clock: export request through source lock.",
+					key: `export:call:${at}`, label: "Source export call", indent: 1,
+					startMs: callStart, endMs: callEnd, durationMs: callMs, color: "exportQueue", kind: "measured",
+					note: anchored
+						? "Controller wall clock: export request sent to the source until it returned. Anchored on export_requested / export_returned."
+						: "Controller wall clock: export request sent to the source until it returned. Back-computed from requestExportAndLockMs (no anchor events in this log).",
 				});
+				sourceExportCallMs = callMs;
+				sourceExportAnchored = anchored;
 			}
 			if (storeMs > 0) {
 				rows.push({
 					key: `export:store:${at}`, label: "Wait for store", indent: 1,
-					startMs: lockEnd, endMs: at, durationMs: storeMs, color: "exportStore", kind: "measured",
-					note: "Controller wall clock: waiting for the export to land in the controller store.",
+					startMs: callEnd, endMs: at, durationMs: storeMs, color: "exportStore", kind: "measured",
+					note: "Controller wall clock: the async export runs on the source, then lands in the controller store.",
 				});
 			}
 			const asyncMs = positive(exportMetrics.instanceAsyncExportMs);
 			const ticks = positive(exportMetrics.instanceAsyncExportTicks);
-			const envelopeStart = lockMs > 0 || storeMs > 0 ? lockStart : at;
 			if (asyncMs !== null) {
+				const asyncStart = hasEnvelope ? callEnd : Math.max(0, at - asyncMs);
 				const asyncRow: TimelineRow = {
 					key: `export:async:${at}`, label: ticks !== null
 						? `Async export (${ticks.toLocaleString()} ticks)` : "Async export",
-					indent: lockMs > 0 || storeMs > 0 ? 2 : 1,
-					startMs: Math.max(0, envelopeStart === at ? at - asyncMs : envelopeStart),
-					endMs: envelopeStart === at ? at : Math.min(envelopeStart + asyncMs, at),
+					indent: hasEnvelope ? 2 : 1,
+					startMs: asyncStart,
+					endMs: Math.min(asyncStart + asyncMs, at),
 					durationMs: asyncMs, color: "exportAsync", kind: "tickDerived",
 					note: `${ticks ?? "?"} ticks x 16.67 ms nominal — a tick count, not elapsed time.`,
 				};
 				rows.push(asyncRow);
-				if (lockMs > 0 || storeMs > 0) {
-					detailWindows.push({ startMs: lockStart, endMs: at, children: [asyncRow] });
+				sourceExportAsyncMs = asyncMs;
+				sourceExportAsyncTicks = ticks;
+				if (hasEnvelope) {
+					detailWindows.push({ startMs: callStart, endMs: at, children: [asyncRow] });
 				}
 			}
 		}
@@ -328,6 +374,7 @@ export function buildTransferTimeline(
 	}
 
 	let detailGapMs = 0;
+	let importDetailGapMs = 0;
 	let windowTotalMs = 0;
 	for (const window of detailWindows) {
 		if (window.children.length === 0) continue;
@@ -343,12 +390,13 @@ export function buildTransferTimeline(
 			windowMs,
 		)) {
 			detailGapMs += end - start;
+			if (window === importWindow) importDetailGapMs += end - start;
 			rows.push({
-				key: `detailgap:${window.startMs}:${start}`, label: "No phase detail", indent: 2,
+				key: `detailgap:${window.startMs}:${start}`, label: "Not tick-attributed", indent: 2,
 				startMs: window.startMs + start, endMs: window.startMs + end,
 				durationMs: end - start, color: "detailGap", kind: "detailGap",
-				note: "Inside a measured window, but past where its tick-derived spans reach. "
-					+ "Span marks are game.tick deltas; a tick that runs long does not widen them.",
+				note: "Measured wall clock inside this window that no game.tick span covers: synchronous work, "
+					+ "or time below one tick (16.67 ms) of resolution. Not idle, not a missing measurement.",
 			});
 		}
 	}
@@ -369,6 +417,12 @@ export function buildTransferTimeline(
 			overlapTrimmedMs,
 			detailGapMs,
 			detailGapPct,
+			sourceExportCallMs,
+			sourceExportAsyncMs,
+			sourceExportAsyncTicks,
+			sourceExportAnchored,
+			importWindowMs: importWindow ? (importWindow as DetailWindow).endMs - (importWindow as DetailWindow).startMs : null,
+			importDetailGapMs,
 		},
 	};
 }
