@@ -551,8 +551,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.warn("Unable to confirm Lua console unlock; subsequent exports may require a manual command rerun.");
 	}
 
-	async handleExportPlatformRequest(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
-		return this.withTiming(`export-request:${randomUUID()}`, undefined, "Export request handling", () => this.handleExportPlatformRequestMeasured(request));
+	async handleExportPlatformRequest(request: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		return this.withTiming(request.operationId || `export-request:${randomUUID()}`, undefined, "Export request handling", () => this.handleExportPlatformRequestMeasured(request));
 	}
 
 	async handleExportPlatformRequestMeasured(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {

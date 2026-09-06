@@ -6,7 +6,6 @@ import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./
 import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
 import { TimingClock } from "./timing";
 import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
-import { createOperationRecord } from "./operation-record";
 import { getErrorMessage, PLUGIN_NAME } from "../helpers";
 
 export class TransactionLogger {
@@ -60,21 +59,30 @@ export class TransactionLogger {
 		const bound = [...this.clocks.values()].find(clock => clock.jobId === id);
 		if (bound?.operationId && !this.clocks.has(id)) id = bound.operationId;
 		if (this.plugin.activeTransfers.has(id)) return;
-		if (!this.clocks.has(id)) return;
+		const clock = this.clocks.get(id), root = this.spans.get(`${id}:operation`);
+		if (!clock || !root) return;
 		const kind = request.operationType === "import" || request.operationType === "export" ? request.operationType : "transfer";
-		const operation = createOperationRecord(kind, {
-			operationId: id, platformName: `platform #${request.sourcePlatformIndex ?? "unknown"}`,
+		clock.stop(root, "failed");
+		const timing: OperationTiming = { v: 1, records: [] };
+		for (const [key, { record }] of this.pendingTiming) {
+			if (record.operationId !== id && record.clockId !== clock.clockId) continue;
+			timing.records.push(record); this.pendingTiming.delete(key);
+		}
+		// A rejected request may not identify any platform. It is evidence, never an executable transfer record.
+		const info = {
+			transferId: id, operationType: kind, platformName: `platform #${request.sourcePlatformIndex ?? "unknown"}`,
 			sourceInstanceId: Number(request.sourceInstanceId) || -1,
 			targetInstanceId: Number(request.targetInstanceId) || -1, status: "failed",
-		});
-		operation.error = error; operation.failedAt = Date.now();
-		this.finishObservation(operation);
-		this.collectTiming(operation);
-		const entry = { transferId: id, transferInfo: this.buildTransferInfo(operation),
-			summary: this.buildDetailedTransferSummary(id, operation), events: [], savedAt: Date.now() };
+			error, startedAt: clock.startedAtUtc, failedAt: Date.now(),
+			observedDurationMs: root.endMs! - root.startMs!,
+		} satisfies PersistedTransactionLog["transferInfo"];
+		const entry = { transferId: id, transferInfo: info,
+			summary: { ...info, timing, totalDurationMs: info.observedDurationMs,
+				timingBoundary: "Controller observation of a rejected request; no active operation record was created." },
+			events: [], savedAt: Date.now() };
 		this.plugin.persistedTransactionLogs = this.applyDetailRetention([...this.plugin.persistedTransactionLogs, entry]);
 		await this.plugin.recordAuditRow(buildAuditRow({ transferId: id, rowKind: "terminal", savedAt: entry.savedAt,
-			eventCount: 0, lastEventAt: operation.failedAt, info: entry.transferInfo }));
+			eventCount: 0, lastEventAt: info.failedAt, info }));
 		if (!this.plugin.transactionLogLoadError) await enqueueWrite(this.plugin.transactionLogPath,
 			() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(this.plugin.persistedTransactionLogs, null, 2)));
 	}

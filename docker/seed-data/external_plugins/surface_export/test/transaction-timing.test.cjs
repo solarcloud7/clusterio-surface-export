@@ -124,3 +124,24 @@ test("controller reload preserves missing boundaries and still accepts a genuine
 		await fs.rm(dir, { recursive: true, force: true });
 	}
 });
+
+test("a rejection before platform or job creation retains its measured request without fabricating a platform", async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "timing-test-"));
+	try {
+		const { plugin, logger } = harness(); let audits = 0;
+		Object.assign(plugin, { transactionLogPath: path.join(dir, "details.json"), transactionLogLoadError: null,
+			controller: { config: { get: () => 10 } }, recordAuditRow: async () => { audits++; } });
+		logger.beginObservation("rejected");
+		await logger.rejectObservation("rejected", { sourcePlatformIndex: 0 }, "Invalid platform index");
+		const [entry] = JSON.parse(await fs.readFile(plugin.transactionLogPath, "utf8"));
+		assert.equal(entry.transferInfo.operationType, "transfer");
+		assert.equal(entry.transferInfo.status, "failed");
+		assert.equal(entry.transferInfo.platformIndex, undefined);
+		assert.equal(entry.summary.timing.records[0].status, "failed");
+		assert.equal(typeof entry.summary.totalDurationMs, "number");
+		assert.equal(audits, 1); assert.equal(plugin.activeTransfers.size, 0);
+	} finally {
+		assert.ok(dir.startsWith(path.join(os.tmpdir(), "timing-test-")));
+		await fs.rm(dir, { recursive: true, force: true });
+	}
+});

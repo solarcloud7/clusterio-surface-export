@@ -65,6 +65,7 @@ export function parseLuaTiming(line: string, instanceId: number, epoch: string):
 
 export class TimingClock {
 	readonly clockId: string;
+	readonly startedAtUtc = Date.now();
 	exportId?: string;
 	operationId?: string;
 	private records = new Map<string, TimingRecord>();

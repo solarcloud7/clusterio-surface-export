@@ -462,6 +462,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.ExportPlatformRequest({
+					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId,
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: null,

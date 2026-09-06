@@ -99,6 +99,7 @@ export class ExportPlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			operationId: { type: "string" },
 			forceName: { type: "string", default: "player" },
 			targetInstanceId: { type: ["integer", "null"], default: null },
 		},
@@ -106,22 +107,24 @@ export class ExportPlatformRequest {
 		additionalProperties: false,
 	};
 
+	operationId?: string;
 	platformIndex: number;
 	forceName: string;
 	targetInstanceId: number | null;
 
-	constructor(json: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	constructor(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		this.operationId = json.operationId;
 		this.platformIndex = json.platformIndex;
 		this.forceName = json.forceName || "player";
 		this.targetInstanceId = json.targetInstanceId ?? null;
 	}
 
-	static fromJSON(json: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	static fromJSON(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		return new ExportPlatformRequest(json);
 	}
 
 	toJSON() {
-		return { platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
+		return { operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
 	}
 
 	static Response = {

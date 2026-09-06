@@ -575,6 +575,7 @@ export class TransferOrchestrator {
 			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				new this.messages.ExportPlatformRequest({
+					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId,
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: resolvedTarget.id,
