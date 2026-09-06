@@ -27,7 +27,11 @@ function global:docker {
   default { throw 'unexpected Docker operation' }
  }
 }
-& $env:BUILD_SCRIPT $env:BUILD_TARGET
+if ($env:BUILD_FAIL -eq 'true') {
+ & $env:BUILD_SCRIPT $env:BUILD_TARGET -RestartController -RestartHosts
+} else {
+ & $env:BUILD_SCRIPT $env:BUILD_TARGET
+}
 exit $LASTEXITCODE
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
@@ -56,3 +60,33 @@ test("a failed test container fails the wrapper without restarting the cluster",
 	assert.match(result.stderr, /Plugin build failed/);
 	assert.deepEqual(result.calls.map(args => args[0]), ["version", "run"]);
 });
+
+const shell = process.platform === "win32"
+	? { command: "docker", args: ["run", "--rm", "-i", "node:24-bookworm-slim", "sh"] }
+	: { command: "sh", args: [] };
+const shellSkip = skip || ((process.platform === "win32"
+	&& spawnSync("docker", ["image", "inspect", "node:24-bookworm-slim"], { stdio: "ignore" }).status !== 0)
+	? "requires the local build image on Windows" : false);
+
+for (const failure of ["build:browser", "build:web", null]) {
+	test(`web build shell ${failure ? `stops on ${failure} failure` : "reports successful completion"}`,
+		{ skip: shellSkip }, t => {
+			const capture = run(t, "web");
+			assert.equal(capture.status, 0, capture.stderr);
+			const buildCommand = capture.calls.find(args => args[0] === "run").at(-1);
+			const fixture = `
+node() { echo v24-fixture; }
+npm() {
+ echo "fixture-npm:$*"
+ if [ "$2" = "${failure ?? "no-failure"}" ]; then return 17; fi
+ return 0
+}
+${buildCommand}
+`;
+			const result = spawnSync(shell.command, shell.args, { input: fixture, encoding: "utf8", timeout: 30000 });
+			assert.equal(result.status, failure ? 17 : 0, result.stderr || result.stdout);
+			if (failure) assert.doesNotMatch(result.stdout, /\[ok\] build complete/);
+			else assert.match(result.stdout, /\[ok\] build complete/);
+			if (failure === "build:browser") assert.doesNotMatch(result.stdout, /fixture-npm:run build:web/);
+		});
+}
