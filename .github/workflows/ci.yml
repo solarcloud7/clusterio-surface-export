@@ -56,6 +56,12 @@ jobs:
       - name: Test (repo root — manifest, meters, pins, testkit)
         run: npm test
 
+      - name: Test (gateway mod — both layouts)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.2
+          lua5.2 tests/mods/gateway-layout.lua
+
   # ===========================================================================
   # Integration Tests — spin up the full Docker cluster and run the suite
   # ===========================================================================

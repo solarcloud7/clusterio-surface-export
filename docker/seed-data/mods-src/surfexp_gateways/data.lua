@@ -1,5 +1,6 @@
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
+local multi = settings.startup["surfexp-gateway-layout"].value == "multi"
 
 local locations = {}
 local connections = {}
@@ -9,6 +10,8 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 	locations[#locations + 1] = {
 		type = "space-location",
 		name = name,
+		hidden = not multi,
+		draw_orbit = multi,
 		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
 		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
 		starmap_icon_size = 512,
@@ -20,15 +23,17 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 		magnitude = 1.0,
 		label_orientation = 0.15,
 	}
-	connections[#connections + 1] = {
-		type = "space-connection",
-		name = "surfexp_gateway_link_" .. i,
-		subgroup = "planet-connections",
-		from = "nauvis",
-		to = name,
-		order = "z[surfexp-gateway]-" .. i,
-		length = 3000,
-	}
+	if multi then
+		connections[#connections + 1] = {
+			type = "space-connection",
+			name = "surfexp_gateway_link_" .. i,
+			subgroup = "planet-connections",
+			from = "nauvis",
+			to = name,
+			order = "z[surfexp-gateway]-" .. i,
+			length = 3000,
+		}
+	end
 end
 
 local HUB_NAME = "surfexp_gateway_hub"
@@ -36,27 +41,34 @@ local HUB_NAME = "surfexp_gateway_hub"
 locations[#locations + 1] = {
 	type = "space-location",
 	name = HUB_NAME,
+	hidden = multi,
+	draw_orbit = not multi,
 	icon = "__surfexp_gateways__/graphics/icons/gateway-hub.png",
 	starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
 	starmap_icon_size = 512,
+	starmap_icon_orientation = 0,
 	subgroup = "planets",
 	order = "z[surfexp-gateway]-0",
 	gravity_pull = -10,
-	distance = 45,
-	orientation = 0.925,
-	magnitude = 1.0,
+	distance = 25.5,
+	orientation = 0.245,
+	magnitude = 2.25,
 	label_orientation = 0.15,
 }
 
-connections[#connections + 1] = {
-	type = "space-connection",
-	name = "surfexp_gateway_link_hub",
-	subgroup = "planet-connections",
-	from = "nauvis",
-	to = HUB_NAME,
-	order = "z[surfexp-gateway]-0",
-	length = 3000,
-}
+if not multi then
+	for _, planet in ipairs({ "nauvis", "vulcanus", "gleba", "fulgora", "aquilo" }) do
+		connections[#connections + 1] = {
+			type = "space-connection",
+			name = "surfexp_gateway_link_hub" .. (planet == "nauvis" and "" or "_" .. planet),
+			subgroup = "planet-connections",
+			from = planet,
+			to = HUB_NAME,
+			order = "z[surfexp-gateway]-0-" .. planet,
+			length = 3000,
+		}
+	end
+end
 
 data:extend(locations)
 data:extend(connections)
