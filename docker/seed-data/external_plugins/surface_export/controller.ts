@@ -7,7 +7,9 @@ import { PlatformTree, instanceAddress } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { enqueueWrite } from "./lib/persist-queue";
-import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./lib/audit-ledger";
+import { buildAuditRow } from "./lib/audit-ledger";
+import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } from "./lib/export-storage";
+import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit";
 import type { AuditRow } from "./lib/audit-ledger";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
@@ -28,7 +30,7 @@ import type {
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
@@ -635,78 +637,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	canonicalizeStoredExport(entry: StoredExport): StoredExport {
-		const parsed = parseCanonicalTransferId(entry.exportId);
-		if (parsed) {
-			return { ...entry, exportId: entry.exportId, sourceExportId: entry.sourceExportId || parsed.sourceJobId };
-		}
-		if (Number.isInteger(Number(entry.instanceId)) && Number(entry.instanceId) > 0) {
-			const sourceExportId = entry.sourceExportId || entry.exportId;
-			return { ...entry, exportId: makeCanonicalTransferId(Number(entry.instanceId), sourceExportId), sourceExportId };
-		}
-		this.logger.warn(`Cannot canonicalize stored export ${entry.exportId}: missing numeric instanceId; preserving legacy key`);
-		return { ...entry, sourceExportId: entry.sourceExportId || entry.exportId };
+		return canonicalizeStoredExport(this, entry);
 	}
 
 	async loadStorage() {
-		try {
-			const content = await fs.readFile(this.storagePath, "utf8");
-			const entries = JSON.parse(content);
-			if (Array.isArray(entries)) {
-				for (const rawEntry of entries) {
-					if (rawEntry && rawEntry.exportId) {
-						const entry = rawEntry as StoredExport;
-						if (!entry.size && entry.exportData) {
-							entry.size = Buffer.byteLength(JSON.stringify(entry.exportData), "utf8");
-						}
-						const stored = this.canonicalizeStoredExport(entry);
-						this.platformStorage.set(stored.exportId, stored);
-					}
-				}
-			}
-			this.storageLoadError = null;
-			this.logger.info(`Loaded ${this.platformStorage.size} stored platforms from disk`);
-		} catch (err: unknown) {
-			const code = (err as { code?: string }).code;
-			if (code === "ENOENT") {
-				this.storageLoadError = null;
-				this.logger.verbose("No existing Surface Export storage found; starting fresh");
-				return;
-			}
-			this.storageLoadError = getErrorMessage(err);
-			this.logger.error(
-				`Stored exports could not be loaded from ${this.storagePath}: ${this.storageLoadError}. `
-				+ "Persistence is DISABLED for this session to protect the existing file. To recover: stop the controller, "
-				+ `back up ${this.storagePath}, repair or move the file aside, then restart. Stored exports from before this `
-				+ "error will reappear after a successful load; exports created while degraded will NOT survive a restart.",
-			);
-		}
+		return loadStoredExports(this);
 	}
 
 	async persistStorage() {
-		if (this.storageLoadError !== null) {
-			this.logger.error(
-				`Refusing to persist stored exports to ${this.storagePath}: the startup load failed (${this.storageLoadError}) `
-				+ "and the file is being preserved as-is. This session's changes will not survive restart. "
-				+ "Repair or move the file and restart the controller to re-enable persistence.",
-			);
-			return;
-		}
-		try {
-			const payload = JSON.stringify(Array.from(this.platformStorage.values()), null, 2);
-			await enqueueWrite(this.storagePath, () => lib.safeOutputFile(this.storagePath, payload));
-			this.consecutiveStorageWriteFailures = 0;
-		} catch (err: unknown) {
-			this.consecutiveStorageWriteFailures = (this.consecutiveStorageWriteFailures ?? 0) + 1;
-			const run = this.consecutiveStorageWriteFailures;
-			const suffix = run > 1
-				? ` This is failure #${run} in a row — stored exports have not reached disk since the last `
-					+ "success, so nothing created in that window will survive a controller restart. "
-					+ "Check free space and permissions on the database directory."
-				: "";
-			this.logger.error(`Failed to persist Surface Export storage: ${getErrorMessage(err)}.${suffix}`);
-		}
+		return persistStoredExports(this);
 	}
-
 
 	private gatewayKey(sourceInstanceId: number, gatewayName: string): string {
 		return `${sourceInstanceId}:${gatewayName}`;
@@ -726,84 +666,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async loadAuditIndex() {
-		try {
-			let { rows, skipped } = await loadAuditLedger(this.auditLedgerPath);
-			if (!rows.length && this.persistedTransactionLogs.length) {
-				rows = await this.migrateAuditLedger();
-			}
-			for (const drop of skipped) {
-				this.logger.warn(
-					`Audit ledger: skipped unreadable line ${drop.lineNumber} at byte ${drop.byteOffset} `
-					+ `(${drop.reason}). Every other row was loaded.`,
-				);
-			}
-			this.auditIndex = foldAuditRows(rows);
-			this.auditRevisions = countRevisions(rows);
-			this.logger.info(
-				`Audit ledger: ${this.auditIndex.size} transfer(s) from ${rows.length} row(s)`
-				+ (skipped.length ? `, ${skipped.length} unreadable line(s) skipped` : ""),
-			);
-		} catch (err: unknown) {
-			this.auditIndex = new Map();
-			this.auditRevisions = new Map();
-			this.logger.error(
-				`Audit ledger at ${this.auditLedgerPath} could not be read (${getErrorMessage(err)}). `
-				+ "The LIST falls back to the detail store, so history is limited to the retention window "
-				+ "(transaction_log_detail_entries) instead of every transfer ever run, until this is fixed "
-				+ "and the controller restarts. New transfers are still recorded. NOTE: the most likely "
-				+ "cause is not a read at all — migrateAuditLedger WRITES inside this same block, and "
-				+ "loadAuditLedger already tolerates a missing file and damaged lines on its own.",
-			);
-		}
+		return loadControllerAudit(this);
 	}
 
 	async migrateAuditLedger(): Promise<AuditRow[]> {
-		const rows = [...this.persistedTransactionLogs]
-			.sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0))
-			.map(entry => {
-				const events = Array.isArray(entry.events) ? entry.events : [];
-				const lastEvent = events.length ? events[events.length - 1] : null;
-				return buildAuditRow({
-					transferId: entry.transferId,
-					rowKind: "terminal",
-					savedAt: entry.savedAt || 0,
-					eventCount: events.length,
-					lastEventAt: lastEvent?.timestampMs ?? null,
-					info: entry.transferInfo || {},
-				});
-			});
-		const payload = rows.map(row => `${JSON.stringify(row)}
-`).join("");
-		await enqueueWrite(this.auditLedgerPath, () => lib.safeOutputFile(this.auditLedgerPath, payload));
-		this.logger.info(
-			`Audit ledger: migrated ${rows.length} transfer(s) from the detail store into `
-			+ `${this.auditLedgerPath}. The detail store was not modified. NOTE: that store is a BOUNDED `
-			+ "window (transaction_log_detail_entries), so this migration recovers only the transfers "
-			+ "still inside it. Any older than the window are not represented — this is the full set the "
-			+ "controller still holds, not necessarily the full set that ever ran.",
-		);
-		return rows;
+		return migrateControllerAudit(this);
 	}
 
 	async recordAuditRow(row: AuditRow) {
-		try {
-			await appendAuditRow(this.auditLedgerPath, row);
-			const existing = this.auditIndex.get(row.transferId);
-			if (!(existing && existing.rowKind === "terminal" && row.rowKind === "start")) {
-				this.auditIndex.set(row.transferId, row);
-			}
-			if (row.rowKind === "terminal") {
-				this.auditRevisions.set(row.transferId, (this.auditRevisions.get(row.transferId) ?? 0) + 1);
-			}
-		} catch (err: unknown) {
-			this.logger.error(
-				`Audit ledger: failed to record ${row.rowKind} row for ${row.transferId} `
-				+ `(${getErrorMessage(err)}). The transfer itself is unaffected and its detail entry is `
-				+ "intact, but this transfer now has NO permanent audit row — it will disappear from the "
-				+ `history when its detail entry ages out of the retention window. Check that `
-				+ `${this.auditLedgerPath} is writable.`,
-			);
-		}
+		return recordControllerAuditRow(this, row);
 	}
 
 	async recordTransferStarted(transfer: ActiveTransfer) {
