@@ -15,7 +15,7 @@ docker version --format '{{.Server.Version}}' 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
 
 $BuildScript = switch ($Target) {
-    'web'  { 'npm run build:browser && npm run build:web' }
+    'web'  { 'npm run build:browser; npm run build:web' }
     'node' { 'npm run build:node' }
     'lint' { 'npm run lint' }
     'test' { 'npm test' }

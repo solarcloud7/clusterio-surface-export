@@ -204,6 +204,172 @@ test("transferPlatform is idempotent for canonical replay and does not resend im
 	assert.equal(activeTransfers.size, 1, "replayed canonical transfer must not overwrite active transfer state");
 });
 
+function deferred() {
+	let resolve;
+	const promise = new Promise(done => { resolve = done; });
+	return { promise, resolve };
+}
+
+test("concurrent replay shares initialization and one import without replacing transfer state", async t => {
+	const { orch, activeTransfers, calls } = makeTransferHarness();
+	const archiving = deferred();
+	const archiveEntered = deferred();
+	const importing = deferred();
+	const importEntered = deferred();
+	let archives = 0;
+	const records = [];
+	orch.txLogger.archiveRecycledTransferId = async () => {
+		archives++;
+		archiveEntered.resolve();
+		await archiving.promise;
+	};
+	orch.plugin.recordTransferStarted = async record => { records.push(record); };
+	const send = orch.plugin.controller.sendTo;
+	orch.plugin.controller.sendTo = async (...args) => {
+		const result = await send(...args);
+		if (args[1].constructor.name === "ImportPlatformRequest") {
+			importEntered.resolve();
+			await importing.promise;
+		}
+		return result;
+	};
+	t.after(() => {
+		archiving.resolve();
+		importing.resolve();
+		for (const record of records) clearTimeout(record.validationTimeout);
+	});
+	const first = orch.transferPlatform("1:001_test", 2);
+	await archiveEntered.promise;
+	const replayDuringArchive = orch.transferPlatform("1:001_test", 2);
+	archiving.resolve();
+	await importEntered.promise;
+	const registered = activeTransfers.get("1:001_test");
+	const replayDuringImport = orch.transferPlatform("1:001_test", 2);
+	importing.resolve();
+	const results = await Promise.all([first, replayDuringArchive, replayDuringImport]);
+	assert.ok(results.every(result => result.success));
+	assert.equal(archives, 1);
+	assert.equal(records.length, 1);
+	assert.equal(calls.imports.length, 1);
+	assert.strictEqual(activeTransfers.get("1:001_test"), registered);
+	assert.strictEqual(results[0], results[1]);
+	assert.strictEqual(results[0], results[2]);
+});
+
+test("concurrent initialization failures are shared and release the reservation for retry", async t => {
+	const { orch, activeTransfers, calls } = makeTransferHarness();
+	const archiving = deferred();
+	const entered = deferred();
+	const failure = new Error("archive unavailable");
+	let archives = 0;
+	orch.txLogger.archiveRecycledTransferId = async () => {
+		archives++;
+		entered.resolve();
+		await archiving.promise;
+		throw failure;
+	};
+	t.after(() => {
+		archiving.resolve();
+		for (const record of activeTransfers.values()) clearTimeout(record.validationTimeout);
+	});
+	const first = orch.transferPlatform("1:001_test", 2);
+	await entered.promise;
+	const replay = orch.transferPlatform("1:001_test", 2);
+	const settled = Promise.allSettled([first, replay]);
+	archiving.resolve();
+	const results = await settled;
+	assert.ok(results.every(result => result.status === "rejected" && result.reason === failure));
+	assert.equal(archives, 1);
+	assert.equal(calls.imports.length, 0);
+	assert.equal(activeTransfers.size, 0);
+	orch.txLogger.archiveRecycledTransferId = async () => { archives++; };
+	assert.equal((await orch.transferPlatform("1:001_test", 2)).success, true);
+	assert.equal(calls.imports.length, 1);
+	assert.equal(archives, 2);
+});
+
+test("a conflicting destination cannot reuse or unlock an initializing or active transfer", async t => {
+	const { orch, activeTransfers, calls } = makeTransferHarness();
+	const archiving = deferred();
+	const entered = deferred();
+	orch.txLogger.archiveRecycledTransferId = async () => { entered.resolve(); await archiving.promise; };
+	t.after(() => {
+		archiving.resolve();
+		for (const record of activeTransfers.values()) clearTimeout(record.validationTimeout);
+	});
+	const first = orch.transferPlatform("1:001_test", 2);
+	await entered.promise;
+	const conflict = await orch.transferPlatform("1:001_test", 3);
+	archiving.resolve();
+	await first;
+	orch.plugin.isInstanceOnline = () => false;
+	assert.equal((await orch.transferPlatform("1:001_test", 2)).success, true);
+	const activeConflict = await orch.transferPlatform("1:001_test", 3);
+	for (const result of [conflict, activeConflict]) {
+		assert.equal(result.success, false);
+		assert.equal(result.safeToUnlockSource, false);
+		assert.match(result.error, /destination/);
+	}
+	assert.equal(calls.imports.length, 1);
+	assert.equal(activeTransfers.get("1:001_test").targetInstanceId, 2);
+});
+
+test("a blocked transfer start does not serialize unrelated exports", async t => {
+	const { orch, activeTransfers, calls } = makeTransferHarness();
+	const stored = orch.plugin.platformStorage.get("1:001_test");
+	orch.plugin.platformStorage.get = id => ({ ...stored, exportId: id, sourceExportId: id.split(":")[1] });
+	const blocked = deferred();
+	const entered = deferred();
+	orch.txLogger.archiveRecycledTransferId = async id => {
+		if (id === "1:001_test") { entered.resolve(); await blocked.promise; }
+	};
+	t.after(() => {
+		blocked.resolve();
+		for (const record of activeTransfers.values()) clearTimeout(record.validationTimeout);
+	});
+	const first = orch.transferPlatform("1:001_test", 2);
+	await entered.promise;
+	const unrelated = await orch.transferPlatform("1:002_other", 2);
+	assert.equal(unrelated.success, true);
+	assert.equal(calls.imports.length, 1);
+	assert.equal(calls.imports[0].exportId, "1:002_other");
+	blocked.resolve();
+	await first;
+	assert.equal(calls.imports.length, 2);
+});
+
+test("a refused import returns the same failure to replays and permits a later retry", async t => {
+	const { orch, activeTransfers, calls } = makeTransferHarness();
+	const importing = deferred();
+	const entered = deferred();
+	const send = orch.plugin.controller.sendTo;
+	orch.plugin.controller.sendTo = async (...args) => {
+		const response = await send(...args);
+		if (args[1].constructor.name === "ImportPlatformRequest") {
+			entered.resolve();
+			await importing.promise;
+			return { success: false, error: "destination refused import" };
+		}
+		return response;
+	};
+	t.after(() => {
+		importing.resolve();
+		for (const record of activeTransfers.values()) clearTimeout(record.validationTimeout);
+	});
+	const first = orch.transferPlatform("1:001_test", 2);
+	await entered.promise;
+	const replay = orch.transferPlatform("1:001_test", 2);
+	importing.resolve();
+	const [result, replayResult] = await Promise.all([first, replay]);
+	assert.equal(result.success, false);
+	assert.strictEqual(result, replayResult);
+	assert.equal(calls.imports.length, 1);
+	assert.equal(activeTransfers.get("1:001_test").status, "failed");
+	orch.plugin.controller.sendTo = send;
+	assert.equal((await orch.transferPlatform("1:001_test", 2)).success, true);
+	assert.equal(calls.imports.length, 2);
+});
+
 test("transfer uses canonical id everywhere except raw source delete correlation", async () => {
 	const { orch, activeTransfers, calls } = makeTransferHarness();
 	const result = await orch.transferPlatform("1:001_test", 2);
