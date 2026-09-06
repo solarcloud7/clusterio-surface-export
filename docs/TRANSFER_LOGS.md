@@ -3,7 +3,8 @@
 The Transaction Logs tab shows searchable recent history beside the selected operation. The initial
 snapshot requests 100 operations; live updates can increase the loaded set. Search covers platform,
 instance names/IDs, and operation IDs within that set. Outcome and operation filters and pagination
-run in the browser. Selection, detail tabs, and audit filters survive live updates. Below 1280px,
+run in the browser. Selection, detail tabs, and audit filters survive live updates. Revisiting a record
+and reconnecting both refresh its detailed evidence to recover missed events. Below 1280px,
 history and details stack vertically.
 
 The persistent detail header shows the route, outcome, timestamps, elapsed duration, and downloads.

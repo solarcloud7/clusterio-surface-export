@@ -14,12 +14,10 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const [search, setSearch] = useState(""), [outcome, setOutcome] = useState("all"), [operation, setOperation] = useState("all");
 	const [page, setPage] = useState(1), [preview, setPreview] = useState(false);
 	const [requests, setRequests] = useState<Record<string, { loading: boolean; error?: string }>>({});
-	const requested = useRef(new Set<string>());
 	const generations = useRef(new Map<string, number>());
 	const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
 	useEffect(() => () => { timers.current.forEach(clearTimeout); generations.current.clear(); }, []);
 	const load = (id: string) => {
-		requested.current.add(id);
 		const generation = (generations.current.get(id) || 0) + 1;
 		generations.current.set(id, generation);
 		setRequests(prev => ({ ...prev, [id]: { loading: true } }));
@@ -39,7 +37,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const sorted = useMemo(() => [...state.transferSummaries].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)
 		|| a.transferId.localeCompare(b.transferId)), [state.transferSummaries]);
 	useEffect(() => { if (!selected && sorted.length) setSelected(sorted[0].transferId); }, [selected, sorted]);
-	useEffect(() => { if (selected && !requested.current.has(selected)) load(selected); }, [selected, plugin]);
+	// Revisit and reconnect both refresh evidence that may have missed live events.
+	useEffect(() => { if (selected && state.liveStatus === "live") load(selected); }, [selected, plugin, state.liveStatus]);
 	const filtered = useMemo(() => sorted.filter(row => (outcome === "all" || outcomeGroup(row.status) === outcome)
 		&& (operation === "all" || (row.operationType || "transfer") === operation)
 		&& [row.platformName, row.transferId, row.sourceInstanceName, row.targetInstanceName, row.sourceInstanceId, row.targetInstanceId]
@@ -78,7 +77,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 					: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={sorted.length ? "No operations match these filters" : "No operations loaded"} />)}
 				<Pagination size="small" current={currentPage} pageSize={10} total={filtered.length} showSizeChanger={false} onChange={setPage} />
 			</section>
-			<div className="se-detail-panel">{row ? <TransferDetail row={row} detail={state.logDetails[row.transferId]} loading={request?.loading ?? true}
+			<div className="se-detail-panel">{row ? <TransferDetail row={row} detail={state.logDetails[row.transferId]} loading={state.liveStatus === "live" && (request?.loading ?? true)}
 				 error={request?.error} onRetry={() => load(row.transferId)} plugin={plugin} /> : <Empty description="Select an operation to inspect its evidence" />}</div>
 		</div>
 		{preview && <LogPreview onClose={() => setPreview(false)} />}

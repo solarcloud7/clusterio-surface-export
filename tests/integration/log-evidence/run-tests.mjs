@@ -106,9 +106,17 @@ try {
 	assert.ok((await page.locator(".se-history-row").allTextContents()).every(text => text.includes("Uploaded file")));
 	await select(page, "Outcome filter", "All outcomes");
 	await select(page, "Operation filter", "All operations");
+	const originalValidation = structuredClone(history[0].detail.summary.validation);
+	history[0].detail.summary.validation.success = false;
+	history[0].detail.summary.validation.itemCountMatch = false;
 	await page.locator(".se-history-row").first().click();
+	await detail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
+	history[0].detail.summary.validation = originalValidation;
+	await page.locator(".se-history-row").nth(1).click();
+	await page.locator(".se-history-row").first().click();
+	await detail.getByText("Arrived and verified", { exact: true }).waitFor();
 	await detail.getByRole("tab", { name: "Overview", exact: true }).click();
-	console.log("PASS recorded success/failure, reports, search, filters, pagination and keyboard selection");
+	console.log("PASS recorded success/failure, reports, search, filters, pagination, keyboard selection and refreshing revisited evidence");
 
 	const beforePreview = requests;
 	await page.getByRole("button", { name: "Preview logs", exact: true }).click();
@@ -248,5 +256,21 @@ try {
 	await summaryPage.getByTestId("transfer-detail").getByText("Cleanup needs attention", { exact: true }).waitFor();
 	assert.equal((await readReport(summaryPage.getByTestId("transfer-detail"))).operation.status, "cleanup_failed");
 	console.log("PASS summary-only live update is not overwritten by older details");
+	const reconnectPage = await browser.newPage();
+	let reconnectSocket;
+	await reconnectPage.routeWebSocket(/api\/socket/, socket => {
+		reconnectSocket = socket;
+		const wire = connectHistory(socket);
+		wire.server.onMessage(raw => { const frame = JSON.parse(String(raw)); wire.replace(frame); socket.send(JSON.stringify(frame)); });
+	});
+	await signIn(reconnectPage);
+	const reconnectDetail = reconnectPage.getByTestId("transfer-detail");
+	await reconnectDetail.getByText("Arrived and verified", { exact: true }).waitFor();
+	history[0].detail.summary.validation.success = false;
+	history[0].detail.summary.validation.itemCountMatch = false;
+	await reconnectSocket.close({ code: 1012, reason: "Browser-only reconnect check" });
+	await reconnectDetail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
+	assert.equal((await readReport(reconnectDetail)).summary.validation.success, false);
+	console.log("PASS reconnect refreshes selected evidence without a page reload");
 	assert.deepEqual(errors, [], "no browser runtime errors");
 } finally { await browser.close(); }
