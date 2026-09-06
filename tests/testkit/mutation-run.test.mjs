@@ -1,12 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-	SUITES, laneRefusal, idleRefusal, readOutcome, combineVerdict, formatVerdict, mutationRun,
+	SUITES, checkoutFacts, laneRefusal, idleRefusal, readOutcome, combineVerdict, formatVerdict, mutationRun,
 } from "../../tools/tests/testkit/mutation-run.mjs";
 
 const MAIN = path.resolve("/repo");
@@ -18,13 +17,8 @@ function outcome(suite, failed, names = []) {
 
 function tempDir(t, prefix) {
 	const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), prefix)));
+	assert.ok(root.startsWith(realpathSync.native(tmpdir()) + path.sep));
 	t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 3 }));
-	return root;
-}
-
-function fixtureRepo(t, prefix) {
-	const root = tempDir(t, prefix);
-	execFileSync("git", ["init", "-q"], { cwd: root });
 	return root;
 }
 
@@ -186,14 +180,15 @@ test("readOutcome reads the fail count and the dead test names, and refuses to g
 const ORIGINAL = "export const limit = 5;\n";
 
 function ritualFixture(t, prefix, rootPackageFailsWhenMutated = true) {
-	const root = fixtureRepo(t, prefix);
+	const root = tempDir(t, prefix);
 	const target = path.join(root, "guard.mjs");
 	writeFileSync(target, ORIGINAL);
-	writeFileSync(path.join(root, ".git", "info", "exclude"), "guard.mjs\n");
 
 	const seen = [];
 	const builds = [];
 	const hooks = {
+		checkoutFacts: () => ({ invocationRoot: root, mainRoot: root }),
+		workingTreeChanges: () => [],
 		buildNode: cwd => { builds.push(cwd); assert.equal(path.resolve(cwd), root, "a build targets the mutated tree"); },
 		runSuites: cwd => {
 			assert.equal(path.resolve(cwd), root, "a suite run must target the mutated tree");
@@ -241,6 +236,7 @@ test("--baseline measures BOTH packages first, then proceeds with the ritual", t
 test("--baseline refuses on a red repo-root package, before anything is mutated", t => {
 	const { root, target, seen, builds, hooks } = ritualFixture(t, "mutation-run-baseline-red-");
 	const red = {
+		...hooks,
 		buildNode: hooks.buildNode,
 		runSuites: cwd => hooks.runSuites(cwd).map(result =>
 			result.suite === "root-pkg" ? outcome("root-pkg", 3, ["an unrelated red test"]) : result),
@@ -264,17 +260,16 @@ test("--baseline refuses on a red repo-root package, before anything is mutated"
 	assert.equal(existsSync(`${target}.mutation-backup`), false, "no sidecar before a passing baseline");
 });
 
-test("the ritual refuses from a REAL linked worktree, before touching the target file", t => {
-	const root = fixtureRepo(t, "mutation-run-lane-");
-	const linked = path.join(tempDir(t, "mutation-run-linked-"), "wt");
-	execFileSync("git", ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
-		"commit", "-q", "--allow-empty", "-m", "base"], { cwd: root });
-	execFileSync("git", ["worktree", "add", "-q", "-b", "probe", linked], { cwd: root });
+test("the ritual refuses linked-worktree checkout facts before touching the target file", t => {
+	const root = tempDir(t, "mutation-run-lane-");
+	const linked = tempDir(t, "mutation-run-linked-");
 	const linkedTarget = path.join(linked, "guard.mjs");
 	writeFileSync(linkedTarget, "export const limit = 5;\n");
 
 	let thrown = null;
 	const hooks = {
+		checkoutFacts: () => ({ invocationRoot: linked, mainRoot: root }),
+		workingTreeChanges: () => assert.fail("a refused lane must not read dirty state"),
 		buildNode: () => assert.fail("a refused run must not build"),
 		runSuites: () => assert.fail("a refused run must not run a suite"),
 	};
@@ -289,4 +284,10 @@ test("the ritual refuses from a REAL linked worktree, before touching the target
 	assert.match(thrown.message, /false MUTATION SURVIVED/);
 	assert.equal(readFileSync(linkedTarget, "utf8"), "export const limit = 5;\n", "the file must be untouched");
 	assert.equal(existsSync(`${linkedTarget}.mutation-backup`), false, "no sidecar on a refused run");
+});
+
+test("checkout facts reject an ordinary directory without creating repository metadata", t => {
+	const root = tempDir(t, "mutation-run-no-repo-");
+	assert.throws(() => checkoutFacts(root), /not a git working tree/);
+	assert.equal(existsSync(path.join(root, ".git")), false);
 });

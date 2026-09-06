@@ -33,7 +33,7 @@ $Inner = "set -e; echo '[node] '`$(node -v); " +
          "echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +
          "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
 
-if ($Target -eq 'lint') {
+if ($Target -in @('lint', 'test')) {
     $RepoPath = (Resolve-Path "$PSScriptRoot/../..").Path
     $MountSrc = $RepoPath
     $MountDst = '/repo'

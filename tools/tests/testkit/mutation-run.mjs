@@ -154,7 +154,7 @@ const REAL_HOOKS = {
 };
 
 export function mutationRun({ file, find, replace, baseline, cwd = process.cwd() }, hooks = REAL_HOOKS) {
-	const { invocationRoot, mainRoot } = checkoutFacts(cwd);
+	const { invocationRoot, mainRoot } = (hooks.checkoutFacts || checkoutFacts)(cwd);
 	const absolute = path.resolve(cwd, file);
 
 	const lane = laneRefusal({ invocationRoot, mainRoot, targetPath: absolute });
@@ -164,7 +164,7 @@ export function mutationRun({ file, find, replace, baseline, cwd = process.cwd()
 	const idle = idleRefusal({
 		sidecarPath: sidecar,
 		sidecarExists: existsSync(sidecar),
-		dirtyEntries: workingTreeChanges(mainRoot),
+		dirtyEntries: (hooks.workingTreeChanges || workingTreeChanges)(mainRoot),
 	});
 	if (idle) throw new Error(idle);
 
