@@ -79,8 +79,8 @@ destructive. A switch that does not belong to the chosen scope is REFUSED, not i
 ```powershell
 ./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts   # TS change: build + reload hosts
 ./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController  # web change: build + reload controller
-./tools/clusterio/deploy.ps1 -Scope lua                                    # Lua change: skip build, reset saves
-./tools/clusterio/deploy.ps1 -Scope plugin                                 # Lua + TS changed: build AND reset saves
+./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves                         # Lua change: verify artifacts, patch existing saves
+./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves                      # Lua + TS/web: build, back up, patch existing saves
 ./tools/clusterio/deploy.ps1 -Scope cluster                                # full rebuild (DESTROYS volumes)
 ./tools/clusterio/deploy.ps1 -Scope cluster -KeepData -SkipIncrement       # restart without wiping or bumping
 ```
@@ -88,8 +88,8 @@ destructive. A switch that does not belong to the chosen scope is REFUSED, not i
 | Scope | Builds | Resets saves | Destroys volumes |
 |---|---|---|---|
 | `artifacts` | yes | no | no |
-| `lua` | no (refuses if dist is stale) | YES | no |
-| `plugin` | yes | YES | no |
+| `lua` | no (refuses if dist is stale) | YES unless `-KeepSaves` | no |
+| `plugin` | yes | YES unless `-KeepSaves` | no |
 | `cluster` | yes | n/a (fresh) | YES unless `-KeepData` |
 
 Resetting saves disconnects anyone in-game; `predeploy-*.zip` rescue saves are taken first. The
@@ -117,20 +117,37 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
+- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves` (builds artifacts, confirms backups, patches existing saves on restart, checks Lua version and world/player preservation)
 - Clusterio automatically injects Lua code into saves at startup
-- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); the `lua`/`plugin` scopes do that for you
+- No compile step for Lua itself. The pinned Clusterio host patches the selected existing save before starting Factorio when `factorio.enable_save_patching` is enabled. Use `-KeepSaves` to back up, reload and verify the existing world; resetting is an explicit fixture-reset operation.
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
 2. Edit TypeScript files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts`
 3. Edit web (`*.tsx`) files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua` (skips the ~3-min container build —
-   Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
-   than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
-   instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
-   loudly instead of killing the instance silently.
+4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves`. Use `-Scope plugin -KeepSaves` when TS/web changed too. Both instances must be running with save patching and auto-start enabled. The reload compares surfaces, platform names, player roster and positions; do not move players during this maintenance check.
 5. **Or full rebuild**: `./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement`
+
+### Verification order
+
+Run `./tools/clusterio/build-plugin.ps1 smoke` first for timing or transfer lifecycle changes.
+It exercises the registered timing handler, pre-job rejection, canonical replay, late/duplicate
+measurements, retry clocks, standalone export association, rollback boundaries and import verdicts.
+Then run the relevant bounded live fixtures, browser/diagnostic reconciliation, local review, and
+full CI. Track each agreed acceptance case as pending, passed, failed or unverified before calling
+work ready to merge. A new code change invalidates the affected evidence.
+
+Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`. A conflicting
+command refuses with the owning PID. After a crash, confirm the owner is stopped before removing
+that specific lock. Do not build or install dependencies in the live plugin directory. The isolated
+build wrapper installs dependencies without the root prepare rebuild and mounts the lockfile read-only.
+The plugin's `.npmrc` sets `save=false` so runtime installation also leaves dependency metadata
+unchanged. Intentional dependency changes must explicitly pass `--save` in an isolated build environment.
+Browser startup verifies the controller's advertised bundle before checking page details.
+
+Version helpers preserve UTF-8 text and existing line endings. Use targeted patches for other edits;
+avoid implicit-encoding whole-file rewrites. `check-cluster-logs.ps1` selects bounded diagnostic
+fields, redacts credentials, and applies user filters outside shell commands.
 
 ### Cluster / transfer / RCON tools (`tools/`)
 

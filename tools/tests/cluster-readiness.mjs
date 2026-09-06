@@ -5,7 +5,8 @@
 //           (tools/clusterio/tick-liveness.mjs measures that), or mutate any cluster state
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -35,9 +36,54 @@ const UBIQUITOUS_SURFACES = new Set(["nauvis"]);
 const PROBE_LUA = "/sc local s={} for _,x in pairs(game.surfaces) do s[#s+1]=x.name end "
 	+ "local pl={} for _,f in pairs(game.forces) do for _,p in pairs(f.platforms or {}) do "
 	+ "if p.valid then pl[#pl+1]=p.name end end end "
-	+ "local pr={} for _,p in pairs(game.players) do pr[#pr+1]=p.name end "
+	+ "local pr={} local ps={} for _,p in pairs(game.players) do pr[#pr+1]=p.name "
+	+ "ps[#ps+1]=p.name..':'..p.surface.name..':'..p.position.x..':'..p.position.y..':'..p.controller_type end "
 	+ "rcon.print(helpers.table_to_json({surfaces=s,surfaceCount=#s,platforms=pl,platformCount=#pl,"
-	+ "players=pr,playerCount=#pr,tick=game.tick,iface=(remote.interfaces['surface_export']~=nil)}))";
+	+ "players=pr,playerStates=ps,playerCount=#pr,tick=game.tick,iface=(remote.interfaces['surface_export']~=nil),"
+	+ "version=remote.interfaces.surface_export and remote.interfaces.surface_export.get_module_version "
+	+ "and remote.call('surface_export','get_module_version')}))";
+
+export function expectedModuleVersion() {
+	const text = readFileSync(join(repoRoot, "docker/seed-data/external_plugins/surface_export/module/version.lua"), "utf8");
+	const match = text.match(/^return\s+"([^"]+)"/);
+	if (!match) throw new Error("module/version.lua has no readable version marker");
+	return match[1];
+}
+
+export function evaluateRuntime(probes, expectedVersion) {
+	return INSTANCE_ROLES.flatMap(({ instance }) => {
+		const probe = probes[instance];
+		const valid = probe && !probe.error && normalizeProbe(probe).ok;
+		return [{ instance, checkId: "runtime", ok: Boolean(valid && probe.iface && probe.version === expectedVersion),
+			detail: !valid ? `RCON unavailable: ${probe?.error ?? "invalid probe"}`
+				: `Lua version ${probe.version ?? "unavailable"}; expected ${expectedVersion}` }];
+	});
+}
+
+export function compareWorlds(before, after) {
+	const changes = [];
+	for (const { instance } of INSTANCE_ROLES) {
+		for (const key of ["surfaces", "platforms", "players", "playerStates"]) {
+			const old = toList(before[instance]?.[key]).sort();
+			const current = toList(after[instance]?.[key]).sort();
+			if (JSON.stringify(old) !== JSON.stringify(current)) changes.push(`${instance}/${key} changed during reload`);
+		}
+	}
+	return changes;
+}
+
+export async function waitForRuntime({ timeoutMs = 90000, expectedVersion = expectedModuleVersion(),
+	probe = probeCluster, now = () => performance.now(), sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+	const deadline = now() + timeoutMs;
+	let results, probes;
+	do {
+		probes = probe(); results = evaluateRuntime(probes, expectedVersion);
+		if (results.every(r => r.ok)) return { probes, results };
+		if (now() >= deadline) break;
+		await sleep(Math.min(1000, Math.max(0, deadline - now())));
+	} while (true);
+	throw new Error(`Runtime readiness failed: ${results.filter(r => !r.ok).map(r => `${r.instance}: ${r.detail}`).join("; ")}`);
+}
 
 export function toList(value) {
 	if (Array.isArray(value)) return value;
@@ -184,5 +230,20 @@ export function runReadinessGate({ probe = probeCluster, log = console.log, mani
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-	process.exit(runReadinessGate().ok ? 0 : 1);
+	if (process.argv.includes("--runtime")) {
+		const value = flag => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : null;
+		try {
+			const captured = process.argv.includes("--capture-world") ? probeCluster() : null;
+			if (captured && INSTANCE_ROLES.some(({ instance }) => !normalizeProbe(captured[instance]).ok || !captured[instance].iface)) {
+				throw new Error("Cannot capture world: both existing instances must answer RCON with the plugin loaded");
+			}
+			const { probes, results } = captured ? { probes: captured, results: [] } : await waitForRuntime();
+			if (value("--compare")) {
+				const changes = compareWorlds(JSON.parse(readFileSync(value("--compare"), "utf8")), probes);
+				if (changes.length) throw new Error(changes.join("; "));
+			}
+			if (value("--snapshot")) writeFileSync(value("--snapshot"), JSON.stringify(probes, null, 2) + "\n", "utf8");
+			for (const result of results) console.log(`PASS ${result.instance}: ${result.detail}`);
+		} catch (error) { console.error(error.message); process.exitCode = 1; }
+	} else process.exitCode = runReadinessGate().ok ? 0 : 1;
 }

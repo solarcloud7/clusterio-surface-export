@@ -36,6 +36,16 @@ function run(dir, ...args) {
 	});
 }
 const decide = (dir) => JSON.parse(run(dir, "--decide"));
+
+test("explicit build wrapper skips root prepare but still stamps explicit build outputs", () => {
+	const dir = makeTree();
+	const env = { ...process.env, PREPARE_BUILD_PLUGIN_DIR: dir, SE_SKIP_PREPARE: "1" };
+	const text = execFileSync(process.execPath, [SCRIPT], { env, encoding: "utf8" });
+	assert.match(text, /explicit build wrapper owns/);
+	assert.equal(fs.existsSync(path.join(dir, "dist/node", STAMP)), false);
+	execFileSync(process.execPath, [SCRIPT, "--stamp", "node"], { env });
+	assert.equal(fs.existsSync(path.join(dir, "dist/node", STAMP)), true);
+});
 function stamp(dir, tree, whenMs) {
 	run(dir, "--stamp", tree);
 	if (whenMs !== undefined) {

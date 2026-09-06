@@ -9,7 +9,7 @@ Patch and Reset Instances
 ==========================
 
 Hot-reloads plugin code (Lua + TypeScript + web) and resets instances to seed save without
-rebuilding containers. This is the one-shot for LUA changes (and any combination of changes).
+rebuilding containers. Use this only when deliberately resetting fixture state.
 
 Usage:
     .\patch-and-reset.ps1            # full: rebuild dist (node + web), reset saves, restart
@@ -25,15 +25,15 @@ This script:
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
    (skipped by -LuaOnly, guarded by the staleness tripwire above)
 3. Stops Factorio instances (keeps controller running)
-4. Resets save files to seed saves (required to apply Lua code changes)
+4. Resets save files to seed saves (deliberate fixture reset)
 5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
    saves with the latest Lua; the controller re-reads dist/web/manifest.json
 6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
    remote interface present — a Lua error at save-load kills the headless server (exit 255),
    and before this check the only signal was the server dying later.
 
-Note: Save reset is REQUIRED because Lua code is embedded in save files via save-patching.
-      Without reset, old embedded script.dat prevents Lua code updates from taking effect.
+Note: For code updates that preserve game state use deploy.ps1 -Scope plugin -KeepSaves.
+      The pinned Clusterio host can patch existing saves before starting Factorio.
 
       For a web-ONLY or TypeScript-ONLY change you do NOT need this heavy reset — use
       ./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController
@@ -46,6 +46,8 @@ Note: Save reset is REQUIRED because Lua code is embedded in save files via save
 }
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/../shared/workflow-lock.ps1"
+Invoke-WorkflowLock {
 
 Write-Host "=== Patch and Reset Instances ===" -ForegroundColor Cyan
 Write-Host ""
@@ -98,16 +100,13 @@ $NewPatch = [int]$VerParts[2] + 1
 $NewVersion = "{0}.{1}.{2}" -f $VerParts[0], $VerParts[1], $NewPatch
 Write-Host "  $($PluginJson.version) → $NewVersion" -ForegroundColor Green
 
-$PluginJson.version = $NewVersion
-$PluginJson | ConvertTo-Json -Depth 10 | Set-Content $PluginJsonPath -Encoding UTF8
+. "$PSScriptRoot/../shared/version-utils.ps1"
+Update-JsonVersion -Path $PluginJsonPath -NewVersion $NewVersion
 
 if (Test-Path $ModuleJsonPath) {
-    $ModuleJson = Get-Content $ModuleJsonPath -Raw | ConvertFrom-Json
-    $ModuleJson.version = $NewVersion
-    $ModuleJson | ConvertTo-Json -Depth 10 | Set-Content $ModuleJsonPath -Encoding UTF8
+    Update-JsonVersion -Path $ModuleJsonPath -NewVersion $NewVersion
 }
 
-. "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module") -NewVersion $NewVersion
 Write-Host "✓ Version updated" -ForegroundColor Green
@@ -367,3 +366,4 @@ Write-Host "  2. Test export: docker exec surface-export-controller npx clusteri
 Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
 
 exit 0
+}

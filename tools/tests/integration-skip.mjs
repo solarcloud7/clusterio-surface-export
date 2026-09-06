@@ -7,6 +7,8 @@
 //           as a pass — run-integration-tests.mjs fails any suite that exits 77 with no reason
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { acquireWorkflowLock } from "../shared/workflow-lock.mjs";
+import { assertControllerBundle } from "../surface-export/canvas-bundle.mjs";
 
 export const SKIP_EXIT_CODE = 77;
 export const SKIP_REASON_ENV = "SE_INTEGRATION_SKIP_FILE";
@@ -48,9 +50,14 @@ function recordedInstallError() {
 
 export async function launchChromiumOrSkip(suite, options = {}) {
 	const { chromium } = await import("playwright");
+	const release = acquireWorkflowLock();
 	try {
-		return await chromium.launch(options);
+		const browser = await chromium.launch(options);
+		browser.once("disconnected", release);
+		try { await assertControllerBundle(); } catch (error) { await browser.close(); throw error; }
+		return browser;
 	} catch (err) {
+		release();
 		const message = err && err.message ? err.message : String(err);
 		if (!BROWSER_ABSENT_SIGNATURES.some(signature => message.includes(signature))) {
 			throw err;

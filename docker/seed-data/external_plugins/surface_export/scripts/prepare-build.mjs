@@ -11,6 +11,13 @@ const PLUGIN_DIR = process.env.PREPARE_BUILD_PLUGIN_DIR
 
 const STAMP = ".prepare-build-stamp";
 
+// The isolated build wrapper explicitly chooses node/web/lint/test after installing dependencies.
+// Do not let npm ci's root prepare hook unexpectedly rebuild a live web bundle first.
+if (process.env.SE_SKIP_PREPARE === "1" && !process.argv.includes("--stamp")) {
+	console.log("[prepare] explicit build wrapper owns artifact generation");
+	process.exit(0);
+}
+
 function stampTree(tree) {
 	const dir = join(PLUGIN_DIR, "dist", tree);
 	mkdirSync(dir, { recursive: true });

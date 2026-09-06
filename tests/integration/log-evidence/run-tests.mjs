@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { selectOption } from "../../../tools/tests/browser-interactions.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "credentials stay on localhost");
@@ -66,8 +67,7 @@ const readReport = async scope => {
 	return JSON.parse(readFileSync(await (await pending).path(), "utf8"));
 };
 const select = async (page, label, option) => {
-	await page.getByRole("combobox", { name: label, exact: true }).press("ArrowDown");
-	await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)").getByText(option, { exact: true }).click();
+	await selectOption(page, label, option);
 };
 try {
 	const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
