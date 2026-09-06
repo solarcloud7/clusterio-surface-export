@@ -97,10 +97,14 @@ try {
 		document.addEventListener("mousedown", () => { popupMouseDown = false; });
 		const schedule = window.setTimeout;
 		window.delayedPopupFocus = 0;
+		window.pendingPopupFocus = 0;
 		window.setTimeout = (callback, delay, ...args) => {
-			if (popupMouseDown && (delay === undefined || delay === 0)) {
+			if (popupMouseDown && typeof callback === "function" && (delay === undefined || delay === 0)) {
 				window.delayedPopupFocus++;
-				return schedule(callback, 150, ...args);
+				window.pendingPopupFocus++;
+				return schedule(() => {
+					try { callback.apply(window, args); } finally { window.pendingPopupFocus--; }
+				}, 150);
 			}
 			return schedule(callback, delay, ...args);
 		};
@@ -320,6 +324,8 @@ try {
 	await page.waitForFunction(() => document.querySelector('input[aria-label="Operation filter"]')?.getAttribute("aria-expanded") === "false");
 	assert.equal(await operationFilter.evaluate(el => el.closest(".ant-select").querySelector(".ant-select-selection-item")?.textContent), "Imports");
 	assert.ok(await page.evaluate(() => window.delayedPopupFocus > 0), "mouse coverage exercised deferred popup focus");
+	await page.waitForFunction(() => window.pendingPopupFocus === 0);
+	assert.equal(await operationFilter.evaluate(el => document.activeElement === el), true, "mouse selection restores focus to its filter");
 	console.log("PASS mouse selection and keyboard filters with delayed popup focus restoration");
 	console.log(`Isolated ${isolatedLiveUpdates} real-cluster log/transfer updates from fixture history`);
 	assert.deepEqual(errors, [], "no browser runtime errors");
