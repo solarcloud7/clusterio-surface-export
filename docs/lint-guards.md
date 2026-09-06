@@ -12,6 +12,11 @@ allow is an ESCALATION, never self-approved.
 Run everything: `npm run lint` (gated in CI's Fast checks). Guard self-tests live in
 `test/lint-*.test.cjs` and mutation-pin the guards' teeth.
 
+ESLint covers plugin TypeScript and frontend TS/TSX using the Node and browser TypeScript
+projects. The frontend receives the same unbound-method, unsafe Link-method extraction, and
+empty-catch checks as the controller. `test/lint-web.test.cjs` checks unsafe examples and valid
+JSX through the real ESLint configuration.
+
 Each section below is the relocated header of the script it names, verbatim apart from comment
 syntax. `fail-safe-hooks` and `prepare-build` are not lint guards but lost their headers to the
 same purge; their rationale lives here under the same rule.

@@ -138,7 +138,6 @@ function SurfaceExportPage() {
 }
 
 export class WebPlugin extends BaseWebPlugin {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private get link(): ControlLike { return this.control as unknown as ControlLike; }
 
 	private callbacks: Array<() => void>;
@@ -149,7 +148,6 @@ export class WebPlugin extends BaseWebPlugin {
 	private resubscribeGeneration = 0;
 
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		super(container, packageData, info as any, control as any, logger as any);
 		this.callbacks = [];
 		this.liveUpdatesEnabled = false;
