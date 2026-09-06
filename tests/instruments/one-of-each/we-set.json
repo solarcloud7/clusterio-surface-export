@@ -33,6 +33,7 @@
 				"module/core/import-pipeline.lua",
 				"module/import_phases/active_state_restoration.lua",
 				"module/import_phases/belt_restoration.lua",
+				"module/import_phases/connection_restoration.lua",
 				"module/import_phases/entity_creation.lua",
 				"module/import_phases/entity_state_restoration.lua",
 				"module/import_phases/fluid_restoration.lua",
@@ -982,55 +983,55 @@
 		"evaluated_sites": [
 			{
 				"file": "core/deserializer.lua",
-				"line": 381,
+				"line": 382,
 				"property": "mirroring",
 				"gates": 3
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 385,
+				"line": 386,
 				"property": "health",
 				"gates": 3
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 418,
+				"line": 419,
 				"property": "destructible",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 423,
+				"line": 424,
 				"property": "name_tag",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 428,
+				"line": 429,
 				"property": "custom_status",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 435,
+				"line": 436,
 				"property": "last_user",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 445,
+				"line": 446,
 				"property": "tags",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 1318,
+				"line": 1319,
 				"property": "infinity_container_filters",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 1334,
+				"line": 1335,
 				"property": "remove_unfiltered_items",
 				"gates": 1
 			}
@@ -1039,7 +1040,7 @@
 			{
 				"file": "core/deserializer.lua",
 				"function": "Deserializer.restore_inventories",
-				"line": 704
+				"line": 705
 			},
 			{
 				"file": "import_phases/active_state_restoration.lua",
@@ -1242,8 +1243,8 @@
 				"plane": "entity",
 				"field": "circuit_connections",
 				"sites": [
-					"core/deserializer.lua:Deserializer.restore_circuit_connections",
-					"core/deserializer.lua:payload_copper_peers"
+					"import_phases/connection_restoration.lua:ConnectionRestoration.restore_circuit_connections",
+					"import_phases/connection_restoration.lua:payload_copper_peers"
 				]
 			},
 			{
@@ -1294,13 +1295,13 @@
 				"plane": "entity",
 				"field": "entity_id",
 				"sites": [
-					"core/deserializer.lua:Deserializer.prune_pole_copper",
-					"core/deserializer.lua:Deserializer.restore_circuit_connections",
 					"core/import-completion.lua:ImportCompletion.run_phase2",
 					"core/import-pipeline.lua:ImportPipeline.process_batch",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
 					"import_phases/belt_restoration.lua:BeltRestoration.attribute_lines",
+					"import_phases/connection_restoration.lua:ConnectionRestoration.prune_pole_copper",
+					"import_phases/connection_restoration.lua:ConnectionRestoration.restore_circuit_connections",
 					"import_phases/entity_creation.lua:EntityCreation.process_batch",
 					"import_phases/entity_state_restoration.lua:EntityStateRestoration.restore_all",
 					"import_phases/fluid_restoration.lua:FluidRestoration.restore",

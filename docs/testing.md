@@ -33,6 +33,19 @@ and the oracle do.
 Static guards enforce repository rules across these categories; they are not substitutes for physical or
 integration evidence.
 
+`lua5.2 tests/lua/restore-behavior.lua` loads the production deserializer and connection-restoration
+module with small entity/connector doubles. It checks failed inventory and display writes, connection
+replay, positional target lookup, and pruning of real and ghost copper connections. It runs in CI
+alongside the gateway Lua tests. These are Lua unit tests; real engine behavior remains covered by
+the existing `config-attrs` and transfer integration suites. The inventory-bar behavior cases replace
+the former source-text ordering assertion in `restore-rules-safecall.test.cjs`.
+
+Controller persistence is separated into `lib/export-storage.ts` (stored export loading, identity
+migration, and writes) and `lib/controller-audit.ts` (audit migration, indexing, and append handling).
+`test/controller-persistence.test.cjs` verifies real temporary-file round trips, damaged audit lines,
+late start records, and write failures. The controller retains its existing entry points, and its
+existing recovery and replay tests continue to exercise those entry points.
+
 ### Physical Truth Lab mission
 
 A physical lab converts an uncertain engine-dependent claim into version-pinned, reproducible evidence. It is
