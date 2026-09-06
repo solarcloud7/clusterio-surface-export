@@ -17,7 +17,7 @@ export const SHIP_LEGEND: Array<{ tone: ShipTone; label: string }> =
 
 export const TERMINAL_LINGER_MS = 10000;
 
-export const SHIP_TRAVEL_MS = 900;
+export { SHIP_TRAVEL_MS } from "./ship-motion";
 
 const SHIP_MEMORY_CAP = 32;
 const shipMemory = new Map<string, { terminalSeenAt?: number; seenLive?: boolean }>();

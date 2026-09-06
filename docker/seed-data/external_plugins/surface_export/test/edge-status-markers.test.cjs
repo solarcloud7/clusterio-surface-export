@@ -15,6 +15,17 @@ const ship = (transferId, status, sourceInstanceId, platformName) =>
 
 const forward = () => false;
 
+test("phase changes keep travelling ships individual until they reach their marker", () => {
+	for (const status of ["awaiting_validation", "completed", "failed", "cleanup_failed"]) {
+		const moving = ship("moving", status, 1, "still moving");
+		const settled = ship("settled", status, 1, "already there");
+		const groups = groupEdgeShips([moving, settled], forward, item => item.transferId === "settled");
+		assert.deepEqual(groups.transit, [moving], `${status} must finish moving before aggregation`);
+		assert.equal(groups.markers[0].count, 1);
+		assert.deepEqual(groups.markers[0].platformNames, ["already there"]);
+	}
+});
+
 test("in-transit transfers stay individual; resting ones become markers", () => {
 	const { transit, markers } = groupEdgeShips([
 		ship("a", "transporting", 1, "alpha"),

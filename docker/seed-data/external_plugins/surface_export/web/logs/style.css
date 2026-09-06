@@ -1,0 +1,55 @@
+.se-logs { --se-border: rgba(150,170,195,.2); --se-muted: #a8b4c5; }
+.se-logs h2, .se-logs h3, .se-log-preview h2, .se-log-preview h3 { margin: 0; color: inherit; }
+.se-logs-heading, .se-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.se-logs-heading p { margin: 6px 0 0; }
+.se-muted { color: var(--se-muted, #a8b4c5); }
+.se-logs-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 20px; margin-top: 16px; align-items: start; }
+.se-history, .se-detail-panel { min-width: 0; border: 1px solid var(--se-border); border-radius: 10px; overflow: hidden; background: rgba(20,26,35,.35); }
+.se-history-controls { padding: 16px; display: grid; gap: 12px; border-bottom: 1px solid var(--se-border); }
+.se-history-filters { display: flex; gap: 8px; }
+.se-history-filters .ant-select { flex: 1; min-width: 0; }
+.se-history-row { color: inherit; background: transparent; width: 100%; border: 0; border-bottom: 1px solid var(--se-border); padding: 15px 16px; display: grid; gap: 7px; text-align: left; cursor: pointer; border-left: 3px solid transparent; }
+.se-history-row:hover { background: rgba(80,150,215,.08); }
+.se-history-row.is-selected { background: rgba(58,140,220,.14); border-left-color: #69b1ff; }
+.se-history-row:focus-visible, .se-audit-card:focus-visible { outline: 2px solid #91caff; outline-offset: -3px; }
+.se-history-title { display: flex; gap: 8px; justify-content: space-between; align-items: start; }
+.se-history-title strong { overflow-wrap: anywhere; }
+.se-history-title .ant-tag { margin: 0; white-space: normal; }
+.se-history-route { color: #b8c5d6; font-size: 12px; overflow-wrap: anywhere; }
+.se-history-meta { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--se-muted); font-size: 11px; }
+.se-history .ant-pagination { padding: 14px; }
+.se-transfer-detail { padding: 20px; min-width: 0; }
+.se-detail-header h2 { margin-top: 12px; overflow-wrap: anywhere; }
+.se-route { color: #b8c5d6; margin: 6px 0 16px; overflow-wrap: anywhere; }
+.se-detail-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0; color: #a8b4c5; font-size: 12px; }
+.se-detail-meta strong { color: #e5edf8; }
+.se-audit-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.se-audit-card { display: grid; gap: 10px; background: rgba(255,255,255,.025); border: 1px solid #465367; border-radius: 8px; padding: 16px; text-align: left; color: inherit; cursor: pointer; }
+.se-audit-card:hover { background: rgba(255,255,255,.055); }
+.se-audit-card strong { font-size: 18px; }
+.se-audit-card small, .se-card-eyebrow { color: #a8b4c5; font-size: 12px; }
+.se-audit-passed { border-top: 3px solid #73b76b; }
+.se-audit-mismatch { border-top: 3px solid #ed7777; }
+.se-audit-pending { border-top: 3px solid #69b1ff; }
+.se-audit-toolbar { display: flex; gap: 16px; align-items: center; margin: 16px 0; }
+.se-audit-toolbar .ant-input-affix-wrapper { max-width: 320px; }
+.se-audit-toolbar label { white-space: nowrap; }
+.se-cargo-name { display: flex; gap: 8px; align-items: center; }
+.se-cargo-name small { display: block; color: #a8b4c5; }
+.se-difference { color: #ffc069; }
+.se-timing-track { position: relative; height: 12px; width: 100%; background: rgba(255,255,255,.05); }
+.se-timing-track span { position: absolute; top: 2px; height: 8px; min-width: 2px; border-radius: 2px; }
+.se-transfer-detail .ant-alert, .se-timing .ant-alert { margin-bottom: 12px; }
+.se-transfer-detail pre { max-height: 440px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.se-transfer-detail .ant-collapse { margin-top: 16px; }
+.se-loading { padding: 50px 0; text-align: center; }
+.se-log-preview { --se-muted: #a8b4c5; }
+.se-preview-controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+@media (max-width: 1279px) { .se-logs-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+ .se-transfer-detail { padding: 12px; }
+ .se-logs-heading, .se-section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+ .se-audit-cards { grid-template-columns: 1fr; }
+ .se-audit-toolbar { align-items: stretch; flex-direction: column; }
+ .se-audit-toolbar .ant-input-affix-wrapper { max-width: none; }
+}

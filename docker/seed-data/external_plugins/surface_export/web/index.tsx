@@ -11,7 +11,7 @@ import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
 import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
@@ -383,33 +383,55 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	async loadTransactionLog(transferId: string) {
+		const before = this.state.logDetails[transferId];
+		const summaryBefore = this.state.transferSummaries.find(entry => entry.transferId === transferId);
 		const response = await this.link.send(new GetTransactionLogRequest({ transferId })) as JsonObject;
 		if (!getProp(response, "success", false)) {
 			throw new Error(String(getProp(response, "error", "Failed to load transaction log")));
 		}
 
 		const existing = this.state.logDetails[transferId] || {};
-		const transferInfo = getProp(response, "transferInfo", null) as JsonObject | null || existing.transferInfo || null;
+		let transferInfo = getProp(response, "transferInfo", null) as JsonObject | null || existing.transferInfo || null;
 		const responseEvents = getProp(response, "events", null);
-		const events = Array.isArray(responseEvents) ? responseEvents as Array<LogEvent> : existing.events || [];
+		let events = Array.isArray(responseEvents) ? responseEvents as Array<LogEvent> : existing.events || [];
+		let summary = getProp(response, "summary", null) as JsonObject | null || existing.summary || null;
+		let detailRetained = getProp(response, "detailRetained", true) as boolean;
+		// A log push can arrive while the snapshot request is in flight. Preserve its evidence and outcome.
+		if (existing !== before && existing.events?.length) {
+			const latest = (entries: LogEvent[]) => Math.max(0, ...entries.map(entry => Number(entry.timestampMs) || 0));
+			if (latest(existing.events) >= latest(events)) {
+				transferInfo = existing.transferInfo || transferInfo;
+				summary = existing.summary || summary;
+				detailRetained = existing.detailRetained !== false;
+			}
+			const identity = (entry: LogEvent) => JSON.stringify([entry.timestampMs, entry.eventType, entry.message]);
+			const merged = new Map(events.map(entry => [identity(entry), entry]));
+			for (const entry of existing.events) merged.set(identity(entry), entry);
+			events = [...merged.values()].sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0));
+		}
 		const detail = {
 			transferInfo,
-			summary: getProp(response, "summary", null) as JsonObject | null || existing.summary || null,
+			summary,
 			events,
-			detailRetained: getProp(response, "detailRetained", true) as boolean,
+			detailRetained,
 		};
 
 		const transferSummary = summaryFromTransferInfo(transferInfo, events.length ? events[events.length - 1].timestampMs : null);
+		const currentSummary = this.state.transferSummaries.find(entry => entry.transferId === transferId);
 		if (transferSummary) {
 			transferSummary.transferId = transferId;
+			transferSummary.downloadable = currentSummary?.downloadable ?? false;
 		}
+		const latestSummaryTime = (entry?: TransferSummary | null) => Math.max(entry?.lastEventAt || 0, entry?.completedAt || 0, entry?.failedAt || 0, entry?.startedAt || 0);
+		const keepPushedSummary = currentSummary !== summaryBefore
+			&& latestSummaryTime(currentSummary) >= latestSummaryTime(transferSummary);
 
 		this.setState({
 			logDetails: {
 				...this.state.logDetails,
 				[transferId]: detail,
 			},
-			transferSummaries: transferSummary
+			transferSummaries: transferSummary && !keepPushedSummary
 				? mergeTransferSummary(this.state.transferSummaries, transferSummary)
 				: this.state.transferSummaries,
 		});
@@ -472,6 +494,7 @@ export class WebPlugin extends BaseWebPlugin {
 
 		const detail = {
 			...existing,
+			detailRetained: true,
 			transferInfo: (event.transferInfo as JsonObject) || existing.transferInfo || null,
 			summary: (event.summary as JsonObject) || existing.summary || null,
 			events,
@@ -482,6 +505,7 @@ export class WebPlugin extends BaseWebPlugin {
 			transferSummary = summaryFromTransferInfo(event.transferInfo as JsonObject, incoming.timestampMs || null);
 			if (transferSummary) {
 				transferSummary.transferId = transferId;
+				transferSummary.downloadable = this.state.transferSummaries.find(entry => entry.transferId === transferId)?.downloadable ?? false;
 			}
 		}
 
