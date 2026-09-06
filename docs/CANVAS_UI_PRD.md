@@ -268,6 +268,24 @@ and this stays readable as what happened.
    with the Export/Transfer pair per platform — the manual-transfer half the section above left to
    decide, answered by putting the actions on the node rather than in a second table.
 
+## Transfer motion
+
+Transfer dots retain their identity and current position across status updates. They travel to the
+midpoint while in transit, hold there during validation, and then continue to the destination or
+return to the source on failure. A cleanup failure stays at the destination. Positions illustrate
+phases; they are not measured transfer percentages. Count markers include a transfer only after its
+dot settles. Validation markers pulse until the status changes rather than fading after ten seconds.
+Reduced-motion preferences skip travel and the validation pulse.
+
+The debug panel's **Preview round trip** opens a local animation preview using the same
+`EdgeTransfers` renderer as the gateway edges. Play/Pause and Next phase exercise forward arrival,
+a failed return journey, and a retry with destination cleanup failure. The phase checkboxes remain
+static examples. The preview does not send transfer requests or save gateway configuration.
+
+Run `node tests/integration/canvas-motion/run-tests.mjs` against the local controller after deploying
+the web bundle. It checks actual browser positions, element continuity, endpoint markers, prolonged
+validation, and reduced motion. It verifies animation behavior, not server transfer correctness.
+
 ## What this plan does **not** claim
 
 - No measurement of runtime performance at cluster scale. This cluster is 2 hosts / 2 instances; the

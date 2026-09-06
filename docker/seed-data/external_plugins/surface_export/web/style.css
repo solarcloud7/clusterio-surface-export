@@ -37,8 +37,7 @@ body.surface-export-page .site-layout-content-container {
 	background: currentColor;
 	box-shadow: 0 0 8px currentColor;
 	pointer-events: none;
-	transition-property: offset-distance;
-	transition-timing-function: ease-in-out;
+	transition: color 200ms ease;
 }
 
 .surface-export-edge-status {
@@ -58,6 +57,9 @@ body.surface-export-page .site-layout-content-container {
 	justify-content: center;
 	pointer-events: auto;
 	cursor: default;
+}
+
+.surface-export-edge-status-terminal {
 	animation: surface-export-status-fade 10s ease-out forwards;
 }
 
@@ -86,6 +88,11 @@ body.surface-export-page .site-layout-content-container {
 @keyframes surface-export-ship-pulse {
 	0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
 	50% { opacity: 0.4; box-shadow: 0 0 2px currentColor; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.surface-export-ship { transition: none; }
+	.surface-export-ship-holding { animation: none; }
 }
 
 .surface-export-legend {

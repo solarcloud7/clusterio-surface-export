@@ -62,6 +62,7 @@ export interface EdgeShipGroups<T> {
 export function groupEdgeShips<T extends PositionedTransfer>(
 	ships: readonly T[],
 	isReversed: (ship: T) => boolean,
+	isSettled: (ship: T) => boolean = () => true,
 ): EdgeShipGroups<T> {
 	const transit: T[] = [];
 	const byPosition = new Map<string, EdgeStatusMarker>();
@@ -70,7 +71,7 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 		if (!phase) {
 			continue;
 		}
-		if (!phase.terminal && !phase.holding) {
+		if ((!phase.terminal && !phase.holding) || !isSettled(ship)) {
 			transit.push(ship);
 			continue;
 		}

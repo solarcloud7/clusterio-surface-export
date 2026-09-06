@@ -9,10 +9,8 @@ import { GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle }
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
 import { DEFAULT_EDGE_SHAPE } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
-import { groupEdgeShips, shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
-import TransferShip from "./TransferShip";
-import EdgeStatusMarker from "./EdgeStatusMarker";
+import EdgeTransfers from "./EdgeTransfers";
 
 export default function FloatingEdge({
 	id, source, target, markerStart, markerEnd, style, selected, data,
@@ -52,10 +50,6 @@ export default function FloatingEdge({
 	} | undefined;
 	const colour = gatewayColour(edgeData?.sourceGateway) || DEFAULT_EDGE_COLOUR;
 	const anchorInstanceId = edgeData?.sourceInstanceId;
-	const { transit, markers } = groupEdgeShips<ShipTransfer>(
-		edgeData?.transfers || [],
-		ship => anchorInstanceId !== undefined && ship.sourceInstanceId !== anchorInstanceId,
-	);
 
 	return (
 		<>
@@ -75,18 +69,7 @@ export default function FloatingEdge({
 		/>
 		{}
 		<EdgeLabelRenderer>
-			{transit.length ? transit.map(ship => (
-				<TransferShip
-					key={ship.transferId}
-					path={path}
-					phase={shipPhaseFor(ship.status)}
-					reversed={anchorInstanceId !== undefined && ship.sourceInstanceId !== anchorInstanceId}
-					summary={ship}
-				/>
-			)) : <TransferShip key="idle" path={path} phase={null} reversed={false} />}
-			{markers.map(marker => (
-				<EdgeStatusMarker key={marker.key} path={path} marker={marker} />
-			))}
+			<EdgeTransfers path={path} ships={edgeData?.transfers || []} anchorInstanceId={anchorInstanceId} />
 		</EdgeLabelRenderer>
 		</>
 	);

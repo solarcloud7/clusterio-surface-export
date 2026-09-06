@@ -9,7 +9,8 @@ export default function EdgeStatusMarker({ path, marker }: { path: string; marke
 
 	return (
 		<div
-			className={`surface-export-edge-status surface-export-ship-${marker.tone}`}
+			className={`surface-export-edge-status surface-export-ship-${marker.tone}`
+				+ (marker.tone === "holding" ? " surface-export-ship-holding" : " surface-export-edge-status-terminal")}
 			style={{
 				offsetPath: `path('${path}')`,
 				offsetDistance: `${marker.distance * 100}%`,
