@@ -1,31 +1,26 @@
 import React from "react";
-import { Alert, Empty, Table, Tooltip } from "antd";
+import { Empty, Table } from "antd";
 import type { GanttRow, TimelineAttribution } from "../view-models";
-import { formatMs } from "../../shared/utils";
-import { describeAttribution, describeSourceExportAnomaly, describeImportGapAnomaly, TIMELINE_PALETTE, tickHatch } from "../../shared/transfer-timeline";
+import type { OperationTiming } from "../../shared/timing";
+import MeasuredTiming, { timingMs } from "./MeasuredTiming";
 
-const basis = (row: GanttRow) => ({ measured: "Elapsed time", tickDerived: "Game ticks", event: "Event",
-	residual: "Unattributed", detailGap: "Within measured stage" }[row.kind]);
-export default function TimingTable({ rows, attribution, compact = false }: {
-	rows: GanttRow[]; attribution?: TimelineAttribution; compact?: boolean;
+export default function TimingTable({ rows, timing, compact = false }: {
+ rows: GanttRow[]; attribution?: TimelineAttribution; timing?: OperationTiming | null; compact?: boolean;
 }) {
-	const shown = compact ? rows.filter(row => row.indent <= 1 && row.kind !== "event" && row.kind !== "residual") : rows;
-	const notices = attribution ? [describeAttribution(attribution), describeSourceExportAnomaly(attribution), describeImportGapAnomaly(attribution)].filter(Boolean) : [];
-	if (!shown.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No recorded stage timings available" />;
-	return <div className="se-timing">
-		{!compact && <><p className="se-muted">Elapsed time and game-tick measurements are distinct. Stages can overlap; their durations must not be added together.</p>
-			{notices.map(notice => <Alert key={notice!.headline} type="warning" showIcon message={notice!.headline} description={notice!.detail} />)}</>}
-		<Table size="small" pagination={false} rowKey="key" dataSource={shown} scroll={{ x: compact ? 460 : 700 }}
-			columns={[
-				{ title: "Stage / step", key: "label", render: (_, row: GanttRow) => <Tooltip title={row.note}><span style={{ paddingLeft: compact ? 0 : row.indent * 12 }}>{row.label.replaceAll("_", " ")}</span></Tooltip> },
-				{ title: "Start", key: "start", render: (_, row: GanttRow) => formatMs(row.startMs) || "0 ms" },
-				{ title: "Duration", key: "duration", render: (_, row: GanttRow) => row.kind === "event" ? "—"
-					: row.kind === "tickDerived" && (row.durationMs === 0 || row.note?.startsWith("Under one tick")) ? "<1 tick" : row.durationMs == null ? "Not measured" : formatMs(row.durationMs) || "0 ms" },
-				{ title: "Measured by", key: "basis", render: (_, row: GanttRow) => <small className="se-muted">{basis(row)}</small> },
-				...(!compact ? [{ title: "Timeline", key: "bar", width: 150, render: (_: unknown, row: GanttRow) =>
-					<div className="se-timing-track"><span style={{ left: `${row.ganttStartPct}%`,
-						width: row.kind === "event" ? 2 : `${row.ganttWidthPct}%`,
-						background: row.kind === "tickDerived" ? tickHatch(TIMELINE_PALETTE[row.color] || "#888") : TIMELINE_PALETTE[row.color] || "#888" }} /></div> }] : []),
-			]} />
-	</div>;
+ const legacy = rows.filter(row => row.kind === "measured" || row.kind === "event");
+ if (!timing?.records.length && !legacy.length) return <Empty description="No measured elapsed times available" />;
+ return <div className="se-timing">
+  {!compact && <p className="se-muted">Each waterfall uses its own local clock. Positions across clocks are not aligned. Stages can overlap; do not add their durations. Phase elapsed time includes waits between batches; execution measures only instrumented work. Request round trips include remote handling, not just network communication.</p>}
+  {timing && <MeasuredTiming timing={timing} compact={compact} />}
+  {!timing?.records.some(row => row.owner === "controller") && legacy.length > 0 && <section>
+   <h3>Clusterio orchestration - legacy recording</h3>
+   <p className="se-muted">Controller elapsed measurements only. Legacy tick evidence remains in Technical details.</p>
+   <Table size="small" pagination={false} rowKey="key" dataSource={legacy} columns={[
+    { title: "Stage / event", dataIndex: "label" }, { title: "Start", key: "start", render: (_, row: GanttRow) => timingMs(row.startMs) },
+    { title: "End", key: "end", render: (_, row: GanttRow) => row.kind === "event" ? "-" : timingMs(row.endMs) },
+    { title: "Elapsed", key: "duration", render: (_, row: GanttRow) => row.kind === "event" ? "-" : timingMs(row.durationMs) },
+    { title: "Waterfall (ms)", key: "bar", render: (_, row: GanttRow) => <div className="se-timing-track"><span style={{ left: `${row.ganttStartPct}%`, width: row.kind === "event" ? 2 : `${row.ganttWidthPct}%`, background: "#1890ff" }} /></div> },
+   ]} />
+  </section>}
+ </div>;
 }

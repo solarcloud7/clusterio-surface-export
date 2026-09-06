@@ -91,10 +91,6 @@ export function normalizeExportMetrics(raw: Record<string, unknown> | null | und
 		}
 	}
 
-	const ticks = toFiniteNumber(normalized.instanceAsyncExportTicks);
-	if (ticks !== null && normalized.instanceAsyncExportMs === undefined) {
-		normalized.instanceAsyncExportMs = Math.round(ticks * TICKS_TO_MS);
-	}
 
 	for (const key of [
 		"requestExportAndLockMs",
@@ -229,14 +225,14 @@ export function buildImportMetrics(raw: Record<string, unknown> | null | undefin
 		"belt_state_merge_discarded", "belt_state_declined",
 		"inventory_state_applied", "inventory_state_declined", "inventory_state_failed",
 		"circuits_connected", "copper_pruned", "proxies_linked", "total_items", "total_fluids"];
-	const result: Record<string, number> = { total_ticks: Number(input.total_ticks || durationTicks || 0) };
+	const result: Record<string, number> = {};
 	for (const f of tickFields) {
-		const ticks = Number(input[f + "_ticks"] || (f === "total" ? durationTicks || 0 : 0));
-		result[f + "_ticks"] = ticks;
-		result[f + "_ms"] = Math.round(ticks * TICKS_TO_MS);
+		const ticks = input[f + "_ticks"] ?? (f === "total" ? durationTicks : undefined);
+		if (typeof ticks === "number" && Number.isSafeInteger(ticks) && ticks >= 0) result[f + "_ticks"] = ticks;
 	}
 	for (const f of countFields) result[f] = Number(input[f] || 0);
 	const metrics = result as unknown as ImportMetrics;
+	if (Array.isArray(input.phase_ticks)) metrics.phaseTicks = input.phase_ticks.filter(entry => entry && typeof entry.name === "string" && Number.isSafeInteger(entry.start_tick) && Number.isSafeInteger(entry.end_tick));
 	if (Array.isArray(input.phase_spans)) {
 		const spans: PhaseSpan[] = [];
 		for (const entry of input.phase_spans) {

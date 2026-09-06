@@ -39,6 +39,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		activeTransfers,
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
+			...require("./timing-harness.cjs").makeTimingHarness(),
 			logTransactionEvent: (_id, type) => { calls.events.push(type); },
 			archiveRecycledTransferId() {},
 			startPhase: (_id, name) => { calls.openPhases.add(name); },

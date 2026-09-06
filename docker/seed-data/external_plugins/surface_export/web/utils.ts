@@ -491,10 +491,10 @@ export function buildDetailedLogSummary(detail: JsonObject, transferId: string) 
 		|| (latestEvent?.timestampMs ?? null);
 	const finishedAt = completedAt || failedAt || completionEvent?.timestampMs || lastEventAt;
 	let totalDurationMs = getNumber(summary, "totalDurationMs", null);
-	if (totalDurationMs === null && startedAt && finishedAt) {
+	if (totalDurationMs === null && !summary.timing && startedAt && finishedAt) {
 		totalDurationMs = Math.max(0, finishedAt - startedAt);
 	}
-	if (totalDurationMs === null && typeof completionEvent?.durationMs === "number") {
+	if (totalDurationMs === null && !summary.timing && typeof completionEvent?.durationMs === "number") {
 		totalDurationMs = completionEvent.durationMs;
 	}
 
@@ -526,6 +526,7 @@ export function buildDetailedLogSummary(detail: JsonObject, transferId: string) 
 		result,
 		status,
 		totalDurationMs,
+		timing: summary?.timing,
 		totalDurationStr: getString(summary, "totalDurationStr", null) || formatDuration(totalDurationMs),
 		phases: (phasesFromSummary && typeof phasesFromSummary === "object" ? phasesFromSummary : null)
 			|| (completionEvent?.phases && typeof completionEvent.phases === "object" ? completionEvent.phases : null)

@@ -135,10 +135,28 @@ try {
 		if (await overview.isVisible()) await overview.click();
 	};
 	await preview.getByText("Arrived and verified", { exact: true }).waitFor();
+	await scenario("Recorded profiling sample");
+	await preview.getByRole("tab", { name: "Timing", exact: true }).click();
+	const sourceTiming = preview.locator('[data-clock="sample-clock-1"]');
+	const beltTiming = sourceTiming.locator("tr").filter({ has: page.getByText("belt capture", { exact: true }) });
+	assert.equal(await beltTiming.locator("td").nth(4).innerText(), "507.756 ms");
+	assert.equal(await beltTiming.locator("td").nth(5).innerText(), "507.67 ms");
+	assert.equal(await preview.getByRole("heading", { name: "Clusterio orchestration", exact: true }).count(), 1);
+	assert.ok(await sourceTiming.locator(".se-timing-track span").count() > 0);
+	assert.ok((await readReport(previewDetail)).summary.timing.records.length > 0);
+	await scenario("Ticks with missing profiler output");
+	await preview.getByRole("tab", { name: "Timing", exact: true }).click();
+	assert.equal(await preview.locator(".se-timing-track span").count(), 0, "Tick-only records cannot draw elapsed-time bars");
+	await preview.getByText("Tick boundaries and batch counts", { exact: true }).click();
+	assert.match(await preview.innerText(), /38520992/);
+	assert.match(await preview.innerText(), /Not measured/);
+	console.log("PASS local-clock waterfalls, raw profiler values and tick-only geometry exclusion");
+	await scenario("Recorded success");
 	await preview.getByRole("tab", { name: "Fluids", exact: true }).click();
 	await preview.getByText("Measured empty cargo — zero recorded types", { exact: true }).waitFor();
 	await preview.getByRole("tab", { name: "Timing", exact: true }).click();
-	assert.ok((await preview.innerText()).includes("<1 tick"), "sub-tick measurements must not be called instant or missing");
+	assert.ok(!(await preview.innerText()).includes("<1 tick"), "Tick evidence must not become a duration bound in the waterfall");
+	assert.ok((await preview.innerText()).includes("legacy recording"), "Historical elapsed records must identify their provenance");
 	assert.match(await preview.innerText(), /Stages can overlap/);
 	await preview.getByRole("tab", { name: "Items", exact: true }).click();
 	await preview.getByRole("textbox", { name: "Search items" }).fill("coal");
@@ -286,6 +304,7 @@ try {
 	const pages = [];
 	for (const context of browser.contexts()) for (const page of context.pages()) {
 		pages.push(await page.evaluate(() => ({ url: location.href,
+			body: document.body.innerText.slice(0, 2000),
 			selected: document.querySelector(".se-history-row.is-selected")?.getAttribute("data-transfer-id"),
 			rows: [...document.querySelectorAll(".se-history-row")].map(row => row.getAttribute("data-transfer-id")),
 			detail: document.querySelector('[data-testid="transfer-detail"]')?.textContent,

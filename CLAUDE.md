@@ -12,7 +12,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 
 **Key Features**:
 - Complete platform state export/import (entities, inventories, fluids, tiles)
-- Async processing to prevent game freezing
+- Tick-batched entity processing; synchronous phases can still cause hitches (see docs/async-processing.md)
 - Graceful handling of mod content mismatches
 - Factorio 2.0 compatibility (handles read-only properties)
 - Chunked RCON protocol for large payloads (100 KB chunks — `RCON_CHUNK_SIZE` in `helpers.ts`)

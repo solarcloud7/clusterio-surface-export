@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
+import { timed, timedSync, timingContext } from "./timing";
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
+import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
 
@@ -48,7 +51,7 @@ export class TransferOrchestrator {
 			color,
 		});
 		for (const instanceId of [transfer.sourceInstanceId, transfer.targetInstanceId]) {
-			try { await this.plugin.controller.sendTo({ instanceId }, msg); }
+			try { await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo({ instanceId }, msg)); }
 			catch (err: unknown) {
 				this.logger.warn(`Failed to broadcast transfer status to instance ${instanceId}: ${getErrorMessage(err)}`);
 			}
@@ -62,7 +65,7 @@ export class TransferOrchestrator {
 
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName);
+		const err = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName));
 		if (!err) {
 			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
 			return null;
@@ -83,8 +86,8 @@ export class TransferOrchestrator {
 			}
 			return starting.result;
 		}
-		const result = Promise.resolve().then(() =>
-			this.startTransfer(exportId, targetInstanceId, exportMetrics, transferStartedAt, targetPlanet));
+		const result = Promise.resolve().then(() => timingContext.run(this.txLogger.clock(transferId), () =>
+			this.startTransfer(exportId, targetInstanceId, exportMetrics, transferStartedAt, targetPlanet)));
 		this.startingTransfers.set(transferId, { targetInstanceId, result });
 		try {
 			return await result;
@@ -137,7 +140,8 @@ export class TransferOrchestrator {
 				+ "destination is running." };
 		}
 		const innerData = exportData.exportData;
-		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
+		timingContext.enterWith(this.txLogger.beginObservation(transferId));
+		const { payloadMetrics, itemCounts, fluidCounts } = timedSync("Payload preparation", () => buildPayloadMetrics(innerData));
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
 			? innerData.platform
 			: {}) as { force?: string };
@@ -170,10 +174,7 @@ export class TransferOrchestrator {
 		const finiteMs = (value: unknown): value is number =>
 			typeof value === "number" && Number.isFinite(value) && value >= 0;
 		const prepMs = mergedExportMetrics?.controllerExportPrepTotalMs;
-		const inGameMs = mergedExportMetrics?.instanceAsyncExportMs;
-		const exportPhase = finiteMs(prepMs) ? { name: "export", ms: prepMs }
-			: finiteMs(inGameMs) ? { name: "exportTickEstimate", ms: inGameMs }
-				: null;
+		const exportPhase = finiteMs(prepMs) ? { name: "export", ms: prepMs } : null;
 		if (exportPhase) {
 			const exportEndMs = Date.now();
 			operation.phases = {
@@ -214,7 +215,7 @@ export class TransferOrchestrator {
 		let importAccepted = false;
 		try {
 			this.txLogger.startPhase(transferId, "transmission");
-			const response = await this.plugin.controller.sendTo(
+			const response = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: targetInstanceId },
 				new this.messages.ImportPlatformRequest({
 					exportId,
@@ -222,7 +223,7 @@ export class TransferOrchestrator {
 					forceName: "player",
 					targetPlanet,
 				}),
-			);
+			));
 			const transmissionMs = this.txLogger.endPhase(transferId, "transmission");
 
 			if (!response.success) {
@@ -262,13 +263,16 @@ export class TransferOrchestrator {
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) return { success: false, error };
 
+		transfer.timingPendingRecovery = true;
 		transfer.status = "failed";
 		transfer.error = error || "Import failed";
 		transfer.failedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "import_failed",
 			`Import failed: ${error}`, { error, transmissionMs });
 
-		const rollbackError = await this.tryUnlockSource(transferId, transfer);
+		let rollbackError: string | null;
+		try { rollbackError = await this.tryUnlockSource(transferId, transfer); }
+		finally { transfer.timingPendingRecovery = false; }
 		if (rollbackError) transfer.error = `${transfer.error}; rollback failed: ${rollbackError}`;
 
 		this.updateTransfer(transfer);
@@ -352,6 +356,11 @@ export class TransferOrchestrator {
 
 
 	async handleTransferValidation(event: TransferValidationEvent) {
+		return timingContext.run(this.txLogger.clock(event.transferId), () =>
+			timed("Destination verdict handling", "inclusive", () => this.handleTransferValidationMeasured(event)));
+	}
+
+	private async handleTransferValidationMeasured(event: TransferValidationEvent) {
 		const settled = this.plugin.activeTransfers.get(event.transferId);
 		if (settled && settled.status !== "awaiting_validation") {
 			const verdict = event.success ? "SUCCESS" : "FAILURE";
@@ -440,7 +449,7 @@ export class TransferOrchestrator {
 		this.txLogger.startPhase(transferId, "cleanup");
 		await this.broadcastTransferStatus(transfer, "Validation passed ✓ — deleting source...", "green");
 
-		const deleteResponse = await this.plugin.controller.sendTo(
+		const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 			{ instanceId: transfer.sourceInstanceId },
 			new this.messages.DeleteSourcePlatformRequest({
 				platformIndex: transfer.platformIndex,
@@ -448,15 +457,15 @@ export class TransferOrchestrator {
 				forceName: transfer.forceName,
 				exportId: transfer.sourceExportId ?? transfer.exportId ?? null,
 			}),
-		);
+		));
 		const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
 
 		if (deleteResponse.success) {
 			transfer.status = "completed";
 			transfer.completedAt = Date.now();
-			const durationMs = transfer.completedAt - transfer.startedAt;
+			const durationMs = this.txLogger.getObservedDuration(transfer);
 			this.txLogger.logTransactionEvent(transferId, "transfer_completed",
-				`Completed in ${Math.round(durationMs / 1000)}s`, {
+				"Transfer completed", {
 					durationMs, cleanupMs,
 					phases: this.txLogger.buildPhaseSummary(transfer),
 				});
@@ -499,8 +508,8 @@ export class TransferOrchestrator {
 		transfer.error = [errorMsg, rollbackError, destinationCleanupError].filter(Boolean).join("; ");
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",
-			`Failed after ${Math.round((transfer.completedAt - transfer.startedAt) / 1000)}s`, {
-				durationMs: transfer.completedAt - transfer.startedAt,
+			"Transfer failed", {
+				durationMs: this.txLogger.getObservedDuration(transfer),
 				error: transfer.error,
 				destinationCleanupError,
 			});
@@ -520,6 +529,17 @@ export class TransferOrchestrator {
 
 
 	async handleStartPlatformTransferRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+		const observationId = `request:${randomUUID()}`;
+		const clock = this.txLogger.beginObservation(observationId);
+		const result = await timingContext.run(clock, () => this.handleStartPlatformTransferRequestMeasured(request, observationId));
+		if (!result.success) {
+			try { await this.txLogger.rejectObservation(observationId, request, result.error || "Request rejected"); }
+			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
+		}
+		return result;
+	}
+
+	async handleStartPlatformTransferRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }, observationId: string) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		if (!Number.isInteger(sourceInstanceId)) {
 			return { success: false, error: `Invalid source instance: ${request.sourceInstanceId}` };
@@ -551,23 +571,25 @@ export class TransferOrchestrator {
 
 		try {
 			const t0 = Date.now();
-			const exportResponse = await this.plugin.controller.sendTo(
+			const exportStart = performance.now();
+			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				new this.messages.ExportPlatformRequest({
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: resolvedTarget.id,
 				}),
-			) as SimpleResponse & { exportId?: string };
-			const exportRequestMs = Date.now() - t0;
+			)) as SimpleResponse & { exportId?: string };
+			const exportRequestMs = performance.now() - exportStart;
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				return { success: false, error: exportResponse?.error || "Export failed" };
 			}
 
-			const t1 = Date.now();
+			const t1 = performance.now();
 			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
-			await this.waitForStoredExport(canonicalExportId);
-			const waitForStoredMs = Date.now() - t1;
+			this.txLogger.bindObservation(observationId, canonicalExportId);
+			await timed("Await artifact storage", "wait", () => this.waitForStoredExport(canonicalExportId));
+			const waitForStoredMs = performance.now() - t1;
 
 			const result = await this.transferPlatform(canonicalExportId, resolvedTarget.id, {
 				requestExportAndLockMs: exportRequestMs,
@@ -575,7 +597,7 @@ export class TransferOrchestrator {
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			}, t0, request.targetPlanet ?? null);
 			if (!result.success && result.safeToUnlockSource) {
-				const rollbackError = await this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName);
+				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName));
 				if (rollbackError) {
 					this.logger.error(`Unlock after refused transfer of #${sourcePlatformIndex} failed: ${rollbackError}`);
 					return { ...result, error: `${result.error}; rollback failed: ${rollbackError}`,
@@ -586,7 +608,7 @@ export class TransferOrchestrator {
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Error starting transfer (source instance ${sourceInstanceId}, platform #${sourcePlatformIndex}): ${errMsg}`);
-			const rollbackError = await this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName);
+			const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName));
 			if (rollbackError) {
 				this.logger.error(`Rollback unlock of source #${sourcePlatformIndex} failed: ${rollbackError}`);
 				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
@@ -598,10 +620,11 @@ export class TransferOrchestrator {
 	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName?: string): Promise<string | null> {
 		if (coercePlatformIndex(platformIndex) === null) return `invalid platformIndex: ${String(platformIndex)}`;
 		try {
-			const resp = await this.plugin.controller.sendTo(
+			const resp = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName: platformName ?? null, forceName }),
-			);
+				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName: platformName ?? null, forceName,
+					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId }),
+			));
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";
 			if (isBenignUnlockError(err)) return null;
@@ -632,7 +655,7 @@ export class TransferOrchestrator {
 			const stored = this.plugin.platformStorage.get(request.exportId) || this.plugin.platformStorage.get(fallbackExportId);
 			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
 			if (stored && Number.isInteger(stored.platformIndex)) {
-				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force);
+				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force));
 				if (rollbackError) {
 					this.logger.error(`Rollback unlock of source #${stored.platformIndex} ('${stored.platformName}') failed: ${rollbackError}`);
 				}

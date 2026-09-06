@@ -23,6 +23,7 @@ local test_import_entity = require("modules/surface_export/interfaces/remote/tes
 local test_runner = require("modules/surface_export/interfaces/remote/test-runner")
 local clone_platform = require("modules/surface_export/interfaces/remote/clone-platform")
 local version_selftest = require("modules/surface_export/interfaces/remote/version-selftest")
+local timing_selftest = require("modules/surface_export/interfaces/remote/timing-selftest")
 local selection_lab_drive = require("modules/surface_export/interfaces/remote/selection-lab-drive")
 local belt_side_restore_selftest = require("modules/surface_export/interfaces/remote/belt-side-restore-selftest")
 local inventory_import_guard_selftest = require("modules/surface_export/interfaces/remote/inventory-import-guard-selftest")
@@ -133,6 +134,7 @@ function RemoteInterface.register()
     clone_platform = clone_platform,
     clone_platform_json = Base.json_wrap(clone_platform),
     version_selftest = version_selftest,
+    timing_selftest = timing_selftest,
     version_selftest_json = Base.json_wrap(version_selftest),
     get_module_version = get_module_version,
     teleport_roster_update = teleport_roster_update,

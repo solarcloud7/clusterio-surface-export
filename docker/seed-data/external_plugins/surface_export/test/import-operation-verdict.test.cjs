@@ -67,7 +67,7 @@ function makeInstanceHarness() {
 	plugin.instance = {
 		id: 22,
 		sendTo: async (_dst, message) => {
-			sent.push(message.toJSON ? message.toJSON() : message);
+			if (message.constructor.name !== "OperationTimingEvent") sent.push(message.toJSON ? message.toJSON() : message);
 			return { success: true };
 		},
 	};
@@ -94,6 +94,7 @@ function makeControllerHarness() {
 	plugin.activeTransfers = new Map([[operation.transferId, operation]]);
 	plugin.logger = { info() {}, warn() {}, error() {}, verbose() {} };
 	plugin.txLogger = {
+		...require("./timing-harness.cjs").makeTimingHarness(),
 		logTransactionEvent: (transferId, eventType, message, data) =>
 			logged.push({ transferId, eventType, message, data }),
 		persistTransactionLog: async () => {},

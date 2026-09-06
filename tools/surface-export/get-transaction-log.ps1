@@ -168,7 +168,7 @@ try {
             }
             
             if ($event.PSObject.Properties['transmissionMs'] -and $event.transmissionMs) {
-                Write-Host "    Transmission: $($event.transmissionMs)ms" -ForegroundColor Blue
+                Write-Host "    Import request round trip: $($event.transmissionMs)ms" -ForegroundColor Blue
             }
             
             if ($event.PSObject.Properties['validationMs'] -and $event.validationMs) {
@@ -177,17 +177,9 @@ try {
             
             if ($event.PSObject.Properties['importMetrics'] -and $event.importMetrics) {
                 $im = $event.importMetrics
-                Write-Host "    Import Phase Timing:" -ForegroundColor Yellow
-                $phaseTimings = @()
-                if ($im.tiles_ms) { $phaseTimings += "tiles=$($im.tiles_ms)ms" }
-                if ($im.entities_ms) { $phaseTimings += "entities=$($im.entities_ms)ms" }
-                if ($im.fluids_ms) { $phaseTimings += "fluids=$($im.fluids_ms)ms" }
-                if ($im.belts_ms) { $phaseTimings += "belts=$($im.belts_ms)ms" }
-                if ($im.state_ms) { $phaseTimings += "state=$($im.state_ms)ms" }
-                if ($im.validation_ms) { $phaseTimings += "validation=$($im.validation_ms)ms" }
-                Write-Host "      $($phaseTimings -join ', ')" -ForegroundColor Yellow
-                Write-Host "      Total: $($im.total_ticks) ticks ($($im.total_ms)ms)" -ForegroundColor Yellow
-                
+                Write-Host "    Import tick span: $($im.total_ticks) ticks (scheduling only)" -ForegroundColor Yellow
+                Write-Host "    Measured durations, when available, are in summary.timing; legacy *_ms fields are not profiler measurements." -ForegroundColor Yellow
+
                 Write-Host "    Import Counts:" -ForegroundColor Cyan
                 $counts = @()
                 if ($im.tiles_placed) { $counts += "tiles=$($im.tiles_placed)" }
@@ -290,7 +282,7 @@ try {
         if ($s.PSObject.Properties['import'] -and $s.import) {
             $im = $s.import
             Write-Host "`n  Import Processing:" -ForegroundColor Green
-            Write-Host "    Duration: $($im.total_ticks) ticks ($($im.total_ms)ms)" -ForegroundColor White
+            Write-Host "    Tick span: $($im.total_ticks) ticks (scheduling only)" -ForegroundColor White
             Write-Host "    Entities: $($im.entities_created) created, $($im.entities_failed) failed" -ForegroundColor White
             Write-Host "    Tiles: $($im.tiles_placed) placed" -ForegroundColor White
             Write-Host "    Belt Items: $($im.belt_items_restored) restored" -ForegroundColor White

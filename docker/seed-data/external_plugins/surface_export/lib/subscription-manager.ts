@@ -78,7 +78,6 @@ export class SubscriptionManager {
 		if (!transfer) {
 			return;
 		}
-		recordOperationOutcome(transfer);
 		this.plugin.transferRevision += 1;
 		const transferSummary = this.plugin.txLogger.buildTransferSummary(
 			transfer.transferId,
@@ -90,6 +89,7 @@ export class SubscriptionManager {
 			generatedAt: Date.now(),
 			transfer: transferSummary,
 		});
+		recordOperationOutcome(transfer);
 		this.broadcastToSubscribers(subscription => subscription.transfers, event);
 	}
 
