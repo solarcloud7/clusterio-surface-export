@@ -14,6 +14,10 @@ export class TransactionLogger {
 	private spans = new Map<string, TimingRecord>();
 	private pendingTiming = new Map<string, { record: TimingRecord; received: number }>();
 	private timingWrites = new Map<string, ReturnType<typeof setTimeout>>();
+	private isArtifactTiming(record: TimingRecord, stored: StoredExport): boolean {
+		return (record.owner === "source-lua" && record.instanceId === stored.instanceId && record.exportId === stored.sourceExportId)
+			|| (record.owner === "controller" && record.operationId === stored.exportId && record.stage.startsWith("Artifact "));
+	}
 
 	clock(id: string): TimingClock {
 		let clock = this.clocks.get(id);
@@ -131,7 +135,7 @@ export class TransactionLogger {
 		const key = `${record.clockId}:${record.id}`;
 		let storedMatch = false;
 		for (const [id, stored] of this.plugin.platformStorage) {
-			if (record.operationId !== id && !(record.instanceId === stored.instanceId && record.exportId === stored.sourceExportId)) continue;
+			if (!this.isArtifactTiming(record, stored)) continue;
 			const records = stored.timing?.records ?? [];
 			const prior = records.find(value => value.clockId === record.clockId && value.id === record.id);
 			if (!prior || prior.revision < record.revision) {
@@ -176,6 +180,9 @@ export class TransactionLogger {
 		}
 		for (const [key, { record }] of this.pendingTiming) {
 			const direct = record.operationId === transfer.transferId;
+			const sharedArtifact = stored && this.isArtifactTiming(record, stored);
+			if (!direct && !sharedArtifact && record.operationId
+				&& (this.plugin.activeTransfers.has(record.operationId) || this.plugin.platformStorage.has(record.operationId))) continue;
 			const exportMatch = record.exportId && record.instanceId === transfer.sourceInstanceId
 				&& (record.exportId === transfer.sourceExportId || `${record.instanceId}:${record.exportId}` === transfer.exportId);
 			const clockMatch = transfer.timing?.records.some(existing => existing.clockId === record.clockId);
@@ -194,8 +201,14 @@ export class TransactionLogger {
 	}
 
 	captureStoredTiming(stored: StoredExport) {
+		// A standalone export can consume source measurements before its artifact arrives.
+		for (const transfer of this.plugin.activeTransfers.values()) {
+			for (const record of transfer.timing?.records ?? []) {
+				if (this.isArtifactTiming(record, stored)) stored.timing = { v: 1, records: mergeTiming(stored.timing?.records ?? [], record) };
+			}
+		}
 		for (const [key, { record }] of this.pendingTiming) {
-			if (record.operationId !== stored.exportId && !(record.instanceId === stored.instanceId && record.exportId === stored.sourceExportId)) continue;
+			if (!this.isArtifactTiming(record, stored)) continue;
 			stored.timing = { v: 1, records: mergeTiming(stored.timing?.records ?? [], record) };
 			this.pendingTiming.delete(key);
 		}

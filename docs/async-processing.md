@@ -191,6 +191,11 @@ associated using the existing canonical export identity; stored exports retain
 that evidence until transferred. Late evidence updates retained terminal details
 without reopening transfers, changing validation or deleting a source.
 
+Stored artifacts retain source Lua and artifact-storage measurements. A later
+transfer has its own operation records; its import, recovery and verdict spans
+must not be attached to the earlier standalone export. Direct operation identity
+takes precedence over a shared artifact clock when associating late records.
+
 Unmatched telemetry is limited to 10,000 records and five minutes, pruned on arrival
 with an explicit discard diagnostic. Controller clock retention targets
 1,000 observations, evicting settled clocks; active observations can exceed this target. Phase

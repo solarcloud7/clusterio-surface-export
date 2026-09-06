@@ -38,6 +38,30 @@ test("early export evidence is retained with its stored artifact and reused late
 	logger.acceptTiming(record({ id: "other" }));
 	assert.equal(operation.timing.records.length, 2); assert.equal(operation.status, "transporting");
 });
+
+test("a stored-export transfer shares source evidence without adding its later stages to the standalone export", () => {
+	const { plugin, logger } = harness();
+	const source = record({ operationId: undefined, exportId: "source-job", owner: "source-lua" });
+	const standalone = { transferId: "download", sourceInstanceId: 2, sourceExportId: "source-job", exportId: "2:source-job", operationType: "export", status: "completed" };
+	plugin.activeTransfers.set("download", standalone);
+	logger.acceptTiming(source);
+	const artifact = { exportId: "2:source-job", sourceExportId: "source-job", instanceId: 2 };
+	plugin.platformStorage.set(artifact.exportId, artifact); logger.captureStoredTiming(artifact);
+	assert.equal(artifact.timing.records.length, 1, "capture source records already consumed by the standalone operation");
+	const storage = record({ owner: "controller", instanceId: undefined, operationId: artifact.exportId, clockId: "artifact-clock", stage: "Artifact storage write" });
+	logger.acceptTiming(storage);
+	const later = { ...storage, id: "request", stage: "Import request round trip" };
+	logger.acceptTiming(later); // early request, before active transfer creation
+	assert.ok(!standalone.timing.records.some(row => row.id === "request"));
+	const transfer = { transferId: artifact.exportId, exportId: artifact.exportId, sourceInstanceId: 2, status: "transporting" };
+	plugin.activeTransfers.set(transfer.transferId, transfer); logger.collectTiming(transfer);
+	assert.ok(transfer.timing.records.some(row => row.owner === "source-lua"));
+	assert.ok(transfer.timing.records.some(row => row.id === "request"));
+	assert.ok(!artifact.timing.records.some(row => row.id === "request"));
+	logger.acceptTiming(record({ operationId: transfer.transferId, owner: "recovery-lua", exportId: "source-job", id: "delete", clockId: "recovery-clock" }));
+	assert.ok(transfer.timing.records.some(row => row.id === "delete"));
+	assert.ok(!standalone.timing.records.some(row => row.id === "delete"));
+});
 test("instance restart interrupts retained open records without fabricating a finish", () => {
 	const { plugin, logger } = harness();
 	const entry = { transferId: "op", transferInfo: { status: "completed" }, summary: { timing: { v: 1,

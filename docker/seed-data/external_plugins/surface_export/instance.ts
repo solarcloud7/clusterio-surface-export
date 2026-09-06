@@ -40,6 +40,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (!line.includes(TIMING_MARKER)) return;
 		const record = parseLuaTiming(line, this.i.id, this.timingEpoch);
 		if (!record) { this.logger.warn("Invalid profiling record from Factorio"); return; }
+		if (record.owner === "recovery-lua" && !record.operationId && record.exportId) {
+			record.operationId = makeCanonicalTransferId(this.i.id, record.exportId);
+		}
 		try { await this.i.sendTo("controller", new messages.OperationTimingEvent(record)); }
 		catch (error) { this.logger.warn(`Profiling delivery failed: ${getErrorMessage(error)}`); }
 	}
@@ -737,7 +740,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
-		return this.withTiming(String(request.exportId || "source-delete"), request.exportId ?? undefined, "handleDeleteSourcePlatform", () => this.handleDeleteSourcePlatformMeasured(request));
+		return this.withTiming(request.exportId ? makeCanonicalTransferId(this.i.id, request.exportId) : "source-delete", request.exportId ?? undefined, "handleDeleteSourcePlatform", () => this.handleDeleteSourcePlatformMeasured(request));
 	}
 
 	async handleDeleteSourcePlatformMeasured(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
