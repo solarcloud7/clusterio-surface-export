@@ -6,6 +6,8 @@ import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS, SHIP_PHASE_NAMES } from "./debu
 import { shipPhaseFor } from "./transfer-motion";
 import type { DebugState } from "./debug-mode";
 import MotionPreview from "./MotionPreview";
+import LogPreview from "../logs/LogPreview";
+import "../logs/style.css";
 
 const { Text } = Typography;
 
@@ -47,13 +49,16 @@ export default function DebugPanel({ state, onChange, mockCount }: {
 }) {
 	const set = (patch: Partial<DebugState>) => onChange({ ...state, ...patch });
 	const [preview, setPreview] = useState(false);
+	const [logPreview, setLogPreview] = useState(false);
 
 	return (
 		<div className="surface-export-debug-panel nodrag nopan">
 			{preview ? <MotionPreview onClose={() => setPreview(false)} /> : null}
+			{logPreview ? <LogPreview onClose={() => setLogPreview(false)} /> : null}
 			<Space size="small" wrap>
 				<Tag color="purple" className="surface-export-debug-tag">debug</Tag>
 				<Button size="small" onClick={() => setPreview(true)}>Preview round trip</Button>
+				<Button size="small" onClick={() => setLogPreview(true)}>Preview logs</Button>
 
 				<Stepper
 					label="mock instances"
