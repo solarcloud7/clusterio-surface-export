@@ -416,6 +416,7 @@ export type PositionedNode = {
 	id: string;
 	position: { x: number; y: number };
 	selected?: boolean;
+	measured?: { width?: number; height?: number };
 };
 
 export function preservePositions<T extends PositionedNode>(
@@ -428,6 +429,11 @@ export function preservePositions<T extends PositionedNode>(
 	const byId = new Map(previous.map(node => [node.id, node]));
 	return next.map(node => {
 		const existing = byId.get(node.id);
-		return existing ? { ...node, position: existing.position, selected: existing.selected } : node;
+		return existing ? {
+			...node,
+			position: existing.position,
+			selected: existing.selected,
+			measured: existing.measured,
+		} : node;
 	});
 }
