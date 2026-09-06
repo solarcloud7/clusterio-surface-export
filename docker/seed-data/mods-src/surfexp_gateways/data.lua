@@ -49,9 +49,9 @@ locations[#locations + 1] = {
 	subgroup = "planets",
 	order = "z[surfexp-gateway]-0",
 	gravity_pull = -10,
-	distance = 27,
-	orientation = 0.24,
-	magnitude = 2.5,
+	distance = 25.5,
+	orientation = 0.245,
+	magnitude = 2.25,
 	label_orientation = 0.15,
 }
 
