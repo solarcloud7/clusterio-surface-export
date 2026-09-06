@@ -6,7 +6,12 @@ const path = require("node:path");
 const { ESLint } = require("eslint");
 
 const pluginRoot = path.resolve(__dirname, "..");
-const eslint = new ESLint({ cwd: pluginRoot });
+const eslint = new ESLint({
+	cwd: pluginRoot,
+	overrideConfig: {
+		languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } },
+	},
+});
 
 for (const file of ["web/view-models.ts", "web/TransactionLogsTab.tsx"]) {
 	test(`frontend correctness guards reject unsafe code in ${file}`, async () => {
