@@ -38,6 +38,20 @@ to Nauvis with its identity and cargo intact; its in-flight progress was not pre
 From the repository root, `lua tests/mods/gateway-layout.lua` checks both layouts, retained
 active connections, and referenced map artwork without starting Factorio.
 
+For live development, capture the map before an update, then compare after restarting the instance:
+
+```powershell
+node tools/surface-export/check-gateway-map.mjs --host 1 --output ci-artifacts/gateway-before.json
+# Build/upload the mod and restart the instance with its existing save.
+node tools/surface-export/check-gateway-map.mjs --host 1 --expect-version 0.6.4 --baseline ci-artifacts/gateway-before.json --output ci-artifacts/gateway-after.json
+```
+
+This read-only tool checks the selected layout's exact routes, location visibility, loaded version,
+and platform identities/locations against the baseline. Use unique output names; existing evidence
+is never overwritten. Run it for each host. A moving platform can legitimately fail the baseline
+comparison, so use stationary platforms for a before/after upgrade check. Restart the Steam client
+and inspect the map too: prototype checks cannot prove what the client draws.
+
 `graphics/icons/` carries two files per gateway, the same split space-age uses for its own planets:
 
 | File | Size | Rendered by |
