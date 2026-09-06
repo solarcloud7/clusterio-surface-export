@@ -23,16 +23,17 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 		magnitude = 1.0,
 		label_orientation = 0.15,
 	}
-	connections[#connections + 1] = {
-		type = "space-connection",
-		name = "surfexp_gateway_link_" .. i,
-		hidden = not multi,
-		subgroup = "planet-connections",
-		from = "nauvis",
-		to = name,
-		order = "z[surfexp-gateway]-" .. i,
-		length = 3000,
-	}
+	if multi then
+		connections[#connections + 1] = {
+			type = "space-connection",
+			name = "surfexp_gateway_link_" .. i,
+			subgroup = "planet-connections",
+			from = "nauvis",
+			to = name,
+			order = "z[surfexp-gateway]-" .. i,
+			length = 3000,
+		}
+	end
 end
 
 local HUB_NAME = "surfexp_gateway_hub"
@@ -55,17 +56,18 @@ locations[#locations + 1] = {
 	label_orientation = 0.15,
 }
 
-for _, planet in ipairs({ "nauvis", "vulcanus", "gleba", "fulgora", "aquilo" }) do
-	connections[#connections + 1] = {
-		type = "space-connection",
-		name = "surfexp_gateway_link_hub" .. (planet == "nauvis" and "" or "_" .. planet),
-		hidden = multi,
-		subgroup = "planet-connections",
-		from = planet,
-		to = HUB_NAME,
-		order = "z[surfexp-gateway]-0-" .. planet,
-		length = 3000,
-	}
+if not multi then
+	for _, planet in ipairs({ "nauvis", "vulcanus", "gleba", "fulgora", "aquilo" }) do
+		connections[#connections + 1] = {
+			type = "space-connection",
+			name = "surfexp_gateway_link_hub" .. (planet == "nauvis" and "" or "_" .. planet),
+			subgroup = "planet-connections",
+			from = planet,
+			to = HUB_NAME,
+			order = "z[surfexp-gateway]-0-" .. planet,
+			length = 3000,
+		}
+	end
 end
 
 data:extend(locations)

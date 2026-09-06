@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.4
+Date: 2026-09-05
+  Bugfixes:
+    - Only create routes for the selected gateway layout. Factorio still drew connections whose
+      hidden flag was set, leaving dangling lines to inactive gateways.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.3
 Date: 2026-09-05
   Changes:
