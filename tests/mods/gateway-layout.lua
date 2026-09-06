@@ -14,7 +14,8 @@ for _, mode in ipairs(setting.allowed_values) do
     end
   end}
   dofile(root .. "data.lua")
-  local visible, count, links = 0, 0, 0
+  local visible, count, links, visible_links = 0, 0, 0, 0
+  local hub_planets = {}
   for name, location in pairs(locations) do
     count = count + 1
     local expected = mode == "one_gate" and name == "surfexp_gateway_hub"
@@ -27,9 +28,29 @@ for _, mode in ipairs(setting.allowed_values) do
   end
   for _, connection in pairs(connections) do
     links = links + 1
-    assert(connection.from == "nauvis" and locations[connection.to])
+    local destination = assert(locations[connection.to])
+    assert(connection.hidden == destination.hidden, connection.name .. " route visibility")
+    assert(connection.length == 3000)
+    if not connection.hidden then visible_links = visible_links + 1 end
+    if connection.to == "surfexp_gateway_hub" then
+      assert(not hub_planets[connection.from], "duplicate hub route")
+      hub_planets[connection.from] = true
+    else
+      assert(connection.from == "nauvis")
+    end
   end
-  assert(count == 5 and links == 5)
+  for _, planet in ipairs({"nauvis", "vulcanus", "gleba", "fulgora", "aquilo"}) do
+    assert(hub_planets[planet], "missing hub route from " .. planet)
+  end
+  assert(connections.surfexp_gateway_link_hub.from == "nauvis")
+  for i=1,4 do assert(connections["surfexp_gateway_link_" .. i]) end
+  local hub = locations.surfexp_gateway_hub
+  assert(hub.starmap_icon_orientation == 0)
+  assert(hub.magnitude > locations.surfexp_gateway_1.magnitude)
+  assert(hub.distance > 25 and hub.distance < 35)
+  assert(hub.orientation > 0.225 and hub.orientation < 0.275)
+  assert(count == 5 and links == 9)
   assert(visible == (mode == "one_gate" and 1 or 4))
+  assert(visible_links == (mode == "one_gate" and 5 or 4))
   print(mode .. ": PASS (visible=" .. visible .. ", retained locations=" .. count .. ", connections=" .. links .. ")")
 end

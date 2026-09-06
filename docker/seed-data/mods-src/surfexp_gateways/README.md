@@ -20,8 +20,11 @@ here. See `docs/GATEWAY_TRANSFER_PRD.md`.
 
 The startup setting `surfexp-gateway-layout` defaults to `one_gate`: only
 `surfexp_gateway_hub` appears on the space map, using the artwork in
-`docs/icons/gateway512.png`. The four numbered locations remain defined for save compatibility,
-but are hidden and have no orbital rings. Runtime locks alone leave dim icons on the map.
+`docs/icons/gateway512.png`, upright and enlarged between the five basic planets.
+Nauvis, Vulcanus, Gleba, Fulgora, and Aquilo each have a direct 3,000 km route to the hub.
+The four numbered locations remain defined for save compatibility,
+but their locations and routes are hidden and have no orbital rings.
+Runtime locks alone leave dim icons on the map.
 
 For the advanced four-gateway layout, set both the mod pack startup setting
 `surfexp-gateway-layout` and the controller setting `surface_export.gateway_mode` to `multi`,

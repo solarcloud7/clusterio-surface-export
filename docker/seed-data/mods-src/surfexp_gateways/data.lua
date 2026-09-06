@@ -26,6 +26,7 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 	connections[#connections + 1] = {
 		type = "space-connection",
 		name = "surfexp_gateway_link_" .. i,
+		hidden = not multi,
 		subgroup = "planet-connections",
 		from = "nauvis",
 		to = name,
@@ -44,24 +45,28 @@ locations[#locations + 1] = {
 	icon = "__surfexp_gateways__/graphics/icons/gateway-hub.png",
 	starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
 	starmap_icon_size = 512,
+	starmap_icon_orientation = 0,
 	subgroup = "planets",
 	order = "z[surfexp-gateway]-0",
 	gravity_pull = -10,
-	distance = 45,
-	orientation = 0.925,
-	magnitude = 1.0,
+	distance = 27,
+	orientation = 0.24,
+	magnitude = 2.5,
 	label_orientation = 0.15,
 }
 
-connections[#connections + 1] = {
-	type = "space-connection",
-	name = "surfexp_gateway_link_hub",
-	subgroup = "planet-connections",
-	from = "nauvis",
-	to = HUB_NAME,
-	order = "z[surfexp-gateway]-0",
-	length = 3000,
-}
+for _, planet in ipairs({ "nauvis", "vulcanus", "gleba", "fulgora", "aquilo" }) do
+	connections[#connections + 1] = {
+		type = "space-connection",
+		name = "surfexp_gateway_link_hub" .. (planet == "nauvis" and "" or "_" .. planet),
+		hidden = multi,
+		subgroup = "planet-connections",
+		from = planet,
+		to = HUB_NAME,
+		order = "z[surfexp-gateway]-0-" .. planet,
+		length = 3000,
+	}
+end
 
 data:extend(locations)
 data:extend(connections)

@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.2
+Date: 2026-09-05
+  Bugfixes:
+    - Hide route lines together with their inactive gateway layout.
+  Changes:
+    - Move the single gateway between the five basic planets, enlarge its artwork, and keep it upright.
+    - Connect Nauvis, Vulcanus, Gleba, Fulgora, and Aquilo directly to the single gateway.
+      Retain the original Nauvis connection name and all legacy connection prototypes.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.1
 Date: 2026-09-05
   Bugfixes:
