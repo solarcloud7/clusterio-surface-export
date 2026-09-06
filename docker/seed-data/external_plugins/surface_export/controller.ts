@@ -33,6 +33,10 @@ import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
+type GatewayLinkUpdate = {
+	sourceInstanceId: number;
+	gateways: Array<{ gatewayName: string; targets: messages.GatewayLink[] }>;
+};
 export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
 export const SOURCE_COMMIT_MARKER_RETENTION_MS = PENDING_TRANSFER_INTENT_RETENTION_MS * 2;
 
@@ -75,6 +79,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	orchestrator!: TransferOrchestrator;
 	gatewayLinks!: Map<string, messages.GatewayLink[]>;
 	gatewayConfigPath!: string;
+	gatewayConfigLoadError: string | null = null;
+	private gatewayConfigUpdate?: Promise<void>;
 	pendingTransfers!: Map<string, messages.PendingTransferIntent>;
 	pendingTransfersPath!: string;
 	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
@@ -691,59 +697,77 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async loadGatewayConfig() {
 		try {
 			const content = await fs.readFile(this.gatewayConfigPath, "utf8");
-			const entries = JSON.parse(content);
+			const entries: unknown = JSON.parse(content);
+			if (!Array.isArray(entries)) {
+				throw new Error("Expected an array of gateway entries");
+			}
+			const loaded = new Map<string, messages.GatewayLink[]>();
 			const liveInstances = [...this.c.instances.values()].filter(inst => !inst.isDeleted);
 			let migratedLegacy = 0;
-			if (Array.isArray(entries)) {
-				for (const entry of entries) {
-					if (!(Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1]))) {
+			for (const entry of entries) {
+				if (!(Array.isArray(entry) && entry.length === 2
+					&& typeof entry[0] === "string" && Array.isArray(entry[1]))) {
+					throw new Error("Invalid gateway entry");
+				}
+				const key = entry[0] as string;
+				if (!entry[1].every(link => link && Number.isInteger(link.targetInstanceId)
+					&& typeof link.targetGateway === "string" && link.targetGateway.length > 0)) {
+					throw new Error(`Invalid targets for gateway '${key}'`);
+				}
+				const links = entry[1] as messages.GatewayLink[];
+				const parsed = this.parseGatewayKey(key);
+				if (parsed) {
+					if (!(messages.ALL_GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
+						this.logger.warn(`Dropping unknown gateway link '${key}'`);
 						continue;
 					}
-					const key = entry[0] as string;
-					const links = entry[1] as messages.GatewayLink[];
-					const parsed = this.parseGatewayKey(key);
-					if (parsed) {
-						if (!(messages.ALL_GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
-							this.logger.warn(`Dropping unknown gateway link '${key}'`);
-							continue;
-						}
-						this.gatewayLinks.set(key, links);
-					} else if ((messages.ALL_GATEWAY_NAMES as readonly string[]).includes(key)) {
-						if (liveInstances.length === 0) {
-							this.gatewayLinks.set(key, links);
-							this.logger.warn(`Legacy gateway link '${key}' kept for migration on a later boot (no instances known yet)`);
-							continue;
-						}
-						for (const inst of liveInstances) {
-							const perInstance = links.filter(l => l.targetInstanceId !== inst.id);
-							if (perInstance.length > 0) {
-								this.gatewayLinks.set(this.gatewayKey(inst.id, key), perInstance);
-							}
-						}
-						migratedLegacy += 1;
-					} else {
-						this.logger.warn(`Dropping unknown gateway link '${key}'`);
+					loaded.set(key, links);
+				} else if ((messages.ALL_GATEWAY_NAMES as readonly string[]).includes(key)) {
+					if (liveInstances.length === 0) {
+						loaded.set(key, links);
+						this.logger.warn(`Legacy gateway link '${key}' kept for migration on a later boot (no instances known yet)`);
+						continue;
 					}
+					for (const inst of liveInstances) {
+						const perInstance = links.filter(l => l.targetInstanceId !== inst.id);
+						if (perInstance.length > 0) {
+							loaded.set(this.gatewayKey(inst.id, key), perInstance);
+						}
+					}
+					migratedLegacy += 1;
+				} else {
+					this.logger.warn(`Dropping unknown gateway link '${key}'`);
 				}
 			}
+			this.gatewayLinks = loaded;
+			this.gatewayConfigLoadError = null;
 			if (migratedLegacy > 0) {
-				await this.persistGatewayConfig();
-				this.logger.warn(`Migrated ${migratedLegacy} legacy cluster-wide gateway link(s) to per-instance keys`);
+				const persistError = await this.persistGatewayConfig();
+				if (persistError) {
+					this.logger.warn(`Gateway migration is active in memory but could not be saved: ${persistError}`);
+				} else {
+					this.logger.warn(`Migrated ${migratedLegacy} legacy cluster-wide gateway link(s) to per-instance keys`);
+				}
 			}
 			this.logger.info(`Loaded ${this.gatewayLinks.size} gateway link(s) from disk`);
 		} catch (err: unknown) {
 			const code = (err as { code?: string }).code;
 			if (code === "ENOENT") {
+				this.gatewayConfigLoadError = null;
 				this.logger.verbose("No existing gateway config found; starting fresh");
 				return;
 			}
-			this.logger.error(`Failed to load gateway config: ${getErrorMessage(err)}`);
+			this.gatewayConfigLoadError = getErrorMessage(err);
+			this.logger.error(`Failed to load gateway config; writes disabled to preserve the file: ${this.gatewayConfigLoadError}`);
 		}
 	}
 
-	async persistGatewayConfig(): Promise<string | null> {
+	async persistGatewayConfig(links = this.gatewayLinks): Promise<string | null> {
 		try {
-			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
+			if (this.gatewayConfigLoadError) {
+				throw new Error(`Existing gateway config could not be loaded; repair the file and restart the controller: ${this.gatewayConfigLoadError}`);
+			}
+			const payload = JSON.stringify(Array.from(links.entries()), null, 2);
 			await enqueueWrite(this.gatewayConfigPath, () => lib.safeOutputFile(this.gatewayConfigPath, payload));
 			return null;
 		} catch (err: unknown) {
@@ -946,10 +970,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		};
 	}
 
-	async handleSetGatewayLinkRequest(request: {
-		sourceInstanceId: number;
-		gateways: Array<{ gatewayName: string; targets: messages.GatewayLink[] }>;
-	}) {
+	handleSetGatewayLinkRequest(request: GatewayLinkUpdate) {
+		const previous = this.gatewayConfigUpdate ?? Promise.resolve();
+		const update = previous.then(() => this.applyGatewayLinkRequest(request));
+		this.gatewayConfigUpdate = update.then(() => undefined, () => undefined);
+		return update;
+	}
+
+	private async applyGatewayLinkRequest(request: GatewayLinkUpdate) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		const mode = this.gatewayMode();
 		const activeNames = messages.gatewayNamesFor(mode);
@@ -996,18 +1024,20 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			}
 		}
 
+		const updated = new Map(this.gatewayLinks);
 		for (const [gatewayName, targets] of normalized) {
 			const key = this.gatewayKey(sourceInstanceId, gatewayName);
 			if (targets.length > 0) {
-				this.gatewayLinks.set(key, targets);
+				updated.set(key, targets);
 			} else {
-				this.gatewayLinks.delete(key);
+				updated.delete(key);
 			}
 		}
-		const persistError = await this.persistGatewayConfig();
+		const persistError = await this.persistGatewayConfig(updated);
 		if (persistError) {
 			return { success: false, error: `Gateway config could not be written to disk: ${persistError}` };
 		}
+		this.gatewayLinks = updated;
 		const pushError = await this.pushGatewayConfigToInstance(sourceInstanceId);
 		this.logger.info(
 			`Instance ${sourceInstanceId} gateways set: `
