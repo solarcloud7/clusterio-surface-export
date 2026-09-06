@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.5
+Date: 2026-09-05
+  Changes:
+    - Warn that changing layouts removes inactive travel routes. Return platforms to a planet first;
+      configured instance destinations are retained, but parked platforms can lose their route out.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.4
 Date: 2026-09-05
   Bugfixes:

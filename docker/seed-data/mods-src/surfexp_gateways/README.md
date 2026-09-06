@@ -31,19 +31,21 @@ For the advanced four-gateway layout, set both the mod pack startup setting
 `surfexp-gateway-layout` and the controller setting `surface_export.gateway_mode` to `multi`,
 then restart the instances and clients. Switch both back to `one_gate` for the single hub.
 All locations retain their names. Connections keep their original names when their layout is active,
-but changing layout removes the inactive connections. Finish gateway journeys before switching layouts.
+but changing layout removes the inactive connections. Return all platforms to a planet before switching
+layouts: platforms parked at an inactive gateway have no route out until that layout is restored.
 In a Factorio 2.1.17 upgrade probe, a paused platform halfway along a removed numbered route returned
 to Nauvis with its identity and cargo intact; its in-flight progress was not preserved.
 
 From the repository root, `lua tests/mods/gateway-layout.lua` checks both layouts, retained
-active connections, and referenced map artwork without starting Factorio.
+active connections, and referenced map artwork without starting Factorio. CI runs this test in its
+fast-checks job.
 
 For live development, capture the map before an update, then compare after restarting the instance:
 
 ```powershell
 node tools/surface-export/check-gateway-map.mjs --host 1 --output ci-artifacts/gateway-before.json
 # Build/upload the mod and restart the instance with its existing save.
-node tools/surface-export/check-gateway-map.mjs --host 1 --expect-version 0.6.4 --baseline ci-artifacts/gateway-before.json --output ci-artifacts/gateway-after.json
+node tools/surface-export/check-gateway-map.mjs --host 1 --expect-version 0.6.5 --baseline ci-artifacts/gateway-before.json --output ci-artifacts/gateway-after.json
 ```
 
 This read-only tool checks the selected layout's exact routes, location visibility, loaded version,
