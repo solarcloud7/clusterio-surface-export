@@ -61,6 +61,7 @@ try {
 	await page.goto(base);
 	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
 	await page.goto(`${base}/surface-export?tab=gateways`);
+	await page.locator(".react-flow__node").first().waitFor({ state: "attached" });
 	await settingsAfter(0);
 	await visibleNodes();
 	await assertPageMatchesDisk(page, { context: "canvas-navigation" });
@@ -95,7 +96,10 @@ try {
 	const nodes = await page.locator(".react-flow__node").evaluateAll(nodes => nodes.map(node => ({
 		id: node.dataset.id, style: node.getAttribute("style"), box: node.getBoundingClientRect().toJSON(),
 	})));
-	writeFileSync("ci-artifacts/canvas-navigation-failure.json", JSON.stringify({ error: String(error), nodes, errors }, null, 2));
+	writeFileSync("ci-artifacts/canvas-navigation-failure.json", JSON.stringify({
+		error: String(error), url: page.url(), nodes, errors,
+		page: await page.locator("body").innerText(),
+	}, null, 2));
 	await page.screenshot({ path: "ci-artifacts/canvas-navigation-failure.png" });
 	throw error;
 } finally {
