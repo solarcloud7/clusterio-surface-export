@@ -73,6 +73,7 @@ export const plugin = {
 			initialValue: true,
 			optional: true,
 		},
+		[`${PLUGIN_NAME}.profile_batches`]: { description: "Record individual profiling batches (up to 2000 per job)", type: "boolean", initialValue: false },
 		[`${PLUGIN_NAME}.debug_mode`]: {
 			description: "Enable debug mode - exports JSON comparison files for transfer validation",
 			type: "boolean",
@@ -141,6 +142,7 @@ export const plugin = {
 		},
 	},
 	messages: [
+		messages.OperationTimingEvent,
 		messages.ExportPlatformRequest,
 		messages.PlatformExportEvent,
 		messages.ImportPlatformRequest,

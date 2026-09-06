@@ -44,7 +44,21 @@ export {
 	parseGatewayMode,
 } from "./shared/dto";
 export type { GatewayMode } from "./shared/dto";
+import type { TimingRecord, OperationTiming } from "./shared/timing";
 const PLUGIN_NAME = "surface_export";
+
+export class OperationTimingEvent {
+	declare ["constructor"]: typeof OperationTimingEvent;
+	static plugin = PLUGIN_NAME;
+	static type = "event" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = { type: "object", properties: { record: { type: "object" } }, required: ["record"], additionalProperties: false };
+	constructor(public record: TimingRecord) {}
+	toJSON() { return { record: this.record }; }
+	static fromJSON(json: { record: TimingRecord }) { return new this(json.record); }
+}
+
 
 export const PERMISSIONS = {
 	LIST_EXPORTS: `${PLUGIN_NAME}.exports.list`,
@@ -85,6 +99,7 @@ export class ExportPlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			operationId: { type: "string" },
 			forceName: { type: "string", default: "player" },
 			targetInstanceId: { type: ["integer", "null"], default: null },
 		},
@@ -92,22 +107,24 @@ export class ExportPlatformRequest {
 		additionalProperties: false,
 	};
 
+	operationId?: string;
 	platformIndex: number;
 	forceName: string;
 	targetInstanceId: number | null;
 
-	constructor(json: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	constructor(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		this.operationId = json.operationId;
 		this.platformIndex = json.platformIndex;
 		this.forceName = json.forceName || "player";
 		this.targetInstanceId = json.targetInstanceId ?? null;
 	}
 
-	static fromJSON(json: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	static fromJSON(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		return new ExportPlatformRequest(json);
 	}
 
 	toJSON() {
-		return { platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
+		return { operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
 	}
 
 	static Response = {
@@ -1181,6 +1198,7 @@ export class UnlockSourcePlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			operationId: { type: "string" },
 			platformName: { type: ["string", "null"] },
 			forceName: { type: "string", default: "player" },
 		},
@@ -1188,18 +1206,20 @@ export class UnlockSourcePlatformRequest {
 		additionalProperties: false,
 	};
 
+	operationId?: string;
 	platformIndex: number;
 	platformName: string | null;
 	forceName: string;
 
-	constructor(json: { platformIndex: number; platformName?: string | null; forceName?: string }) {
+	constructor(json: { operationId?: string; platformIndex: number; platformName?: string | null; forceName?: string }) {
+		this.operationId = json.operationId;
 		this.platformIndex = json.platformIndex;
 		this.platformName = json.platformName ?? null;
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { platformIndex: number; platformName?: string | null; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
+	static fromJSON(json: { operationId?: string; platformIndex: number; platformName?: string | null; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
+	toJSON() { return { operationId: this.operationId, platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1388,6 +1408,9 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	timingPendingRecovery?: boolean;
+	timing?: OperationTiming;
+	observedDurationMs?: number;
 	transferId: string;
 	operationType: OperationType;
 	exportId: string | null;
@@ -1419,6 +1442,7 @@ export interface ActiveTransfer {
 
 
 export interface StoredExport {
+	timing?: OperationTiming;
 	exportId: string;
 	sourceExportId: string;
 	platformName: string;
@@ -1518,6 +1542,11 @@ export interface IControllerPlugin {
 	transferRevision: number;
 	logRevision: number;
 	txLogger: {
+		getObservedDuration(transfer: ActiveTransfer): number | null;
+		rejectObservation(id: string, request: Record<string, unknown>, error: string): Promise<void>;
+		beginObservation(id: string): import("./shared/timing").TimingClockContract;
+		bindObservation(from: string, to: string): void;
+		clock(id: string): import("./shared/timing").TimingClockContract;
 		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>, atMs?: number | null): void;
 		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
 		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;

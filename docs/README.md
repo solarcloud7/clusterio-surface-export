@@ -193,6 +193,6 @@ For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMP
 | [TRANSFER_2PC.md](TRANSFER_2PC.md) | Transfer durability, identity (surface.index not name), and two-phase-commit design + current state — single source of truth |
 | [clusterio-core-dev.md](clusterio-core-dev.md) | Working on Clusterio core itself: the sibling fork checkout, the two test loops, and promotion paths |
 | [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
-| [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
+| [async-processing.md](async-processing.md) | Tick-batched jobs, performance controls, and timing limitations |
 | [config-survey.md](config-survey.md) | Every hardcoded operational value classified TUNABLE / LAW / INTERNAL, with the rule that decides which — plus the four-place wiring pattern an instance→Lua field must follow or it silently drops |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |

@@ -1,4 +1,7 @@
 import fs from "fs";
+import { randomUUID } from "node:crypto";
+import { parseLuaTiming, TIMING_MARKER, TimingClock, timingContext, timed, timedSync } from "./lib/timing";
+import type { ParsedFactorioOutput } from "@clusterio/lib";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
@@ -22,6 +25,28 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private controllerManagedTransferExports: Set<string> = new Set();
 	private pendingTransfer: PendingTransfer | null = null;
 	private lua!: LuaInterface;
+	private timingEpoch = randomUUID();
+	private async withTiming<T>(jobId: string, exportId: string | undefined, stage: string, fn: () => Promise<T>): Promise<T> {
+		const clock = new TimingClock(jobId, "instance", record => {
+			record.instanceId = this.i.id;
+			record.exportId = record.exportId ?? exportId;
+			void Promise.resolve().then(() => this.i.sendTo("controller", new messages.OperationTimingEvent(record)))
+				.catch(error => this.logger.warn(`Instance profiling delivery failed: ${getErrorMessage(error)}`));
+		});
+		return timingContext.run(clock, () => clock.measure(stage, "inclusive", fn));
+	}
+
+	override async onOutput(_parsed: ParsedFactorioOutput, line: string) {
+		if (!line.includes(TIMING_MARKER)) return;
+		const record = parseLuaTiming(line, this.i.id, this.timingEpoch);
+		if (!record) { this.logger.warn("Invalid profiling record from Factorio"); return; }
+		if (record.owner === "recovery-lua" && !record.operationId && record.exportId) {
+			record.operationId = makeCanonicalTransferId(this.i.id, record.exportId);
+		}
+		try { await this.i.sendTo("controller", new messages.OperationTimingEvent(record)); }
+		catch (error) { this.logger.warn(`Profiling delivery failed: ${getErrorMessage(error)}`); }
+	}
+
 
 	normalizeRconScalarResult(value: unknown) {
 		const text = String(value ?? "");
@@ -74,6 +99,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	override async onStart() {
+		this.timingEpoch = randomUUID();
+		try { await this.i.sendTo("controller", new messages.OperationTimingEvent({ v: 1, id: "runtime_started", clockId: this.timingEpoch, jobId: "runtime", instanceId: this.i.id, owner: "instance", stage: "runtime_started", kind: "inclusive", status: "completed", revision: 1, startMs: null, endMs: null, executionMs: null })); }
+		catch (error) { this.logger.warn(`Runtime profiling notification failed: ${getErrorMessage(error)}`); }
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
@@ -88,7 +116,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const debugMode = this.cfg<boolean>("surface_export.debug_mode");
 			const maxExportCacheSize = this.cfg<number>("surface_export.max_export_cache_size");
 
-			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode, maxExportCacheSize });
+			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode, maxExportCacheSize,
+				profileBatches: this.cfg<boolean>("surface_export.profile_batches") });
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, max_export_cache_size=${maxExportCacheSize}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
@@ -166,6 +195,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handleExportComplete(data: Record<string, unknown>) {
+		return this.withTiming(String(data.export_id || "export-completion"), String(data.export_id || ""), "handleExportComplete", () => this.handleExportCompleteMeasured(data));
+	}
+
+	async handleExportCompleteMeasured(data: Record<string, unknown>) {
 		const exportId = String(data.export_id || "").trim();
 		this.logger.info(`Export complete send_json event received: export_id=${exportId}, platform=${data.platform_name}`);
 		this.logger.verbose(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
@@ -335,6 +368,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
+			const clock = timingContext.getStore();
+			if (clock) { clock.exportId = exportResult; clock.bind(clock.jobId); }
 			if (!exportResult || exportResult.toLowerCase() === "nil") {
 				return { success: false, error: "Export failed - no export_id returned" };
 			}
@@ -454,7 +489,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info(`Importing platform "${platformName}" for force "${forceName}"`);
 
 		try {
-			const jsonData = JSON.stringify(exportData);
+			const jsonData = timedSync("Payload serialization", () => JSON.stringify(exportData));
 			const sizeKB = (jsonData.length / 1024).toFixed(1);
 
 			if (exportData.compressed) {
@@ -463,7 +498,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			await this.lua.importPlatformChunked(platformName, forceName, exportData);
+			await timed("RCON payload upload", "round-trip", () => this.lua.importPlatformChunked(platformName, forceName, exportData));
 
 			this.logger.info("All chunks sent, import queued for async processing");
 			return { success: true };
@@ -519,7 +554,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.warn("Unable to confirm Lua console unlock; subsequent exports may require a manual command rerun.");
 	}
 
-	async handleExportPlatformRequest(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	async handleExportPlatformRequest(request: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		return this.withTiming(request.operationId || `export-request:${randomUUID()}`, undefined, "Export request handling", () => this.handleExportPlatformRequestMeasured(request));
+	}
+
+	async handleExportPlatformRequestMeasured(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null);
 		const numericTargetInstanceId = Number(request.targetInstanceId);
 		if (result?.success && Number.isInteger(numericTargetInstanceId) && numericTargetInstanceId > 0) {
@@ -529,6 +568,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handleImportPlatformRequest(request: { exportData: ExportData; forceName?: string; targetPlanet?: string | null }) {
+		return this.withTiming(String(request.exportData?._operationId || request.exportData?._transferId || "unassociated-import"), undefined, "Import request handling", () => this.handleImportPlatformRequestMeasured(request));
+	}
+
+	async handleImportPlatformRequestMeasured(request: { exportData: ExportData; forceName?: string; targetPlanet?: string | null }) {
 		const hasTransferId = Boolean(request.exportData && request.exportData._transferId);
 		const dataSize = request.exportData ? JSON.stringify(request.exportData).length : 0;
 		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB, targetPlanet=${request.targetPlanet ?? "default"}`);
@@ -557,6 +600,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handleImportCompleteValidation(data: Record<string, unknown>) {
+		return this.withTiming(String(data.operation_id || data.transfer_id || "import-completion"), undefined, "handleImportCompleteValidation", () => this.handleImportCompleteValidationMeasured(data));
+	}
+
+	async handleImportCompleteValidationMeasured(data: Record<string, unknown>) {
 		this.logger.info(`Import completed for ${data.platform_name}, performing validation`);
 
 		const transferId = String(data.transfer_id || "").trim();
@@ -693,6 +740,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
+		return this.withTiming(request.exportId ? makeCanonicalTransferId(this.i.id, request.exportId) : "source-delete", request.exportId ?? undefined, "handleDeleteSourcePlatform", () => this.handleDeleteSourcePlatformMeasured(request));
+	}
+
+	async handleDeleteSourcePlatformMeasured(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}', export ${request.exportId ?? "—"})`);
 
@@ -726,7 +777,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
+	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string; operationId?: string }) {
+		return this.withTiming(request.operationId || `unlock:${randomUUID()}`, undefined, "Source unlock handling", () => this.handleUnlockSourcePlatformMeasured(request));
+	}
+
+	async handleUnlockSourcePlatformMeasured(request: { platformIndex: number; platformName?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
@@ -807,4 +862,3 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 }
-

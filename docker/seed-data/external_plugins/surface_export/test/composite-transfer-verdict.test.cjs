@@ -48,7 +48,7 @@ function makeInstanceHarness() {
 	plugin.instance = {
 		id: 22,
 		sendTo: async (_dst, msg) => {
-			calls.sent.push(msg.toJSON ? msg.toJSON() : msg);
+			if (msg.constructor.name !== "OperationTimingEvent") calls.sent.push(msg.toJSON ? msg.toJSON() : msg);
 			return { success: true };
 		},
 	};
@@ -169,6 +169,7 @@ function makeTransferHarness() {
 		activeTransfers,
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
+			...require("./timing-harness.cjs").makeTimingHarness(),
 			logTransactionEvent: noop,
 			archiveRecycledTransferId() {},
 			startPhase: noop,
@@ -403,7 +404,7 @@ test("fluid-loss configuration coerces unsafe input and debug result emits once"
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	assert.match(configure, /tonumber\(config\.test_force_fluid_loss\)/,
 		"non-numeric debug input must not crash import completion");
-	const emits = importCompletion.match(/\n\s*emit_debug_import_result\(job, validation_result, duration_seconds\)/g) || [];
+	const emits = importCompletion.match(/\n\s*emit_debug_import_result\(job, validation_result, duration_ticks\)/g) || [];
 	assert.equal(emits.length, 1, "debug import result must be emitted once per completion tick");
 });
 

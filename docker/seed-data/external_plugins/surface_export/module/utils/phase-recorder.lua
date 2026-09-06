@@ -1,3 +1,4 @@
+local Timing = require("modules/surface_export/utils/operation-timing")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 
 local PhaseRecorder = {}
@@ -43,6 +44,7 @@ local function spec_for(name, caller)
 end
 
 function PhaseRecorder.start(job, name)
+	if name ~= "entities" and name ~= "tiles" then Timing.start(job.job_id, name) end
 	local spec = spec_for(name, "start")
 	if not spec then return end
 	job.metrics = job.metrics or {}
@@ -51,6 +53,7 @@ function PhaseRecorder.start(job, name)
 end
 
 function PhaseRecorder.stop(job, name)
+	if name ~= "entities" and name ~= "tiles" then Timing.stop(job.job_id, name) end
 	local spec = spec_for(name, "stop")
 	if not spec then return end
 	job.metrics = job.metrics or {}
@@ -79,8 +82,10 @@ function PhaseRecorder.build_spans(job, t0)
 			if started and completed then
 				spans[#spans + 1] = {
 					name = spec.name,
-					start_offset_ms = math.max(0, math.floor((started - t0) * 16.67)),
-					duration_ms = math.max(0, math.floor((completed - started) * 16.67)),
+					start_tick = started,
+					end_tick = completed,
+					start_offset_ticks = math.max(0, started - t0),
+					ticks_elapsed = math.max(0, completed - started),
 				}
 			end
 		end

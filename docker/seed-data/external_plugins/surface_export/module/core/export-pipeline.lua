@@ -1,3 +1,4 @@
+local Timing = require("modules/surface_export/utils/operation-timing")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
@@ -99,6 +100,7 @@ local function handle_pending_file_write(export_id)
 		return
 	end
 
+	Timing.start(export_id, "file_output")
 	local file_request = storage.pending_file_writes[export_id]
 	local filename = file_request.filename
 
@@ -127,6 +129,7 @@ local function handle_pending_file_write(export_id)
 		end
 	end
 
+	Timing.stop(export_id, "file_output")
 	storage.pending_file_writes[export_id] = nil
 end
 
@@ -145,16 +148,20 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	local safe_name = platform.name:gsub("[^%w%-]", "-")
 
 	local job_id = string.format("%03d_%s", job_counter, safe_name)
+	Timing.begin(job_id, "source-lua", nil, job_id)
+	Timing.start(job_id, "preflight")
 
 	log(string.format("[Export Queue] job_id=%s, platform_index=%s, force=%s, requester=%s, dest_instance_id=%s (type=%s)",
 		job_id, tostring(platform_index), force_name, tostring(requester_name),
 		tostring(destination_instance_id), type(destination_instance_id)))
 	local surface = platform.surface
 	if not surface or not surface.valid then
+		Timing.finish(job_id, "failed")
 		return nil, "Platform surface not valid"
 	end
 
 	if not GameUtils.platform_has_hub(platform) then
+		Timing.finish(job_id, "failed")
 		return nil, string.format(
 			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
@@ -167,19 +174,26 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
 	}
 
+	Timing.stop(job_id, "preflight")
+	Timing.start(job_id, "locking")
 	local lock_success, lock_err = SurfaceLock.lock_platform(platform, force, lock_opts)
+	Timing.stop(job_id, "locking")
 	if not lock_success then
 		if lock_err ~= "Platform already locked" then
-			return nil, "Failed to lock platform: " .. (lock_err or "unknown error")
+			Timing.fail(job_id, "locking")
+			Timing.finish(job_id, "failed")
+		return nil, "Failed to lock platform: " .. (lock_err or "unknown error")
 		end
 		log(string.format("[Export] Platform %s was already locked, continuing with export", platform.name))
 	else
 		game.print(string.format("[Export] Locked platform %s for stable export...", platform.name), {1, 0.8, 0})
 	end
+	Timing.start(job_id, "preparation")
 
 	local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
 	if not platform_schedule then
-		SurfaceLock.unlock_platform(platform.index)
+		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index)
+		Timing.finish(job_id, "failed")
 		return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
 	end
 	local schedule_summary = PlatformSchedule.summarize(platform_schedule)
@@ -235,12 +249,15 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		}
 	}
 
+	Timing.stop(job_id, "preparation")
+	Timing.start(job_id, "scheduler_wait", "wait")
 	PhaseProfiler.init(job_id, {"completion", "total"})
 	PhaseProfiler.start(job_id, "total")
 	return job_id
 end
 
 function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
+	Timing.stop(job.job_id, "scheduler_wait")
 	local batch_size = get_batch_size()
 	local start_index = job.current_index + 1
 	local end_index = math.min(start_index + batch_size - 1, job.total_entities)
@@ -290,6 +307,7 @@ function ExportPipeline.complete(job)
 
 	storage.platform_exports = storage.platform_exports or {}
 
+	Timing.start(job.job_id, "belt_capture")
 	local belt_scan_count = 0
 	local belt_item_total = 0
 	local belt_pairs = {}
@@ -327,7 +345,9 @@ function ExportPipeline.complete(job)
 		end
 	end
 
-	local ground_items = EntityScanner.scan_items_on_ground(job.surface)
+	Timing.stop(job.job_id, "belt_capture")
+	local ground_items = Timing.scope(job.job_id, "ground_items", EntityScanner.scan_items_on_ground, job.surface)
+	Timing.start(job.job_id, "verification_census")
 	for _, ground_item in ipairs(ground_items) do
 		table.insert(job.export_data.entities, ground_item)
 	end
@@ -362,6 +382,8 @@ function ExportPipeline.complete(job)
 		end
 	end
 
+	Timing.stop(job.job_id, "verification_census")
+	Timing.start(job.job_id, "finalize_payload")
 	local lock_data = storage.locked_platforms and storage.locked_platforms[job.platform_index]
 	if lock_data and lock_data.frozen_states then
 		job.export_data.frozen_states = lock_data.frozen_states
@@ -385,8 +407,10 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification.fluid_counts ~= nil)))
 	end
 
-	local json_string = Util.encode_json_compat(job.export_data)
-	local compressed = helpers.encode_string(json_string)
+	Timing.stop(job.job_id, "finalize_payload")
+	local json_string = Timing.scope(job.job_id, "serialization", Util.encode_json_compat, job.export_data)
+	local compressed = Timing.scope(job.job_id, "compression", helpers.encode_string, json_string)
+	Timing.start(job.job_id, "cache_output")
 
 	if compressed then
 		ExportCache.record(export_id, {
@@ -409,12 +433,11 @@ function ExportPipeline.complete(job)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
 
+	Timing.stop(job.job_id, "cache_output")
 	PhaseProfiler.stop(job.job_id, "completion")
 	PhaseProfiler.stop(job.job_id, "total")
 
 	local duration_ticks = game.tick - job.started_tick
-	local duration_seconds = duration_ticks / 60
-	local duration_ms = math.floor(duration_ticks * 16.67)
 	local uncompressed_bytes = #json_string
 	local compressed_bytes = compressed and #compressed or nil
 	local compression_reduction_pct = nil
@@ -427,12 +450,12 @@ function ExportPipeline.complete(job)
 	)
 
 	if job.destination_instance_id then
-		DebugExport.export_source_platform(job.export_data, job.platform_name)
+		Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_source_platform, job.export_data, job.platform_name)
 	end
 
 	local message = string.format(
-		"[Export Complete] %s (%d entities in %.1fs) - ID: %s",
-		job.platform_name, job.total_entities, duration_seconds, export_id
+		"[Export Complete] %s (%d entities; %d ticks elapsed) - ID: %s",
+		job.platform_name, job.total_entities, duration_ticks, export_id
 	)
 	game.print(message, {0, 1, 0})
 	log(message)
@@ -444,7 +467,7 @@ function ExportPipeline.complete(job)
 	local perf = PhaseProfiler.get(job.job_id)
 	if perf then
 		local msg = {"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities):\n",
-			"  Scanning:   ", math.floor(duration_ticks * 16.67), "ms (", duration_ticks, " ticks)\n",
+			"  Scheduling: ", duration_ticks, " ticks elapsed\n",
 			"  Completion (belt+verify+compress): ", perf.completion}
 		game.print(msg)
 		log({"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities, ",
@@ -464,12 +487,9 @@ function ExportPipeline.complete(job)
 			platform_index = job.platform_index,
 			entity_count = job.total_entities,
 			duration_ticks = duration_ticks,
-			duration_seconds = duration_seconds,
 			destination_instance_id = job.destination_instance_id,
 			export_metrics = {
 				async_export_ticks = duration_ticks,
-				async_export_ms = duration_ms,
-				async_export_seconds = duration_seconds,
 				entity_count = job.total_entities,
 				tile_count = exported_tile_count,
 				atomic_belt_entities = belt_scan_count,
@@ -509,7 +529,6 @@ function ExportPipeline.complete(job)
 		platform_name = job.platform_name,
 		total_entities = job.total_entities,
 		duration_ticks = duration_ticks,
-		duration_seconds = duration_seconds,
 		progress = 100,
 		requester = job.requester
 	}
@@ -518,7 +537,7 @@ function ExportPipeline.complete(job)
 	handle_pending_file_write(export_id)
 
 	if not job.destination_instance_id then
-		local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
+		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index)
 		if unlock_success then
 			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
 			if clusterio_api and clusterio_api.send_json then
@@ -550,6 +569,7 @@ function ExportPipeline.complete(job)
 		end
 	end
 
+	Timing.finish(job.job_id, "completed")
 	storage.async_jobs[job.job_id] = nil
 end
 
@@ -628,6 +648,7 @@ function ExportPipeline.report_property_findings(job)
 end
 
 function ExportPipeline.abort_transfer_on_census_mismatch(job)
+	Timing.fail(job.job_id, "verification_census")
 	local verdict = job.census_verdict or { mismatches = {}, totals = {} }
 	local mismatch_count = #(verdict.mismatches or {})
 	local safe_name = string.gsub(job.platform_name or "unknown", "[^%w_-]", "_")
@@ -645,7 +666,9 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		mismatches = verdict.mismatches,
 		totals = verdict.totals,
 	}
+	Timing.start(job.job_id, "failure_diagnostics")
 	local written = DebugExport.write_failure_black_box(filename, bundle)
+	Timing.stop(job.job_id, "failure_diagnostics")
 
 	log(string.format(
 		"[Census][ABORT] Transfer export '%s' ABORTED — source census mismatch: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
@@ -654,7 +677,9 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		"[Census] Transfer of '%s' ABORTED — source serialization mismatch detected; source preserved.",
 		job.platform_name), {1, 0.3, 0})
 
+	Timing.start(job.job_id, "source_unlock")
 	local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
+	Timing.stop(job.job_id, "source_unlock")
 	if unlock_success and clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
 			clusterio_api.send_json("surface_platform_state_changed", {
@@ -696,6 +721,7 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	JobResults.prune(25)
 
 	PhaseProfiler.discard(job.job_id)
+	Timing.finish(job.job_id, "failed")
 	storage.async_jobs[job.job_id] = nil
 end
 

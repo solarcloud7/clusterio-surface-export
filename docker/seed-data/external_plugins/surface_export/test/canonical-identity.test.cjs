@@ -48,6 +48,7 @@ test("canonical transfer id helpers qualify by numeric source instance and parse
 function makeControllerHarness() {
 	const calls = { persisted: 0, broadcasts: 0, warns: [] };
 	const plugin = Object.create(ControllerPlugin.prototype);
+	plugin.txLogger = require("./timing-harness.cjs").makeTimingHarness();
 	plugin.platformStorage = new Map();
 	plugin.logger = { info() {}, verbose() {}, error(msg) { throw new Error(msg); }, warn(msg) { calls.warns.push(msg); } };
 	plugin.cfg = () => 100;
@@ -133,6 +134,7 @@ function makeTransferHarness() {
 		activeTransfers,
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
+			...require("./timing-harness.cjs").makeTimingHarness(),
 			logTransactionEvent() {},
 			archiveRecycledTransferId() {},
 			startPhase() {},

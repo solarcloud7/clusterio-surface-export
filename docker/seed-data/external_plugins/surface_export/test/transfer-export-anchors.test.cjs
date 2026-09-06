@@ -33,6 +33,7 @@ function makeHarness() {
 		activeTransfers,
 		recordTransferStarted: async () => {},
 		txLogger: {
+			...require("./timing-harness.cjs").makeTimingHarness(),
 			logTransactionEvent: (_id, type, _message, _data, atMs) => { events.push({ type, atMs: atMs ?? null }); },
 			archiveRecycledTransferId() {},
 			startPhase: noop,

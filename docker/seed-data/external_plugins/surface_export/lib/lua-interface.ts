@@ -1,3 +1,4 @@
+import { timed, timedSync } from "./timing";
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
 import {
@@ -19,11 +20,15 @@ export interface LuaConfigure {
 	maxConcurrentJobs: number;
 	showProgress: boolean;
 	debugMode: boolean;
+	profileBatches?: boolean;
 	maxExportCacheSize: number;
 }
 
 export class LuaInterface {
-	constructor(private readonly host: RconHost, private readonly logger: ChunkLogger) {}
+	private readonly host: RconHost;
+ constructor(host: RconHost, private readonly logger: ChunkLogger) {
+  this.host = { sendRcon: (command, expectEmpty) => timed("RCON request round trip", "round-trip", () => host.sendRcon(command, expectEmpty)) };
+ }
 
 	async configure(cfg: LuaConfigure): Promise<void> {
 		const script = `/sc ` +
@@ -33,6 +38,7 @@ export class LuaInterface {
 			`max_concurrent_jobs=${cfg.maxConcurrentJobs}, ` +
 			`show_progress=${cfg.showProgress}, ` +
 			`debug_mode=${cfg.debugMode}, ` +
+			`profile_batches=${cfg.profileBatches === true}, ` +
 			`max_export_cache_size=${cfg.maxExportCacheSize}` +
 			`}) ` +
 			`end`;
@@ -134,7 +140,7 @@ export class LuaInterface {
 		if (!jsonText || jsonText === "null") {
 			return null;
 		}
-		const parsed = JSON.parse(jsonText);
+		const parsed = timedSync("Artifact JSON decoding", () => JSON.parse(jsonText));
 		return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
 	}
 
@@ -160,7 +166,7 @@ export class LuaInterface {
 	): Promise<void> {
 		await sendChunkedJson(
 			this.host,
-			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}"))`,
+			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}", "${escapeString(String(exportData._operationId || exportData._transferId || ""))}"))`,
 			exportData,
 			this.logger,
 			RCON_CHUNK_SIZE,
