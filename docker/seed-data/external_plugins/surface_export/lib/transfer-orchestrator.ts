@@ -2,6 +2,12 @@ import { wait } from "@clusterio/lib";
 import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
+
+type TransferStartResult = {
+	success: boolean; error?: string; transferId?: string; message?: string;
+	safeToUnlockSource?: boolean;
+};
+
 function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
 		...normalizeExportMetrics((storedMetrics || null) as Record<string, unknown> | null),
@@ -13,6 +19,7 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
 export class TransferOrchestrator {
 	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
+	private startingTransfers = new Map<string, { targetInstanceId: number; result: Promise<TransferStartResult> }>();
 
 	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
@@ -66,21 +73,30 @@ export class TransferOrchestrator {
 
 
 
-	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null, targetPlanet: string | null = null): Promise<{
-		success: boolean; error?: string; transferId?: string; message?: string;
-		safeToUnlockSource?: boolean;
-	}> {
+	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null, targetPlanet: string | null = null): Promise<TransferStartResult> {
+		const transferId = this.plugin.platformStorage.get(exportId)?.exportId || exportId;
+		const starting = this.startingTransfers.get(transferId);
+		if (starting) {
+			if (starting.targetInstanceId !== targetInstanceId) {
+				return { success: false, safeToUnlockSource: false,
+					error: `Transfer ${transferId} is already starting for destination ${starting.targetInstanceId}` };
+			}
+			return starting.result;
+		}
+		const result = Promise.resolve().then(() =>
+			this.startTransfer(exportId, targetInstanceId, exportMetrics, transferStartedAt, targetPlanet));
+		this.startingTransfers.set(transferId, { targetInstanceId, result });
+		try {
+			return await result;
+		} finally {
+			this.startingTransfers.delete(transferId);
+		}
+	}
+
+	private async startTransfer(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null, transferStartedAt: number | null, targetPlanet: string | null): Promise<TransferStartResult> {
 		const exportData = this.plugin.platformStorage.get(exportId);
 		if (!exportData) {
 			return { success: false, error: `Export not found: ${exportId}`, safeToUnlockSource: true };
-		}
-
-		if (!this.plugin.isInstanceOnline(targetInstanceId)) {
-			const name = this.plugin.platformTree.resolveInstanceName(targetInstanceId);
-			return { success: false, safeToUnlockSource: true, error:
-				`Destination instance ${name ? `"${name}" ` : ""}(${targetInstanceId}) is offline — `
-				+ "transfer refused before starting. The source platform is unchanged; retry when the "
-				+ "destination is running." };
 		}
 
 		const transferId = exportData.exportId || exportId;
@@ -92,6 +108,10 @@ export class TransferOrchestrator {
 				|| existingTransfer.status === "awaiting_completion"
 				|| existingTransfer.status === "in_progress";
 			if (live) {
+				if (existingTransfer.targetInstanceId !== targetInstanceId) {
+					return { success: false, safeToUnlockSource: false,
+						error: `Transfer ${transferId} is already active for destination ${existingTransfer.targetInstanceId}` };
+				}
 				return { success: true, transferId, message: `Transfer already active: ${transferId}` };
 			}
 			if (existingTransfer.status !== "failed") {
@@ -108,6 +128,13 @@ export class TransferOrchestrator {
 			}
 			this.plugin.logger.info(
 				`Replacing failed (destination-discarded) transfer record for retried export ${transferId}`);
+		}
+		if (!this.plugin.isInstanceOnline(targetInstanceId)) {
+			const name = this.plugin.platformTree.resolveInstanceName(targetInstanceId);
+			return { success: false, safeToUnlockSource: true, error:
+				`Destination instance ${name ? `"${name}" ` : ""}(${targetInstanceId}) is offline — `
+				+ "transfer refused before starting. The source platform is unchanged; retry when the "
+				+ "destination is running." };
 		}
 		const innerData = exportData.exportData;
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
