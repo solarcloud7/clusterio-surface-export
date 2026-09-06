@@ -81,17 +81,41 @@ test("same-name rebuilds repair bytes and keep unrelated mod-list entries untouc
 	assert.match(f.run().output, /copied=0 repaired=0 unchanged=1/);
 });
 
-test("filename/numeric disagreement refuses before copying, including with prune", t => {
-	const f = fixture(t, { "example_1.9.0.zip": "nine", "example_1.10.0.zip": "ten" }, {
-		"example_2.0.0.zip": "keep until resolved",
-	});
-	for (const args of [[], ["-PruneShadowing"], ["-DryRun", "-PruneShadowing"]]) {
+test("numeric-newest duplicate seeds sync across major, minor and patch boundaries", t => {
+	const seeds = {
+		"major_9.0.0.zip": "major old", "major_10.0.0.zip": "major newest",
+		"minor_1.9.0.zip": "minor old", "minor_1.10.0.zip": "minor newest",
+		"patch_1.0.9.zip": "patch old", "patch_1.0.10.zip": "patch newest",
+	};
+	const f = fixture(t, seeds, { "client_only_99.0.0.zip": "unrelated" });
+	assert.equal(f.run(["-DryRun"]).status, 0);
+	assert.deepEqual(f.names(), ["client_only_99.0.0.zip"]);
+	for (const args of [[], ["-PruneShadowing"], []]) {
 		const r = f.run(args);
-		assert.notEqual(r.status, 0);
-		assert.match(r.output, /Ambiguous seed versions/);
-		assert.deepEqual(f.names(), ["example_2.0.0.zip"]);
-		assert.equal(f.bytes("example_2.0.0.zip"), "keep until resolved");
+		assert.equal(r.status, 0, r.output);
+		for (const [name, bytes] of Object.entries(seeds)) assert.equal(f.bytes(name), bytes);
+		assert.equal(f.bytes("client_only_99.0.0.zip"), "unrelated");
 	}
+});
+
+test("shadow checks use the numeric maximum before any copying or pruning", t => {
+	const f = fixture(t, { "example_1.9.0.zip": "nine", "example_1.10.0.zip": "ten" }, {
+		"example_1.11.0.zip": "newer", "example_1.8.0.zip": "older", "other_2.0.0.zip": "unrelated",
+	});
+	const before = f.names();
+	const refused = f.run();
+	assert.notEqual(refused.status, 0);
+	assert.match(refused.output, /NEWER client copies/);
+	assert.deepEqual(f.names(), before);
+	const dry = f.run(["-DryRun", "-PruneShadowing"]);
+	assert.equal(dry.status, 0, dry.output);
+	assert.match(dry.output, /would prune newer: example_1.11.0.zip/);
+	assert.deepEqual(f.names(), before);
+	const pruned = f.run(["-PruneShadowing"]);
+	assert.equal(pruned.status, 0, pruned.output);
+	assert.deepEqual(f.names(), ["example_1.10.0.zip", "example_1.8.0.zip", "example_1.9.0.zip", "other_2.0.0.zip"]);
+	assert.equal(f.bytes("example_1.8.0.zip"), "older");
+	assert.equal(f.bytes("other_2.0.0.zip"), "unrelated");
 });
 
 test("gateway build pruning leaves other seeded mods and prefix-sharing mods untouched", t => {
