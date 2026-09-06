@@ -4,7 +4,7 @@
 // does not: perform transfers, change validation rules, or write synthetic evidence to the controller
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
 
@@ -14,6 +14,7 @@ const browser = await launchChromiumOrSkip("log-evidence");
 const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
 const token = config["control.controller_token"];
 const errors = [];
+let isolatedLiveUpdates = 0;
 // Keep this suite repeatable on freshly seeded CI: only this browser receives the recorded fixtures.
 const recorded = JSON.parse(readFileSync(new URL("../../../docker/seed-data/external_plugins/surface_export/web/logs/recorded-fixtures.ts", import.meta.url), "utf8")
 	.replace(/^[\s\S]*?export default /, "").replace(/;\s*$/, ""));
@@ -36,6 +37,12 @@ function connectHistory(socket) {
 		server.send(raw);
 	});
 	return { server, replace(frame) {
+		// Initial subscriptions can replay real transfers from earlier suites. Keep this
+		// browser's fixture history isolated; explicit race-test pushes bypass this hook.
+		if (frame.type === "event" && ["surface_export:SurfaceExportTransferUpdateEvent", "surface_export:SurfaceExportLogUpdateEvent"].includes(frame.name)) {
+			frame.data.revision = 0;
+			isolatedLiveUpdates++;
+		}
 		if (frame.type !== "response") return;
 		const request = pending.get(frame.dst[2]);
 		pending.delete(frame.dst[2]);
@@ -79,6 +86,7 @@ try {
 	await assertPageMatchesDisk(page, { context: "log-evidence" });
 	assert.match(await logs.innerText(), /Searching \d+ loaded operations/);
 	const selected = await page.locator(".se-history-row.is-selected").getAttribute("data-transfer-id");
+	assert.equal(selected, "browser-record-00");
 	const report = await readReport(detail);
 	assert.equal(report.transferId, selected);
 	assert.equal(report.schemaVersion, 1);
@@ -109,11 +117,11 @@ try {
 	const originalValidation = structuredClone(history[0].detail.summary.validation);
 	history[0].detail.summary.validation.success = false;
 	history[0].detail.summary.validation.itemCountMatch = false;
-	await page.locator(".se-history-row").first().click();
+	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
 	await detail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
 	history[0].detail.summary.validation = originalValidation;
-	await page.locator(".se-history-row").nth(1).click();
-	await page.locator(".se-history-row").first().click();
+	await page.locator('.se-history-row[data-transfer-id="browser-record-01"]').click();
+	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
 	await detail.getByText("Arrived and verified", { exact: true }).waitFor();
 	await detail.getByRole("tab", { name: "Overview", exact: true }).click();
 	console.log("PASS recorded success/failure, reports, search, filters, pagination, keyboard selection and refreshing revisited evidence");
@@ -272,5 +280,20 @@ try {
 	await reconnectDetail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
 	assert.equal((await readReport(reconnectDetail)).summary.validation.success, false);
 	console.log("PASS reconnect refreshes selected evidence without a page reload");
+	console.log(`Isolated ${isolatedLiveUpdates} real-cluster log/transfer updates from fixture history`);
 	assert.deepEqual(errors, [], "no browser runtime errors");
+} catch (error) {
+	const pages = [];
+	for (const context of browser.contexts()) for (const page of context.pages()) {
+		pages.push(await page.evaluate(() => ({ url: location.href,
+			selected: document.querySelector(".se-history-row.is-selected")?.getAttribute("data-transfer-id"),
+			rows: [...document.querySelectorAll(".se-history-row")].map(row => row.getAttribute("data-transfer-id")),
+			detail: document.querySelector('[data-testid="transfer-detail"]')?.textContent,
+		})));
+	}
+	mkdirSync("ci-artifacts", { recursive: true });
+	const diagnostics = { error: String(error), errors, isolatedLiveUpdates, pages };
+	writeFileSync("ci-artifacts/log-evidence-failure.json", JSON.stringify(diagnostics, null, 2));
+	console.error(JSON.stringify(diagnostics));
+	throw error;
 } finally { await browser.close(); }
