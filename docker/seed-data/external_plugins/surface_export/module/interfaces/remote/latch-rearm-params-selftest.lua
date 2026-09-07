@@ -1,121 +1,135 @@
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local function latch_rearm_params_selftest()
-	local details = {}
-	local passed, failed = 0, 0
+  local details, passed, failed = {}, 0, 0
+  local function check(name, condition)
+    if condition then passed = passed + 1 else failed = failed + 1 end
+    details[#details + 1] = { name = name, ok = condition == true }
+  end
+  local signals = {
+    { signal = { type = "virtual", name = "signal-S" }, count = 47 },
+    { signal = { type = "virtual", name = "signal-Q" }, count = -7 },
+    { signal = { type = "item", name = "iron-plate", quality = "rare" }, count = 3 },
+  }
+  local original = {
+    conditions = {{ first_signal = signals[1].signal, comparator = ">", constant = 0 }},
+    outputs = {{ signal = signals[1].signal, copy_count_from_input = true }},
+    else_outputs = {{ signal = signals[2].signal, constant = 1, copy_count_from_input = false }},
+    future_field = "preserved",
+  }
+  local item = { captured_outputs = signals, captured_parameters = original }
+  local seed = LatchRearm.forced_parameters(item)
+  check("all captured signals have explicit outputs", #seed.outputs == 3)
+  check("signed counts preserved", seed.outputs[1].constant == 47 and seed.outputs[2].constant == -7)
+  check("quality preserved", seed.outputs[3].signal.quality == "rare")
+  check("input copying disabled", seed.outputs[1].copy_count_from_input == false
+    and seed.outputs[2].copy_count_from_input == false and seed.outputs[3].copy_count_from_input == false)
+  check("seed cannot fire alternate outputs", #seed.else_outputs == 0)
+  check("seed condition always true", seed.conditions[1].constant == -2147483648
+    and seed.conditions[1].comparator == ">=")
+  check("future parameter fields preserved", seed.future_field == "preserved")
+  check("captured rules untouched", original.outputs[1].copy_count_from_input and #original.else_outputs == 1
+    and original.conditions[1].constant == 0)
+  check("full register equality", LatchRearm.register_matches(item, signals))
+  local extra = { signals[1], signals[2], signals[3], {signal={type="virtual",name="signal-A"},count=1} }
+  check("unexpected extra signal rejected", not LatchRearm.register_matches(item, extra))
+  check("missing signal rejected", not LatchRearm.register_matches(item, {signals[1]}))
+  check("empty register rejected", not LatchRearm.register_matches(item, nil))
+  check("only working counts as evaluating", LatchRearm.status_is_live("working")
+    and not LatchRearm.status_is_live("low_power") and not LatchRearm.status_is_live(nil))
 
-	local function check(name, cond, msg)
-		if cond then
-			passed = passed + 1
-			details[#details + 1] = { name = name, ok = true }
-		else
-			failed = failed + 1
-			details[#details + 1] = { name = name, ok = false, msg = msg or "assertion failed" }
-		end
-	end
+  -- Exercise error paths with mock entities, without changing the game clock or any surface.
+  local saved_jobs, saved_results = storage.latch_rearm_jobs, storage.latch_rearm_results
+  local ok, err = xpcall(function()
+    local parameters, register, reject_restore = original, signals, false
+    local behavior = setmetatable({}, {
+      __index = function(_, key)
+        if key == "parameters" then return parameters end
+        if key == "signals_last_tick" then return register end
+      end,
+      __newindex = function(_, key, value)
+        if key == "parameters" then
+          if reject_restore and value == original then error("injected original-rule write failure") end
+          parameters = value
+        end
+      end,
+    })
+    local entity = { valid=true, surface={index=-123}, status=defines.entity_status.working,
+      get_control_behavior=function() return behavior end }
+    local function install(stage)
+      item = { entity=entity, entity_id=-1, captured_outputs=signals, captured_parameters=original }
+      storage.latch_rearm_jobs = { selftest={version=2,stage=stage,at_tick=game.tick,items={item}} }
+      storage.latch_rearm_results = {}
+    end
+    local function step()
+      local job = storage.latch_rearm_jobs.selftest
+      if job then job.at_tick = game.tick end
+      LatchRearm.process_tick()
+    end
+    install("preflight")
+    check("pending surface guarded", LatchRearm.pending_on_surface(-123) and not LatchRearm.pending_on_surface(-124))
+    local locked, lock_error = SurfaceLock.lock_platform({valid=true,surface={valid=true,index=-123}}, nil)
+    check("actual export lock rejects pending restoration", locked == false
+      and lock_error == "Circuit memory restoration is still pending on this platform")
+    step(); step(); step(); step()
+    check("verified seed completed", storage.latch_rearm_results.selftest.rearmed == 1)
+    check("original parameters restored", parameters == original)
+    check("completed surface released", not LatchRearm.pending_on_surface(-123))
 
-	local function make_item()
-		return {
-			captured_outputs = { { signal = { type = "virtual", name = "signal-S" }, count = 1 } },
-			captured_parameters = {
-				conditions = {
-					{ first_signal = { type = "virtual", name = "signal-A" }, comparator = ">", constant = 0 },
-					{ first_signal = { type = "virtual", name = "signal-S" }, comparator = ">", constant = 0,
-						compare_type = "or" },
-				},
-				outputs = { { signal = { type = "virtual", name = "signal-S" }, copy_count_from_input = false } },
-				else_outputs = { { signal = { type = "virtual", name = "signal-R" }, copy_count_from_input = false } },
-				future_field = "must-survive",
-			},
-		}
-	end
+    local dark_parameters = original
+    local dark_behavior = setmetatable({}, {
+      __index = function(_, key) if key == "parameters" then return dark_parameters end end,
+      __newindex = function(_, key, value) if key == "parameters" then dark_parameters = value end end,
+    })
+    local dark_entity = { valid=true, status=defines.entity_status.no_power,
+      get_control_behavior=function() return dark_behavior end }
+    install("preflight")
+    local dark_item = {entity=dark_entity, entity_id=-2, captured_outputs=signals, captured_parameters=original}
+    storage.latch_rearm_jobs.selftest.items[2] = dark_item
+    -- An old saved deadline must not preserve the removed retry policy.
+    storage.latch_rearm_jobs.selftest.power_deadline = game.tick + 1800
+    step(); step()
+    check("ready sibling seeded without waiting", item.seed_written == true)
+    check("dark sibling fails without seed writes", dark_item.failed and not dark_item.seed_written
+      and dark_parameters == original and dark_item.outcome:find("no_power", 1, true) ~= nil)
+    step(); step()
+    check("mixed job finishes with separate outcomes", storage.latch_rearm_results.selftest.rearmed == 1
+      and storage.latch_rearm_results.selftest.failed == 1)
 
-	local function gcd(a, b)
-		while b ~= 0 do a, b = b, a % b end
-		return a
-	end
-	local gaps = LatchRearm.SAMPLE_GAPS
-	local coprime = #gaps == LatchRearm.SAMPLE_COUNT - 1
-	for i = 1, #gaps do
-		for j = i + 1, #gaps do
-			if gcd(gaps[i], gaps[j]) ~= 1 then coprime = false end
-		end
-	end
-	check("sample_gaps_are_pairwise_coprime_and_cover_every_sample",
-		coprime,
-		"uniform spacing aliases any register whose period divides the gap — pairwise-coprime gaps "
-			.. "catch every periodic register with period > 1")
+    install("seed_verify"); item.seed_written = true; entity.status = defines.entity_status.no_power
+    step(); step()
+    check("power loss cannot verify stale matching signals", storage.latch_rearm_results.selftest.failed == 1
+      and parameters == original)
+    entity.status = defines.entity_status.working
 
-	local item = make_item()
-	local forced = LatchRearm.forced_parameters(item)
-	check("forced_preserves_outputs",
-		forced.outputs ~= nil and #forced.outputs == 1
-			and forced.outputs[1].signal.name == "signal-S"
-			and forced.outputs[1].copy_count_from_input == false,
-		"forced_parameters must carry the captured outputs through by value")
-	check("forced_preserves_else_outputs",
-		forced.else_outputs ~= nil and #forced.else_outputs == 1
-			and forced.else_outputs[1].signal.name == "signal-R",
-		"a rebuilt table drops else_outputs — the E-rung measured the getter emits it at 2.1.11")
-	check("forced_preserves_unknown_future_fields", forced.future_field == "must-survive",
-		"shallow-copy semantics must carry fields this code has never heard of")
-	check("forced_overrides_to_one_always_true_condition",
-		#forced.conditions == 1 and forced.conditions[1].comparator == ">="
-			and forced.conditions[1].constant == -2147483648
-			and forced.conditions[1].first_signal.name == "signal-S",
-		"the force stage exists only to make the output fire unconditionally")
-	check("forced_does_not_mutate_the_captured_table",
-		#item.captured_parameters.conditions == 2
-			and item.captured_parameters.conditions[1].comparator == ">",
-		"restore writes captured_parameters back verbatim — mutating it corrupts the restore")
+    install("seed_verify"); item.seed_written = true; register = extra; reject_restore = true
+    step()
+    check("restore failure is retained after mismatch", item.failed and item.outcome:find("restore write failed",1,true) ~= nil)
+    check("failed restore keeps pending guard", LatchRearm.pending_on_surface(-123) and storage.latch_rearm_results.selftest == nil)
+    reject_restore = false; step(); step()
+    check("restore retry cannot turn failure into success", storage.latch_rearm_results.selftest.failed == 1)
+    check("retry restores original rules", parameters == original)
 
-	local item2 = make_item()
-	local clearing = LatchRearm.clearing_parameters(item2)
-	check("clearing_has_one_always_false_condition",
-		#clearing.conditions == 1 and clearing.conditions[1].comparator == "<"
-			and clearing.conditions[1].constant == -2147483648,
-		"the clear window exists only to hold the output at nothing")
-	check("clearing_strips_else_outputs_even_when_captured_carries_one",
-		clearing.else_outputs == nil,
-		"under an always-false condition a preserved else_outputs would FIRE for the whole clear window")
-	check("clearing_preserves_outputs",
-		clearing.outputs ~= nil and #clearing.outputs == 1
-			and clearing.outputs[1].signal.name == "signal-S",
-		"the cleared latch must keep its own output shape for the restore that follows")
-	check("clearing_does_not_mutate_the_captured_table",
-		item2.captured_parameters.else_outputs ~= nil
-			and #item2.captured_parameters.conditions == 2,
-		"clear_restore writes captured_parameters back verbatim — mutating it corrupts the restore")
+    install("seed_verify"); item.seed_written = true; register = signals
+    step(); register = extra; step()
+    check("changed register reported as resumed without clear", storage.latch_rearm_results.selftest.resumed == 1
+      and storage.latch_rearm_results.selftest.cleared == 0 and parameters == original)
 
-	check("only_working_counts_as_a_live_instrument",
-		LatchRearm.status_is_live("working") == true,
-		"a powered decider reports status 'working' — measured 14/14 on lab-transfer-fixture-v1")
-
-	local dead_statuses = { "no_power", "low_power", "not_plugged_in_electric_network",
-		"recharging_after_power_outage", "disabled_by_script", "disabled_by_control_behavior",
-		"marked_for_deconstruction", "normal" }
-	local live_dead = {}
-	for _, name in ipairs(dead_statuses) do
-		if LatchRearm.status_is_live(name) then live_dead[#live_dead + 1] = name end
-	end
-	check("a_decider_not_working_is_not_a_live_instrument",
-		#live_dead == 0,
-		"these statuses must not license a clear; 'normal' is included deliberately — it is a live status "
-			.. "for other entity types but combinators report 'working', so treating it as live would widen "
-			.. "the gate past what was measured. Leaked: " .. table.concat(live_dead, ", "))
-
-	check("an_unreadable_status_is_not_a_live_instrument",
-		LatchRearm.status_is_live(nil) == false,
-		"status_name returns nil when the read throws — an unknown instrument must never read as alive")
-
-	for _, outcome in ipairs({ LatchRearm.UNPOWERED_SAMPLE_OUTCOME, LatchRearm.UNPOWERED_FORCE_OUTCOME }) do
-		check("unpowered_outcome_buckets_as_failed_not_cleared",
-			outcome:find("cleared to 0", 1, true) == nil and outcome:find("register moving", 1, true) == nil,
-			"finalize buckets by substring in order (rearmed / cleared to 0 / register moving / failed); an "
-				.. "unpowered outcome containing either phrase would be counted as a successful clear: " .. outcome)
-	end
-
-	return { passed = passed, failed = failed, total = passed + failed, details = details }
+    install("clear_restore"); storage.latch_rearm_jobs.selftest.version = nil
+    step(); step()
+    check("legacy pending job restores and reports interruption", storage.latch_rearm_results.selftest.failed == 1
+      and parameters == original)
+    install("restore"); entity.valid = false; step(); step()
+    check("removed entity does not leave pending job", storage.latch_rearm_results.selftest.failed == 1
+      and storage.latch_rearm_jobs.selftest == nil)
+  end, debug.traceback)
+  storage.latch_rearm_jobs, storage.latch_rearm_results = saved_jobs, saved_results
+  check("mock state-machine harness completed", ok)
+  if not ok then
+    log("[latch-rearm-params-selftest] " .. tostring(err))
+    details[#details].msg = tostring(err)
+  end
+  return { passed=passed, failed=failed, total=passed+failed, details=details }
 end
-
 return latch_rearm_params_selftest

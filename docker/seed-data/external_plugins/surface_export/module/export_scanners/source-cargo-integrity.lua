@@ -1,8 +1,8 @@
-local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
+local CargoCounter = require("modules/surface_export/validators/cargo-counter")
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
 
-local CensusAccumulator = {}
+local SourceCargoIntegrity = {}
 
 local EXACT_EPSILON = 1e-6
 
@@ -63,9 +63,9 @@ local function build_row(entity, entity_data, phys_items, ser_items, item_delta)
     }
 end
 
-function CensusAccumulator.new(fluid_registry)
+function SourceCargoIntegrity.new(fluid_registry)
     if not fluid_registry then
-        error("CensusAccumulator.new requires the job's FluidRegistry " ..
+        error("SourceCargoIntegrity.new requires the job's FluidRegistry " ..
             "(the serialized-side fluid truth) — see the FLUIDS ON 2.1 header note")
     end
     return {
@@ -74,6 +74,7 @@ function CensusAccumulator.new(fluid_registry)
         physical_fluids = {},
         serialized_fluids = {},
         mismatches = {},
+        measurement_errors = {},
         property_findings = {},
         entity_count = 0,
         fluid_registry = fluid_registry,
@@ -82,12 +83,24 @@ function CensusAccumulator.new(fluid_registry)
     }
 end
 
-function CensusAccumulator.record(acc, entity, entity_data, fluid_state)
+function SourceCargoIntegrity.record(acc, entity, entity_data, fluid_state)
     fluid_state = fluid_state or acc.fluid_state
     acc.entity_count = acc.entity_count + 1
 
-    local phys_items = SurfaceCounter.count_entity_items(entity)
-    local phys_fluids = SurfaceCounter.count_entity_fluids(entity, fluid_state)
+    -- Old saved jobs may not have this field. Once a read fails the job cannot pass.
+    acc.measurement_errors = acc.measurement_errors or {}
+    local errors = acc.measurement_errors
+    local items_ok, phys_items = pcall(CargoCounter.count_entity_items, entity)
+    if not items_ok then
+        acc.measurement_failed = true
+        if #errors < 20 then table.insert(errors, tostring(phys_items)) end
+    end
+    local fluids_ok, phys_fluids = pcall(CargoCounter.count_entity_fluids, entity, fluid_state)
+    if not fluids_ok then
+        acc.measurement_failed = true
+        if #errors < 20 then table.insert(errors, tostring(phys_fluids)) end
+    end
+    if not items_ok or not fluids_ok then return end
 
     local one = { entity_data }
     local ser_items = Verification.count_all_items(one)
@@ -119,7 +132,7 @@ function CensusAccumulator.record(acc, entity, entity_data, fluid_state)
     end
 end
 
-function CensusAccumulator.verdict(acc)
+function SourceCargoIntegrity.verdict(acc)
     local item_delta = item_key_delta(acc.physical_items, acc.serialized_items)
     local phys_fluids_by_name = aggregate_fluids_by_name(acc.physical_fluids)
     local ser_fluids_by_name = aggregate_fluids_by_name(acc.serialized_fluids)
@@ -127,10 +140,12 @@ function CensusAccumulator.verdict(acc)
 
     local items_exact = next(item_delta) == nil
     local fluids_exact = next(fluid_delta) == nil
-    local ok = (#acc.mismatches == 0) and items_exact and fluids_exact
+    local ok = not acc.measurement_failed and (#acc.mismatches == 0) and items_exact and fluids_exact
 
     return {
         ok = ok,
+        measurementAvailable = not acc.measurement_failed,
+        measurementErrors = acc.measurement_errors,
         mismatches = acc.mismatches,
         property_findings = acc.property_findings,
         totals = {
@@ -147,4 +162,4 @@ function CensusAccumulator.verdict(acc)
     }
 end
 
-return CensusAccumulator
+return SourceCargoIntegrity

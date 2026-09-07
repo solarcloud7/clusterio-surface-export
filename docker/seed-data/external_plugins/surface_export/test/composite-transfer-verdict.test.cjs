@@ -260,7 +260,7 @@ test("single gate is exact for items and by-name fluids", () => {
 		"the only fluid comparison nuance is serializer-scale floating representation");
 	assert.doesNotMatch(transferValidation, /STRICT_ABS|STRICT_PCT|FLUID_GAIN_TOLERANCE|FLUID_LOSS_TOLERANCE/,
 		"destructive transfer parity must contain no band, floor, or percentage tolerance");
-	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
+	assert.match(transferValidation, /CargoCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
 		"the exact census must receive injection segment temperatures (2.1 registry: no ownership-exclusion arg)");
 });
 
@@ -273,20 +273,6 @@ test("failed single gate banks an always-on black box before discard", () => {
 		"debug-gated preserve mode must remain an explicit escape hatch");
 	assert.doesNotMatch(importCompletion, /quarantine_destination_after_discard_failure|destinationDiscard(?:ed|Escalated|Quarantined|QuarantineError)/,
 		"retired quarantine and consumer-less destination fields must be gone");
-});
-
-test("failed-entity ITEMS are subtracted, failed-entity FLUIDS are not, and only write_rejected adjusts fluids pre-gate", () => {
-	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const felItemsAt = importCompletion.indexOf("pairs(fel.items)");
-	const felGateAt = importCompletion.indexOf("TransferValidation.validate_import", felItemsAt);
-	assert.ok(felItemsAt !== -1 && felGateAt > felItemsAt,
-		"failed-entity item losses must adjust expected item counts before the verdict");
-	assert.doesNotMatch(importCompletion, /fel\.fluids/,
-		"failed-entity fluids must NOT be subtracted — a short segment fails the exact gate (fail => revert)");
-	const rejectedAt = importCompletion.indexOf("write_rejected");
-	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", rejectedAt);
-	assert.ok(rejectedAt !== -1 && gateAt > rejectedAt,
-		"physically-measured write_rejected must adjust expected fluids before the verdict");
 });
 
 test("failed-entity and overflow item losses retain quality keys end to end", () => {
@@ -302,8 +288,8 @@ test("failed-entity and overflow item losses retain quality keys end to end", ()
 		"ground, inventory, belt, and held-item loss paths must each preserve quality");
 	assert.match(deserializer, /Util\.make_quality_key\(item\.name,\s*item\.quality/,
 		"overflow losses must use the exported item quality");
-	assert.match(importCompletion, /adjusted_verification\.item_counts\[item_key\]/,
-		"quality-keyed losses must be subtracted from the same expected-count key");
+	assert.match(importCompletion, /result\.inventoryOverflowLosses = job\.inventory_overflow_losses/,
+		"quality-keyed losses remain evidence");
 });
 
 test("forced entity failure is fail-safe and preservation is one-shot and visible", () => {
@@ -312,7 +298,7 @@ test("forced entity failure is fail-safe and preservation is one-shot and visibl
 	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
 	assert.match(entityCreation, /job\.test_forced_entity_failure\s*=\s*true/,
 		"the mutating entity hook must leave a fail-safe verdict marker");
-	assert.match(importCompletion, /job\.test_forced_entity_failure[\s\S]*result\.success\s*=\s*false/,
+	assert.match(importCompletion, /job\.failed_entity_losses[\s\S]*result\.success\s*=\s*false/,
 		"a leaked entity-failure hook must fail the transfer and preserve the source");
 	assert.match(importCompletion, /config\.preserve_failed_destination\s*=\s*nil/,
 		"debug destination preservation must be consumed when it fires");
@@ -418,13 +404,6 @@ test("fluid restoration reports dropped fluids without subtracting them", () => 
 });
 
 
-test("post-activation reporting cannot overwrite frozen gate fields", () => {
-	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
-	assert.match(lossAnalysis, /result\.postActivationReport\s*=\s*{/,
-		"post-activation physical reporting must live under a separate sub-object");
-	assert.doesNotMatch(lossAnalysis, /validation_result\.actualItemCounts\s*=|validation_result\.actualFluidCounts\s*=/,
-		"reporting must not mutate the gate's immutable actual counts");
-});
 
 test("LuaInterface has no production validation-result refetch helper", () => {
 	const luaInterface = fs.readFileSync(path.join(__dirname, "..", "lib", "lua-interface.ts"), "utf8");
@@ -441,7 +420,7 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 
 	assert.notEqual(hookIndex, -1, "import completion must consume test_force_fluid_loss");
 	assert.ok(hookIndex < gateIndex, "test_force_fluid_loss must fire before the single gate");
-	assert.match(importCompletion, /adjusted_verification\.fluid_counts\[missing_key\]\s*=\s*\(adjusted_verification\.fluid_counts\[missing_key\]\s*or\s*0\)\s*\+\s*expected_loss/,
+	assert.match(importCompletion, /cargo_expectations\.fluid_counts\[missing_key\]\s*=\s*\(cargo_expectations\.fluid_counts\[missing_key\]\s*or\s*0\)\s*\+\s*expected_loss/,
 		"hook should inflate expected fluids without mutating the destination");
 	assert.match(importCompletion, /\[TEST HOOK\] Forced fluid loss: inflated missing expected/,
 		"integration probe needs a direct log witness that the hook fired");
@@ -460,12 +439,12 @@ test("belt forensic census survives the legacy purge; recovery machinery is gone
 		"attribution rows must name a physical entity and line with both sides of the comparison");
 	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
 		"the forensic total must come from the completed physical census, not insert return values");
-	assert.match(restoration, /OVER-COMPRESSION MERGE/,
-		"the restored over-compression merge must stay PRESENT - deleting it re-opens the 2026-07-27 incident (a purge must account for this class)");
-	assert.match(restoration, /local function scan_place[\s\S]{0,900}?can_insert_at\(k \/ 256\)[\s\S]{0,160}?and insert_with_state\(/,
-		"the merge's scan must gate every landing on the engine's insert return - a can_insert_at-only scan reports landings that never happened (review 2026-08-09)");
-	assert.match(restoration, /local function insert_with_state\([\s\S]{0,240}?if not VersionCompat\.belt_insert_at\([^\n]*then return false end/,
-		"insert_with_state is the single belt write: it must report the engine's own refusal, or every caller's landing gate (try_insert and scan_place alike) becomes a lie");
+	assert.doesNotMatch(restoration, /OVER-COMPRESSION MERGE|local function scan_place|line\.can_insert_at/,
+		"force insertion restored the retained 5,772 stacks exactly; coordinate scans and merging must not change their positions or state");
+	assert.match(restoration, /VersionCompat\.belt_force_insert_at\(line, k \/ 256, stack_def, count\)/,
+		"the force API returns void; physical side-group checks below remain the authority");
+	assert.match(restoration, /k >= 0 and k \/ 256 <= line\.line_length/,
+		"the engine's position clamping must not silently repair an invalid captured position");
 	assert.doesNotMatch(restoration, /recover_deficits_to_hub|function BeltRestoration\.restore\s*\(|line_needs_consolidation|MIN_SPACING/,
 		"the legacy consolidation restore and hub-deficit recovery must stay deleted (owner order 2026-07-27)");
 });

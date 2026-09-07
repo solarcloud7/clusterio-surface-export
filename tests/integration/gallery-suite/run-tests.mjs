@@ -1,3 +1,5 @@
+// Pad boards, real transfer and rollback. Invalid uploads are covered by upload-import-verdict.
+import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -170,32 +172,6 @@ async function main() {
 				`storage.surface_export_config.test_force_validation_failure=nil end return {success=true}`);
 		}
 
-		const uploadName = `gallery-suite-upload-${Date.now() % 1_000_000}`;
-		L.docker(["cp", `${repoRoot}tests/integration/gallery-suite/fixture.json`,
-			`${L.CONTROLLER}:/tmp/gallery-suite-upload.json`], { timeout: 120_000 });
-		L.ctl("surface-export", "upload-import", "/tmp/gallery-suite-upload.json",
-			String(ids[2]), "player", uploadName);
-		let verdict = null;
-		const deadline = Date.now() + 120_000;
-		while (!verdict && Date.now() < deadline) {
-			await L.sleep(2000);
-			const r = L.lua(2, `for id,rec in pairs(storage.async_job_results or {}) do ` +
-				`if rec.type=='import' and rec.platform_name=='${uploadName}' and rec.complete then ` +
-				`return {success=true,found=true,ok=(rec.validation and rec.validation.success),` +
-				`stage=(rec.validation and rec.validation.failedStage),` +
-				`details=(rec.validation and rec.validation.mismatchDetails)} end end ` +
-				`return {success=true,found=false}`);
-			if (r.found) verdict = r;
-		}
-		step("webImport.refusedLoudly", !!verdict && verdict.ok === false && verdict.stage === "belts"
-			&& /predates captured source positions/.test(String(verdict.details)),
-			verdict ? `stage=${verdict.stage}` : "job never completed (server death class?)");
-		const alive = L.lua(2, "return {success=true}");
-		step("webImport.serverAlive", alive.success === true, "post-upload RCON answers");
-		L.lua(2, `for _,p in pairs(game.forces.player.platforms) do ` +
-			`if p.valid and p.name=='${uploadName}' then ` +
-			`remote.call('surface_export','unlock_platform',p.index); game.delete_surface(p.surface) end end ` +
-			`return {success=true}`);
 	} finally {
 		await L.restoreLivePair(results, boundaryErrors);
 	}
@@ -203,13 +179,15 @@ async function main() {
 	for (const err of boundaryErrors) { console.error(err); failed++; }
 	console.log(`\n=== gallery-suite: ${failed === 0 ? "ALL PASS" : failed + " FAILED"} ` +
 		`(${results.steps.length} steps${results.restored ? ", live pair restored" : ""}) ===`);
-	process.exit(failed === 0 ? 0 : 1);
+	process.exitCode = failed === 0 ? 0 : 1;
 }
 
-main().catch(async error => {
+withWorkflowLock(async () => {
+try { await main(); } catch (error) {
 	console.error(error.stack || error.message);
 	await L.restoreLivePair(results, boundaryErrors)
 		.catch(restoreError => console.error(`restoreLivePair itself rejected: ${restoreError.stack || restoreError.message}`));
 	for (const err of boundaryErrors) console.error(err);
-	process.exit(1);
+	process.exitCode = 1;
+}
 });

@@ -5,11 +5,11 @@ local FluidRegistry = require("modules/surface_export/export_scanners/fluid-regi
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
 local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
+local BeltBatches = require("modules/surface_export/import_phases/belt_batches")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
-local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
@@ -19,7 +19,6 @@ local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
-local PhaseCensus = require("modules/surface_export/utils/phase-census")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 
@@ -47,28 +46,11 @@ local function scan_surface_with_registry(surface)
 	InventoryScanner.fluid_registry = nil
 	if not ok then
 		log("[Import] forensic surface scan failed: " .. tostring(entities))
-		return {}, {}
+		return nil, nil, tostring(entities)
 	end
 	return entities, FluidRegistry.list(registry)
 end
 
-
-local function subtract_fluids_by_name(counts, subtractions)
-	local adjusted = copy_counts(counts)
-	for fluid_name, amount in pairs(subtractions or {}) do
-		local remaining = amount
-		for key, current in pairs(adjusted) do
-			if remaining <= 0 then break end
-			local name = Util.parse_fluid_temp_key(key)
-			if name == fluid_name and current > 0 then
-				local subtract = math.min(current, remaining)
-				adjusted[key] = current - subtract
-				remaining = remaining - subtract
-			end
-		end
-	end
-	return adjusted
-end
 
 local function emit_debug_import_result(job, validation_result, duration_ticks)
 	if not job.transfer_id then return end
@@ -143,7 +125,7 @@ local function bank_failure_black_box(job, result)
 	for name, version in pairs(script.active_mods or {}) do mods[name] = version end
 	local safe_name = string.gsub(job.platform_name or "unknown", "[^%w_-]", "_")
 	local filename = string.format("%s_%d.json", safe_name, game.tick)
-	local physical_entities, physical_fluid_segments = scan_surface_with_registry(job.target_surface)
+	local physical_entities, physical_fluid_segments, capture_error = scan_surface_with_registry(job.target_surface)
 	local bundle = {
 		transfer_id = job.transfer_id,
 		platform_name = job.platform_name,
@@ -163,28 +145,14 @@ local function bank_failure_black_box(job, result)
 		},
 		physical_entities = physical_entities,
 		physical_fluid_segments = physical_fluid_segments,
+		physical_capture_available = capture_error == nil,
+		physical_capture_error = capture_error,
 		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
 		replay_payload = job.platform_data,
 	}
 	local written = DebugExport.write_failure_black_box(filename, bundle)
 	result.failureBlackBox = { file = written, tick = game.tick }
 	return written ~= nil
-end
-
-local function belt_delta_to_census_keys(delta)
-	local out = {}
-	for key, value in pairs(delta or {}) do
-		local name, quality = key:match("^(.-)%z(.*)$")
-		if name then
-			local census_key = Util.make_quality_key(name, quality)
-			out[census_key] = (out[census_key] or 0) + value
-		else
-			out[key] = (out[key] or 0) + value
-			log(string.format(
-				"[PhaseCensus] belt delta key %q did not match name\\0quality — carried through unconverted", key))
-		end
-	end
-	return out
 end
 
 local function record_item_state(job, session)
@@ -207,74 +175,88 @@ local function log_item_state(job)
 	end
 end
 
-local function census_scope(job)
-	local platform = job and job.target_platform
-	if platform and platform.valid and platform.surface and platform.surface.valid then
-		return platform.surface
-	end
-	return nil
-end
-
 function ImportCompletion.run_phase1(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
 
-	job.phase_census = job.phase_census or {}
-	PhaseCensus.record_baseline(job, "entity_creation", census_scope(job))
+	if not job.phase1_started then
 
-	log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
+		log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
 
-	PhaseRecorder.start(job, "hub")
-	local hub_scope
-	do
-		local surf = census_scope(job)
-		hub_scope = surf and surf.find_entities_filtered({ type = "space-platform-hub" }) or nil
+		PhaseRecorder.start(job, "hub")
+		local hub_item_state = Deserializer.new_item_state_session()
+		local hub_ok, hub_err = pcall(PlatformHubMapping.restore_hub_inventories, job, hub_item_state)
+		Deserializer.release_item_state_session(hub_item_state)
+		record_item_state(job, hub_item_state)
+		if not hub_ok then error(hub_err, 0) end
+		PhaseRecorder.stop(job, "hub")
+		job.phase1_started = true
 	end
-	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
-	local hub_item_state = Deserializer.new_item_state_session()
-	local hub_ok, hub_err = pcall(PlatformHubMapping.restore_hub_inventories, job, hub_item_state)
-	Deserializer.release_item_state_session(hub_item_state)
-	record_item_state(job, hub_item_state)
-	if not hub_ok then error(hub_err, 0) end
-	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
-	PhaseRecorder.stop(job, "hub")
 
 	PhaseRecorder.start(job, "belts")
 	local belts_result
+	local more_belts = false
 	local side_groups = job.platform_data and job.platform_data.belt_side_groups
 	if side_groups and #side_groups > 0 then
+		local total_side_groups = #side_groups
 		local placed, unplaced, anomalies
-		local shape_ok, shape_err = BeltRestoration.validate_side_groups(side_groups)
+		local shape_ok, shape_err = true, nil
+		if not job.belt_batches then shape_ok, shape_err = BeltRestoration.validate_side_groups(side_groups) end
 		if not shape_ok then
 			log(string.format("[Import] belt_side_groups REFUSED (malformed payload): %s", tostring(shape_err)))
 			job.metrics.belt_shape_error = tostring(shape_err)
 			placed, unplaced, anomalies = 0, 0, 1
-			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		else
+			if not job.belt_batches then
+				local cfg = storage.surface_export_config or {}
+				local ok_plan, plan = pcall(BeltBatches.plan, side_groups, entity_map, cfg.belt_batch_size or 500)
+				if not ok_plan then
+					log("[Import] Belt batch planning failed; using one atomic batch: " .. tostring(plan))
+					local indices = {}; for i in ipairs(side_groups) do indices[#indices + 1] = i end
+					plan = { batches = {{ indices = indices, cost = 0 }}, cursor = 1, networks = 1 }
+				end
+				plan.placed, plan.unplaced, plan.anomalies, plan.state = 0, 0, 0, {}
+				job.belt_batches = plan
+				job.metrics.belt_networks = plan.networks
+				log(string.format("[Import] Belt restoration: %d network(s), %d batch(es)%s", plan.networks,
+					#plan.batches, plan.atomic_reason and ("; atomic: " .. plan.atomic_reason) or ""))
+			end
+			local progress = job.belt_batches
+			local batch = progress.batches[progress.cursor]
+			local slice = {}; for _, i in ipairs(batch.indices) do slice[#slice + 1] = side_groups[i] end
+			side_groups = slice
+			job.metrics.belt_restore_batches = (job.metrics.belt_restore_batches or 0) + 1
+			job.metrics.belt_max_batch_work = math.max(job.metrics.belt_max_batch_work or 0, batch.cost)
 			local restore_fn = BeltRestoration.restore_side_groups
-			local ok_restore, r_placed, r_unplaced, r_anomalies, r_delta, r_state = pcall(restore_fn, side_groups,
+			local ok_restore, r_placed, r_unplaced, r_anomalies, _, r_state = pcall(restore_fn, side_groups,
 				entity_map, job.target_platform and job.target_platform.name or job.platform_name)
 			if not ok_restore then
 				log(string.format("[Import] belt side-restore THREW (routed to verdict, never error()): %s",
 					tostring(r_placed)))
 				job.metrics.belt_restore_error = tostring(r_placed)
-				placed, unplaced, anomalies = 0, 0, 1
-				PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
+				placed, unplaced, anomalies = progress.placed, progress.unplaced, progress.anomalies + 1
 			else
-				placed, unplaced, anomalies = r_placed, r_unplaced, r_anomalies
+				progress.placed = progress.placed + r_placed
+				progress.unplaced = progress.unplaced + r_unplaced
+				progress.anomalies = progress.anomalies + r_anomalies
+				placed, unplaced, anomalies = progress.placed, progress.unplaced, progress.anomalies
 				if r_state then
+					for key, value in pairs(r_state) do progress.state[key] = (progress.state[key] or 0) + value end
+					r_state = progress.state
 					job.metrics.belt_state_applied = r_state.applied
 					job.metrics.belt_state_unmatched = r_state.unmatched
 					job.metrics.belt_state_failed = r_state.failed
 					job.metrics.belt_state_merge_discarded = r_state.merge_discarded
 					job.metrics.belt_state_declined = r_state.declined
 				end
-				PhaseCensus.record_external(job, "belts", PhaseCensus.SUBJECT_BELTS,
-					belt_delta_to_census_keys(r_delta), "side-group member lines")
+				progress.cursor = progress.cursor + 1
+				more_belts = unplaced == 0 and anomalies == 0 and progress.cursor <= #progress.batches
+					and (progress.state.failed or 0) == 0 and (progress.state.unmatched or 0) == 0
+					and (progress.state.declined or 0) == 0
 			end
 		end
 		belts_result = { items_restored = placed, attribution = nil }
-		job.metrics.belt_side_groups = #side_groups
+		job.metrics.belt_side_groups = total_side_groups
 		job.metrics.belt_unplaced = unplaced
 		job.metrics.belt_anomalies = anomalies
 		if unplaced > 0 then
@@ -304,12 +286,13 @@ function ImportCompletion.run_phase1(job)
 				.. " — re-export from the source with the current version")
 			job.metrics.belt_shape_error = "payload predates captured source positions (no belt_side_groups); the legacy restore is deleted"
 			job.metrics.belt_anomalies = 1
-			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		end
 		belts_result = { items_restored = 0 }
 	end
 	PhaseRecorder.stop(job, "belts")
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
+	if more_belts then return end
+	job.belt_batches = nil
 
 	PhaseRecorder.start(job, "state")
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
@@ -337,7 +320,6 @@ function ImportCompletion.run_phase2(job)
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
 	PhaseRecorder.start(job, "inventories")
-	PhaseCensus.open(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	local inv_restored = 0
 	local inv_skipped = 0
 	local inv_item_state = Deserializer.new_item_state_session()
@@ -366,7 +348,6 @@ function ImportCompletion.run_phase2(job)
 	record_item_state(job, inv_item_state)
 	if not inv_ok then error(inv_err, 0) end
 	log_item_state(job)
-	PhaseCensus.close(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PhaseRecorder.stop(job, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
@@ -391,14 +372,7 @@ function ImportCompletion.run_phase2(job)
 	local _dbg_cfg = storage.surface_export_config
 	local defer_clone = _dbg_cfg and _dbg_cfg.debug_mode and _dbg_cfg.test_defer_clone_activation
 	PhaseRecorder.start(job, "held_items")
-	local held_scope
-	do
-		local surf = census_scope(job)
-		held_scope = surf and surf.find_entities_filtered({ type = "inserter" }) or nil
-	end
-	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	PhaseRecorder.stop(job, "held_items")
 	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
@@ -406,15 +380,6 @@ function ImportCompletion.run_phase2(job)
 	PhaseRecorder.stop(job, "fluids")
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
-
-	local _, phase_complete = PhaseCensus.total(job)
-	job.metrics.phase_census = job.phase_census
-	job.metrics.phase_census_complete = phase_complete
-	log(string.format("[Import] PHASE CENSUS: %s", PhaseCensus.format(job)))
-	if not phase_complete then
-		log("[Import] PHASE CENSUS is a LOWER BOUND — at least one phase went unmeasured; "
-			.. "do not read the sum as an exact reconciliation against the gate.")
-	end
 
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after the exact transfer gate")
@@ -450,34 +415,10 @@ function ImportCompletion.run_phase2(job)
 	if is_transfer and has_verification then
 		Timing.start(job.job_id, "verification_preparation")
 
-		local adjusted_verification = {
+		local cargo_expectations = {
 			item_counts = copy_counts(job.platform_data.verification.item_counts),
 			fluid_counts = copy_counts(job.platform_data.verification.fluid_counts),
 		}
-		local fel = job.failed_entity_losses
-		if fel and fel.entity_count > 0 then
-			for item_key, lost_count in pairs(fel.items) do
-				if adjusted_verification.item_counts[item_key] then
-					adjusted_verification.item_counts[item_key] = math.max(
-						0, adjusted_verification.item_counts[item_key] - lost_count)
-				end
-			end
-			log(string.format("[Import] Adjusted expected ITEM totals for %d failed entities: -%d items (fluids never adjusted — fail => revert)",
-				fel.entity_count, fel.total_items))
-		end
-
-		local iol = job.inventory_overflow_losses
-		if iol and iol.total > 0 then
-			for item_key, lost_count in pairs(iol.items) do
-				if adjusted_verification.item_counts[item_key] then
-					adjusted_verification.item_counts[item_key] = math.max(
-						0, adjusted_verification.item_counts[item_key] - lost_count)
-				end
-			end
-			log(string.format("[Import] Adjusted expected totals: subtracted %d items across %d item types due to inventory overflow (API stack cap)",
-				iol.total, table_size(iol.items)))
-		end
-
 		do
 			local _cfg2 = storage.surface_export_config
 			if _cfg2 and _cfg2.debug_mode and _cfg2.test_force_item_loss and _cfg2.test_force_item_loss > 0 then
@@ -526,11 +467,6 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 
-		if fluids_result and fluids_result.write_rejected then
-			adjusted_verification.fluid_counts = subtract_fluids_by_name(
-				adjusted_verification.fluid_counts, fluids_result.write_rejected)
-		end
-
 		do
 			local _fluid_cfg = storage.surface_export_config
 			if _fluid_cfg and _fluid_cfg.debug_mode and _fluid_cfg.test_force_fluid_loss
@@ -538,7 +474,7 @@ function ImportCompletion.run_phase2(job)
 				local n_want = _fluid_cfg.test_force_fluid_loss
 				_fluid_cfg.test_force_fluid_loss = nil
 				local best_key, best_amount = nil, -1
-				for key, amount in pairs(adjusted_verification.fluid_counts or {}) do
+				for key, amount in pairs(cargo_expectations.fluid_counts or {}) do
 					if type(amount) == "number" and amount > best_amount then
 						best_key, best_amount = key, amount
 					end
@@ -547,8 +483,8 @@ function ImportCompletion.run_phase2(job)
 					local fluid_name = Util.parse_fluid_temp_key(best_key)
 					local missing_key = Util.make_fluid_temp_key(fluid_name, -99999)
 					local expected_loss = math.max(n_want, 1500)
-					adjusted_verification.fluid_counts[missing_key] =
-						(adjusted_verification.fluid_counts[missing_key] or 0) + expected_loss
+					cargo_expectations.fluid_counts[missing_key] =
+						(cargo_expectations.fluid_counts[missing_key] or 0) + expected_loss
 					log(string.format("[TEST HOOK] Forced fluid loss: inflated missing expected %s by %.1f (largest real key %s=%.1f)",
 						missing_key, expected_loss, best_key, best_amount))
 				else
@@ -562,7 +498,7 @@ function ImportCompletion.run_phase2(job)
 		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,
-			adjusted_verification,
+			cargo_expectations,
 			{ strict = true, segment_temps = fluids_result and fluids_result.segment_temps, timing_job_id = job.job_id }
 		)
 
@@ -580,14 +516,13 @@ function ImportCompletion.run_phase2(job)
 			result.testForcedFailure = true
 			log("[TEST HOOK] Forcing validation failure to exercise rollback")
 		end
-		if job.test_forced_entity_failure then
+		if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
 			success = false
-			result = result or {}
 			result.success = false
-			result.failedStage = "test_hook"
-			result.mismatchDetails = "TEST: forced entity placement failure (source preserved)"
-			result.testForcedEntityFailure = true
-			log("[TEST HOOK] Forced entity failure made the transfer verdict fail-safe")
+			result.failedStage = result.failedStage or "entities"
+			result.mismatchDetails = (result.mismatchDetails and (result.mismatchDetails .. "; ") or "")
+				.. string.format("%d entities failed to restore", job.failed_entity_losses.entity_count)
+			result.testForcedEntityFailure = job.test_forced_entity_failure or nil
 		end
 		if (job.metrics and job.metrics.belt_anomalies or 0) > 0 then
 			success = false
@@ -629,11 +564,16 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		TransferValidation.store_validation_result(validation_result_id, result)
-		if job.transfer_id and job.target_surface and job.target_surface.valid then
+		if success and job.transfer_id and job.target_surface and job.target_surface.valid then
 			local debug_success, debug_err = pcall(function()
-				if DebugExport.is_enabled() then
+				if DebugExport.destination_snapshot_enabled() then
 					Timing.start(job.job_id, "diagnostic_capture")
-					local scanned_entities, scanned_fluid_segments = scan_surface_with_registry(job.target_surface)
+					local scanned_entities, scanned_fluid_segments, capture_error = scan_surface_with_registry(job.target_surface)
+					if capture_error then
+						Timing.stop(job.job_id, "diagnostic_capture")
+						Timing.fail(job.job_id, "diagnostic_capture")
+						error("Destination snapshot unavailable: " .. capture_error)
+					end
 					local destination_schedule = nil
 					if job.target_platform and job.target_platform.valid then
 						local captured_schedule, schedule_err = PlatformSchedule.capture(job.target_platform, job.target_platform.hub)
@@ -656,17 +596,16 @@ function ImportCompletion.run_phase2(job)
 						},
 					}
 					Timing.stop(job.job_id, "diagnostic_capture")
-					Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_destination_platform, destination_data, job.platform_name)
-				else
-					log("[DebugExport] Skipping destination platform export: debug_mode is not enabled")
+					local written = Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_destination_platform, destination_data, job.platform_name)
+					if not written then
+						Timing.fail(job.job_id, "diagnostic_output")
+						error("Destination snapshot unavailable: JSON output failed")
+					end
 				end
 			end)
 			if not debug_success then
 				log(string.format("[DebugExport] ERROR: Failed to export destination platform: %s", tostring(debug_err)))
 			end
-		else
-			log(string.format("[DebugExport] Skipping destination platform export: transfer_id=%s, surface_valid=%s",
-				tostring(job.transfer_id), tostring(job.target_surface and job.target_surface.valid)))
 		end
 
 		if not success then
@@ -729,23 +668,8 @@ function ImportCompletion.run_phase2(job)
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
 			PhaseRecorder.stop(job, "activation")
 
-			local rearm_count = LatchRearm.schedule(job)
-			if rearm_count > 0 then
-				result.latchRearmScheduled = rearm_count
-			end
+			LatchRearm.schedule(job)
 
-			if result.totalExpectedItems then
-				PhaseRecorder.start(job, "loss_analysis")
-				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
-				PhaseRecorder.stop(job, "loss_analysis")
-				local post_counts = result.postActivationReport and result.postActivationReport.actualFluidCounts or {}
-				local post_diff = build_count_diff(
-					aggregate_fluid_counts_by_name(result.actualFluidCounts),
-					aggregate_fluid_counts_by_name(post_counts)
-				)
-				log(string.format("[Validation] Non-gating post-activation fluid recount: %d changed fluid names",
-					table_size(post_diff)))
-			end
 			game.print(string.format("[Validation] Validation passed - entities activated on platform %s!",
 				job.platform_name), {0, 1, 0})
 
@@ -855,6 +779,9 @@ function ImportCompletion.run_phase2(job)
 				entities_mapped = job.metrics.entities_mapped or 0,
 				fluids_restored = job.metrics.fluids_restored or 0,
 				belt_items_restored = job.metrics.belt_items_restored or 0,
+				belt_restore_batches = job.metrics.belt_restore_batches or 0,
+				belt_max_batch_work = job.metrics.belt_max_batch_work or 0,
+				belt_networks = job.metrics.belt_networks or 0,
 				belt_state_applied = job.metrics.belt_state_applied or 0,
 				belt_state_unmatched = job.metrics.belt_state_unmatched or 0,
 				belt_state_failed = job.metrics.belt_state_failed or 0,
@@ -926,8 +853,6 @@ function ImportCompletion.run_phase2(job)
 		game.print({"", "  Validation:    ", perf.validation})
 		game.print({"", "  Activation:    ", perf.activation})
 		game.print({"", "  Fluids:        ", perf.fluids})
-		game.print({"", "  Loss analysis: ", perf.loss_analysis})
-		
 		TransactionHistory.record_import(job, validation_result, perf)
 		
 		PhaseProfiler.discard(job.job_id)

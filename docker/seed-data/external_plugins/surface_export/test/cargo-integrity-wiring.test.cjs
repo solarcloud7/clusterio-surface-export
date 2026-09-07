@@ -8,7 +8,7 @@ const path = require("node:path");
 
 const moduleRoot = path.join(__dirname, "..", "module");
 const surfaceCounter = fs.readFileSync(
-	path.join(moduleRoot, "validators", "surface-counter.lua"),
+	path.join(moduleRoot, "validators", "cargo-counter.lua"),
 	"utf8",
 );
 
@@ -19,72 +19,72 @@ function functionBody(source, header, nextHeader) {
 	return source.slice(start, end === -1 ? source.length : end);
 }
 
-test("surface-counter defines the per-entity item and fluid census meters", () => {
-	assert.match(surfaceCounter, /function\s+SurfaceCounter\.count_entity_items\s*\(\s*entity/,
+test("cargo-counter defines the per-entity item and fluid census meters", () => {
+	assert.match(surfaceCounter, /function\s+CargoCounter\.count_entity_items\s*\(\s*entity/,
 		"count_entity_items(entity) must be the extracted per-entity item meter");
-	assert.match(surfaceCounter, /function\s+SurfaceCounter\.count_entity_fluids\s*\(\s*entity/,
+	assert.match(surfaceCounter, /function\s+CargoCounter\.count_entity_fluids\s*\(\s*entity/,
 		"count_entity_fluids(entity, ...) must be the extracted per-entity fluid meter");
 });
 
 test("count_items is a fold over the per-entity item meter (one meter, not two)", () => {
 	const body = functionBody(
 		surfaceCounter,
-		"function SurfaceCounter.count_items(surface)",
-		"function SurfaceCounter.count_fluids",
+		"function CargoCounter.count_items(surface)",
+		"function CargoCounter.count_fluids",
 	);
-	assert.match(body, /SurfaceCounter\.count_entity_items\s*\(/,
+	assert.match(body, /CargoCounter\.count_entity_items\s*\(/,
 		"count_items must delegate to count_entity_items so the surface census and the per-entity census share one meter");
 });
 
 test("count_fluids is a fold over the per-entity fluid meter", () => {
 	const body = functionBody(
 		surfaceCounter,
-		"function SurfaceCounter.count_fluids(surface",
-		"function SurfaceCounter.count_all",
+		"function CargoCounter.count_fluids(surface",
+		"function CargoCounter.count_all",
 	);
-	assert.match(body, /SurfaceCounter\.count_entity_fluids\s*\(/,
+	assert.match(body, /CargoCounter\.count_entity_fluids\s*\(/,
 		"count_fluids must delegate to count_entity_fluids so both censuses share one fluid meter");
 });
 
-test("surface-counter never references EntityHandlers (independence is structural)", () => {
+test("cargo-counter never references EntityHandlers (independence is structural)", () => {
 	assert.doesNotMatch(surfaceCounter, /EntityHandlers/,
 		"the census meter must stay independent of the export-side EntityHandlers dispatch");
 });
 
 function accumulatorSource() {
 	return fs.readFileSync(
-		path.join(moduleRoot, "export_scanners", "census-accumulator.lua"),
+		path.join(moduleRoot, "export_scanners", "source-cargo-integrity.lua"),
 		"utf8",
 	);
 }
 
-test("census-accumulator defines new/record/verdict", () => {
+test("source-cargo-integrity defines new/record/verdict", () => {
 	const src = accumulatorSource();
-	assert.match(src, /function\s+CensusAccumulator\.new\s*\(/,
-		"CensusAccumulator.new() must create the accumulator");
-	assert.match(src, /function\s+CensusAccumulator\.record\s*\(\s*acc\s*,\s*entity\s*,\s*entity_data/,
+	assert.match(src, /function\s+SourceCargoIntegrity\.new\s*\(/,
+		"SourceCargoIntegrity.new() must create the accumulator");
+	assert.match(src, /function\s+SourceCargoIntegrity\.record\s*\(\s*acc\s*,\s*entity\s*,\s*entity_data/,
 		"record(acc, entity, entity_data, ...) must take the paired reads for one entity");
-	assert.match(src, /function\s+CensusAccumulator\.verdict\s*\(\s*acc/,
+	assert.match(src, /function\s+SourceCargoIntegrity\.verdict\s*\(\s*acc/,
 		"verdict(acc) must produce the census verdict");
 });
 
-test("record performs the paired PHYSICAL read via the Task-2 SurfaceCounter meters (real wiring, not a stub)", () => {
+test("record performs the paired PHYSICAL read via the Task-2 CargoCounter meters (real wiring, not a stub)", () => {
 	const body = functionBody(
 		accumulatorSource(),
-		"function CensusAccumulator.record(",
-		"function CensusAccumulator.verdict",
+		"function SourceCargoIntegrity.record(",
+		"function SourceCargoIntegrity.verdict",
 	);
-	assert.match(body, /SurfaceCounter\.count_entity_items\s*\(\s*entity/,
-		"record must call SurfaceCounter.count_entity_items(entity) — the physical item read is the paired-read wiring");
-	assert.match(body, /SurfaceCounter\.count_entity_fluids\s*\(\s*entity/,
-		"record must call SurfaceCounter.count_entity_fluids(entity, ...) for the physical fluid read");
+	assert.match(body, /pcall\(CargoCounter\.count_entity_items,\s*entity/,
+		"record must call CargoCounter.count_entity_items(entity) — the physical item read is the paired-read wiring");
+	assert.match(body, /pcall\(CargoCounter\.count_entity_fluids,\s*entity/,
+		"record must call CargoCounter.count_entity_fluids(entity, ...) for the physical fluid read");
 });
 
 test("record's SERIALIZED side reuses Verification's item rules and reads fluids from the job registry", () => {
 	const body = functionBody(
 		accumulatorSource(),
-		"function CensusAccumulator.record(",
-		"function CensusAccumulator.verdict",
+		"function SourceCargoIntegrity.record(",
+		"function SourceCargoIntegrity.verdict",
 	);
 	assert.match(body, /Verification\.count_all_items\s*\(/,
 		"the serialized item count must reuse Verification.count_all_items (no re-implementation)");
@@ -135,8 +135,8 @@ test("queue() attaches a fresh storage-safe census accumulator to the job", () =
 		"function ExportPipeline.queue(",
 		"function ExportPipeline.process_batch(",
 	);
-	assert.match(body, /census\s*=\s*CensusAccumulator\.new\s*\(/,
-		"queue() must attach CensusAccumulator.new() to the job (lives in storage.async_jobs across the walk)");
+	assert.match(body, /census\s*=\s*SourceCargoIntegrity\.new\s*\(/,
+		"queue() must attach SourceCargoIntegrity.new() to the job (lives in storage.async_jobs across the walk)");
 });
 
 test("process_batch records paired reads in the SAME loop as serialize_entity, belts excluded", () => {
@@ -147,9 +147,9 @@ test("process_batch records paired reads in the SAME loop as serialize_entity, b
 	);
 	assert.match(body, /EntityScanner\.serialize_entity\s*\(\s*entity\s*\)/,
 		"process_batch must serialize each entity");
-	assert.match(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*entity\s*,\s*entity_data/,
+	assert.match(body, /SourceCargoIntegrity\.record\s*\(\s*job\.census\s*,\s*entity\s*,\s*entity_data/,
 		"process_batch must record the paired reads for the just-serialized entity, in the same loop iteration");
-	assert.match(body, /BELT_ENTITY_TYPES\[category\][\s\S]*?\belse\b[\s\S]*?CensusAccumulator\.record\s*\(\s*job\.census/,
+	assert.match(body, /BELT_ENTITY_TYPES\[category\][\s\S]*?\belse\b[\s\S]*?SourceCargoIntegrity\.record\s*\(\s*job\.census/,
 		"belt entities must be deferred (paired in the atomic pass); only NON-belt entities are recorded in the walk");
 });
 
@@ -161,16 +161,16 @@ test("the atomic belt scan pairs each belt AFTER its serialized items are patche
 	);
 	assert.match(
 		body,
-		/entity_data\.specific_data\.items\s*=\s*belt_items[\s\S]*?CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*live_entity\s*,\s*entity_data/,
+		/entity_data\.specific_data\.items\s*=\s*belt_items[\s\S]*?SourceCargoIntegrity\.record\s*\(\s*job\.census\s*,\s*live_entity\s*,\s*entity_data/,
 		"the atomic belt scan must record each belt's paired reads AFTER patching its serialized items (single-tick execution)",
 	);
 });
 
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
 	const src = exportPipelineSource();
-	const verdictIdx = src.indexOf("CensusAccumulator.verdict(job.census)");
+	const verdictIdx = src.indexOf("SourceCargoIntegrity.verdict(job.census)");
 	const storeIdx = src.indexOf("ExportCache.record(export_id");
-	assert.notEqual(verdictIdx, -1, "complete() must compute CensusAccumulator.verdict(job.census)");
+	assert.notEqual(verdictIdx, -1, "complete() must compute SourceCargoIntegrity.verdict(job.census)");
 	assert.notEqual(storeIdx, -1, "complete() must store the export somewhere");
 	assert.ok(verdictIdx < storeIdx,
 		"the census verdict must be computed BEFORE the export is stored/compressed/sent");
@@ -202,7 +202,7 @@ test("ground items are intentionally NOT census-paired (documented deviation fro
 	);
 	assert.match(body, /table\.insert\(job\.export_data\.entities, ground_item\)/,
 		"the ground-item scan must still append ground items to the payload");
-	assert.doesNotMatch(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*(?:live_ground|ground_live|ground_item|ground_entity)/,
+	assert.doesNotMatch(body, /SourceCargoIntegrity\.record\s*\(\s*job\.census\s*,\s*(?:live_ground|ground_live|ground_item|ground_entity)/,
 		"ground items must NOT be census-paired: the paired read's default (nil-subject) meter "
 		+ "excludes ground, so pairing a loose stack reads physical=0 vs serialized=N and aborts "
 		+ "every transfer carrying one");
@@ -214,13 +214,13 @@ test("the destination gate has no counting implementation of its own", () => {
 		"utf8",
 	);
 	assert.doesNotMatch(transferValidation, /InventoryScanner/,
-		"the gate's item reads must come from SurfaceCounter's subject meter. An inline "
+		"the gate's item reads must come from CargoCounter's subject meter. An inline "
 		+ "InventoryScanner loop here is the return of a second meter — the four-implementations "
 		+ "state unified 2026-08-08, where two verdict-bearing counters could drift with nothing "
 		+ "reporting it.");
-	assert.match(transferValidation, /SurfaceCounter\.count_entity_items\(entity,\s*"inventories"\)/,
+	assert.match(transferValidation, /CargoCounter\.count_entity_items\(entity,\s*"inventories"\)/,
 		"the gate must take its inventory reads from the shared subject meter");
-	assert.match(transferValidation, /SurfaceCounter\.count_ground_items\(surface\)/,
+	assert.match(transferValidation, /CargoCounter\.count_ground_items\(surface\)/,
 		"the gate must take ground from the shared ground pass");
 });
 
@@ -242,10 +242,10 @@ test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS"
 test("the census threads the job's FluidRegistry as the single serialized-fluid source (fail-loud, no silent-nil)", () => {
 	const newBody = functionBody(
 		accumulatorSource(),
-		"function CensusAccumulator.new(",
-		"function CensusAccumulator.record(",
+		"function SourceCargoIntegrity.new(",
+		"function SourceCargoIntegrity.record(",
 	);
-	assert.match(newBody, /function\s+CensusAccumulator\.new\s*\(\s*fluid_registry\s*\)/,
+	assert.match(newBody, /function\s+SourceCargoIntegrity\.new\s*\(\s*fluid_registry\s*\)/,
 		"new() must take the job's FluidRegistry (the serialized-side fluid truth)");
 	assert.match(newBody, /if not fluid_registry then\s*\n\s*error\(/,
 		"new() must fail LOUD on a nil registry — a silent-nil default would quietly stop checking fluids");
@@ -256,6 +256,6 @@ test("the census threads the job's FluidRegistry as the single serialized-fluid 
 		"function ExportPipeline.queue(",
 		"function ExportPipeline.process_batch(",
 	);
-	assert.match(queueBody, /CensusAccumulator\.new\s*\(\s*fluid_registry\s*\)/,
+	assert.match(queueBody, /SourceCargoIntegrity\.new\s*\(\s*fluid_registry\s*\)/,
 		"queue() must pass its own fluid_registry — the payload's serialized fluid truth — into the census");
 });

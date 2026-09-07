@@ -1,7 +1,7 @@
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
-local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
+local CargoCounter = require("modules/surface_export/validators/cargo-counter")
 local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 
 local TransferValidation = {}
@@ -66,15 +66,10 @@ local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts,
     return fluid_match, fluid_mismatches, recon
 end
 
-function TransferValidation.validate_import(surface, expected_verification, options)
+local function validate_import(surface, expected_verification, options)
     options = options or {}
     if not surface or not surface.valid then
-        return false, {
-            itemCountMatch = false,
-            fluidCountMatch = false,
-            entityCount = 0,
-            mismatchDetails = "Surface not valid"
-        }
+        error("Cargo integrity: destination surface unavailable")
     end
 
     local STORAGE_ENTITY_TYPES = {
@@ -111,6 +106,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     local entity_type_counts = {}
 
     for _, entity in ipairs(entities) do
+        assert(entity.valid, "Cargo integrity: destination entity became unavailable")
         if entity.valid then
             local entity_name = entity.name
             entity_type_counts[entity_name] = (entity_type_counts[entity_name] or 0) + 1
@@ -118,7 +114,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             local is_storage = STORAGE_ENTITY_TYPES[entity_type]
             local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
 
-            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "inventories")) do
+            for key, count in pairs(CargoCounter.count_entity_items(entity, "inventories")) do
                 total_item_counts[key] = (total_item_counts[key] or 0) + count
                 if is_storage then
                     storage_item_counts[key] = (storage_item_counts[key] or 0) + count
@@ -128,13 +124,13 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             end
 
             if GameUtils.BELT_ENTITY_TYPES[entity_type] then
-                for key, count in pairs(SurfaceCounter.count_entity_items(entity, "belts")) do
+                for key, count in pairs(CargoCounter.count_entity_items(entity, "belts")) do
                     total_item_counts[key] = (total_item_counts[key] or 0) + count
                     storage_item_counts[key] = (storage_item_counts[key] or 0) + count
                 end
             end
             if entity_type == "inserter" then
-                for key, count in pairs(SurfaceCounter.count_entity_items(entity, "held")) do
+                for key, count in pairs(CargoCounter.count_entity_items(entity, "held")) do
                     total_item_counts[key] = (total_item_counts[key] or 0) + count
                     storage_item_counts[key] = (storage_item_counts[key] or 0) + count
                 end
@@ -142,7 +138,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         end
     end
 
-    local ground_totals = SurfaceCounter.count_ground_items(surface)
+    local ground_totals = CargoCounter.count_ground_items(surface)
     for key, count in pairs(ground_totals) do
         total_item_counts[key] = (total_item_counts[key] or 0) + count
         storage_item_counts[key] = (storage_item_counts[key] or 0) + count
@@ -151,7 +147,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     Timing.stop(options.timing_job_id, "item_census")
     local strict = options.strict == true
     Timing.start(options.timing_job_id, "fluid_census", "execution", "exact_verification")
-    local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps)
+    local actual_fluid_counts = CargoCounter.count_fluids(surface, options.segment_temps)
     Timing.stop(options.timing_job_id, "fluid_census")
     Timing.start(options.timing_job_id, "item_comparison", "execution", "exact_verification")
 
@@ -251,6 +247,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
 
     local validation_result = {
+        measurementAvailable = true,
         itemCountMatch = item_match,
         fluidCountMatch = fluid_match,
         entityCount = #entities,
@@ -297,6 +294,24 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
 
     return success, validation_result
+end
+
+function TransferValidation.validate_import(surface, expected_verification, options)
+    local ok, success, result = pcall(validate_import, surface, expected_verification, options)
+    if ok then return success, result end
+    local detail = "Cargo integrity measurement unavailable: " .. tostring(success)
+    local job_id = options and options.timing_job_id
+    for _, stage in ipairs({"item_census", "fluid_census", "item_comparison", "fluid_comparison"}) do
+        Timing.stop(job_id, stage)
+    end
+    log(detail)
+    return false, {
+        success = false, itemCountMatch = false, fluidCountMatch = false,
+        measurementAvailable = false, measurementErrors = {tostring(success)},
+        failedStage = "cargo_integrity", mismatchDetails = detail,
+        expectedItemCounts = expected_verification and expected_verification.item_counts,
+        expectedFluidCounts = expected_verification and expected_verification.fluid_counts,
+    }
 end
 
 function TransferValidation.store_validation_result(result_id, validation_result)

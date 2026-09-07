@@ -7,6 +7,7 @@ import { formatMs } from "../../shared/utils";
 import { diagnosticReport, downloadJson, duration, evidence, record, route, terminal } from "./evidence";
 import AuditTable, { auditLabel } from "./AuditTable";
 import TimingTable from "./TimingTable";
+import EntityAudit, { entityAuditLabel } from "./EntityAudit";
 import type { OperationTiming } from "../../shared/timing";
 
 export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false }: {
@@ -24,7 +25,9 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 	const flow = useMemo(() => buildGanttRows(model.retained ? detail?.events || [] : [], model.summary as JsonObject | null), [detail, model.summary, model.retained]);
 	const elapsed = model.summary?.totalDurationMs ?? duration(row, now);
 	const failure = model.validation.failedStage;
-	const reason = row.error || model.summary?.error;
+	const reason = row.error || model.summary?.error || model.validation.mismatchDetails;
+	const failed = ["failed", "error"].includes(model.status);
+	const failureTitle = model.operation === "import" ? "Import failed" : model.operation === "export" ? "Export failed" : "Transfer failed";
 	const canDownload = !preview && !!plugin && !!row.downloadable && !!row.exportId;
 	const unavailableReason = preview ? "Preview data has no downloadable platform."
 		: "The stored platform export is no longer available for this operation.";
@@ -39,7 +42,14 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 		finally { setDownloading(false); }
 	};
 	const overview = <>
-		<div className="se-audit-cards">{(["items", "fluids"] as const).map(kind => {
+		<div className="se-audit-cards">
+			<button className={`se-audit-card se-audit-${model.entities.state}`} onClick={() => setActiveTab("entities")}>
+				<span className="se-card-eyebrow">Entity audit</span><strong>{entityAuditLabel(model.entities.state)}</strong>
+				<span>{model.entities.failedStage ? `Failed stage: ${model.entities.failedStage}`
+					: model.entities.census === null ? "Count not recorded" : `${formatNumeric(model.entities.census, 0)} in destination count`}</span>
+				<small>Structure and placement · Inspect entities →</small>
+			</button>
+			{(["items", "fluids"] as const).map(kind => {
 			const audit = model[kind];
 			const count = (value: number | null) => value === null ? "Not recorded" : formatNumeric(value, kind === "items" ? 0 : 4);
 			return <button key={kind} className={`se-audit-card se-audit-${audit.state}`} onClick={() => setActiveTab(kind)}>
@@ -49,7 +59,7 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 				<small>{audit.types === null ? "Key count unavailable" : `${audit.types} recorded keys`} · Inspect {kind} →</small>
 			</button>;
 		})}</div>
-		<p className="se-muted">Each recorded item and fluid key is available for inspection. Audit verdicts come from validation; equal totals alone do not prove a match.</p>
+		<p className="se-muted">Entity restoration and cargo checks are separate. Equal item and fluid totals do not prove that belt structure or entity state was restored.</p>
 		<div className="se-section-heading"><h3>Recorded stage timings</h3><Button type="link" onClick={() => setActiveTab("timing")}>View every recorded step</Button></div>
 		<TimingTable timing={model.summary?.timing as OperationTiming | undefined} rows={flow.rows} attribution={flow.attribution} compact />
 	</>;
@@ -62,7 +72,6 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 		]} />
 		{model.validation.inventoryOverflowLosses != null && <Alert type="warning" message="Inventory overflow exclusions recorded" description="The audit may exclude items recorded as overflow loss. Inspect the validation evidence below for exact quantities and affected entities." />}
 		{model.validation.forceDataMismatches != null && <Alert type="info" message="Force bonus comparison recorded" description="Inspect the validation evidence for force bonuses and any adjustments." />}
-		{Number(model.validation.latchRearmScheduled) > 0 && <Alert type="info" message="Latch rearm scheduled" description="A scheduled rearm does not confirm that rearming completed." />}
 		{record(model.validation.failureBlackBox).file != null && <p>Server diagnostic reference: <code>{String(record(model.validation.failureBlackBox).file)}</code>. This reference is not a downloadable browser file.</p>}
 		{metrics.length > 0 && <Table size="small" pagination={false} rowKey="key" dataSource={metrics} columns={[
 			{ title: "Operation metric", dataIndex: "metric", key: "metric" }, { title: "Value", dataIndex: "value", key: "value" },
@@ -77,9 +86,18 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 		<header className="se-detail-header">
 			<Space wrap><Tag>{model.operation}</Tag>{preview && <Tag color="purple">Preview</Tag>}{model.isTest && <Tag color="gold">Intentional test</Tag>}</Space>
 			<h2>{row.platformName || "Unnamed platform"}</h2><p className="se-route">{route(row)}</p>
-			<Alert showIcon type={model.tone as "info" | "success" | "error"} message={model.outcome}
-				description={<>{failure != null && <div>Failed stage: {String(failure)}</div>}{reason && <div>{String(reason)}</div>}
-					{model.status === "cleanup_failed" && <div>Inspect recorded events for arrival, discard, and cleanup outcomes.{model.recoveryText && ` ${model.recoveryText}.`}</div>}</>} />
+			<Alert className="se-operation-outcome" data-testid="operation-outcome" showIcon
+				type={model.tone as "info" | "success" | "error"} message={failed ? failureTitle : model.outcome}
+				description={<>
+					{failure != null && <div className="se-outcome-stage">Failed stage: <strong>{String(failure)}</strong></div>}
+					{reason && <div>{String(reason)}</div>}
+					{model.entities.failure && <Button className="se-outcome-inspect" size="small" onClick={() => setActiveTab("entities")}>Inspect entity evidence</Button>}
+					{(model.recoveryText || failed) && <div className="se-outcome-recovery">
+						<span className="se-card-eyebrow">Recovery</span><strong>{model.recoveryText || "Recovery not confirmed"}</strong>
+						<span className="se-muted">Audit evidence below describes the destination attempt, before recovery.</span>
+					</div>}
+					{model.status === "cleanup_failed" && <div>Inspect recorded events for arrival, discard, and cleanup outcomes.</div>}
+				</>} />
 			<div className="se-detail-meta"><span>{terminal(row.status) ? "Duration" : "Elapsed"}: <strong>{elapsed == null ? "Not recorded" : formatMs(elapsed) || "0 ms"}</strong></span>
 				<span>Started: {row.startedAt == null ? "Not recorded" : new Date(row.startedAt).toLocaleString()}</span>
 				{row.completedAt != null && <span>Completed: {new Date(row.completedAt).toLocaleString()}</span>}</div>
@@ -94,6 +112,7 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 				{ key: "overview", label: "Overview", children: overview },
 				{ key: "timing", label: "Timing", children: <><p className="se-muted">{String(detail?.summary?.timingBoundary || "Historical controller observation; precise boundaries may be unavailable.")}</p><TimingTable timing={model.summary?.timing as OperationTiming | undefined} rows={flow.rows} attribution={flow.attribution} /></> },
 				{ key: "items", label: "Items", children: <AuditTable model={model} kind="items" /> },
+				{ key: "entities", label: "Entities", children: <EntityAudit model={model} /> },
 				{ key: "fluids", label: "Fluids", children: <AuditTable model={model} kind="fluids" /> },
 				{ key: "technical", label: "Technical details", children: technical },
 			]} />

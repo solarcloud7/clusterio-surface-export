@@ -70,6 +70,7 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	queuedRequestId?: string;
 	observedDurationMs?: number | null;
 	transferId: string;
 	operationType: "transfer" | "export" | "import";
@@ -247,7 +248,9 @@ export interface ValidationResult {
 	fluidCountMatch: boolean;
 	success?: boolean;
 	message?: string;
-	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
+	failedStage?: 'items' | 'fluids' | 'belts' | 'entities' | 'cargo_integrity' | 'test_hook' | null;
+	measurementAvailable?: boolean;
+	measurementErrors?: string[];
 	testForcedFailure?: boolean;
 	testForcedEntityFailure?: boolean;
 	itemLossByType?: Record<string, { expected: number; actual: number; loss: number }>;
@@ -288,11 +291,14 @@ export interface ValidationResult {
 	};
 	droppedFluids?: Record<string, number>;
 	writeRejectedFluids?: Record<string, number>;
+	/** Historical diagnostic evidence; new transfers use the pre-activation cargo verdict. */
 	postActivationReport?: {
-		totalActualItems: number;
-		actualItemCounts: Record<string, number>;
-		totalActualFluids: number;
-		actualFluidCounts: Record<string, number>;
+		measurementAvailable?: boolean;
+		measurementErrors?: string[];
+		totalActualItems?: number;
+		actualItemCounts?: Record<string, number>;
+		totalActualFluids?: number;
+		actualFluidCounts?: Record<string, number>;
 		fluidReconciliation?: Record<string, unknown>;
 	};
 	failureBlackBox?: { file: string; tick: number };

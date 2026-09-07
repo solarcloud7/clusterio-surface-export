@@ -67,6 +67,14 @@ export const plugin = {
 			initialValue: 3,
 			optional: true,
 		},
+		[`${PLUGIN_NAME}.belt_batch_size`]: {
+			description: "Target belt restoration work per callback (stacks or member lines). Connected networks stay atomic and may exceed this target.",
+			type: "number", initialValue: 500,
+		},
+		[`${PLUGIN_NAME}.belt_trace`]: {
+			description: "Enable expensive per-position tracing after successful belt restoration; failures always retain tracing.",
+			type: "boolean", initialValue: false,
+		},
 		[`${PLUGIN_NAME}.show_progress`]: {
 			description: "Show progress notifications for async operations",
 			type: "boolean",
@@ -79,6 +87,11 @@ export const plugin = {
 			type: "boolean",
 			initialValue: true,
 			optional: true,
+		},
+		[`${PLUGIN_NAME}.debug_destination_snapshot`]: {
+			title: "Capture full destination snapshots",
+			description: "Debug: rescan and write full destination JSON after successful transfer validation. Requires debug mode; adds synchronous work. Transfer logs and failure black boxes do not require this setting.",
+			type: "boolean", initialValue: false,
 		},
 	},
 	controllerConfigFields: {
@@ -163,6 +176,7 @@ export const plugin = {
 		messages.GetPlatformTreeRequest,
 		messages.ListTransactionLogsRequest,
 		messages.GetTransactionLogRequest,
+		messages.ReadEntityEvidenceRequest,
 		messages.SetSurfaceExportSubscriptionRequest,
 		messages.SurfaceExportTreeUpdateEvent,
 		messages.SurfaceExportTransferUpdateEvent,

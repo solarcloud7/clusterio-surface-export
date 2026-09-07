@@ -316,9 +316,11 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
     end
     local function insert_with_state(line, k, stack_def, count, st)
         local before_ids = st and line_ids(line) or nil
-        if not VersionCompat.belt_insert_at(line, k / 256, stack_def, count) then return false end
+        -- force_insert_at can clamp positions. Reject instead of silently changing the payload.
+        assert(k >= 0 and k / 256 <= line.line_length, 'captured position outside destination line')
+        VersionCompat.belt_force_insert_at(line, k / 256, stack_def, count)
         if before_ids then apply_state(line, before_ids, st, stack_def, count) end
-        return true
+        return true -- write completed; the side-group census below verifies physical placement
     end
     local side_before = {}
     local preexisting_ids = {}
@@ -351,7 +353,6 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
         local exp = {}
         expected_by_side[gi] = exp
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
-            if not line.can_insert_at(k / 256) then return nil end
             local landed = insert_with_state(line, k,
                 { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct, slot.st)
             if landed then
@@ -377,17 +378,8 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
             if slot.src then
                 local se = entity_map[slot.src.id]
                 if se and se.valid then
-                    local skmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
                     local sline = se.get_transport_line(slot.src.li)
-                    local top = math.floor(sline.line_length * 256 + 0.5)
-                    local want = math.min(top, math.max(skmin, (slot.src.k or skmin) - skmin))
-                    for k = want, skmin, -1 do
-                        local r = try_insert(sline, se, slot.src.li, k, slot, wanted_key)
-                        if r ~= nil then
-                            done = true
-                            break
-                        end
-                    end
+                    done = try_insert(sline, se, slot.src.li, slot.src.k, slot, wanted_key) == true
                 end
             end
             if not done then
@@ -397,84 +389,8 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
         end
     end
     for _, entry in ipairs(pending) do
-        local slot, gi = entry.slot, entry.gi
-        local done = false
-        local se = slot.src and entity_map[slot.src.id]
-        if se and se.valid then
-            local wanted_key = item_key(slot.n, slot.q)
-            local partner
-            for _, ledger_entry in ipairs(ledger) do
-                if ledger_entry.e == se and ledger_entry.li == slot.src.li and ledger_entry.key == wanted_key then
-                    partner = ledger_entry
-                end
-            end
-            if partner then
-                local function scan_place(count, st)
-                    local mline = se.get_transport_line(slot.src.li)
-                    local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
-                    local mtop = math.floor(mline.line_length * 256 + 0.5)
-                    for k = math.min(partner.k, mtop - mkmin), mkmin, -1 do
-                        if mline.can_insert_at(k / 256)
-                            and insert_with_state(mline, k,
-                                { name = slot.n, quality = slot.q, count = count }, count, st) then
-                            return k
-                        end
-                    end
-                    for k = partner.k + 1, mtop - mkmin do
-                        if mline.can_insert_at(k / 256)
-                            and insert_with_state(mline, k,
-                                { name = slot.n, quality = slot.q, count = count }, count, st) then
-                            return k
-                        end
-                    end
-                end
-                local merged_ct = partner.slot.ct + slot.ct
-                local merged_st = partner.slot.st
-                local removed = se.get_transport_line(slot.src.li).remove_item(
-                    { name = slot.n, quality = slot.q, count = partner.slot.ct })
-                local landed_k = nil
-                if removed == partner.slot.ct then
-                    landed_k = scan_place(merged_ct, merged_st)
-                end
-                if landed_k then
-                    placed = placed + slot.ct
-                    local exp = expected_by_side[gi]
-                    exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
-                    partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src, st = merged_st }
-                    partner.k = landed_k
-                    log(string.format(
-                        "[BeltRestoration] OVER-COMPRESSION MERGE: %s x%d joined the stack near entity %s line %d (now x%d) — engine packed tighter than insert_at can recreate",
-                        slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))
-                    if slot.st then
-                        state_stats.merge_discarded = state_stats.merge_discarded + 1
-                        log(string.format(
-                            "[BeltRestoration] MERGE DISCARDED item state for %s x%d — one physical stack "
-                            .. "carries one state, the partner's is kept",
-                            slot.n, slot.ct))
-                    end
-                    done = true
-                else
-                    local putback_k = nil
-                    if removed > 0 then
-                        putback_k = scan_place(removed, merged_st)
-                    end
-                    if putback_k and removed == partner.slot.ct then
-                        partner.k = putback_k
-                        log(string.format(
-                            "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d — partner re-placed (engine-confirmed), slot stays unplaced",
-                            slot.n, slot.ct))
-                    else
-                        log(string.format(
-                            "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d (removed=%d, put-back %s) — the side bracket owns the discrepancy",
-                            slot.n, slot.ct, removed, putback_k and "partial" or "did not land"))
-                    end
-                end
-            end
-        end
-        if not done then
-            unplaced = unplaced + slot.ct
-            unplaced_list[#unplaced_list + 1] = slot
-        end
+        unplaced = unplaced + entry.slot.ct
+        unplaced_list[#unplaced_list + 1] = entry.slot
     end
     local physical_delta = {}
     for gi, g in ipairs(side_groups) do
@@ -500,7 +416,9 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
     for key, delta in pairs(physical_delta) do
         if delta == 0 then physical_delta[key] = nil end
     end
-    local dbg = storage.surface_export_config and storage.surface_export_config.debug_mode
+    -- Successful restores need the physical bracket above, not the expensive position trace.
+    -- Failures always retain their forensic trace regardless of this opt-in setting.
+    local dbg = storage.surface_export_config and storage.surface_export_config.belt_trace
     if dbg or anomalies > 0 then
         local function line_key_of(entity, li)
             return tostring(entity.unit_number or entity) .. "/" .. li

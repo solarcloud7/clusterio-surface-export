@@ -36,7 +36,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	};
 	const sorted = useMemo(() => [...state.transferSummaries].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)
 		|| a.transferId.localeCompare(b.transferId)), [state.transferSummaries]);
-	useEffect(() => { if (!selected && sorted.length) setSelected(sorted[0].transferId); }, [selected, sorted]);
+	useEffect(() => {
+		const canonical = sorted.find(entry => entry.queuedRequestId === selected);
+		if (canonical) setSelected(canonical.transferId);
+		else if (!selected && sorted.length) setSelected(sorted[0].transferId);
+	}, [selected, sorted]);
 	// Revisit and reconnect both refresh evidence that may have missed live events.
 	useEffect(() => { if (selected && state.liveStatus === "live") load(selected); }, [selected, plugin, state.liveStatus]);
 	const filtered = useMemo(() => sorted.filter(row => (outcome === "all" || outcomeGroup(row.status) === outcome)

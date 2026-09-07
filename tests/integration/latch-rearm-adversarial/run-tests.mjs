@@ -182,15 +182,15 @@ async function main() {
 			console.log(`  latch_rearm_results: ${JSON.stringify(rearmResult)}`);
 			check(rearmResult.rearmed === 1, "dest: exactly the latch re-armed",
 				`rearmed=${rearmResult.rearmed}`);
-			check((rearmResult.moving || 0) === 1,
-				"dest: the counter classified as MOVING (behavioural guard), not cleared",
-				`moving=${rearmResult.moving} cleared=${rearmResult.cleared} failed=${rearmResult.failed}`);
+			check((rearmResult.resumed || 0) === 1,
+				"dest: the counter seed verified and original rules resumed, not cleared",
+				`moving=${rearmResult.resumed} cleared=${rearmResult.cleared} failed=${rearmResult.failed}`);
 			check((rearmResult.cleared || 0) === 0 && (rearmResult.failed || 0) === 0,
 				"dest: nothing cleared, nothing failed — the false destructive clear is gone",
 				`cleared=${rearmResult.cleared} failed=${rearmResult.failed}`);
 			const counterDetail = asArray(rearmResult.details).find(d =>
-				d.outcome && d.outcome.indexOf("register moving") !== -1);
-			check(!!counterDetail, "dest: counter outcome names 'register moving'",
+				d.outcome && d.outcome.indexOf("original rules resumed") !== -1);
+			check(!!counterDetail, "dest: counter outcome names 'original rules resumed'",
 				JSON.stringify(rearmResult.details));
 		}
 

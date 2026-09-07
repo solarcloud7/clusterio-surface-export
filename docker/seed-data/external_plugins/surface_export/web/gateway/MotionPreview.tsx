@@ -20,12 +20,13 @@ const STEPS = [
 export default function MotionPreview({ onClose }: { onClose: () => void }) {
 	const [step, setStep] = useState(0);
 	const [playing, setPlaying] = useState(true);
+	const [queued, setQueued] = useState(false);
 	useEffect(() => {
 		if (!playing) return undefined;
 		const timer = setInterval(() => setStep(value => value + 1), 2200);
 		return () => clearInterval(timer);
 	}, [playing]);
-	const current = STEPS[step % STEPS.length];
+	const current = { ...STEPS[step % STEPS.length], ...(queued ? { status: "queued" } : {}) };
 	const ship = {
 		...current,
 		transferId: `preview-${Math.floor(step / STEPS.length)}-${Math.floor((step % STEPS.length) / 3)}`,
@@ -51,8 +52,9 @@ export default function MotionPreview({ onClose }: { onClose: () => void }) {
 			{current.sourceInstanceId === -1 ? "A → B" : "B → A"}: {shipPhaseFor(current.status)?.label}
 		</Typography.Paragraph>
 		<Space>
-			<Button onClick={() => setPlaying(value => !value)}>{playing ? "Pause" : "Play round trip"}</Button>
-			<Button onClick={() => { setPlaying(false); setStep(value => value + 1); }}>Next phase</Button>
+			<Button onClick={() => { setQueued(false); setPlaying(value => !value); }}>{playing ? "Pause" : "Play round trip"}</Button>
+			<Button onClick={() => { setPlaying(false); if (queued) setQueued(false); else setStep(value => value + 1); }}>Next phase</Button>
+			<Button onClick={() => { setPlaying(false); setQueued(true); }}>Show queue</Button>
 		</Space>
 	</Modal>;
 }

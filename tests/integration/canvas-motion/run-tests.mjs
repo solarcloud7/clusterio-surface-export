@@ -34,7 +34,7 @@ try {
 			return el && Math.abs(parseFloat(getComputedStyle(el).offsetDistance) - expected) < 0.001;
 		}, distance);
 	};
-	const moveTo = async (from, to, label) => {
+	const moveTo = async (from, to, label, marker = true) => {
 		const original = await ship.elementHandle();
 		assert.ok(Math.abs(await position() - from) < 0.001);
 		await next();
@@ -51,8 +51,8 @@ try {
 		assert.ok(samples.values.some(value => value > Math.min(from, to) && value < Math.max(from, to)),
 			`${label}: must render intermediate positions, not jump to the endpoint`);
 		assert.ok(Math.abs(await position() - to) < 0.001, `${label}: reaches correct endpoint`);
-		assert.equal(await ship.evaluate(el => getComputedStyle(el).visibility), "hidden", "only settled ships join markers");
-		assert.equal(await scene.locator(".surface-export-edge-status").count(), 1);
+		assert.equal(await ship.evaluate(el => getComputedStyle(el).visibility), marker ? "hidden" : "visible", "Only holding or terminal ships join markers");
+		assert.equal(await scene.locator(".surface-export-edge-status").count(), marker ? 1 : 0);
 		console.log(`PASS ${label}`);
 	};
 
@@ -89,6 +89,17 @@ try {
 	await settledAt(100);
 	assert.ok(await interrupted.evaluate(el => el.isConnected), "rapid updates must preserve the moving element");
 	console.log("PASS rapid phase updates preserve the journey");
+	await page.getByRole("button", { name: "Close", exact: true }).click();
+	await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
+	await page.getByRole("button", { name: "Show queue", exact: true }).click();
+	await settledAt(0);
+	await page.waitForTimeout(10500);
+	const queueMarker = scene.locator(".surface-export-edge-status");
+	assert.match(await queueMarker.getAttribute("title"), /queued/);
+	assert.ok(Number(await queueMarker.evaluate(el => getComputedStyle(el).opacity)) > 0.1, "Queue markers do not expire while waiting");
+	assert.equal(await queueMarker.evaluate(el => parseFloat(getComputedStyle(el).offsetDistance)), 0);
+	await moveTo(0, 50, "queue release moves smoothly from source into transit", false);
+	console.log("PASS queued origin, persistent marker and animated release");
 	assert.deepEqual(errors, [], "preview must not raise browser errors");
 } finally {
 	await browser.close();

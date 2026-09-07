@@ -11,6 +11,7 @@ import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
+import SettingsTab from "./SettingsTab";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
@@ -88,7 +89,7 @@ function SurfaceExportPage() {
 	const [importModalOpen, setImportModalOpen] = useState(false);
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
-		return t && ["logs", "gateways"].includes(t) ? t : "gateways";
+		return t && ["logs", "gateways", "settings"].includes(t) ? t : "gateways";
 	});
 	function handleTabChange(key: string) {
 		setActiveTab(key);
@@ -110,6 +111,7 @@ function SurfaceExportPage() {
 		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
+	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab state={state} active={activeTab === "settings"} /> });
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "gateways";
 
 	useEffect(() => {
@@ -365,7 +367,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
 	}
 

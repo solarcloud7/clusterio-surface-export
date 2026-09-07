@@ -10,6 +10,15 @@ local function configure(config)
   if config.batch_size then
     AsyncProcessor.set_batch_size(config.batch_size)
   end
+  if config.belt_batch_size ~= nil then
+    local value = config.belt_batch_size
+    assert(type(value) == "number" and value >= 1 and value <= 1000000 and value % 1 == 0,
+      "belt_batch_size must be an integer from 1 to 1000000")
+    storage.surface_export_config.belt_batch_size = value
+  end
+  if config.belt_trace ~= nil then
+    storage.surface_export_config.belt_trace = config.belt_trace == true
+  end
   if config.max_concurrent_jobs then
     AsyncProcessor.set_max_concurrent_jobs(config.max_concurrent_jobs)
   end
@@ -24,6 +33,9 @@ local function configure(config)
   end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
+  end
+  if config.debug_destination_snapshot ~= nil then
+    storage.surface_export_config.debug_destination_snapshot = config.debug_destination_snapshot == true
   end
   if config.test_force_validation_failure ~= nil then
     storage.surface_export_config.test_force_validation_failure = config.test_force_validation_failure

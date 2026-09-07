@@ -1,6 +1,6 @@
 # Tick-batched export and import jobs
 
-Current behavior reviewed on 2026-09-06 for the Factorio 2.1.17 configuration.
+Current behavior reviewed on 2026-09-07 for the Factorio 2.1.17 configuration.
 The filename, `AsyncProcessor` API, and `storage.async_jobs` identifiers remain unchanged.
 
 ## Execution model
@@ -19,6 +19,37 @@ At the nominal 60 updates per second, the interval is approximately 16.67 ms. Th
 is not an enforced callback deadline or a budget reserved for this plugin. A long
 callback delays the next update. Batching does not guarantee stable UPS or no hitches.
 
+## Controller admission queue
+
+The web transfer action and `surface-export start-transfer` command enter a controller
+queue before sending an export request. Acceptance means **queued**, not arrived.
+Requests sharing either their source or destination instance run in arrival order;
+independent instance pairs can run concurrently. Reservations last through terminal
+cleanup or rollback. An unresolved pending-transfer intent also blocks admission on
+its instances. Duplicate requests for the same source platform reuse the queue entry;
+a different destination is refused while that entry exists.
+
+Queued platforms remain untouched until dispatch. The gateway map shows a queued marker
+at the source endpoint, followed by preparation and then transfer motion. The controller's
+monotonic `Transfer queue wait` span records waiting separately from export work; the
+observed operation duration includes it. The provisional request ID is carried as
+`queuedRequestId` when the canonical source-job transfer ID becomes known.
+
+The queue has a 100-request bound and journals admission before acknowledging it in
+`surface_export_transfer_queue.json` beside the transaction log store. On a controller
+restart, unfinished requests are reported as interrupted rather than replayed. A request
+that had started export may have an uncertain outcome; the existing recovery safeguards
+still apply. Queued requests do not survive restart as automatically executable work.
+
+This admission queue covers controller-requested transfers. In-game/source-initiated
+exports, stored-artifact transfers, and standalone imports keep their existing entry
+paths. Already-active operations on those paths block overlapping queued requests;
+the queue does not change the Lua scheduler or eliminate expensive synchronous scans.
+
+Verification: a local three-platform concurrent submission completed in order through
+source cleanup, retained measured queue waits under the canonical IDs, and left no
+test platforms after cleanup. This verifies admission behavior, not a throughput gain.
+
 ## Scheduler and synchronous work
 
 [`AsyncProcessor.process_tick()`](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)
@@ -34,19 +65,34 @@ and batch size 50, a tick can examine up to 150 entity entries plus other work.
 
 | Path | Count-limited work | Work outside the entity batch limit |
 |---|---|---|
-| Export | Entity serialization | Queue preparation; final belt capture/census; verification construction; encoding, compression, and completion |
-| Import | General entity creation | Payload preparation and platform creation; tiles; beacon pre-placement; hub, belt, state, inventory, held-item and fluid restoration; validation, activation, and reporting |
+| Export | Entity serialization | Queue preparation; final belt capture/cargo integrity; verification construction; encoding, compression, and completion |
+| Import | General entity creation; whole connected belt networks | Payload preparation and platform creation; tiles; beacon pre-placement; hub, oversized/unsupported belt networks, state, inventory, held-item and fluid restoration; validation, activation, and reporting |
 
 Export batches skip belt-item capture and retain belt references. Completion reads
 their contents in one synchronous pass without simulation updates between those
 reads. That consistency boundary can be expensive and is not limited by `batch_size`.
 
-Import completion has two callbacks. Phase 1 restores hub contents, belts, and state,
-then sets `pending_beacon_tick = game.tick + 1`. Phase 2 runs on an eligible later
+Import completion has two logical phases. Phase 1 restores hub contents once, then
+one belt batch per callback, and finally entity state. It
+sets `pending_beacon_tick = game.tick + 1`. Phase 2 runs on an eligible later
 visit, restoring inventories after the beacon update boundary, followed by held
 items, fluids, validation, and completion handling. Beacon inventories precede other
 inventories. Preserve the implementation's phase ordering and validation/failure
 branches; changing scheduling does not authorize reordering restoration or activation.
+
+The 2026-09-07 force-insertion change replaces belt placement, not scheduling. Captured
+positions are passed to `force_insert_at`; alternate-position scans and stack merging are
+removed. The physical side-group and item-state checks remain. `batch_size` still controls
+entity creation and does not bound the synchronous belt-item restoration phase.
+
+Live round-trip records `836570928:106_belt-roundtrip-1788758774956` and
+`902099405:052_belt-roundtrip-1788758774956` each recorded 28 destination entity batches
+on 28 work ticks (27 elapsed ticks). Each belt phase recorded one batch on one work tick
+(zero elapsed ticks), with roughly 115–126 ms of profiler execution time. These are separate
+measurements; zero elapsed ticks does not mean zero work. No before/after performance gain
+is established. Those records predate the connected-network batching described below.
+Evidence: `ci-artifacts/force-insert-roundtrip.json` and the
+[belt experiment notebook](../tests/instruments/belt-boundary/README.md).
 
 For 1,000 queued entity entries at batch size 50, the entity loop needs 20 batch
 visits, assuming no early failure. This excludes setup, deferred phases, completion,
@@ -64,10 +110,13 @@ and sent to Lua on instance start by [instance.ts](../docker/seed-data/external_
 | Setting | Default | Current effect |
 |---|---|---|
 | `surface_export.batch_size` | 50 | Entity-list entries per visited export or general entity-creation batch; not milliseconds or a limit on all phases |
+| `surface_export.belt_batch_size` | 500 | Soft stack/member-line work target per belt callback; connected networks remain atomic |
+| `surface_export.belt_trace` | `false` | Expensive successful belt position diagnostics; failure traces and mandatory cargo integrity stay enabled |
 | `surface_export.max_concurrent_jobs` | 3 | Job entries serviced per scheduler invocation, sequentially |
 | `surface_export.show_progress` | `true` | Conditional progress notifications and periodic job logging |
 | `surface_export.profile_batches` | `false` | Additional bounded batch-level profiler records; phase totals remain enabled |
 | `surface_export.debug_mode` | `true` | Debug behavior and diagnostic output, not a processing budget |
+| `surface_export.debug_destination_snapshot` | `false` | Full destination snapshot on successful transfers; also requires debug_mode |
 | `surface_export.max_export_cache_size` | 10 | Retained Lua export-cache limit, with a floor of `max_concurrent_jobs + 1`; affects retention/memory |
 
 Temporary Lua-side configuration uses unprefixed keys:
@@ -76,8 +125,8 @@ Temporary Lua-side configuration uses unprefixed keys:
 /sc remote.call("surface_export", "configure", {batch_size = 25, max_concurrent_jobs = 1})
 ```
 
-The scheduler values are module-local. Remote adjustments do not update Clusterio's
-instance configuration; instance startup sends its configured values again. Setters
+The entity scheduler values are module-local; belt controls are retained in storage. Remote adjustments do not update Clusterio's
+instance configuration; instance startup sends its configured values again. The belt budget enforces integers from 1 through 1,000,000. Entity/job setters
 do not enforce positive-integer ranges. Use positive integers for the batch/job
 counts; zero is not a supported pause mechanism.
 
@@ -130,12 +179,12 @@ before a job exists are observed by Clusterio, without a fabricated Lua job.
 | Source Lua | preflight; locking | Validity/hub checks; lock call | Export queue in `export-pipeline.lua` |
 | Source Lua | preparation | Schedule capture, entity scan and job setup → enqueued | All queued exports |
 | Source Lua | scheduler wait | Enqueued → first scheduler visit | Wait, no execution accumulator |
-| Source Lua | entities | Each entity batch entry → return | Phase envelope and accumulated batches; includes paired per-entity census |
+| Source Lua | entities | Each entity batch entry → return | Phase envelope and accumulated batches; includes paired per-entity cargo integrity |
 | Source Lua | belt capture; ground items | Final belt read; ground scan → collected state | Separate completion steps |
-| Source Lua | verification census | Census verdict, blueprint comparison and report → completed check | Includes census diagnostics, distinct from entity capture |
+| Source Lua | source cargo integrity | Cargo verdict, blueprint comparison and report → completed check | Includes cargo-integrity diagnostics, distinct from entity capture |
 | Source Lua | finalize payload; serialization; compression | Payload metadata → ready; JSON encode; compression call | Separate execution spans |
 | Source Lua | cache output; diagnostic output; file output | Cache insertion; debug export; requested file write | Cache always; diagnostics/file output conditional |
-| Source Lua | source unlock; failure diagnostics | Unlock call; census-abort black-box write | Standalone export / source rejection |
+| Source Lua | source unlock; failure diagnostics | Unlock call; cargo-integrity rejection black-box write | Standalone export / source rejection |
 | Destination Lua | chunk delivery; chunk assembly | First chunk → assembled payload; concatenation call | RCON chunk path, separate job clock from import |
 | Destination Lua | queue setup | Intake → scheduled job | Inclusive envelope, not another validation check |
 | Destination Lua | decode; decompression; decode payload | Outer JSON parse; decompression; inner JSON parse | Decode/decompression branches explicit |
@@ -149,11 +198,11 @@ before a job exists are observed by Clusterio, without a fabricated Lua job.
 | Destination Lua | verdict handling | Validation preparation → completion notification | Inclusive envelope, includes reporting and branch handling |
 | Destination Lua | verification preparation | Adjust expected counts → exact check | Transfer-shaped payload with verification |
 | Destination Lua | exact verification | Exact audit and gate decision → result | Envelope for individual checks |
-| Destination Lua | item census; fluid census | Physical recount start → counts | Individual audit checks |
+| Destination Lua | item cargo count; fluid cargo count | Physical recount start → counts | Individual audit checks |
 | Destination Lua | item comparison; fluid comparison | Expected/actual comparison → verdict | Failed comparisons explicitly marked failed |
-| Destination Lua | diagnostic capture; diagnostic output | Destination scan/schedule capture; diagnostic export write | Debug branch |
+| Destination Lua | diagnostic capture; diagnostic output | Destination scan/schedule capture; diagnostic export write | Successful transfer with debug_mode and debug_destination_snapshot enabled |
 | Destination Lua | failure diagnostics; passenger evacuation; destination recovery | Black-box attempt; evacuation; failed destination deletion | Failure branch; failures never gate recovery |
-| Destination Lua | activation; loss analysis | Restore activity; post-activation recount/analysis | Successful gate (standalone activation has its own branch) |
+| Destination Lua | activation | Restore activity after cargo validation; no second cargo recount | Successful gate (standalone activation has its own branch) |
 | Recovery Lua | source deletion; source unlock | Actual remote recovery call → result | Separate recovery job clock, matched by source export ID |
 | Controller | Observed operation | Observed request → terminal result/cleanup acknowledgement | Monotonic headline; source-initiated boundary described above |
 | Controller | Artifact receipt and storage; Artifact serialization; Artifact storage write | Export event handler; serialized size calculation; storage persistence | Handler inclusive, serialization execution, storage inclusive |
@@ -278,3 +327,56 @@ cleanup and lock-handling paths. Inspect the job, source lock, destination, and
 controller state together before recovery. Platform travel pause and stopping
 simulation ticks are different controls; stopping ticks prevents normal scheduler
 progress.
+
+
+## Connected belt-network batches (2026-09-07)
+
+`surface_export.belt_batch_size` defaults to **500** work units independently of
+entity `batch_size`. Each side group costs the larger of its stack-slot count,
+member-line count, or one. The planner joins both lanes of each belt, connected
+inputs/outputs, splitter branches, and underground partners. It packs whole
+connected networks into callbacks; it never splits a connected network to meet
+the target. A large network can exceed the target. This is a soft work budget,
+not a milliseconds limit or a guarantee against lag.
+
+Transport lines continue moving between callbacks: `disabled_by_script` does not
+pause belts. Each network is fully inserted and physically checked before yielding.
+Restored consumer entities remain inactive through belt batching, including standalone
+imports. Transfers activate only after validation; standalone imports retain their
+existing activation point after inventory and fluid restoration. Unsupported belt types (including loaders) or connections outside the
+captured entity map conservatively use one atomic belt batch. These cases retain
+the previous synchronous behavior and may still cause long callbacks.
+
+Each callback accumulates placement and item-state results. The belt restorer keeps its
+physical placement witnesses; the importer no longer aggregates a diagnostic phase census.
+A failed callback stops further belt batches and follows the existing validation
+and recovery path. Hub restoration executes once. State restoration and the deferred
+beacon/inventory phase follow the final belt batch. Belt profiler execution stops
+between callbacks; start/end ticks retain the first and last callback boundaries.
+
+`surface_export.belt_trace` defaults to **false**. It enables expensive successful
+position-trace diagnostics independently of `debug_mode`. Physical cargo counts and
+item-state checks remain mandatory, and failures still produce diagnostic traces.
+
+The isolated Factorio 2.1.17 fixture restored 19,700 items in seven separate callbacks
+with long intervening tick gaps. Each newly restored network matched captured
+positions, names, qualities and counts. Independent network cargo totals matched
+after every gap, with zero unplaced items or structural anomalies. Previously
+restored belts are allowed to move within their network; final positions are not
+claimed to remain frozen. Evidence: `ci-artifacts/belt-helper-batched-result.json`.
+Deployed acceptance completed two transfers and a forced rejection with acknowledged
+rollback, source preservation and destination removal. Every belt phase recorded
+seven batches on seven work ticks (six elapsed ticks). Successful legs accumulated
+83.169 and 91.436 ms of belt execution; their longest belt callbacks were 37.777 and
+54.004 ms. The rejected leg's longest belt callback was 64.838 ms. These local samples
+include debug-batch profiling and runtime noise; they are not a controlled benchmark
+or a guarantee that every callback meets a frame budget. Earlier single-callback
+115�126 ms measurements also had successful diagnostic tracing enabled.
+
+A separate deployed transfer preserved eight non-default item states with physical
+destination readback (blueprint contents, entity data, health, ammo, durability and
+spoilage), zero state failures, and matching persisted counters. The deployed
+self-test passed 27 checks. The unit suite passed 643 tests with eight skipped.
+Evidence: `ci-artifacts/belt-batching-roundtrip.json`, `belt-batching-item-state.log`,
+`belt-batching-selftest.json` and `belt-batching-unit-tests.log`. Disposable clones
+were removed, settings restored, and jobs/locks/holds/tombstones were clear.

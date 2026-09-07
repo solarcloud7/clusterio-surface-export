@@ -1,3 +1,7 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { createSaveSession } from "./save-session.mjs";
+import { probeCluster, compareWorlds, evaluateRuntime, expectedModuleVersion } from "../../tools/tests/cluster-readiness.mjs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -5,8 +9,6 @@ export const CONTROLLER = "surface-export-controller";
 export const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 import { seededHosts } from "../../tools/shared/seeded-instances.mjs";
 export const HOSTS = seededHosts();
-export const RESTORE_SAVES = { 1: "lab-gallery-source.zip", 2: "lab-gallery-destination.zip" };
-export const RESTORE_SOURCE_PLATFORM = "lab-omnibus-state-v1";
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const FLUID_EPSILON = 1e-6;
 export const DOUBLE_EPSILON = 1e-9;
@@ -232,6 +234,17 @@ export function loadedSave(host) {
 	throw new Error(`No loaded save found for host ${host}:\n${out}`);
 }
 
+// Independent destination/source read for fixture expectations, not the importer's report.
+export function readPlatformPause(host, name) {
+	if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error("Invalid platform fixture name");
+	const state = lua(host, `for _,p in pairs(game.forces.player.platforms) do `
+		+ `if p.valid and p.name=='${name}' then return {success=true,present=true,tick=game.tick,`
+		+ `paused=p.paused,state_paused=p.state==defines.space_platform_state.paused} end end `
+		+ `return {success=true,present=false,tick=game.tick}`);
+	if (!state.success) throw new Error(`Cannot read platform pause: ${state.error}`);
+	return state;
+}
+
 
 export async function waitReady(host, timeoutMs = 180_000) {
 	const deadline = Date.now() + timeoutMs;
@@ -261,26 +274,80 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	if (!goldenSourceSave || !goldenDestSave || !markerPrefix) {
 		throw new Error("createBatchLifecycle needs goldenSourceSave, goldenDestSave, markerPrefix");
 	}
+	for (const name of [goldenSourceSave, goldenDestSave, markerPrefix]) {
+		if (!/^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*$/.test(name)) throw new Error("Invalid save or marker name");
+	}
 
-	let restoreArtifacts = null;
-
-	let livePairRestored = false;
+	const stamp = randomUUID();
+	const snapshots = { 1: `pretest-${markerPrefix}-${stamp}-1.zip`, 2: `pretest-${markerPrefix}-${stamp}-2.zip` };
+	let temporaryFilesRemoved = false;
+	const markers = new Map();
+	const captureWorld = () => {
+		const probes = probeCluster();
+		const failures = evaluateRuntime(probes, expectedModuleVersion()).filter(check => !check.ok);
+		if (failures.length) throw new Error(JSON.stringify(failures));
+		return probes;
+	};
+	const session = createSaveSession({
+		preflight() {
+			for (const host of [1, 2]) {
+				assertLeaseClean(host, preflightState(host), "before snapshot");
+				const pending = lua(host, "return {count=table_size(storage.latch_rearm_jobs or {})}");
+				if (pending.count !== 0) throw new Error("Circuit restoration pending before snapshot");
+			}
+		},
+		capture: captureWorld,
+		record(record) {
+			mkdirSync(`${REPO_ROOT}ci-artifacts`, { recursive: true });
+			writeFileSync(`${REPO_ROOT}ci-artifacts/${markerPrefix}-save-session-${stamp}.json`, JSON.stringify(record, null, 2));
+		},
+		save(host, name) {
+			const result = lua(host, `game.server_save('${name.slice(0, -4)}'); return {success=true}`);
+			if (!result.success) throw new Error(`Snapshot request failed: ${result.error}`);
+		},
+		async confirm(host, name) {
+			const deadline = performance.now() + 120000;
+			let previous = null, stable = 0, lastError = null;
+			while (performance.now() < deadline) {
+				let size;
+				try { size = Number(docker(["exec", HOSTS[host].container, "stat", "-c", "%s", instancePath(host, `saves/${name}`)]).trim()); }
+				catch (error) {
+					if (lastError === null) console.warn(`Waiting for snapshot file on host ${host}: ${error.message}`);
+					lastError = error; previous = null; stable = 0; await sleep(500); continue;
+				}
+				stable = size > 0 && size === previous ? stable + 1 : 0;
+				if (stable >= 2) { console.log(`snapshot confirmed: host ${host} / ${name}`); return; }
+				previous = size; await sleep(500);
+			}
+			throw new Error(`Snapshot incomplete: host ${host} / ${name}; neither test world will be loaded`, { cause: lastError });
+		},
+		async reload(host, name) {
+			const rows = ctl("instance", "list").split(/\r?\n/).map(line => line.split("|").map(cell => cell.trim()));
+			const status = rows.find(cells => cells[0] === HOSTS[host].instance)?.[4];
+			if (status === "running") ctl("instance", "stop", HOSTS[host].instance);
+			else if (status !== "stopped") throw new Error(`Cannot restore host ${host} while status is ${status}`);
+			ctl("instance", "start", HOSTS[host].instance, "--save", name);
+			await waitReady(host);
+		},
+		verify(before) {
+			const changes = compareWorlds(before, captureWorld());
+			if (changes.length) throw new Error(changes.join("; "));
+			for (const host of [1, 2]) assertLeaseClean(host, preflightState(host), "restored snapshot");
+		},
+	}, snapshots);
 
 	async function loadGoldenPair(manifest, phase) {
-		const repoRoot = REPO_ROOT;
-		restoreArtifacts = { 1: manifest.saves.source.artifact, 2: manifest.saves.destination.artifact };
-		ctl("instance", "stop", HOSTS[1].instance);
-		ctl("instance", "stop", HOSTS[2].instance);
-		docker(["cp", `${repoRoot}${manifest.saves.source.artifact}`,
-			`${HOSTS[1].container}:${instancePath(1, `saves/${goldenSourceSave}`)}`], { timeout: 180_000 });
-		docker(["cp", `${repoRoot}${manifest.saves.destination.artifact}`,
-			`${HOSTS[2].container}:${instancePath(2, `saves/${goldenDestSave}`)}`], { timeout: 180_000 });
-		ctl("instance", "start", HOSTS[1].instance, "--save", goldenSourceSave);
-		await waitReady(1);
-		ctl("instance", "start", HOSTS[2].instance, "--save", goldenDestSave);
-		await waitReady(2);
-		assertLeaseClean(1, preflightState(1), phase);
-		assertLeaseClean(2, preflightState(2), phase);
+		await session.prepare();
+		await session.enter(async () => {
+			for (const host of [1, 2]) ctl("instance", "stop", HOSTS[host].instance);
+			for (const [host, role, name] of [[1, "source", goldenSourceSave], [2, "destination", goldenDestSave]]) {
+				docker(["cp", `${REPO_ROOT}${manifest.saves[role].artifact}`,
+					`${HOSTS[host].container}:${instancePath(host, `saves/${name}`)}`], { timeout: 180000 });
+				ctl("instance", "start", HOSTS[host].instance, "--save", name);
+				await waitReady(host);
+				assertLeaseClean(host, preflightState(host), phase);
+			}
+		});
 		const floor = exportIdFloor();
 		const counters = {};
 		for (const host of [1, 2]) counters[host] = bumpExportIdCounter(host, floor);
@@ -288,8 +355,10 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	}
 
 	function dropMarker(host, name) {
+		if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error("Invalid marker name");
 		const marker = `/tmp/${markerPrefix}-${name}`;
 		docker(["exec", HOSTS[host].container, "sh", "-c", `touch ${marker}`]);
+		markers.set(`${host}:${marker}`, { host, marker });
 		return marker;
 	}
 
@@ -344,70 +413,25 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 
 	async function restoreLivePair(results, boundaryErrors) {
 		try {
-			if (!restoreArtifacts) {
-				results.restored = { skipped: "golden pair never loaded; live pair untouched" };
-				return;
-			}
-			if (livePairRestored) {
-				results.restored = { skipped: "live pair already restored this run; refusing to re-run "
-					+ "the rescue-and-overwrite (it would destroy the pre-suite rescue save)" };
-				return;
-			}
-			livePairRestored = true;
-			results.goldenSessionLogTails = {};
-			for (const host of [1, 2]) {
-				try {
-					results.goldenSessionLogTails[host] = docker(["exec", HOSTS[host].container, "sh", "-c",
-						`tail -n 80 ${instancePath(host, "factorio-current.log")}`]);
-				} catch (error) { results.goldenSessionLogTails[host] = `unreadable: ${error.message}`; }
-			}
-			ctl("instance", "stop", HOSTS[1].instance);
-			ctl("instance", "stop", HOSTS[2].instance);
-			const rescueStamp = Date.now();
-			for (const host of [1, 2]) {
-				const live = instancePath(host, `saves/${RESTORE_SAVES[host]}`);
-				docker(["exec", HOSTS[host].container, "sh", "-c",
-					`rm -f ${instancePath(host, "saves/predeploy-suiterescue-")}*.zip; ` +
-					`if [ -f ${live} ]; then cp ${live} ${instancePath(host, `saves/predeploy-suiterescue-${rescueStamp}.zip`)}; fi`]);
-			}
-			for (const host of [1, 2]) {
-				docker(["cp", `${REPO_ROOT}${restoreArtifacts[host]}`,
-					`${HOSTS[host].container}:${instancePath(host, `saves/${RESTORE_SAVES[host]}`)}`],
-				{ timeout: 180_000 });
-			}
-			for (const host of [1, 2]) {
-				ctl("instance", "start", HOSTS[host].instance, "--save", RESTORE_SAVES[host]);
-				await waitReady(host);
-			}
-			const leftovers = [];
+			results.restored = await session.restore();
+			if (!results.restored.verified || temporaryFilesRemoved) return;
 			for (const [host, name] of [[1, goldenSourceSave], [2, goldenDestSave]]) {
 				const path = instancePath(host, `saves/${name}`);
-				docker(["exec", HOSTS[host].container, "sh", "-c", `rm -f -- ${path}`]);
-				try { docker(["exec", HOSTS[host].container, "test", "!", "-e", path]); }
-				catch (error) { leftovers.push(`${name} still on host ${host} filesystem (${error.message.split(/\r?\n/)[0]})`); }
+				docker(["exec", HOSTS[host].container, "rm", "-f", "--", path]);
+				docker(["exec", HOSTS[host].container, "test", "!", "-e", path]);
 			}
-			for (const host of [1, 2]) {
-				docker(["exec", HOSTS[host].container, "sh", "-c", `rm -f /tmp/${markerPrefix}-*`]);
-				assertLeaseClean(host, preflightState(host), "release");
+			for (const { host, marker } of markers.values()) {
+				docker(["exec", HOSTS[host].container, "rm", "-f", "--", marker]);
 			}
-			if (leftovers.length) throw new Error(`temporary golden saves leaked: ${leftovers.join("; ")}`);
-			const restoredSource = lua(1, `for _,p in pairs(game.forces.player.platforms) do ` +
-				`if p.valid and p.name=='${RESTORE_SOURCE_PLATFORM}' then return {success=true,present=true} end end ` +
-				`return {success=true,present=false}`);
-			if (restoredSource.present !== true) {
-				throw new Error(`restore verification FAILED — ${RESTORE_SOURCE_PLATFORM} is absent from the ` +
-					`restored host-1 world; the cluster IS displaced. Artifact ${restoreArtifacts[1]} is stale ` +
-					`or empty; recover with docker cp (clusterioctl save upload does not overwrite).`);
-			}
-			results.restored = { 1: RESTORE_SAVES[1], 2: RESTORE_SAVES[2], zeroLeftovers: true, sourceVerified: true };
+			temporaryFilesRemoved = true;
 		} catch (error) {
-			boundaryErrors.push(`RESTORE FAILED (cluster may be displaced!): ${error.stack || error.message}`);
+			boundaryErrors.push(`RESTORE FAILED: ${error.message}. Snapshot saves retained: ${JSON.stringify(snapshots)}`);
 		}
 	}
 
 	return {
 		goldenSourceSave, goldenDestSave, markerPrefix,
-		CONTROLLER, CTL_CONFIG, HOSTS, RESTORE_SAVES, FLUID_EPSILON, DOUBLE_EPSILON,
+		CONTROLLER, CTL_CONFIG, HOSTS, FLUID_EPSILON, DOUBLE_EPSILON,
 		sleep, lastLine, docker, ctl, rcon, lua, instanceIds, instancePath,
 		preflightState, assertLeaseClean, loadedSave, waitReady, assignSave, readContainerJson,
 		exportIdFloor, bumpExportIdCounter,

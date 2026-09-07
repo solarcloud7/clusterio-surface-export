@@ -163,6 +163,8 @@ function AsyncProcessor.process_tick()
 					job.pending_beacon_tick = nil
 					ImportCompletion.run_phase2(job)
 				end
+			elseif job.phase1_started then
+				ImportCompletion.run_phase1(job)
 			else
 				local done = ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				if done then

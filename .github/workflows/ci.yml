@@ -62,6 +62,8 @@ jobs:
           sudo apt-get install -y lua5.2
           lua5.2 tests/mods/gateway-layout.lua
           lua5.2 tests/lua/restore-behavior.lua
+          lua5.2 tests/lua/cargo-integrity.lua
+          lua5.2 tests/lua/debug-destination-snapshot.lua
 
   # ===========================================================================
   # Integration Tests — spin up the full Docker cluster and run the suite

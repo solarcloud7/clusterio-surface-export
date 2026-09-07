@@ -57,6 +57,7 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 
 	return {
 		transferId: getString(transferInfo, "transferId", null) || getString(transferInfo, "id", null) || "",
+		queuedRequestId: getString(transferInfo, "queuedRequestId", null) || undefined,
 		operationType: getString(transferInfo, "operationType", "transfer") as TransferSummary["operationType"],
 		exportId: getString(transferInfo, "exportId", null),
 		artifactSizeBytes: getNumber(transferInfo, "artifactSizeBytes", null),
@@ -78,6 +79,9 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 export function mergeTransferSummary(existing: TransferSummary[], incoming: TransferSummary | null) {
 	const byId = new Map((existing || []).map(summary => [summary.transferId, summary]));
 	if (incoming && incoming.transferId) {
+		if (incoming.queuedRequestId) byId.delete(incoming.queuedRequestId);
+		// A delayed provisional response must not resurrect a queue marker after canonical handoff.
+		if ([...byId.values()].some(summary => summary.queuedRequestId === incoming.transferId)) return [...byId.values()];
 		byId.set(incoming.transferId, { ...byId.get(incoming.transferId), ...incoming });
 	}
 

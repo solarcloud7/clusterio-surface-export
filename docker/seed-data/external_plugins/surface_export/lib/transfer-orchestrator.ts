@@ -4,6 +4,8 @@ import { timed, timedSync, timingContext } from "./timing";
 import { wait } from "@clusterio/lib";
 import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
+import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue";
+import type { TimingRecord } from "../shared/timing";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
 
 type TransferStartResult = {
@@ -23,10 +25,36 @@ export class TransferOrchestrator {
 	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
 	private startingTransfers = new Map<string, { targetInstanceId: number; result: Promise<TransferStartResult> }>();
+	readonly requestQueue: TransferRequestQueue;
+	private queueWaits = new Map<string, TimingRecord>();
+	private queueAdmissions = new Map<string, Promise<void>>();
 
 	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
+		this.requestQueue = new TransferRequestQueue({
+			run: entry => this.runQueuedRequest(entry),
+			interrupted: async entry => {
+				const retained = this.plugin.persistedTransactionLogs.find(log => log.transferId === entry.operation.transferId);
+				if (retained && ["completed", "failed", "error", "cleanup_failed"].includes(retained.transferInfo.status)) return;
+				const untouched = entry.operation.status === "queued";
+				entry.operation.error = untouched ? "Queue interrupted by controller restart; no export was started. Submit again to transfer."
+					: "Controller restarted during transfer admission; outcome unknown. Inspect source and destination before retrying.";
+				entry.operation.status = "error";
+				entry.operation.failedAt = Date.now();
+				this.plugin.activeTransfers.set(entry.operation.transferId, entry.operation);
+				this.txLogger.logTransactionEvent(entry.operation.transferId, "queue_interrupted", entry.operation.error, {});
+				await this.txLogger.persistTransactionLog(entry.operation.transferId);
+			},
+			busyInstances: () => {
+				const busy = [...this.plugin.activeTransfers.values()].filter(operation => operation.status !== "queued"
+					&& (!["completed", "failed", "error", "cleanup_failed"].includes(operation.status) || operation.timingPendingRecovery))
+					.flatMap(operation => [operation.sourceInstanceId, operation.targetInstanceId]);
+				for (const pending of this.plugin.pendingTransfers?.values() || []) busy.push(pending.sourceInstanceId, pending.targetInstanceId);
+				return busy;
+			},
+			error: error => this.logger.error(`Transfer queue: ${getErrorMessage(error)}`),
+		});
 	}
 
 	get logger() { return this.plugin.logger; }
@@ -187,8 +215,24 @@ export class TransferOrchestrator {
 			};
 		}
 		operation.sourceVerification = { itemCounts, fluidCounts };
+		const queuedRequestId = timingContext.getStore()?.jobId;
+		const queued = queuedRequestId ? this.requestQueue.entries.get(queuedRequestId) : undefined;
+		const queuedEvents = queued ? this.plugin.transactionLogs.get(queued.id) : undefined;
+		if (queued) {
+			operation.queuedRequestId = queued.id;
+			operation.startedAt = queued.operation.startedAt;
+			if (queued.operation.timing) operation.timing = { v: 1, records: queued.operation.timing.records.map(record => ({
+				...record, operationId: record.operationId === queued.id ? transferId : record.operationId,
+			})) };
+			this.plugin.activeTransfers.delete(queued.id);
+			this.plugin.transactionLogs.delete(queued.id);
+			this.plugin.persistedTransactionLogs = this.plugin.persistedTransactionLogs.filter(log => log.transferId !== queued.id);
+			queued.operation = operation;
+			await this.requestQueue.persist();
+		}
 		await this.txLogger.archiveRecycledTransferId(transferId, operation.startedAt);
 		this.plugin.activeTransfers.set(transferId, operation);
+		if (queuedEvents) this.plugin.transactionLogs.set(transferId, queuedEvents);
 
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) {
@@ -196,11 +240,12 @@ export class TransferOrchestrator {
 		}
 		const requestMs = mergedExportMetrics?.requestExportAndLockMs;
 		if (finiteMs(requestMs)) {
+			const requestedAt = transferStartedAt ?? transfer.startedAt;
 			this.txLogger.logTransactionEvent(transferId, "export_requested",
-				`Export requested from ${transfer.sourceInstanceName || transfer.sourceInstanceId}`, {}, transfer.startedAt);
+				`Export requested from ${transfer.sourceInstanceName || transfer.sourceInstanceId}`, {}, requestedAt);
 			this.txLogger.logTransactionEvent(transferId, "export_returned",
 				`Source returned export ${sourceExportId} after ${requestMs} ms`,
-				{ requestExportAndLockMs: requestMs }, transfer.startedAt + requestMs);
+				{ requestExportAndLockMs: requestMs }, requestedAt + requestMs);
 		}
 		this.txLogger.logTransactionEvent(transferId, "transfer_created",
 			`${transfer.platformName}: ${transfer.sourceInstanceName || transfer.sourceInstanceId} → ${transfer.targetInstanceName || targetInstanceId}`, {
@@ -528,15 +573,92 @@ export class TransferOrchestrator {
 	}
 
 
-	async handleStartPlatformTransferRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
-		const observationId = `request:${randomUUID()}`;
-		const clock = this.txLogger.beginObservation(observationId);
-		const result = await timingContext.run(clock, () => this.handleStartPlatformTransferRequestMeasured(request, observationId));
-		if (!result.success) {
-			try { await this.txLogger.rejectObservation(observationId, request, result.error || "Request rejected"); }
-			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
+	async handleStartPlatformTransferRequest(request: QueuedTransferRequest) {
+		const reject = async (error: string) => {
+			const id = `request:${randomUUID()}`;
+			try {
+				this.txLogger.beginObservation(id);
+				await this.txLogger.rejectObservation(id, { ...request }, error);
+			} catch (timingError) {
+				this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(timingError)}`);
+			}
+			return { success: false, error };
+		};
+		const source = this.plugin.controller.instances.get(request.sourceInstanceId);
+		const target = this.plugin.controller.instances.get(request.targetInstanceId);
+		if (!source || source.isDeleted || !target || target.isDeleted || source.id === target.id
+			|| coercePlatformIndex(request.sourcePlatformIndex) === null) return reject("Invalid source, destination or platform");
+		if (!this.plugin.isInstanceOnline(source.id) || !this.plugin.isInstanceOnline(target.id)) return reject("Both instances must be online to queue a transfer");
+		const existing = this.requestQueue.find(request);
+		if (existing) {
+			if (existing.request.targetInstanceId !== request.targetInstanceId || (existing.request.targetPlanet ?? null) !== (request.targetPlanet ?? null)) {
+				return reject("This platform is already queued or transferring to another destination");
+			}
+			try { await this.queueAdmissions.get(existing.id); }
+			catch (error) { return { success: false, error: getErrorMessage(error) }; }
+			return { success: true, transferId: existing.operation.transferId, message: "Transfer already queued or active" };
 		}
-		return result;
+		if ([...this.plugin.activeTransfers.values()].some(operation => operation.sourceInstanceId === source.id
+			&& operation.platformIndex === request.sourcePlatformIndex && !["completed", "failed", "error", "cleanup_failed"].includes(operation.status))) {
+			return reject("This platform already has an active transfer");
+		}
+		const observationId = `request:${randomUUID()}`;
+		this.txLogger.beginObservation(observationId);
+		const operation = createOperationRecord("transfer", { operationId: observationId, status: "queued",
+			platformName: request.platformName || `Platform #${request.sourcePlatformIndex}`, platformIndex: request.sourcePlatformIndex,
+			sourceInstanceId: source.id, targetInstanceId: target.id, forceName: request.forceName || "player",
+			resolveInstanceName: id => this.plugin.platformTree.resolveInstanceName(id) });
+		this.plugin.activeTransfers.set(observationId, operation);
+		this.queueWaits.set(observationId, this.txLogger.clock(observationId).start("Transfer queue wait", "wait"));
+		this.txLogger.logTransactionEvent(observationId, "transfer_queued", "Waiting for source and destination instances", {});
+		try {
+			const admission = this.requestQueue.add({ id: observationId, request: { ...request }, operation });
+			this.queueAdmissions.set(observationId, admission);
+			await admission;
+			this.updateTransfer(operation);
+			return { success: true, transferId: observationId, message: "Transfer queued" };
+		} catch (error) {
+			const span = this.queueWaits.get(observationId);
+			if (span) this.txLogger.clock(observationId).stop(span, "failed");
+			this.queueWaits.delete(observationId);
+			operation.status = "failed"; operation.error = getErrorMessage(error); operation.failedAt = Date.now();
+			this.updateTransfer(operation);
+			await this.txLogger.persistTransactionLog(observationId);
+			return { success: false, error: operation.error };
+		} finally {
+			this.queueAdmissions.delete(observationId);
+		}
+	}
+
+	private async runQueuedRequest(entry: QueueEntry) {
+		const clock = this.txLogger.clock(entry.id);
+		const span = this.queueWaits.get(entry.id);
+		if (span) clock.stop(span);
+		this.queueWaits.delete(entry.id);
+		// The root began at admission. Queue wait uses the same monotonic clock, independent of game ticks.
+		this.txLogger.logTransactionEvent(entry.id, "queue_released", "Source and destination reserved; preparing export", {});
+		this.updateTransfer(entry.operation);
+		try {
+			const result = await timingContext.run(clock, () => this.handleStartPlatformTransferRequestMeasured(entry.request, entry.id));
+			if (!result.success && !["completed", "failed", "error", "cleanup_failed"].includes(entry.operation.status)) {
+				// A canonical operation with no terminal result may already have reached the destination.
+				// Keep its reservation until recovery is resolved; an exception is not a cleanup acknowledgement.
+				if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;
+				entry.operation.status = "failed";
+				entry.operation.error = result.error || "Transfer request failed";
+				entry.operation.failedAt = Date.now();
+				this.txLogger.logTransactionEvent(entry.operation.transferId, "transfer_failed", entry.operation.error, {});
+				this.updateTransfer(entry.operation);
+				await this.txLogger.persistTransactionLog(entry.operation.transferId);
+			}
+		} catch (error) {
+			if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;
+			entry.operation.status = "error"; entry.operation.error = getErrorMessage(error); entry.operation.failedAt = Date.now();
+			this.txLogger.logTransactionEvent(entry.operation.transferId, "queue_error", entry.operation.error, {});
+			this.updateTransfer(entry.operation);
+			await this.txLogger.persistTransactionLog(entry.operation.transferId);
+		}
+		await this.requestQueue.persist();
 	}
 
 	async handleStartPlatformTransferRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }, observationId: string) {

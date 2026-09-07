@@ -156,9 +156,7 @@ guard against the migration shape, not a current fix.
 
 Rule 2's trigger is a self-report read inside one file, so that file owes its own corroboration in both
 roots — a sibling's physical count does not discharge it. Discharge keys are root-qualified, so
-tests/integration/belt-freeze and tests/instruments/belt-freeze never merge: six names are shared across
-the two roots today (belt-freeze, engine-invariants, fluid-segment-law, loader-freeze, pole-copper-prune,
-selftests), two of them carrying a one-sided physical count.
+`tests/integration/engine-invariants` and `tests/instruments/engine-invariants` never merge, even though they share a directory name.
 
 Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
 runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
@@ -187,12 +185,14 @@ can-actually-fail row and the derived column's reach are MEASURED, by blinding e
 `validation_success` token and re-running the shipped `findMjsGroundingViolations` — a file whose
 blinded form fires is a file the rule engages on and can fail.
 
-The two runners the old literal missed entirely both read the glob through a local
+Historically, the two runners the old literal missed entirely both read the glob through a local
 `readDestImportResult`: `gateway-park-proxies` and `platform-paused-restore` (PR #259, which reported
 the gap in its own body). Both are grounded in substance; neither was covered. The other five —
 `gallery-suite`, `ghost-item-requests`, `hub-request-sections`, `latch-rearm-adversarial`,
 `segmented-unit-sleep` — reach the rule through the shared `L.waitForImportResult`, and four of those
 five carry no board/census marker at all, which is why the old arm could fail exactly one file.
+`platform-paused-restore` has since been removed; its physical pause checks now ride the
+existing `ghost-tags` and `ghost-item-requests` transfers, without the standalone waits.
 
 Two narrowings, each measured rather than assumed:
 

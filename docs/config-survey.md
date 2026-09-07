@@ -95,7 +95,7 @@ mod dependency and no second settings surface for operators to discover.
 
 | value | where | why it is law |
 |---|---|---|
-| `EXACT_EPSILON` 1e-6 | census-accumulator.lua:43; transfer-validation.lua:13 | The gate's definition of "exact"; widening forgives real loss (verdict-flipping). |
+| `EXACT_EPSILON` 1e-6 | source-cargo-integrity.lua; transfer-validation.lua:13 | The gate's definition of "exact"; widening forgives real loss (verdict-flipping). |
 | `LOSS_TOLERANCE_PCT/ABS` 0.05/25 | loss-analysis.lua:15-16 | High-temp reconciliation forgiveness — verdict-flipping. |
 | `STORAGE_TOLERANCE`/`TOTAL_LOSS_TOLERANCE`/`MIN_ABSOLUTE_LOSS` 5/0.95/100 | transfer-validation.lua:215-217 | Loose-path verdict thresholds (already bypassed on the strict transfer path). |
 | `HIGH_TEMP_THRESHOLD` 10000 | game-utils.lua:105 + util.lua:27 + **3 web mirrors** | Partitions fluids into the reconciliation bucket — verdict-flipping; four sites must agree or the UI disagrees with the gate. |
@@ -106,7 +106,7 @@ mod dependency and no second settings surface for operators to discover.
 | `GATEWAY_COUNT`/`GATEWAY_PREFIX` | shared/dto.ts:8-9 | Hand-mirror of the data mod's prototypes; solo change yields gateways with no prototypes. |
 | list-transfers max 500 (+default 50 ×4 sites) | messages.ts:329,336; control.ts:50,57-59 | Wire-schema bound both ends must agree on. Duplication flagged. |
 | `%03d` job-id format, `:` canonical-id separator, `STORAGE_FILENAME`, JSON byte constants | various | Wire/persisted identity — changing breaks every existing id/file. |
-| latch re-arm tick spacings 2/2/2 | latch_rearm.lua:45-47 | Engine evaluation-order requirements; correctness, not speed. |
+| circuit seed/restore evaluation waits 2/2 | latch_rearm.lua | Engine evaluation-order requirements; correctness, not speed. |
 
 ## INTERNAL — left alone (samples; full list in the migration PR)
 
@@ -145,3 +145,19 @@ paragraph previously warned it was unverified.)
 4. Duplicate-constant pairs the migration must fix together: RCON_CHUNK_SIZE ×2 ·
    MAX_RCON_COMMAND_BYTES ×2 · VALIDATION_TIMEOUT ms↔ticks · HIGH_TEMP_THRESHOLD ×5 · TICKS_TO_MS ×2 ·
    JobResults.prune ×3 · limit 500/50 ×4 · EXACT_EPSILON ×2 · activeTransfers cap ×2 · store-wait 10s/60s.
+# Surface Export settings page
+
+The plugin's **Settings** tab (`/surface-export?tab=settings`) edits the existing controller
+configuration through Clusterio's `ControllerConfigGetRequest` and `ControllerConfigSetRequest`.
+It uses `core.controller.get_config` for reading and `core.controller.update_config` for saving;
+only changed, writable plugin fields are submitted. There is no additional configuration store.
+
+Gateway layout requires a matching mod-pack startup setting and instance/client restarts. Payload
+retention is checked when an export is stored, detail retention on its next retention pass, and
+validation timeout on the next transfer. Each field states its application boundary in the UI.
+Instance links lead to the existing configuration editor for batching and debug settings, which
+are sent to Lua when the instance starts.
+
+`node tests/integration/settings/run-tests.mjs` verifies the real browser and config reads while
+intercepting every configuration write. It covers changed-field saves, discard, read/save errors,
+read-only and denied accounts, tab return, and narrow-screen layout. It never changes live settings.

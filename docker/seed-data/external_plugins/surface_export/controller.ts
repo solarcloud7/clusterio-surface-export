@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { unavailableEvidence } from "./lib/entity-evidence";
 import { performance } from "node:perf_hooks";
 import { timed, timedSync, timingContext } from "./lib/timing";
 import fs from "fs/promises";
@@ -147,6 +148,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadGatewayConfig();
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
+		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"));
 
 		this.c.handle(messages.OperationTimingEvent, async (event: messages.OperationTimingEvent) => {
 			this.txLogger.acceptTiming(event.record);
@@ -184,6 +186,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	override async onShutdown() {
+		this.orchestrator.requestQueue.stop();
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
@@ -572,7 +575,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.error = error;
 			operation.failedAt = Date.now();
 			if (event.failedStage === "items" || event.failedStage === "fluids"
-				|| event.failedStage === "belts" || event.failedStage === "test_hook") {
+				|| event.failedStage === "belts" || event.failedStage === "test_hook"
+				|| event.failedStage === "entities" || event.failedStage === "cargo_integrity") {
 				operation.failedStage = event.failedStage;
 			}
 			this.txLogger.logTransactionEvent(operation.transferId, "import_failed",
@@ -607,6 +611,29 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handleGetTransactionLog(request: { transferId?: string }) {
+		const detail = await this.readTransactionLog(request);
+		const summary = detail.summary;
+		const validation = summary?.validation;
+		if (!validation || typeof validation !== "object") return detail;
+		const reference = (validation as Record<string, unknown>).failureBlackBox as { file?: unknown; tick?: unknown } | undefined;
+		const instanceId = detail.transferInfo?.targetInstanceId;
+		if (typeof reference?.file !== "string" || typeof reference.tick !== "number" || !Number.isInteger(reference.tick)
+			|| !detail.transferId || !Number.isInteger(instanceId)) return detail;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const entityEvidence = await Promise.race([
+				this.c.sendTo({ instanceId: instanceId as number }, new messages.ReadEntityEvidenceRequest(detail.transferId, reference.file, reference.tick)),
+				new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Diagnostic request timed out")), 3000); }),
+			]);
+			return { ...detail, summary: { ...summary, validation: { ...validation, entityEvidence } } };
+		} catch (error) {
+			return { ...detail, summary: { ...summary, validation: { ...validation,
+				entityEvidence: unavailableEvidence(reference.file, `Destination diagnostic is unavailable: ${getErrorMessage(error)}. Reopen this operation to retry.`),
+			} } };
+		} finally { if (timer) clearTimeout(timer); }
+	}
+
+	async readTransactionLog(request: { transferId?: string }) {
 		const { transferId } = request;
 
 		if (!transferId || transferId === "latest") {

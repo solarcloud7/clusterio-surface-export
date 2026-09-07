@@ -3,13 +3,17 @@ export async function selectOption(page, label, option, scope = page) {
 	const input = scope.getByRole("combobox", { name: label, exact: true });
 	await input.press("ArrowDown");
 	await input.press("Home");
-	const list = page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)");
+	const controls = await input.getAttribute("aria-controls");
+	if (!controls) throw new Error(`Select '${label}' has no associated option list`);
+	const list = page.locator(".ant-select-dropdown").filter({ has: page.locator(`[id=${JSON.stringify(controls)}]`) });
 	// Home resets virtualization. Keyboard navigation keeps the active option rendered.
 	for (let count = 0; count < 200; count++) {
 		const exact = new RegExp(`^${option.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 		const target = list.locator(".ant-select-item-option-content").filter({ hasText: exact });
 		if (await target.count() && await target.first().isVisible()) {
-			await target.first().click(); return;
+			await target.first().click();
+			await list.waitFor({ state: "hidden" });
+			return;
 		}
 		await input.press("ArrowDown");
 	}

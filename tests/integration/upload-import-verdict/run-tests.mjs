@@ -8,10 +8,10 @@
 //           request the web UI's Import button sends, and `list-transfers`, the same records the web
 //           Transaction Logs list is built from
 // produces: a REAL export payload taken off a throwaway host-1 platform (a chest of items plus a belt
-//           carrying items), uploaded to host-2 three ways — unmutated (control), with
+//           carrying items), uploaded to host-2 four ways — unmutated (control), with
 //           belt_side_groups stripped (an export that predates captured source positions: the
 //           destination refuses the belt restore), and transfer-shaped with an inflated verification
-//           count (the exact gate fails and discards the destination) — each graded on the controller
+//           count, or a missing request-proxy target (both reject and discard the destination) — graded on the controller
 //           transaction row's status and error text AND on a physical destination read
 // does not: assert item/fluid FIDELITY (no exact gate runs on a plain non-transfer import — the
 //           suite's config-attrs / gallery-suite runs are the fidelity control); perform a real
@@ -32,6 +32,7 @@ const PROBE = `${PREFIX}src-${TAG}`;
 const ARM_OK = `${PREFIX}ok-${TAG}`;
 const ARM_BELTS = `${PREFIX}belts-${TAG}`;
 const ARM_GATE = `${PREFIX}gate-${TAG}`;
+const ARM_ENTITY = `${PREFIX}entity-${TAG}`;
 const CRAFTED_TRANSFER_ID = `${PREFIX}${TAG}`;
 const DUMP_FILE = `${PREFIX}${TAG}.json`;
 const EXPORT_WAIT_MS = 120_000;
@@ -361,6 +362,8 @@ try {
 	check(belts.row !== null && typeof belts.row.error === "string" && belts.row.error.includes("belts"),
 		"the row's error names the failure stage the destination reported (belts)",
 		describeRow(belts.row));
+	check(/predates captured source positions/.test(belts.row?.error ?? ""),
+		"missing captured belt positions are the actual rejection reason", describeRow(belts.row));
 	check(belts.summary !== undefined && belts.summary !== null
 		&& (belts.summary.validation ?? null) === null,
 		"NEGATIVE: a FAILED plain upload still carries no verdict — import-completion.lua builds a "
@@ -413,6 +416,37 @@ try {
 		`the verdict's actual counts DO carry the ${BELT_ITEM} the payload really delivered, so the `
 		+ "table is a measurement and not an empty shell",
 		`actual[${BELT_ITEM}]=${JSON.stringify(gateVerdict && gateVerdict.actualItemCounts?.[BELT_ITEM])}`);
+
+	// An orphan request proxy follows the ordinary deserializer failure path. No test hook
+	// overrides the verdict, and original cargo expectations remain unchanged.
+	const entityPayload = JSON.parse(JSON.stringify(base));
+	entityPayload.platform_name = ARM_ENTITY;
+	entityPayload._transferId = CRAFTED_TRANSFER_ID;
+	const chest = entityPayload.entities.find(entity => entity.name === "wooden-chest");
+	if (!chest) throw new Error("ordinary-failure fixture requires its exported chest");
+	entityPayload.entities.push({ name: "item-request-proxy", type: "item-request-proxy",
+		entity_id: Math.max(0, ...entityPayload.entities.map(entity => Number(entity.entity_id) || 0)) + 1, position: chest.position,
+		specific_data: { target_position: chest.position, target_name: "cargo-integrity-missing-target" } });
+	say("\n=== ORDINARY ENTITY FAILURE: cargo matches, missing proxy target must reject ===");
+	const entity = await uploadArm({ label: "entity", platformName: ARM_ENTITY,
+		payload: entityPayload, destInstanceId: ids[DEST_HOST] });
+	containerPaths.push(entity.containerPath);
+	const entityVerdict = entity.summary?.validation;
+	check(entity.attempt.status === 0 && entity.row?.status === "failed" && entity.arrival.present === false,
+		"ordinary entity restoration failure rejects and discards the destination", describeRow(entity.row));
+	check(entityVerdict?.failedEntityLosses?.entity_count > 0 && entityVerdict?.failedStage === "entities"
+		&& entityVerdict?.itemCountMatch === true && entityVerdict?.fluidCountMatch === true
+		&& !entityVerdict?.testForcedEntityFailure,
+		"matching cargo cannot forgive a missing entity; no test-only verdict override", describeVerdict(entity.summary));
+	check(readArrival(SOURCE_HOST, PROBE).present === true,
+		"the original source fixture remains present after the rejected upload");
+	for (const arm of [gate, entity]) {
+		const file = arm.summary.validation.failureBlackBox.file;
+		if (!/^failure_black_box_[A-Za-z0-9_-]+_\d+\.json$/.test(file)) throw new Error("invalid black-box reference");
+		const box = JSON.parse(docker(["exec", `surface-export-host-${DEST_HOST}`, "cat", instancePath(DEST_HOST, `script-output/${file}`)]));
+		check(box.physical_capture_available === true && !!box.replay_payload,
+			"failure black box contains physical evidence and replay payload before fixture cleanup");
+	}
 } catch (probeError) {
 	failures += 1;
 	process.exitCode = 1;

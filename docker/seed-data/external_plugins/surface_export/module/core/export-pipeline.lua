@@ -16,7 +16,8 @@ local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
-local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
+-- Saved job.census fields and census_* event keys remain compatible with retained jobs/logs.
+local SourceCargoIntegrity = require("modules/surface_export/export_scanners/source-cargo-integrity")
 local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-diff")
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
@@ -33,7 +34,7 @@ local function maybe_inject_census_omission(entity_data)
 			local removed = table.remove(inv.items, 1)
 			cfg.test_force_census_omission = nil
 			log(string.format(
-				"[Census][test hook] test_force_census_omission dropped serialized stack '%s' x%d from entity_id=%s",
+				"[Cargo integrity][test hook] test_force_census_omission dropped serialized stack '%s' x%d from entity_id=%s",
 				tostring(removed and removed.name),
 				tonumber(removed and removed.count) or 0,
 				tostring(entity_data.entity_id)))
@@ -226,7 +227,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		total_entities = #entities,
 		current_index = 0,
 		belt_entities = {},
-		census = CensusAccumulator.new(fluid_registry),
+		census = SourceCargoIntegrity.new(fluid_registry),
 		fluid_registry = fluid_registry,
 		export_data = {
 			schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
@@ -279,7 +280,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 						local serialized_index = #job.export_data.entities
 						job.belt_entities[serialized_index] = entity
 					else
-						CensusAccumulator.record(job.census, entity, entity_data)
+						SourceCargoIntegrity.record(job.census, entity, entity_data)
 					end
 				end
 			end
@@ -319,7 +320,7 @@ function ExportPipeline.complete(job)
 				belt_pairs[#belt_pairs + 1] = { entity = live_entity, id = entity_data.entity_id }
 				entity_data.specific_data = entity_data.specific_data or {}
 				entity_data.specific_data.items = belt_items
-				CensusAccumulator.record(job.census, live_entity, entity_data)
+				SourceCargoIntegrity.record(job.census, live_entity, entity_data)
 				belt_scan_count = belt_scan_count + 1
 				for _, line_data in ipairs(belt_items) do
 					for _ in ipairs(line_data.items or {}) do
@@ -364,7 +365,7 @@ function ExportPipeline.complete(job)
 		fluid_counts = fluid_counts,
 	}
 
-	job.census_verdict = CensusAccumulator.verdict(job.census)
+	job.census_verdict = SourceCargoIntegrity.verdict(job.census)
 	ExportPipeline.run_blueprint_diff(job)
 	ExportPipeline.report_property_findings(job)
 	if job.destination_instance_id then
@@ -377,7 +378,7 @@ function ExportPipeline.complete(job)
 		job.export_data.census_verdict = job.census_verdict
 		if not job.census_verdict.ok then
 			log(string.format(
-				"[Census][WARN] Source census MISMATCH on non-transfer export '%s': %d mismatch row(s) — exporting anyway (no source-delete risk)",
+				"[Cargo integrity][WARN] Source census MISMATCH on non-transfer export '%s': %d mismatch row(s) — exporting anyway (no source-delete risk)",
 				job.platform_name, #job.census_verdict.mismatches))
 		end
 	end
@@ -664,6 +665,8 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		verdict_ok = verdict.ok,
 		mismatch_count = mismatch_count,
 		mismatches = verdict.mismatches,
+		measurementAvailable = verdict.measurementAvailable,
+		measurementErrors = verdict.measurementErrors,
 		totals = verdict.totals,
 	}
 	Timing.start(job.job_id, "failure_diagnostics")
@@ -671,10 +674,10 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	Timing.stop(job.job_id, "failure_diagnostics")
 
 	log(string.format(
-		"[Census][ABORT] Transfer export '%s' ABORTED — source census mismatch: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
+		"[Cargo integrity][ABORT] Transfer export '%s' ABORTED — source cargo integrity failure: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
 		job.platform_name, mismatch_count, tostring(written)))
 	game.print(string.format(
-		"[Census] Transfer of '%s' ABORTED — source serialization mismatch detected; source preserved.",
+		"[Cargo integrity] Transfer of '%s' ABORTED — source cargo mismatched or could not be measured; source preserved.",
 		job.platform_name), {1, 0.3, 0})
 
 	Timing.start(job.job_id, "source_unlock")

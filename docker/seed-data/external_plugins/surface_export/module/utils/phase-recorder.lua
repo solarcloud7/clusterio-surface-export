@@ -18,7 +18,6 @@ PhaseRecorder.IMPORT_PHASES = {
 	{ name = "fluids",        from = "fluids_started_tick",        to = "fluids_completed_tick" },
 	{ name = "validation",    from = "validation_started_tick",    to = "validation_done_tick" },
 	{ name = "activation",    from = "activation_started_tick",    to = "activation_completed_tick" },
-	{ name = "loss_analysis", from = "loss_analysis_started_tick", to = "loss_analysis_completed_tick" },
 }
 
 local by_name = {}
@@ -48,7 +47,7 @@ function PhaseRecorder.start(job, name)
 	local spec = spec_for(name, "start")
 	if not spec then return end
 	job.metrics = job.metrics or {}
-	if spec.from then job.metrics[spec.from] = game.tick end
+	if spec.from and job.metrics[spec.from] == nil then job.metrics[spec.from] = game.tick end
 	if spec.profiled ~= false then PhaseProfiler.start(job.job_id, spec.profiler or spec.name) end
 end
 

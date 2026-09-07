@@ -25,6 +25,20 @@ const history = Array.from({ length: 16 }, (_, index) => {
 	fixture.row.downloadable = false;
 	if (index === 14) { fixture.row.downloadable = true; fixture.row.exportId = "browser-artifact"; }
 	if (index === 15) fixture.row.operationType = "import";
+	if (index === 13) {
+		// Reproduce the observed belt refusal with passing cargo and zero placement failures.
+		fixture.row.status = "failed";
+		fixture.row.error = "belt side-restore reported 2 structural anomalies (bracket/side witness)";
+		Object.assign(fixture.detail.summary, { status: "failed", error: fixture.row.error,
+			import: { entities_created: 1367, entities_failed: 0, entities_skipped: 1 } });
+		Object.assign(fixture.detail.summary.validation, { success: false, failedStage: "belts",
+			mismatchDetails: fixture.row.error, itemCountMatch: true, fluidCountMatch: true,
+			entityCount: 1368, reportedEntityCount: 1368, entityTypeBreakdown: { "turbo-transport-belt": 453 } });
+		fixture.detail.summary.validation.entityEvidence = { status: "available", file: "failure_black_box_fixture_123.json", totalRows: 2, truncated: false,
+			rows: [{ entityId: 50106, name: "turbo-transport-belt", x: -6.5, y: -1.5, line: 2, item: "explosive-rocket", expected: 20, actual: 16, delta: -4 },
+				{ entityId: 50135, name: "turbo-transport-belt", x: -5.5, y: -1.5, line: 2, item: "explosive-rocket", expected: 16, actual: 20, delta: 4 }] };
+		fixture.detail.events.push({ eventType: "rollback_success", message: "Rollback succeeded" });
+	}
 	fixture.detail.transferInfo = { ...fixture.row };
 	fixture.detail.summary.transferId = fixture.row.transferId;
 	fixture.detail.summary.operationType = fixture.row.operationType;
@@ -106,7 +120,8 @@ try {
 	await select(page, "Outcome filter", "Needs attention");
 	const failure = page.locator(".se-history-row").filter({ hasText: "Cargo trial" }).first();
 	await failure.click();
-	await detail.getByText(/Failed; rollback succeeded/).waitFor();
+	await detail.getByTestId("operation-outcome").getByText("Transfer failed", { exact: true }).waitFor();
+	await detail.getByTestId("operation-outcome").getByText("Rollback succeeded", { exact: true }).waitFor();
 	assert.equal(await detail.getByRole("button", { name: /Download platform/ }).isEnabled(), true, "loading detail preserves the stored-export download action");
 	await detail.getByRole("tab", { name: "Items", exact: true }).click();
 	await detail.getByText("Item audit · Mismatch", { exact: true }).waitFor();
@@ -119,12 +134,54 @@ try {
 	history[0].detail.summary.validation.itemCountMatch = false;
 	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
 	await detail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
+	// A failed engine read must not turn retained maps into measured zero or a cargo mismatch.
+	history[0].detail.summary.validation.measurementAvailable = false;
+	history[0].detail.summary.validation.measurementErrors = ["inventory read unavailable"];
+	await page.locator('.se-history-row[data-transfer-id="browser-record-01"]').click();
+	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
+	await detail.getByRole("tab", { name: "Overview", exact: true }).click();
+	assert.equal(await detail.locator(".se-audit-passed").count(), 0, "Unavailable reads cannot pass cargo audits");
+	assert.equal(await detail.locator(".se-audit-mismatch").count(), 0, "Unavailable reads are not measured shortages");
+	const unavailableReport = await readReport(detail);
+	assert.equal(unavailableReport.summary.validation.measurementAvailable, false);
+	assert.deepEqual(unavailableReport.summary.validation.measurementErrors, ["inventory read unavailable"]);
+	console.log("PASS unavailable cargo readings remain unavailable in the UI and diagnostic report");
 	history[0].detail.summary.validation = originalValidation;
 	await page.locator('.se-history-row[data-transfer-id="browser-record-01"]').click();
 	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
 	await detail.getByText("Arrived and verified", { exact: true }).waitFor();
 	await detail.getByRole("tab", { name: "Overview", exact: true }).click();
 	console.log("PASS recorded success/failure, reports, search, filters, pagination, keyboard selection and refreshing revisited evidence");
+	await page.getByRole("textbox", { name: "Search loaded operations" }).fill("browser-record-13");
+	await page.locator('.se-history-row[data-transfer-id="browser-record-13"]').click();
+	await detail.getByRole("button", { name: /Entity audit Failure recorded/ }).waitFor();
+	assert.equal(await detail.locator(".se-audit-passed").count(), 2, "Cargo passes do not conceal structural failure");
+	assert.equal(await detail.locator(".se-audit-mismatch").count(), 1);
+	const assertSingleFailure = async () => {
+		assert.equal(await detail.locator(".ant-alert-error:visible").count(), 1, "One operation failure panel across every evidence tab");
+		assert.equal(await detail.getByText(history[13].row.error, { exact: true }).filter({ visible: true }).count(), 1, "The failure reason is not repeated");
+		assert.equal(await detail.getByText("Rollback succeeded", { exact: true }).filter({ visible: true }).count(), 1, "Recovery is reported once inside the outcome panel");
+	};
+	await assertSingleFailure();
+	await detail.getByRole("button", { name: "Inspect entity evidence", exact: true }).click();
+	const entityAudit = detail.getByTestId("audit-entities");
+	await assertSingleFailure();
+	const differences = entityAudit.getByTestId("entity-differences");
+	assert.match(await differences.innerText(), /-6.5, -1.5/);
+	assert.match(await differences.innerText(), /-5.5, -1.5/);
+	assert.equal(await differences.locator("tbody tr[data-row-key]").count(), 2);
+	await differences.getByRole("textbox", { name: "Search belt differences" }).fill("-6.5");
+	assert.equal(await differences.locator("tbody tr[data-row-key]").count(), 1);
+	const reportWithEvidence = await readReport(detail);
+	assert.equal(reportWithEvidence.summary.validation.entityEvidence.rows[0].delta, -4);
+	await entityAudit.getByText("Placement totals and entity counts", { exact: true }).click();
+	await entityAudit.getByRole("textbox", { name: "Search entities" }).fill("turbo");
+	await entityAudit.getByText("turbo-transport-belt", { exact: true }).waitFor();
+	assert.match(await entityAudit.innerText(), /453/);
+	await detail.getByRole("tab", { name: "Technical details", exact: true }).click();
+	await assertSingleFailure();
+	await page.getByRole("textbox", { name: "Search loaded operations" }).fill("");
+	console.log("PASS entity failure, passing cargo, recovery, destination census and technical failure evidence");
 
 	const beforePreview = requests;
 	await page.getByRole("button", { name: "Preview logs", exact: true }).click();
@@ -167,16 +224,18 @@ try {
 	await preview.getByRole("button", { name: "Replay detail update" }).click();
 	assert.equal(await preview.locator('.ant-collapse-header').first().getAttribute("aria-expanded"), "true");
 	await scenario("Recorded failure and rollback");
-	await preview.getByText(/Failed; rollback succeeded/).waitFor();
+	await preview.getByTestId("operation-outcome").getByText("Transfer failed", { exact: true }).waitFor();
+	await preview.getByTestId("operation-outcome").getByText("Rollback succeeded", { exact: true }).waitFor();
 	await preview.getByText("Intentional test", { exact: true }).waitFor();
 	await scenario("Failure, recovery unknown");
-	await preview.getByText("Failed; recovery not confirmed", { exact: true }).waitFor();
+	await preview.getByTestId("operation-outcome").getByText("Transfer failed", { exact: true }).waitFor();
+	await preview.getByTestId("operation-outcome").getByText("Recovery not confirmed", { exact: true }).waitFor();
 	await scenario("Cleanup needs attention");
 	assert.doesNotMatch(await previewDetail.innerText(), /Arrived and verified/);
 	await scenario("Validation pending");
-	assert.equal(await preview.locator(".se-audit-pending").count(), 2);
+	assert.equal(await preview.locator(".se-audit-pending").count(), 3);
 	await scenario("Missing audit evidence");
-	assert.equal(await preview.locator(".se-audit-unavailable").count(), 2);
+	assert.equal(await preview.locator(".se-audit-unavailable").count(), 3);
 	assert.match(await previewDetail.innerText(), /Not recorded/);
 	await scenario("Equal totals, failed gate");
 	await preview.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
@@ -196,7 +255,7 @@ try {
 	const expired = await readReport(previewDetail);
 	assert.equal(expired.detailRetention, "summary-only"); assert.deepEqual(expired.events, []); assert.equal(expired.preview, true);
 	await scenario("Standalone export");
-	assert.equal(await preview.locator(".se-audit-not-applicable").count(), 2);
+	assert.equal(await preview.locator(".se-audit-not-applicable").count(), 3);
 	await preview.getByText("Export stored", { exact: true }).waitFor();
 	await scenario("Standalone import");
 	await preview.getByText("Imported and verified", { exact: true }).waitFor();

@@ -21,7 +21,7 @@
 //           green proxy is a probe control and not coverage of the post-creation proxy write
 
 import {
-	lua, rcon, instanceIds, createBatchLifecycle,
+	lua, rcon, instanceIds, createBatchLifecycle, readPlatformPause,
 } from "../../lab-gallery/batch-lifecycle.mjs";
 import { exportInspect } from "../../../tools/tests/testkit/export-inspect.mjs";
 
@@ -135,7 +135,7 @@ async function main() {
 		const created = lua(1,
 			`local p=game.forces.player.create_space_platform{name='${PROBE}', planet='nauvis', `
 			+ "starter_pack='space-platform-starter-pack'} "
-			+ "p.apply_starter_pack() "
+			+ "p.apply_starter_pack() p.paused=false "
 			+ "local tiles={} for x=2,22 do for y=2,22 do "
 			+ "tiles[#tiles+1]={name='space-platform-foundation', position={x,y}} end end "
 			+ "p.surface.set_tiles(tiles) "
@@ -199,6 +199,10 @@ async function main() {
 				insert_plan: e.specific_data && e.specific_data.insert_plan,
 			}))));
 
+		const sourcePause = readPlatformPause(1, PROBE);
+		check(sourcePause.present && sourcePause.paused === false,
+			"source: fixture explicitly armed paused=false", JSON.stringify(sourcePause));
+
 		const marker = L.dropMarker(2, "transfer");
 		rcon(1, `/transfer-platform ${setup.index} ${ids[2]}`);
 		const { result } = await L.waitForImportResult(2, marker);
@@ -206,6 +210,10 @@ async function main() {
 			`validation_success=${result.validation_success}`
 			+ (result.validation_result && result.validation_result.mismatchDetails
 				? ` — ${result.validation_result.mismatchDetails}` : ""));
+
+		const arrivalPause = readPlatformPause(2, PROBE);
+		check(arrivalPause.present && arrivalPause.paused === false && arrivalPause.state_paused === false,
+			"dest: source paused=false survived transfer", JSON.stringify(arrivalPause));
 
 		const dest = lua(2, dumpRequestsLua(PROBE));
 		if (!dest.success) throw new Error(`destination read failed: ${JSON.stringify(dest)}`);
@@ -236,6 +244,10 @@ async function main() {
 			+ `if q.valid and q.name=='${PROBE}' then return {success=true,present=true} end end `
 			+ "return {success=true,present=false}");
 		check(sourceGone.present === false, "transfer: source deleted (two-phase commit)");
+		const finalPause = readPlatformPause(2, PROBE);
+		check(finalPause.present && finalPause.tick > arrivalPause.tick
+			&& finalPause.paused === false && finalPause.state_paused === false,
+			"dest: paused=false persists on a later tick after source deletion", JSON.stringify(finalPause));
 	} finally {
 		for (const host of [1, 2]) {
 			try {

@@ -50,6 +50,10 @@ end
 local PROFILES = {}
 
 PROFILES["2.0"] = {
+  belt_force_insert_at = function(line, position, stack, belt_stack_size)
+    -- Added in 2.0.35. The API returns void; the caller's physical census owns success.
+    line.force_insert_at(position, stack, belt_stack_size)
+  end,
   belt_insert_at = function(line, position, stack, belt_stack_size)
     return line.insert_at(position, stack, belt_stack_size) == true
   end,
@@ -62,6 +66,7 @@ PROFILES["2.0"] = {
 }
 
 PROFILES["2.1"] = {
+  belt_force_insert_at = PROFILES["2.0"].belt_force_insert_at,
   belt_insert_at = PROFILES["2.0"].belt_insert_at,
   belt_insert_at_back = PROFILES["2.0"].belt_insert_at_back,
   delete_platform = PROFILES["2.0"].delete_platform,
@@ -109,6 +114,10 @@ end
 
 function VersionCompat.belt_insert_at(line, position, stack, belt_stack_size)
   return resolve_profile().belt_insert_at(line, position, stack, belt_stack_size)
+end
+
+function VersionCompat.belt_force_insert_at(line, position, stack, belt_stack_size)
+  resolve_profile().belt_force_insert_at(line, position, stack, belt_stack_size)
 end
 
 function VersionCompat.belt_insert_at_back(line, stack, belt_stack_size)
