@@ -107,7 +107,8 @@ function global:docker {
  } else { throw 'UNEXPECTED_MUTATION' }
 }
 function global:node { throw 'UNEXPECTED_PROBE_OR_MUTATION' }
-& $env:RELOAD_SCRIPT
+try { & $env:RELOAD_SCRIPT }
+catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
 		{ encoding: "utf8", timeout: 15000, env: { ...process.env,
