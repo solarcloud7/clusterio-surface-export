@@ -1,10 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertLeaseClean, assertLegacySaveJournal } from "./batch-lifecycle.mjs";
+import { assertLeaseClean, assertLegacySaveJournal, waitReady } from "./batch-lifecycle.mjs";
 
 const clean = { success: true, players: 0, paused: false, plugin: true, jobs: 0, locks: 0, holds: 0, tombstones: 0 };
 const receipt = { validIdentity: true, deletedTick: 0, surfacePresent: false, platformPresent: false };
 const observed = evidence => ({ ...clean, tombstones: evidence.length, tombstoneEvidence: evidence });
+
+test("a loaded Lua interface is not ready until source recovery finishes", async () => {
+	let reads = 0;
+	const state = await waitReady(1, 5000, () => ({
+		success: true, plugin: true, recoveryReady: ++reads > 1,
+	}));
+	assert.equal(state.recoveryReady, true);
+	assert.equal(reads, 2);
+});
 
 test("legacy save loading refuses existing recovery history without changing it", () => {
 	assert.doesNotThrow(() => assertLegacySaveJournal(1, { v: 1, id: "fresh", retirements: [] }));

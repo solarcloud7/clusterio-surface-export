@@ -263,13 +263,14 @@ export function readPlatformPause(host, name) {
 }
 
 
-export async function waitReady(host, timeoutMs = 180_000) {
+export async function waitReady(host, timeoutMs = 180_000, read = lua) {
 	const deadline = Date.now() + timeoutMs;
 	let lastError;
 	while (Date.now() < deadline) {
 		try {
-			const state = lua(host, `return {success=true,tick=game.tick,plugin=remote.interfaces['surface_export']~=nil}`);
-			if (state.success && state.plugin) return state;
+			const state = read(host, `return {success=true,tick=game.tick,plugin=remote.interfaces['surface_export']~=nil,` +
+				`recoveryReady=storage.source_recovery_ready==true}`);
+			if (state.success && state.plugin && state.recoveryReady === true) return state;
 			lastError = new Error(`plugin not ready: ${JSON.stringify(state)}`);
 		} catch (error) { lastError = error; }
 		await sleep(2000);
