@@ -6,7 +6,7 @@
 #           newest zip present; -PruneShadowing deletes those newer zips instead. -ModName scopes
 #           copying, validation and pruning to one exact mod name. -ModVersion selects an exact
 #           version with -ModName (the gateway builder selects the version it just built).
-#           Duplicate seeds are accepted only when filename-last and numeric-newest agree.
+#           Duplicate seeds use the highest numeric version, matching the pinned cluster seeder.
 # does not: touch mod-list.json, delete client-only mods or OLDER versions, or contact the cluster;
 #           a missing client install is a quiet skip
 
@@ -60,12 +60,6 @@ $latest = [System.Collections.Generic.Dictionary[string,object]]::new([StringCom
 foreach ($name in $groups.Keys) {
 	$versions = $groups[$name]
 	$newest = $versions | Sort-Object Version -Descending | Select-Object -First 1
-	# The pinned seed-mods.sh passes a POSIX filename-sorted list to Clusterio's last-write-wins map.
-	$names = [string[]]@($versions | ForEach-Object { $_.File.Name })
-	[Array]::Sort($names, [StringComparer]::Ordinal)
-	if ($names[-1] -cne $newest.File.Name) {
-		throw "Ambiguous seed versions for '$name': cluster seeding selects '$($names[-1])' by filename, but the client selects '$($newest.File.Name)' by version. Remove obsolete seed versions before syncing: $($names -join ', '). No client files changed."
-	}
 	$latest[$name] = $newest.Version
 	$selected += $versions | ForEach-Object { $_.File }
 }

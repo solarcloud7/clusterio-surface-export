@@ -7,7 +7,6 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
-import { selectOption } from "../../../tools/tests/browser-interactions.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "credentials stay on localhost");
@@ -81,10 +80,49 @@ const readReport = async scope => {
 	return JSON.parse(readFileSync(await (await pending).path(), "utf8"));
 };
 const select = async (page, label, option) => {
-	await selectOption(page, label, option);
+	const input = page.getByRole("combobox", { name: label, exact: true });
+	await input.press("ArrowDown");
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+	for (let step = 0; step < 50; step++) {
+		const active = await input.evaluate(el => document.getElementById(el.getAttribute("aria-activedescendant"))?.getAttribute("aria-label"));
+		if (active === option) {
+			await input.press("Enter");
+			await page.waitForFunction(({ label, option }) => {
+				const el = document.querySelector(`input[aria-label="${label}"]`);
+				return el?.getAttribute("aria-expanded") === "false"
+					&& el.closest(".ant-select").querySelector(".ant-select-selection-item")?.textContent === option;
+			}, { label, option });
+			return;
+		}
+		await input.press("ArrowDown");
+	}
+	throw new Error(`Keyboard selection could not reach '${option}' in '${label}'`);
 };
 try {
 	const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+	await page.addInitScript(() => {
+		window.logFilterFocus = [];
+		let popupMouseDown = false;
+		for (const type of ["focusin", "focusout", "keydown", "mousedown"]) document.addEventListener(type, event => {
+			window.logFilterFocus.push({ type, label: event.target.getAttribute("aria-label"), at: performance.now() });
+			window.logFilterFocus = window.logFilterFocus.slice(-40);
+		}, true);
+		document.addEventListener("mousedown", event => { popupMouseDown = Boolean(event.target.closest(".ant-select-dropdown")); }, true);
+		document.addEventListener("mousedown", () => { popupMouseDown = false; });
+		const schedule = window.setTimeout;
+		window.delayedPopupFocus = 0;
+		window.pendingPopupFocus = 0;
+		window.setTimeout = (callback, delay, ...args) => {
+			if (popupMouseDown && typeof callback === "function" && (delay === undefined || delay === 0)) {
+				window.delayedPopupFocus++;
+				window.pendingPopupFocus++;
+				return schedule(() => {
+					try { callback.apply(window, args); } finally { window.pendingPopupFocus--; }
+				}, 150);
+			}
+			return schedule(callback, delay, ...args);
+		};
+	});
 	await page.routeWebSocket(/api\/socket/, socket => {
 		const wire = connectHistory(socket);
 		wire.server.onMessage(raw => { const frame = JSON.parse(String(raw)); wire.replace(frame); socket.send(JSON.stringify(frame)); });
@@ -357,6 +395,15 @@ try {
 	await reconnectDetail.getByText("Completed; audit reported a failure", { exact: true }).waitFor();
 	assert.equal((await readReport(reconnectDetail)).summary.validation.success, false);
 	console.log("PASS reconnect refreshes selected evidence without a page reload");
+	const operationFilter = page.getByRole("combobox", { name: "Operation filter", exact: true });
+	await page.locator(".ant-select").filter({ has: operationFilter }).locator(".ant-select-selector").click();
+	await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)").getByText("Imports", { exact: true }).click();
+	await page.waitForFunction(() => document.querySelector('input[aria-label="Operation filter"]')?.getAttribute("aria-expanded") === "false");
+	assert.equal(await operationFilter.evaluate(el => el.closest(".ant-select").querySelector(".ant-select-selection-item")?.textContent), "Imports");
+	assert.ok(await page.evaluate(() => window.delayedPopupFocus > 0), "mouse coverage exercised deferred popup focus");
+	await page.waitForFunction(() => window.pendingPopupFocus === 0);
+	assert.equal(await operationFilter.evaluate(el => document.activeElement === el), true, "mouse selection restores focus to its filter");
+	console.log("PASS mouse selection and keyboard filters with delayed popup focus restoration");
 	console.log(`Isolated ${isolatedLiveUpdates} real-cluster log/transfer updates from fixture history`);
 	assert.deepEqual(errors, [], "no browser runtime errors");
 } catch (error) {
@@ -367,6 +414,11 @@ try {
 			selected: document.querySelector(".se-history-row.is-selected")?.getAttribute("data-transfer-id"),
 			rows: [...document.querySelectorAll(".se-history-row")].map(row => row.getAttribute("data-transfer-id")),
 			detail: document.querySelector('[data-testid="transfer-detail"]')?.textContent,
+			focus: document.activeElement?.getAttribute("aria-label"),
+			focusEvents: window.logFilterFocus,
+			filters: [...document.querySelectorAll('.se-history-filters input')].map(el => ({
+				label: el.getAttribute("aria-label"), expanded: el.getAttribute("aria-expanded"), active: el.getAttribute("aria-activedescendant"),
+			})),
 		})));
 	}
 	mkdirSync("ci-artifacts", { recursive: true });
