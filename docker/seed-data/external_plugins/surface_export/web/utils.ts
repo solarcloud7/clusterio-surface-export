@@ -16,11 +16,6 @@ function getNumber(obj: JsonObject, key: string, fallback: number | null = null)
 	return typeof val === "number" ? val : fallback;
 }
 
-function getBool(obj: JsonObject, key: string, fallback = false): boolean {
-	const val = obj[key];
-	return typeof val === "boolean" ? val : fallback;
-}
-
 export function getProp<T>(obj: object | null | undefined, key: string, fallback: T): T {
 	if (!obj || typeof obj !== "object") {
 		return fallback;
@@ -423,7 +418,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 	});
 	const grouped = [];
 	const seen = new Set();
-	const allGroupKeys = rows.filter(r => r.isGroup).map(r => r.name);
 	for (const groupRow of rows.filter(r => r.isGroup).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name))) {
 		if (seen.has(groupRow.name)) continue;
 		seen.add(groupRow.name);

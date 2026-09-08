@@ -495,10 +495,12 @@ local function belt_side_restore_selftest(opts)
     local plan = BeltBatches.plan(groups, map, 1)
     local which = {}
     for i, batch in ipairs(plan.batches) do for _, gi in ipairs(batch.indices) do which[gi] = i end end
-    check("batch_keeps_splitter_and_both_lanes_atomic", which[1] == which[2] and which[2] == which[3] and which[1] == which[7])
-    check("batch_keeps_underground_pair_atomic", which[4] == which[5])
-    check("batch_yields_only_between_independent_networks", #plan.batches == 3 and which[6] ~= which[1] and which[6] ~= which[4])
-    check("connected_network_may_exceed_soft_budget", plan.batches[1].cost > 1)
+    check("batch_can_yield_between_connected_lanes", #plan.batches == 7 and which[1] ~= which[7])
+    check("batch_can_yield_between_underground_groups", which[4] ~= which[5])
+    check("network_count_is_independent_of_batch_count", plan.networks == 3)
+    groups[1].members = {{id = 1, li = 1}, {id = 2, li = 1}}
+    local large_group = BeltBatches.plan(groups, map, 1).batches[1]
+    check("one_group_may_exceed_soft_budget", large_group.cost == 2 and #large_group.indices == 1)
     map[6].type = "loader"
     check("loaders_use_atomic_fallback", #BeltBatches.plan(groups, map, 1).batches == 1)
     map[6].type = "transport-belt"
@@ -630,12 +632,24 @@ local function belt_side_restore_selftest(opts)
     string.format("force insertion must retain two separate stacks; placed=%d unplaced=%d anomalies=%d stacks=%d",
       mplaced, munplaced, manomalies, #merge_line.contents))
 
-  local invalid_groups = {{ members = {{ id = 9, li = 1 }},
+  local clamped_groups = {{ members = {{ id = 9, li = 1 }},
     slots = {{ n = "iron-plate", q = "normal", ct = 1 }}, item_source_positions = {9, 1, 257} }}
+  local clamped_position
+  local honest_insert = honest_line.force_insert_at
+  honest_line.force_insert_at = function(position, stack, count)
+    clamped_position = position
+    return honest_insert(position, stack, count)
+  end
+  local cp, cu, ca = BeltRestoration.restore_side_groups(clamped_groups, honest_map)
+  check("shorter_local_line_keeps_quantity_on_captured_lane",
+    cp == 1 and cu == 0 and ca == 0 and clamped_position == honest_line.line_length
+      and #honest_line.contents == 3,
+    "clamp longitudinal position on the same physical line, preserving its quantity")
+  clamped_groups[1].item_source_positions[3] = math.huge
   -- intentional probe; failure expected, no log
-  local invalid_ok = pcall(BeltRestoration.restore_side_groups, invalid_groups, honest_map)
-  check("out_of_range_position_refused_without_clamping", not invalid_ok and #honest_line.contents == 2,
-    "out-of-range captured positions must fail without adding an item")
+  local invalid_ok = pcall(BeltRestoration.restore_side_groups, clamped_groups, honest_map)
+  check("nonfinite_position_refused_before_insertion", not invalid_ok and #honest_line.contents == 3,
+    "nonfinite positions must fail without adding an item")
 
   local UNKNOWN_ENTITY = "modded-entity-the-destination-lacks"
   local bp_inv = game.create_inventory(2)

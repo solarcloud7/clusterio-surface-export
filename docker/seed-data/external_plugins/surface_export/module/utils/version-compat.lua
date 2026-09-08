@@ -61,7 +61,7 @@ PROFILES["2.0"] = {
     return line.insert_at_back(stack, belt_stack_size)
   end,
   delete_platform = function(platform)
-    game.delete_surface(platform.surface)
+    return game.delete_surface(platform.surface)
   end,
 }
 

@@ -1,6 +1,4 @@
 import type {
-	HostNodeModel,
-	InstanceNodeModel,
 	PlatformModel,
 	StoredExportSummaryModel,
 	TransactionLogEntryModel,
@@ -8,10 +6,8 @@ import type {
 	ExportMetrics,
 	ImportMetrics,
 	PayloadMetrics,
-	PhaseSpan,
 	ValidationResult,
 	GatewayLink,
-	ResolvedGatewayTarget,
 	ResolvedGateway,
 	AuditRow,
 } from "./shared/dto";
@@ -1151,6 +1147,31 @@ export class ImportOperationCompleteEvent {
 	}
 }
 
+export class DestinationTransferGateRequest {
+	declare ["constructor"]: typeof DestinationTransferGateRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live"] } },
+		required: ["transferId", "action"], additionalProperties: false,
+	};
+	transferId: string;
+	action: "verify" | "go_live";
+	constructor(json: { transferId: string; action: "verify" | "go_live" }) {
+		this.transferId = json.transferId;
+		this.action = json.action;
+	}
+	static fromJSON(json: { transferId: string; action: "verify" | "go_live" }) { return new DestinationTransferGateRequest(json); }
+	toJSON() { return { transferId: this.transferId, action: this.action }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
 export class DeleteSourcePlatformRequest {
 	declare ["constructor"]: typeof DeleteSourcePlatformRequest;
 	static plugin = PLUGIN_NAME;
@@ -1431,6 +1452,7 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;
 	timingPendingRecovery?: boolean;
 	timing?: OperationTiming;
@@ -1504,6 +1526,7 @@ export type InstanceRecordLike = {
 
 export interface PendingTransferIntent {
 	transferId: string;
+	sourceExportId?: string | null;
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
 	sourcePlatformName: string;
@@ -1525,6 +1548,7 @@ export interface SourceCommitMarker {
 export interface IControllerPlugin {
 	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
+	persistPendingTransfers(requiredTransferId?: string): Promise<void>;
 	removePendingTransfer(transferId: string): void;
 	isInstanceOnline(instanceId: number): boolean;
 	controller: {

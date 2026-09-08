@@ -7,7 +7,9 @@ import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 const installed=process.argv.includes("--installed");
 const profile=process.argv.includes("--profile");
 const batched=process.argv.includes("--batched");
-const artifact=batched?"ci-artifacts/belt-helper-batched-result.json":profile?"ci-artifacts/belt-helper-profile-result.json":installed?"ci-artifacts/belt-helper-installed-result.json":"ci-artifacts/belt-helper-result.json";
+const connected=process.argv.includes("--connected");
+if(connected)assert.ok(installed&&batched,"connected replay requires --installed --batched");
+const artifact=connected?"ci-artifacts/belt-helper-connected-result.json":batched?"ci-artifacts/belt-helper-batched-result.json":profile?"ci-artifacts/belt-helper-profile-result.json":installed?"ci-artifacts/belt-helper-installed-result.json":"ci-artifacts/belt-helper-result.json";
 const read=name=>readFileSync(new URL(name,import.meta.url),"utf8");
 const array=v=>Object.values(v||{});
 const hash=v=>createHash("sha256").update(v).digest("hex");
@@ -32,6 +34,11 @@ if(process.argv.includes("--analyze")) {
   function once(source,from,to) {
     assert.equal(source.split(from).length,2,`patch anchor changed: ${from.slice(0,70)}`);
     return source.replace(from,to);
+  }
+  if(connected) {
+    const key="modules/surface_export/import_phases/belt_batches";
+    const packed="    for i, group in ipairs(groups) do\n        local component = { indices = { i }, cost = math.max(#group.slots, #group.members, 1) }";
+    if(!modules[key].includes(packed))modules[key]=once(modules[key],"    for _, component in ipairs(ordered) do",packed);
   }
   let candidate=once(baseline,
     "if not VersionCompat.belt_insert_at(line, k / 256, stack_def, count) then return false end",
@@ -135,7 +142,7 @@ if(process.argv.includes("--analyze")) {
           assert.ok(!result.pending,"batch callback budget exceeded");
           result={...result,steps};
         }
-        assert.ok(Buffer.byteLength(JSON.stringify(result))<8*1024*1024,"result budget exceeded");
+        assert.ok(Buffer.byteLength(JSON.stringify(result))<(connected?64:8)*1024*1024,"result budget exceeded");
       } finally {
         const clean=lua(2,`local s=game.surfaces['${name}'];if s then game.delete_surface(s) end return {absent=s==nil}`);
         if(result)result.clean=clean.absent;
@@ -153,7 +160,30 @@ if(process.argv.includes("--analyze")) {
         const expected=array(result.groups).flatMap((g,gi)=>array(g.slots).map((s,i)=>({group:gi+1,id:g.item_source_positions[i*3],line:g.item_source_positions[i*3+1],k:g.item_source_positions[i*3+2],n:s.n,q:s.q||"normal",ct:s.ct})));
         const keys=rows=>array(rows).map(r=>JSON.stringify([r.group,r.id,r.line,r.k,r.n,r.q,r.ct])).sort();
         result.exact=JSON.stringify(keys(result.rows))===JSON.stringify(keys(expected));
-        if(arm==="batched") {
+        if(arm==="batched"&&connected) {
+          const totals=(rows,grouped=false)=>{
+            const out={};for(const r of array(rows)) {
+              const key=JSON.stringify([...(grouped?[r.group]:[]),r.n,r.q]);out[key]=(out[key]||0)+r.ct;
+            }return out;
+          };
+          const completed=new Set();
+          for(const step of result.steps) {
+            assert.equal(step.anomalies,0);assert.equal(step.unplaced,0);
+            const indices=array(step.plan.batches[step.completed-1].indices);
+            const before=totals(step.before,true),after=totals(step.rows,true),delta={};
+            for(const key of new Set([...Object.keys(before),...Object.keys(after)])) {
+              const value=(after[key]||0)-(before[key]||0);if(value)delta[key]=value;
+            }
+            assert.deepEqual(delta,totals(expected.filter(row=>indices.includes(row.group)),true),
+              "each batch must land on its captured groups");
+            for(const index of indices){assert.ok(!completed.has(index));completed.add(index);}
+            assert.deepEqual(totals(step.rows),totals(expected.filter(row=>completed.has(row.group))),
+              "whole fixture cargo must equal all completed writes");
+          }
+          for(let i=1;i<result.steps.length;i++)assert.ok(result.steps[i].startTick>result.steps[i-1].endTick);
+          assert.equal(completed.size,array(result.groups).length);assert.ok(result.steps.length>1);
+          result.groupPlacementVerified=true;
+        } else if(arm==="batched") {
           const plan=result.plan;
           const groupBatch=new Map(plan.batches.flatMap((b,i)=>b.indices.map(gi=>[gi,i])));
           const totals=rows=>{
@@ -174,7 +204,7 @@ if(process.argv.includes("--analyze")) {
           result.networksExact=true;
         }
         if(fixture==="stateful")assert.deepEqual(result.rows,result.before,"physical item state changed");
-        if((!result.exact&&!result.networksExact)||result.unplaced!==0||result.anomalies!==0||Object.entries(result.stats).some(([k,v])=>k!=="applied"&&v!==0)) {
+        if((!result.exact&&!result.networksExact&&!result.groupPlacementVerified)||result.unplaced!==0||result.anomalies!==0||Object.entries(result.stats).some(([k,v])=>k!=="applied"&&v!==0)) {
           result.status="STOP";result.cause="physical tuples or existing structural/state gate did not match";
         }
       }

@@ -111,7 +111,7 @@ function SurfaceExportPage() {
 		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
-	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab state={state} active={activeTab === "settings"} /> });
+	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} /> });
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "gateways";
 
 	useEffect(() => {
@@ -143,7 +143,6 @@ export class WebPlugin extends BaseWebPlugin {
 	private get link(): ControlLike { return this.control as unknown as ControlLike; }
 
 	private callbacks: Array<() => void>;
-	private liveUpdatesEnabled: boolean;
 	private state: SurfaceExportState;
 	private resubscribeTimer: number | null = null;
 	private lastConnectionEvent: ConnectionEvent | null = null;
@@ -152,7 +151,6 @@ export class WebPlugin extends BaseWebPlugin {
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		super(container, packageData, info as any, control as any, logger as any);
 		this.callbacks = [];
-		this.liveUpdatesEnabled = false;
 		this.state = {
 			tree: null,
 			loadingTree: false,
@@ -271,7 +269,6 @@ export class WebPlugin extends BaseWebPlugin {
 	async syncLiveState(): Promise<SyncOutcome> {
 		const shouldEnable = this.callbacks.length > 0;
 		if (!this.link.connector.connected) {
-			this.liveUpdatesEnabled = shouldEnable;
 			return "skipped";
 		}
 		const trySubscribe = (logs: boolean) => this.link.send(new SetSurfaceExportSubscriptionRequest({
@@ -293,7 +290,6 @@ export class WebPlugin extends BaseWebPlugin {
 			}
 		}
 
-		this.liveUpdatesEnabled = shouldEnable;
 		if (shouldEnable) {
 			await this.refreshSnapshots();
 			return "subscribed";

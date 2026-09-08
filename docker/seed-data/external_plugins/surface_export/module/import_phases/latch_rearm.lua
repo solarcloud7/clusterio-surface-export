@@ -301,7 +301,8 @@ end
 
 function LatchRearm.process_tick()
   for job_key, record in pairs(storage.latch_rearm_jobs or {}) do
-    if game.tick >= (record.at_tick or 0) then
+    local held = record.transfer_id and (storage.destination_holds or {})[record.transfer_id]
+    if not held and game.tick >= (record.at_tick or 0) then
       local ok, err = pcall(run_stage, job_key, record)
       if not ok then
         log("[LatchRearm] " .. tostring(record.stage) .. " failed: " .. tostring(err))

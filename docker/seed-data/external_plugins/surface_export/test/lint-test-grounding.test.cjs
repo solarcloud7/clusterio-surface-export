@@ -394,7 +394,11 @@ test("the shipped instruments tree is scanned at its measured size", async (t) =
 		return;
 	}
 	const records = findInstrumentFiles();
-	assert.equal(records.length, 29);
+	assert.equal(records.length, 32);
+	for (const name of ["run-capture.mjs", "run-remove.mjs", "verify-remove-parity.mjs"]) {
+		assert.ok(records.some((entry) => entry.path === `tests/instruments/belt-boundary/${name}`),
+			`the belt experiment ${name} must be included in grounding checks`);
+	}
 	assert.equal(records.filter((entry) => entry.path.endsWith(".test.mjs")).length, 0);
 	assert.equal(new Set(records.map((entry) => entry.unit)).size, 12);
 });

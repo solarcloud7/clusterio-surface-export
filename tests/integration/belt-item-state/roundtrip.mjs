@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { lua, ctl, sleep, preflightState, assertLeaseClean } from "../../lab-gallery/batch-lifecycle.mjs";
 import { readTransactionLogStore } from "../../../tools/tests/testkit/log-query.mjs";
 import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
@@ -7,7 +8,10 @@ import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 // Two sequential production transfers of one disposable clone; optional profiled rejection.
 const profiled=process.argv.includes("--profile-batches"), rejectLast=process.argv.includes("--reject-last");
 const name=`belt-roundtrip-${Date.now()}`, ids={1:836570928,2:902099405};
-const artifact=profiled?"ci-artifacts/belt-batching-roundtrip.json":"ci-artifacts/force-insert-roundtrip.json";
+const artifactArg=process.argv.indexOf("--artifact");
+const artifact=artifactArg<0?(profiled?"ci-artifacts/belt-batching-roundtrip.json":"ci-artifacts/force-insert-roundtrip.json"):process.argv[artifactArg+1];
+assert.ok(artifact&&resolve(artifact).startsWith(resolve("ci-artifacts")+sep)&&artifact.endsWith(".json"),
+  "artifact must be a JSON file inside ci-artifacts");
 const result={name,legs:[]}, previousConfig={};
 const index=host=>lua(host,`local out={} for _,p in pairs(game.forces.player.platforms) do if p.name=='${name}' then out[#out+1]=p.index end end return {indexes=out}`).indexes;
 const getIndex=host=>{const indexes=Object.values(index(host));assert.ok(indexes.length<=1);return indexes[0];};
@@ -56,6 +60,23 @@ await withWorkflowLock(async()=>{
         assert.ok(phase.ticksElapsed>=phase.batchCount-1);
         assert.ok(batches.every(b=>Number.isFinite(b.executionMs)&&b.executionMs>0&&b.startTick===b.endTick));
         assert.ok(phase.endMs-phase.startMs>=phase.executionMs,"phase envelope includes waits");
+        const stage=id=>{
+          const record=records.find(r=>r.owner==="destination-lua"&&r.clockId===phase.clockId&&r.id===id);
+          assert.ok(record&&Number.isSafeInteger(record.startTick)&&Number.isSafeInteger(record.endTick),
+            `missing tick boundaries for ${id}`);
+          return record;
+        };
+        const stages=["tiles","beacons","entities","hub","belts","state","inventories","held_items","fluids"];
+        for(let i=1;i<stages.length;i++) {
+          assert.ok(stage(stages[i]).startTick>stage(stages[i-1]).endTick,
+            `${stages[i-1]} must yield before ${stages[i]}`);
+        }
+        assert.equal(stage("hub_mapping").batchCount,1,"hub mapping must not repeat in every entity batch");
+        assert.equal(stage("fluids").endTick,stage("exact_verification").startTick,
+          "fluid writes and exact cargo gate must share a callback");
+        if(!reject)assert.equal(stage("exact_verification").endTick,stage("activation").startTick,
+          "activation must follow the gate without another simulation tick");
+        result.legs.at(-1).phaseTicks=stages.map(id=>({id,start:stage(id).startTick,end:stage(id).endTick}));
         console.log(JSON.stringify({beltBatches:phase.batchCount,workTicks:phase.workTicks,
           elapsedTicks:phase.ticksElapsed,executionMs:phase.executionMs,
           maxCallbackMs:Math.max(...batches.map(b=>b.executionMs))}));

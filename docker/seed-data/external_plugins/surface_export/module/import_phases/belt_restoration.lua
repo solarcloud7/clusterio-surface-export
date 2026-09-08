@@ -316,11 +316,13 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
     end
     local function insert_with_state(line, k, stack_def, count, st)
         local before_ids = st and line_ids(line) or nil
-        -- force_insert_at can clamp positions. Reject instead of silently changing the payload.
-        assert(k >= 0 and k / 256 <= line.line_length, 'captured position outside destination line')
+        -- Rebuilt corners can expose a shorter local line. Keep the captured entity
+        -- and lane; longitudinal position may change, but quantity and state may not.
+        assert(type(k) == 'number' and k == k and math.abs(k) < math.huge, 'invalid captured position')
+        k = math.max(0, math.min(k, line.line_length * 256))
         VersionCompat.belt_force_insert_at(line, k / 256, stack_def, count)
         if before_ids then apply_state(line, before_ids, st, stack_def, count) end
-        return true -- write completed; the side-group census below verifies physical placement
+        return true, k -- retain the actual write coordinate for the diagnostic trace
     end
     local side_before = {}
     local preexisting_ids = {}
@@ -353,12 +355,12 @@ local function run_side_restore(side_groups, entity_map, platform_label, scratch
         local exp = {}
         expected_by_side[gi] = exp
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
-            local landed = insert_with_state(line, k,
+            local landed, written_k = insert_with_state(line, k,
                 { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct, slot.st)
             if landed then
                 placed = placed + slot.ct
                 exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
-                ledger[#ledger + 1] = { e = w_entity, li = w_li, k = k, slot = slot, key = wanted_key }
+                ledger[#ledger + 1] = { e = w_entity, li = w_li, k = written_k, slot = slot, key = wanted_key }
                 return true
             end
             return nil

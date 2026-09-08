@@ -15,6 +15,7 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Gateway = require("modules/surface_export/core/gateway")
+local DestinationHold = require("modules/surface_export/core/destination-hold")
 local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
@@ -175,23 +176,9 @@ local function log_item_state(job)
 	end
 end
 
-function ImportCompletion.run_phase1(job)
+local function restore_belt_batch(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
-
-	if not job.phase1_started then
-
-		log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
-
-		PhaseRecorder.start(job, "hub")
-		local hub_item_state = Deserializer.new_item_state_session()
-		local hub_ok, hub_err = pcall(PlatformHubMapping.restore_hub_inventories, job, hub_item_state)
-		Deserializer.release_item_state_session(hub_item_state)
-		record_item_state(job, hub_item_state)
-		if not hub_ok then error(hub_err, 0) end
-		PhaseRecorder.stop(job, "hub")
-		job.phase1_started = true
-	end
 
 	PhaseRecorder.start(job, "belts")
 	local belts_result
@@ -291,8 +278,31 @@ function ImportCompletion.run_phase1(job)
 	end
 	PhaseRecorder.stop(job, "belts")
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
-	if more_belts then return end
+	if more_belts then return false end
 	job.belt_batches = nil
+	return true
+end
+
+function ImportCompletion.run_phase1(job)
+	local entity_map = job.entity_map or {}
+	local entities_to_create = job.entities_to_create or {}
+
+	if not job.phase1_started then
+		PhaseRecorder.start(job, "hub")
+		local hub_item_state = Deserializer.new_item_state_session()
+		local hub_ok, hub_err = pcall(PlatformHubMapping.restore_hub_inventories, job, hub_item_state)
+		Deserializer.release_item_state_session(hub_item_state)
+		record_item_state(job, hub_item_state)
+		if not hub_ok then error(hub_err, 0) end
+		PhaseRecorder.stop(job, "hub")
+		job.phase1_started = true
+		return
+	end
+
+	if not job.belts_complete then
+		job.belts_complete = restore_belt_batch(job)
+		return
+	end
 
 	PhaseRecorder.start(job, "state")
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
@@ -307,14 +317,9 @@ function ImportCompletion.run_phase1(job)
 	log(string.format("[Import] Phase 1 complete (tick %d). Inventory restore scheduled for tick %d", game.tick, job.pending_beacon_tick))
 end
 
-function ImportCompletion.run_phase2(job)
-	Timing.stop(job.job_id, "deferred_beacon_wait")
-	local duration_ticks = game.tick - job.started_tick
-	job.metrics = job.metrics or {}
+local function restore_inventories(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
-	local validation_result_id = job.transfer_id or job.job_id
-
 
 	if not job.inventory_overflow_losses then
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
@@ -367,13 +372,35 @@ function ImportCompletion.run_phase2(job)
 		job.target_platform.paused = true
 		log(string.format("[Import] Platform %s re-paused for validation (tick %d)", job.platform_name, game.tick))
 	end
+end
 
+function ImportCompletion.run_phase2(job)
+	job.metrics = job.metrics or {}
+	local entity_map = job.entity_map or {}
+	local entities_to_create = job.entities_to_create or {}
+
+	-- Persist only the next phase; inventory scratch objects are released before yielding.
+	if not job.phase2_stage then
+		Timing.stop(job.job_id, "deferred_beacon_wait")
+		restore_inventories(job)
+		job.phase2_stage = "held_items"
+		return
+	end
+	if job.phase2_stage == "held_items" then
+		PhaseRecorder.start(job, "held_items")
+		ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+		PhaseRecorder.stop(job, "held_items")
+		job.phase2_stage = "finish"
+		return
+	end
+
+	local duration_ticks = game.tick - job.started_tick
+	local validation_result_id = job.transfer_id or job.job_id
 	local frozen_states = job.frozen_states or {}
 	local _dbg_cfg = storage.surface_export_config
 	local defer_clone = _dbg_cfg and _dbg_cfg.debug_mode and _dbg_cfg.test_defer_clone_activation
-	PhaseRecorder.start(job, "held_items")
-	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-	PhaseRecorder.stop(job, "held_items")
+	-- Keep injection, the exact cargo gate and activation in one callback: fluid
+	-- temperatures and amounts may change if the simulation advances between them.
 	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
 		job.platform_data and job.platform_data.fluid_segments)
@@ -608,6 +635,81 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 
+		-- Finalize and hold in one callback: no simulation tick runs between activation
+		-- state restoration and the hold taking ownership of that state.
+		if success then
+			local prepared, prepare_error = pcall(function()
+				if job.target_platform and job.target_platform.valid then
+					job.target_platform.paused = false
+					log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
+				end
+				PhaseRecorder.start(job, "activation")
+				ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+				PhaseRecorder.stop(job, "activation")
+
+
+				game.print(string.format("[Validation] Validation passed - platform %s prepared; awaiting source deletion",
+					job.platform_name), {0, 1, 0})
+
+				if success and job.park_target and job.target_platform and job.target_platform.valid then
+					local tp = job.target_platform
+					local ok_pause, err_pause = pcall(function() tp.paused = true end)
+					if not ok_pause then
+						log(string.format("[Gateway] Pause write failed for %s: %s", job.platform_name, tostring(err_pause)))
+					end
+					local at_park = tp.space_location ~= nil and tp.space_location.name == job.park_target
+					if ok_pause and not at_park then
+						local ok_repark, err_repark = pcall(function() tp.space_location = job.park_target end)
+						if not ok_repark then
+							log(string.format("[Gateway] Re-park write failed for %s at '%s': %s",
+								job.platform_name, job.park_target, tostring(err_repark)))
+						end
+						at_park = tp.valid and tp.space_location ~= nil and tp.space_location.name == job.park_target
+						if at_park then
+							log(string.format("[Gateway] Platform %s RE-PARKED at '%s' after activation — the schedule had pulled it off the park",
+								job.platform_name, job.park_target))
+						end
+					end
+					result.gatewayParked = (ok_pause and at_park) or false
+					if ok_pause and at_park then
+						log(string.format("[Gateway] Platform %s arrived PAUSED at '%s' (parked at creation)",
+							job.platform_name, job.park_target))
+					else
+						log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), at_park=%s (location=%s)",
+							job.platform_name, job.park_target,
+							tostring(ok_pause), tostring(err_pause), tostring(at_park),
+							tostring(tp.space_location and tp.space_location.name)))
+					end
+				end
+
+				if not job.park_target and job.target_platform and job.target_platform.valid then
+					local tp = job.target_platform
+					local captured_paused = job.platform_data.platform.paused == true
+					local ok_captured, err_captured = pcall(function() tp.paused = captured_paused end)
+					result.sourcePaused = captured_paused
+					result.sourcePausedApplied = ok_captured == true
+					if ok_captured then
+						log(string.format("[Import] Platform %s settled at the CAPTURED paused=%s (tick %d)",
+							job.platform_name, tostring(captured_paused), game.tick))
+					else
+						log(string.format("[Import] Captured pause write failed for %s (captured %s): %s",
+							job.platform_name, tostring(captured_paused), tostring(err_captured)))
+					end
+				end
+				local held, hold_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true)
+				assert(held, hold_error)
+				result.destinationHeld = true
+				LatchRearm.schedule(job)
+			end)
+			if not prepared then
+				success = false
+				result.success = false
+				result.failedStage = "destination_hold"
+				result.mismatchDetails = "Destination preparation failed: " .. tostring(prepare_error)
+				log("[Import] " .. result.mismatchDetails)
+			end
+		end
+
 		if not success then
 			game.print(string.format(
 				"[Transfer Validation Failed] %s",
@@ -645,7 +747,14 @@ function ImportCompletion.run_phase2(job)
 						tostring(evacuation_err)))
 				end
 				Timing.start(job.job_id, "destination_recovery")
-				local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
+				local delete_ok, delete_result = pcall(function()
+					local hold = DestinationHold.get(job.transfer_id)
+					if hold and hold.platform_index == job.target_platform.index
+						and hold.surface_index == job.target_surface.index then
+						return DestinationHold.discard(job.transfer_id)
+					end
+					return GameUtils.delete_platform(job.target_platform)
+				end)
 				Timing.stop(job.job_id, "destination_recovery")
 				if not delete_ok or delete_result ~= true then Timing.fail(job.job_id, "destination_recovery") end
 				if delete_ok and delete_result == true then
@@ -659,65 +768,7 @@ function ImportCompletion.run_phase2(job)
 						tostring(job.platform_name), result.cleanup_error))
 				end
 			end
-		else
-			if job.target_platform and job.target_platform.valid then
-				job.target_platform.paused = false
-				log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
-			end
-			PhaseRecorder.start(job, "activation")
-			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
-			PhaseRecorder.stop(job, "activation")
 
-			LatchRearm.schedule(job)
-
-			game.print(string.format("[Validation] Validation passed - entities activated on platform %s!",
-				job.platform_name), {0, 1, 0})
-
-			if success and job.park_target and job.target_platform and job.target_platform.valid then
-				local tp = job.target_platform
-				local ok_pause, err_pause = pcall(function() tp.paused = true end)
-				if not ok_pause then
-					log(string.format("[Gateway] Pause write failed for %s: %s", job.platform_name, tostring(err_pause)))
-				end
-				local at_park = tp.space_location ~= nil and tp.space_location.name == job.park_target
-				if ok_pause and not at_park then
-					local ok_repark, err_repark = pcall(function() tp.space_location = job.park_target end)
-					if not ok_repark then
-						log(string.format("[Gateway] Re-park write failed for %s at '%s': %s",
-							job.platform_name, job.park_target, tostring(err_repark)))
-					end
-					at_park = tp.valid and tp.space_location ~= nil and tp.space_location.name == job.park_target
-					if at_park then
-						log(string.format("[Gateway] Platform %s RE-PARKED at '%s' after activation — the schedule had pulled it off the park",
-							job.platform_name, job.park_target))
-					end
-				end
-				result.gatewayParked = (ok_pause and at_park) or false
-				if ok_pause and at_park then
-					log(string.format("[Gateway] Platform %s arrived PAUSED at '%s' (parked at creation)",
-						job.platform_name, job.park_target))
-				else
-					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), at_park=%s (location=%s)",
-						job.platform_name, job.park_target,
-						tostring(ok_pause), tostring(err_pause), tostring(at_park),
-						tostring(tp.space_location and tp.space_location.name)))
-				end
-			end
-
-			if not job.park_target and job.target_platform and job.target_platform.valid then
-				local tp = job.target_platform
-				local captured_paused = job.platform_data.platform.paused == true
-				local ok_captured, err_captured = pcall(function() tp.paused = captured_paused end)
-				result.sourcePaused = captured_paused
-				result.sourcePausedApplied = ok_captured == true
-				if ok_captured then
-					log(string.format("[Import] Platform %s settled at the CAPTURED paused=%s (tick %d)",
-						job.platform_name, tostring(captured_paused), game.tick))
-				else
-					log(string.format("[Import] Captured pause write failed for %s (captured %s): %s",
-						job.platform_name, tostring(captured_paused), tostring(err_captured)))
-				end
-			end
 		end
 
 	end

@@ -1,4 +1,3 @@
-import React from "react";
 
 import type { EdgeStatusMarker as Marker } from "./transfer-motion";
 

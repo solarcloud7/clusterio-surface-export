@@ -56,32 +56,32 @@ export const plugin = {
 			initialValue: 10,
 		},
 		[`${PLUGIN_NAME}.batch_size`]: {
-			description: "Number of entities to process per tick during async operations",
+			description: "Maximum entities processed per job batch. Several jobs may run in one tick; this does not limit time spent in other stages.",
 			type: "number",
 			initialValue: 50,
 			optional: true,
 		},
 		[`${PLUGIN_NAME}.max_concurrent_jobs`]: {
-			description: "Maximum number of concurrent async import/export jobs",
+			description: "Maximum import and export jobs advanced in one tick, combined. These jobs run sequentially on the game thread.",
 			type: "number",
 			initialValue: 3,
 			optional: true,
 		},
 		[`${PLUGIN_NAME}.belt_batch_size`]: {
-			description: "Target belt restoration work per callback (stacks or member lines). Connected networks stay atomic and may exceed this target.",
+			description: "Target stacks or belt lines restored per batch. Each captured lane group is restored and checked together, so a large group may exceed this target.",
 			type: "number", initialValue: 500,
 		},
 		[`${PLUGIN_NAME}.belt_trace`]: {
-			description: "Enable expensive per-position tracing after successful belt restoration; failures always retain tracing.",
+			description: "Record belt item positions after successful restoration. Failed restores retain this evidence even when tracing is off.",
 			type: "boolean", initialValue: false,
 		},
 		[`${PLUGIN_NAME}.show_progress`]: {
-			description: "Show progress notifications for async operations",
+			description: "Show in-game progress notifications for batched imports and exports.",
 			type: "boolean",
 			initialValue: true,
 			optional: true,
 		},
-		[`${PLUGIN_NAME}.profile_batches`]: { description: "Record individual profiling batches (up to 2000 per job)", type: "boolean", initialValue: false },
+		[`${PLUGIN_NAME}.profile_batches`]: { description: "Save timings for up to 2,000 batches per job. Stage totals are always recorded.", type: "boolean", initialValue: false },
 		[`${PLUGIN_NAME}.debug_mode`]: {
 			description: "Enable debug mode - exports JSON comparison files for transfer validation",
 			type: "boolean",
@@ -90,7 +90,7 @@ export const plugin = {
 		},
 		[`${PLUGIN_NAME}.debug_destination_snapshot`]: {
 			title: "Capture full destination snapshots",
-			description: "Debug: rescan and write full destination JSON after successful transfer validation. Requires debug mode; adds synchronous work. Transfer logs and failure black boxes do not require this setting.",
+			description: "Save a full platform snapshot after successful validation. Requires debug mode and adds a scan that can pause the game. Transfer logs and failure diagnostics remain available when this is off.",
 			type: "boolean", initialValue: false,
 		},
 	},
@@ -114,41 +114,24 @@ export const plugin = {
 			initialValue: messages.DEFAULT_GATEWAY_MODE,
 		},
 		[`${PLUGIN_NAME}.max_storage_size`]: {
-			title: "Stored export payloads to keep",
-			description: "How many platform export payloads the controller keeps on disk. Once the cap is "
-				+ "reached, the OLDEST export is discarded to make room — nothing is lost from a transfer "
-				+ "in progress, because a transfer reads its payload long before it could be evicted. "
-				+ "What eviction does end is the ability to DOWNLOAD that export again: the Transaction "
-				+ "Logs tab keeps showing the transfer, but its download button goes away once the payload "
-				+ "is gone. Raise this if you want players to be able to send you the payload from older "
-				+ "transfers for debugging; each stored export is roughly the size of the platform it "
-				+ "captured (tens to hundreds of KB).",
+			title: "Stored Payload Downloads",
+			description: "Number of platform payload files retained for download. The oldest file is removed when the limit is reached. "
+				+ "Removing a file does not remove its transfer log.",
 			type: "number",
 			initialValue: 20,
 		},
 		[`${PLUGIN_NAME}.transaction_log_detail_entries`]: {
-			title: "Transfers keeping full detail",
-			description: "How many transfers keep their EXPENSIVE detail — the event timeline, phase "
-				+ "timings and validation counts shown when you open a transfer. Every transfer stays "
-				+ "listed for good regardless of this number: the audit ledger keeps a slim row per "
-				+ "transfer permanently, so lowering this never hides a transfer, it only means older "
-				+ "ones open with their status but no timeline. Detail is kept preferentially for "
-				+ "failures, then recent successes, preferring transfers whose export is still "
-				+ "downloadable. Range 10–5000; out-of-range values are clamped and logged. Raise it if "
-				+ "you investigate old transfers often; each retained entry is roughly 10 KB.",
+			title: "Saved Detailed Transfer Logs",
+			description: "Number of transfers retaining step timings and audit evidence. Failed transfers take priority, followed by recent successes; "
+				+ "availability of the payload download also affects retention. Other transfers keep their summary and outcome. Range: 10–5,000.",
 			type: "number",
 			initialValue: 100,
 		},
 		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
 			title: "Transfer validation timeout (seconds)",
-			description: "How long the controller waits for the destination to validate a transfer. "
-				+ "The clock starts AFTER the payload is delivered and accepted — it covers the "
-				+ "destination's import and validation, not delivery. On expiry the transfer is rolled "
-				+ "back: the source platform is unlocked and stays on its instance. If the destination "
-				+ "later finishes its import anyway, the transfer is re-marked cleanup_failed — a live "
-				+ "copy exists on the destination; delete the copy you don't want before retrying. "
-				+ "Range 5–120 seconds (the ceiling protects the source lock's validation budget); "
-				+ "out-of-range values are clamped. Applies to the next transfer, no restart needed.",
+			description: "Seconds to wait for import and validation after the destination accepts the payload. Expiry starts recovery. "
+				+ "If the destination finishes after timeout, cleanup may need attention; inspect the transfer result before retrying. "
+				+ "Range: 5–120 seconds. Applies to the next transfer without a restart.",
 			type: "number",
 			initialValue: 30,
 			optional: true,
@@ -170,6 +153,7 @@ export const plugin = {
 		messages.TransferValidationEvent,
 		messages.ImportOperationCompleteEvent,
 		messages.DeleteSourcePlatformRequest,
+		messages.DestinationTransferGateRequest,
 		messages.UnlockSourcePlatformRequest,
 		messages.GetSourceTransferLockStateRequest,
 		messages.TransferStatusUpdate,

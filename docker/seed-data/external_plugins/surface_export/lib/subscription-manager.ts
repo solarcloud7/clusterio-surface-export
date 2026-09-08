@@ -1,4 +1,4 @@
-import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, TransferSummaryModel, ActiveTransfer } from "../messages";
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, ActiveTransfer } from "../messages";
 import { getErrorMessage } from "../helpers";
 import { recordOperationOutcome } from "./metrics";
 

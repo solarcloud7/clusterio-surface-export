@@ -91,6 +91,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
+		this.i.handle(messages.DestinationTransferGateRequest, this.handleDestinationTransferGate.bind(this));
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		this.i.handle(messages.GetSourceTransferLockStateRequest, this.handleGetSourceTransferLockState.bind(this));
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
@@ -742,6 +743,18 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.logger.error(`Failed to send failure validation: ${getErrorMessage(sendErr)}`);
 			}
 		}
+	}
+
+	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live" }) {
+		return this.withTiming(request.transferId, undefined, "Destination transfer gate", async () => {
+			try {
+				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action));
+				return response.success === true ? { success: true }
+					: { success: false, error: String(response.error || "Destination gate refused") };
+			} catch (error) {
+				return { success: false, error: getErrorMessage(error) };
+			}
+		});
 	}
 
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Collapse, Descriptions, Empty, Input, Table } from "antd";
 import { EntityIcon, ItemIcon } from "../icons";
 import { formatNumeric, formatSigned } from "../utils";

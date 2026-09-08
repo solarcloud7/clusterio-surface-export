@@ -120,6 +120,7 @@ function makeTransferHarness() {
 	const plugin = {
 		logger: { error() {}, warn() {}, info() {}, verbose() {} },
 		persistPendingTransfer: () => {},
+		persistPendingTransfers: async () => {},
 		removePendingTransfer: () => {},
 		isInstanceOnline: () => true,
 		persistStorage: async () => {},

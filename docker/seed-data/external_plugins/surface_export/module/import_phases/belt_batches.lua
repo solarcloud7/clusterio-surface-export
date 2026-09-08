@@ -1,5 +1,6 @@
--- A connected network must be written and checked in one callback: transport lines
--- cannot be paused by disabled_by_script. Independent networks may yield between writes.
+-- Keep each captured side group's write and physical delta check in one callback.
+-- Connected groups may yield: existing cargo can move before the next group's
+-- before-snapshot. A group remains indivisible and may exceed the soft work budget.
 local BeltBatches = {}
 
 function BeltBatches.plan(groups, entity_map, budget)
@@ -64,7 +65,8 @@ function BeltBatches.plan(groups, entity_map, budget)
         component.cost = component.cost + math.max(#g.slots, #g.members, 1)
     end
     local batches, current = {}, nil
-    for _, component in ipairs(ordered) do
+    for i, group in ipairs(groups) do
+        local component = { indices = { i }, cost = math.max(#group.slots, #group.members, 1) }
         if not current or current.cost + component.cost > budget then
             current = { indices = {}, cost = 0 }; batches[#batches + 1] = current
         end

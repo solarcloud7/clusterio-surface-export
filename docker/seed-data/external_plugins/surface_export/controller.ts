@@ -22,19 +22,14 @@ import type {
 	ActiveTransfer,
 	ExportData,
 	OperationOptions,
-	ExportVerification,
-	ExportStats,
 	OperationType,
-	HostNodeModel,
-	InstanceNodeModel,
 	SubscriptionState,
-	TransferSummaryModel,
 	StoredExport,
 	TransactionLogEntryModel,
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 type GatewayLinkUpdate = {
@@ -89,6 +84,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	pendingTransfersPath!: string;
 	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
 	sourceCommitMarkersPath!: string;
+	private recoveryTimer?: ReturnType<typeof setInterval>;
 
 	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -173,19 +169,23 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
+		this.startRecovery();
 	}
 
-	async onStart() {
-		this.logger.info("Controller started - Surface Export plugin ready");
-		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
-		await this.prunePendingTransfers();
-		await this.pruneSourceCommitMarkers();
+	private startRecovery() {
 		if (this.pendingTransfers.size > 0) {
-			this.logger.warn(`${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown. Phase 1 recovery is source-side TTL unlock; controller will not auto-delete or auto-unlock on boot.`);
+			this.logger.warn(`${this.pendingTransfers.size} pending transfer(s); recovery requires a validated destination hold and matching source identity or deletion receipt.`);
 		}
+		this.recoveryTimer = setInterval(() => {
+			void this.prunePendingTransfers().then(() => this.orchestrator.recoverPendingTransfers()).catch(error => {
+				this.logger.error(`Transfer recovery failed: ${getErrorMessage(error)}`);
+			});
+		}, 30_000);
+		this.recoveryTimer.unref();
 	}
 
 	override async onShutdown() {
+		if (this.recoveryTimer) clearInterval(this.recoveryTimer);
 		this.orchestrator.requestQueue.stop();
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
@@ -867,12 +867,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async persistPendingTransfers() {
+	async persistPendingTransfers(requiredTransferId?: string) {
 		try {
+			if (requiredTransferId && !this.pendingTransfers.has(requiredTransferId)) {
+				throw new Error(`Recovery intent unavailable for ${requiredTransferId}`);
+			}
 			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
 			await enqueueWrite(this.pendingTransfersPath, () => lib.safeOutputFile(this.pendingTransfersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
+			if (requiredTransferId) throw err;
 		}
 	}
 

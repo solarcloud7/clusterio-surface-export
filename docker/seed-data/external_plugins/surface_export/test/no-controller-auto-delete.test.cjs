@@ -48,8 +48,10 @@ function pendingIntent(overrides = {}) {
 	};
 }
 
-test("controller restart path does not auto-delete sources from persisted intents", async () => {
+test("controller restart schedules the guarded recovery path without directly deleting or unlocking", async () => {
 	const { plugin, calls } = makeControllerHarness([pendingIntent()]);
+	let recoveries = 0;
+	plugin.orchestrator = { recoverPendingTransfers: async () => { recoveries++; } };
 
 	const origSetInterval = global.setInterval;
 	const origSetTimeout = global.setTimeout;
@@ -57,17 +59,29 @@ test("controller restart path does not auto-delete sources from persisted intent
 	global.setInterval = (...a) => { timers.push(["interval", a]); return { unref() {} }; };
 	global.setTimeout = (...a) => { timers.push(["timeout", a]); return { unref() {} }; };
 	try {
-		await plugin.onStart();
+		plugin.startRecovery();
 	} finally {
 		global.setInterval = origSetInterval;
 		global.setTimeout = origSetTimeout;
 	}
 
-	assert.equal(timers.length, 0, "onStart must not SCHEDULE a timer (the retired reconcile was a setInterval poll)");
+	assert.equal(timers.length, 1);
+	assert.match(ControllerPlugin.prototype.init.toString(), /this\.startRecovery\(\)/,
+		"recovery must be wired into Clusterio's init hook, not an invented onStart hook");
+	assert.equal(timers[0][0], "interval");
+	assert.equal(timers[0][1][1], 30_000);
 	assert.equal(calls.sends.length, 0, "onStart must not send delete/unlock/reconcile requests for boot-leftover intents");
+	timers[0][1][0]();
 	await new Promise((r) => origSetTimeout(r, 0));
+	assert.equal(recoveries, 1);
 	assert.equal(calls.sends.length, 0, "no delete/unlock send may fire on a later macrotask either");
-	assert.match(calls.warns.join("\n"), /source-side TTL unlock/, "restart warning should point at source-side TTL recovery");
+	assert.match(calls.warns.join("\n"), /validated destination hold/);
+});
+
+test("required recovery persistence refuses a missing intent before writing an empty store", async () => {
+	const { plugin } = makeControllerHarness();
+	await assert.rejects(ControllerPlugin.prototype.persistPendingTransfers.call(plugin, "1:expired"),
+		/Recovery intent unavailable for 1:expired/);
 });
 
 test("pending transfer observability store prunes stale entries", async () => {

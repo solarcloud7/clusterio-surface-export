@@ -116,6 +116,7 @@ local ok,result=pcall(function()
     local chunk=work.plan.batches[work.completed+1]
     local slice={};for _,i in ipairs(chunk.indices) do slice[#slice+1]=groups[i] end
     local tick=game.tick
+    local physical_before=observe()
     local profiler=helpers.create_profiler()
     local placed,unplaced,anomalies=helper.restore_side_groups(slice,map,name)
     profiler.stop();log({"","[BELT_BATCH] ",name," batch ",work.completed+1," ",profiler})
@@ -123,7 +124,7 @@ local ok,result=pcall(function()
     work.unplaced=work.unplaced+unplaced;work.anomalies=work.anomalies+anomalies
     return {status="PASS",pending=work.completed<#work.plan.batches,completed=work.completed,
       startTick=tick,endTick=game.tick,placed=work.placed,unplaced=work.unplaced,anomalies=work.anomalies,
-      plan=work.plan,rows=observe(),groups=groups,stats={},mods=script.active_mods}
+      plan=work.plan,rows=observe(),before=physical_before,groups=groups,stats={},mods=script.active_mods}
   end
   local start=game.tick
   local placed,unplaced,anomalies,delta,stats=helper.restore_side_groups(groups,map,name)

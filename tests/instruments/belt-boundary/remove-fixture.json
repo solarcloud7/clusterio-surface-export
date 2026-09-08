@@ -1,0 +1,75 @@
+{
+  "engine": "2.1.17",
+  "maxCalls": 100,
+  "maxRuntimeMs": 150000,
+  "routingCases": { "side-loading": true, "splitter-branches": true },
+  "items": ["iron-plate", "copper-plate", "steel-plate", "coal", "stone"],
+  "statefulItems": [
+    {"name":"pistol","count":1,"health":0.25},
+    {"name":"pistol","count":1,"health":0.75},
+    {"name":"firearm-magazine","count":1,"ammo":3},
+    {"name":"repair-pack","count":1,"durability":77},
+    {"name":"blueprint","count":1,"blueprint":true},
+    {"name":"iron-plate","count":4,"quality":"legendary"},
+    {"name":"copper-plate","count":4},
+    {"name":"steel-plate","count":4,"quality":"uncommon"}
+  ],
+  "cases": {
+    "side-loading": [
+      {"id":"A","name":"transport-belt","x":5.5,"y":4.5,"direction":"south"},
+      {"id":"B","name":"transport-belt","x":5.5,"y":5.5,"direction":"east"},
+      {"id":"C","name":"transport-belt","x":6.5,"y":5.5,"direction":"east"},
+      {"id":"D","name":"transport-belt","x":7.5,"y":5.5,"direction":"east"},
+      {"id":"E","name":"transport-belt","x":4.5,"y":5.5,"direction":"east"}
+    ],
+    "splitter-branches": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":3.5,"direction":"east"},
+      {"id":"B","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"C","name":"fast-splitter","x":5.5,"y":4,"direction":"east"},
+      {"id":"D","name":"transport-belt","x":6.5,"y":3.5,"direction":"east"},
+      {"id":"E","name":"transport-belt","x":6.5,"y":4.5,"direction":"east"},
+      {"id":"F","name":"transport-belt","x":7.5,"y":3.5,"direction":"east"},
+      {"id":"G","name":"transport-belt","x":7.5,"y":4.5,"direction":"east"}
+    ],
+    "straight": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"transport-belt","x":5.5,"y":4.5,"direction":"east"},
+      {"id":"C","name":"transport-belt","x":6.5,"y":4.5,"direction":"east"}
+    ],
+    "loop": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-transport-belt","x":5.5,"y":4.5,"direction":"south"},
+      {"id":"C","name":"transport-belt","x":5.5,"y":5.5,"direction":"west"},
+      {"id":"D","name":"fast-transport-belt","x":4.5,"y":5.5,"direction":"north"}
+    ],
+    "splitter": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-splitter","x":5.5,"y":4,"direction":"east"},
+      {"id":"C","name":"transport-belt","x":6.5,"y":3.5,"direction":"east"},
+      {"id":"D","name":"transport-belt","x":6.5,"y":4.5,"direction":"east"}
+    ],
+    "underground": [
+      {"id":"A","name":"transport-belt","x":3.5,"y":8.5,"direction":"east"},
+      {"id":"B","name":"underground-belt","x":4.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"C","name":"underground-belt","x":7.5,"y":8.5,"direction":"east","type":"output"},
+      {"id":"D","name":"transport-belt","x":8.5,"y":8.5,"direction":"east"}
+    ],
+    "paired-chain": [
+      {"id":"A","name":"transport-belt","x":1.5,"y":8.5,"direction":"east"},
+      {"id":"B","name":"underground-belt","x":2.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"C","name":"underground-belt","x":4.5,"y":8.5,"direction":"east","type":"output"},
+      {"id":"D","name":"underground-belt","x":5.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"E","name":"underground-belt","x":7.5,"y":8.5,"direction":"east","type":"output"},
+      {"id":"F","name":"underground-belt","x":8.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"G","name":"underground-belt","x":10.5,"y":8.5,"direction":"east","type":"output"},
+      {"id":"H","name":"transport-belt","x":11.5,"y":8.5,"direction":"east"}
+    ],
+    "smoke": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-transport-belt","x":5.5,"y":4.5,"direction":"south"},
+      {"id":"C","name":"fast-splitter","x":8.5,"y":4,"direction":"east"},
+      {"id":"D","name":"underground-belt","x":4.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"E","name":"underground-belt","x":7.5,"y":8.5,"direction":"east","type":"output"}
+    ]
+  }
+}

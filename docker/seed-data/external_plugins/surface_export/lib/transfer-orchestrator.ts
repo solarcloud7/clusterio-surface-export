@@ -6,7 +6,7 @@ import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUn
 import { createOperationRecord } from "./operation-record";
 import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue";
 import type { TimingRecord } from "../shared/timing";
-import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics } from "../messages";
 
 type TransferStartResult = {
 	success: boolean; error?: string; transferId?: string; message?: string;
@@ -24,10 +24,12 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
 export class TransferOrchestrator {
 	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
+	private settlingTransfers = new Map<string, Promise<void>>();
 	private startingTransfers = new Map<string, { targetInstanceId: number; result: Promise<TransferStartResult> }>();
 	readonly requestQueue: TransferRequestQueue;
 	private queueWaits = new Map<string, TimingRecord>();
 	private queueAdmissions = new Map<string, Promise<void>>();
+	private recoveryRunning = false;
 
 	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
@@ -60,6 +62,52 @@ export class TransferOrchestrator {
 	get logger() { return this.plugin.logger; }
 	get txLogger() { return this.plugin.txLogger; }
 	get subscriptions() { return this.plugin.subscriptions; }
+
+	async recoverPendingTransfers() {
+		if (this.recoveryRunning) return;
+		this.recoveryRunning = true;
+		try {
+			for (const intent of this.plugin.pendingTransfers?.values() || []) {
+				const id = parseCanonicalTransferId(intent.transferId);
+				if (!id || id.sourceInstanceId !== intent.sourceInstanceId
+					|| !this.plugin.isInstanceOnline(intent.sourceInstanceId)
+					|| !this.plugin.isInstanceOnline(intent.targetInstanceId)
+					|| this.settlingTransfers.has(intent.transferId)) continue;
+				let transfer = this.plugin.activeTransfers.get(intent.transferId);
+				if (transfer && !["cleanup_failed", "error"].includes(transfer.status)) continue;
+				// Never re-import. Only a validated hold or a saved release receipt can pass verify.
+				if (!transfer) {
+					const prior = this.plugin.persistedTransactionLogs?.find(entry => entry.transferId === intent.transferId);
+					if (prior && (prior.transferInfo.sourceInstanceId !== intent.sourceInstanceId
+						|| prior.transferInfo.targetInstanceId !== intent.targetInstanceId
+						|| prior.transferInfo.platformIndex !== intent.sourcePlatformIndex)) continue;
+					transfer = createOperationRecord("transfer", {
+						operationId: intent.transferId, sourceInstanceId: intent.sourceInstanceId,
+						targetInstanceId: intent.targetInstanceId, platformIndex: intent.sourcePlatformIndex,
+						platformName: intent.sourcePlatformName, forceName: intent.forceName,
+						exportId: intent.exportId, sourceExportId: intent.sourceExportId || id.sourceJobId,
+						startedAt: intent.startedAt, status: "cleanup_failed",
+					});
+					if (prior?.summary) Object.assign(transfer, {
+						validationResult: prior.summary.validation, sourceVerification: prior.summary.sourceVerification,
+						exportMetrics: prior.summary.export, importMetrics: prior.summary.import,
+						payloadMetrics: prior.summary.payload, timing: prior.summary.timing,
+					});
+					this.plugin.activeTransfers.set(intent.transferId, transfer);
+				}
+				// The original terminal interval and this recovery are separate observations.
+				// A restart provides no continuous monotonic origin for their combined duration.
+				delete transfer.observedDurationMs;
+				const current = transfer;
+				const recovery = (async () => {
+					const { sourceResolved } = await this.handleValidationSuccess(intent.transferId, current);
+					if (sourceResolved) this.plugin.removePendingTransfer(intent.transferId);
+				})();
+				this.settlingTransfers.set(intent.transferId, recovery);
+				try { await recovery; } finally { this.settlingTransfers.delete(intent.transferId); }
+			}
+		} finally { this.recoveryRunning = false; }
+	}
 
 	async waitForStoredExport(exportId: string, timeoutMs = 10000) {
 		const deadline = Date.now() + timeoutMs;
@@ -332,6 +380,7 @@ export class TransferOrchestrator {
 		this.updateTransfer(transfer);
 		this.plugin.persistPendingTransfer({
 			transferId,
+			sourceExportId: transfer.sourceExportId,
 			sourceInstanceId: transfer.sourceInstanceId,
 			sourcePlatformIndex: transfer.platformIndex,
 			sourcePlatformName: transfer.platformName,
@@ -385,40 +434,50 @@ export class TransferOrchestrator {
 			this.txLogger.logTransactionEvent(transferId, "validation_timeout",
 				`No validation response within ${timeoutMs / 1000}s `
 				+ "(setting: surface_export.transfer_validation_timeout_seconds)", { timeoutMs });
-			await this.handleTransferValidation(new this.messages.TransferValidationEvent({
-				transferId,
-				success: false,
-				platformName: current.platformName,
-				sourceInstanceId: current.sourceInstanceId,
-				validation: {
-					itemCountMatch: false,
-					fluidCountMatch: false,
-					mismatchDetails: `Validation timeout - no response received within ${timeoutMs / 1000}s`,
-				},
-			}));
+			// A missing verdict is not a failed cargo check or permission to unlock/delete.
+			current.validationTimeout = null;
+			current.awaitingLateVerdict = true;
+			current.status = "cleanup_failed";
+			current.error = `Validation reply unavailable after ${timeoutMs / 1000}s; waiting for recovery evidence`;
+			current.completedAt = Date.now();
+			this.updateTransfer(current);
+			try { await this.txLogger.persistTransactionLog(transferId); }
+			catch (error) { this.logger.error(`Persisting validation timeout failed: ${getErrorMessage(error)}`); }
 		}, timeoutMs);
 	}
 
 
-	async handleTransferValidation(event: TransferValidationEvent) {
-		return timingContext.run(this.txLogger.clock(event.transferId), () =>
+	async handleTransferValidation(event: TransferValidationEvent): Promise<void> {
+		const inFlight = this.settlingTransfers.get(event.transferId);
+		if (inFlight) {
+			await inFlight;
+			if (this.plugin.activeTransfers.get(event.transferId)?.awaitingLateVerdict) return this.handleTransferValidation(event);
+			return;
+		}
+		const settling = timingContext.run(this.txLogger.clock(event.transferId), () =>
 			timed("Destination verdict handling", "inclusive", () => this.handleTransferValidationMeasured(event)));
+		this.settlingTransfers.set(event.transferId, settling);
+		try { await settling; }
+		finally { this.settlingTransfers.delete(event.transferId); }
 	}
 
 	private async handleTransferValidationMeasured(event: TransferValidationEvent) {
 		const settled = this.plugin.activeTransfers.get(event.transferId);
+		if (settled?.awaitingLateVerdict) {
+			settled.awaitingLateVerdict = false;
+			settled.status = "awaiting_validation";
+		}
 		if (settled && settled.status !== "awaiting_validation") {
 			const verdict = event.success ? "SUCCESS" : "FAILURE";
 			const priorStatus = settled.status;
 			let disposition = "Record unchanged.";
 			if (event.success && priorStatus === "failed") {
 				settled.status = "cleanup_failed";
-				settled.error = [settled.error, "late import SUCCESS after rollback: the destination holds a live copy — delete one copy before retrying"]
+				settled.error = [settled.error, "late import SUCCESS after rollback: verify destination cleanup before retrying"]
 					.filter(Boolean).join("; ");
 				this.updateTransfer(settled);
-				disposition = "The destination holds a LIVE copy of a platform whose source was already "
-					+ "returned to the player; the transfer is re-marked cleanup_failed so retries are "
-					+ "refused — resolve manually (delete one copy).";
+				disposition = "Source rollback was already acknowledged. The destination may retain a copy; "
+					+ "cleanup_failed prevents another import until its identity and cleanup are verified.";
 			} else if (!event.success && priorStatus === "failed" && event.validation?.cleanup_failed) {
 				settled.status = "cleanup_failed";
 				settled.validationResult = event.validation;
@@ -492,44 +551,67 @@ export class TransferOrchestrator {
 
 	async handleValidationSuccess(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.startPhase(transferId, "cleanup");
-		await this.broadcastTransferStatus(transfer, "Validation passed ✓ — deleting source...", "green");
-
-		const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
-			{ instanceId: transfer.sourceInstanceId },
-			new this.messages.DeleteSourcePlatformRequest({
-				platformIndex: transfer.platformIndex,
-				platformName: transfer.platformName,
-				forceName: transfer.forceName,
-				exportId: transfer.sourceExportId ?? transfer.exportId ?? null,
-			}),
-		));
-		const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
-
-		if (deleteResponse.success) {
-			transfer.status = "completed";
+		const gate = (action: "verify" | "go_live") => timed("Destination transfer gate round trip", "round-trip", () =>
+			this.plugin.controller.sendTo({ instanceId: transfer.targetInstanceId },
+				new this.messages.DestinationTransferGateRequest({ transferId, action })));
+		const failed = async (error: string) => {
+			this.txLogger.endPhase(transferId, "cleanup");
+			if (transfer.status === "cleanup_failed" && transfer.error === error) return { sourceResolved: false };
+			transfer.status = "cleanup_failed";
+			transfer.error = error;
 			transfer.completedAt = Date.now();
-			const durationMs = this.txLogger.getObservedDuration(transfer);
-			this.txLogger.logTransactionEvent(transferId, "transfer_completed",
-				"Transfer completed", {
-					durationMs, cleanupMs,
-					phases: this.txLogger.buildPhaseSummary(transfer),
-				});
+			this.txLogger.logTransactionEvent(transferId, "cleanup_failed", error);
 			this.updateTransfer(transfer);
-			await this.broadcastTransferStatus(transfer, "Transfer complete! ✓", "green");
+			await this.broadcastTransferStatus(transfer, `Cleanup incomplete: ${error}`, "yellow");
 			await this.txLogger.persistTransactionLog(transferId);
-			if (transfer.exportId) {
-				this.plugin.platformStorage.delete(transfer.exportId);
+			return { sourceResolved: false };
+		};
+		try {
+			await this.plugin.persistPendingTransfers(transferId);
+			const held = await gate("verify");
+			if (!held.success) return failed(`Destination hold not confirmed: ${held.error}`);
+			transfer.awaitingLateVerdict = false;
+			await this.broadcastTransferStatus(transfer, "Validation passed — destination held; deleting source...", "green");
+
+			const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
+				{ instanceId: transfer.sourceInstanceId },
+				new this.messages.DeleteSourcePlatformRequest({
+					platformIndex: transfer.platformIndex,
+					platformName: transfer.platformName,
+					forceName: transfer.forceName,
+					exportId: transfer.sourceExportId ?? transfer.exportId ?? null,
+				}),
+			));
+
+			if (deleteResponse.success) {
+				const activated = await gate("go_live");
+				if (!activated.success) return failed(`Source deleted; destination activation not confirmed: ${activated.error}`);
+				const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
+				transfer.status = "completed";
+				transfer.awaitingLateVerdict = false;
+				transfer.error = null;
+				transfer.completedAt = Date.now();
+				const durationMs = this.txLogger.getObservedDuration(transfer);
+				this.txLogger.logTransactionEvent(transferId, "transfer_completed",
+					"Transfer completed", {
+						durationMs, cleanupMs,
+						phases: this.txLogger.buildPhaseSummary(transfer),
+					});
+				this.updateTransfer(transfer);
+				await this.broadcastTransferStatus(transfer, "Transfer complete! ✓", "green");
+				await this.txLogger.persistTransactionLog(transferId);
+				if (transfer.exportId) {
+					this.plugin.platformStorage.delete(transfer.exportId);
+				}
+				await this.plugin.persistStorage();
+				this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
+				return { sourceResolved: true };
 			}
-			await this.plugin.persistStorage();
-			this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
-			return { sourceResolved: true };
+			return failed(`Source deletion not confirmed; destination remains held: ${deleteResponse.error}`);
+		} catch (error) {
+			// A lost reply cannot authorize destination activation or destructive rollback.
+			return failed(`Transfer gate response unavailable: ${getErrorMessage(error)}`);
 		}
-		this.logger.error(`Failed to delete source platform: ${deleteResponse.error}`);
-		transfer.status = "cleanup_failed";
-		transfer.error = deleteResponse.error;
-		this.updateTransfer(transfer);
-		await this.broadcastTransferStatus(transfer, `⚠ Cleanup failed: ${deleteResponse.error}`, "yellow");
-		return { sourceResolved: false };
 	}
 
 	async handleValidationFailure(transferId: string, transfer: ActiveTransfer, validation: ValidationResult | undefined) {

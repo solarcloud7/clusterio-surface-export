@@ -1,5 +1,6 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local Receipts = require("modules/surface_export/utils/transfer-receipts")
 
 local DestinationHold = {}
 
@@ -99,7 +100,7 @@ local function find_hold_for_platform(holds, surface_index, platform_index, exce
 	return nil, nil
 end
 
-function DestinationHold.stage(transfer_id, platform, force)
+function DestinationHold.stage(transfer_id, platform, force, fail_closed)
 	if type(transfer_id) ~= "string" or transfer_id == "" then
 		return false, "transfer_id is required"
 	end
@@ -117,7 +118,11 @@ function DestinationHold.stage(transfer_id, platform, force)
 
 	local holds = ensure_storage()
 	local existing = holds[transfer_id]
+	if Receipts.get("destination_live", transfer_id) then
+		return false, "Destination transfer already released"
+	end
 	if existing then
+		if existing.preparation_failed then return false, "Previous destination preparation failed" end
 		if existing.surface_index == surface.index and existing.platform_index == platform.index then
 			return true, existing
 		end
@@ -134,6 +139,14 @@ function DestinationHold.stage(transfer_id, platform, force)
 	local active_states = {}
 	local deactivated = 0
 	local pod_completion = { descending = 0, ascending = 0, items_recovered = 0 }
+	local hold = {
+		transfer_id = transfer_id, force_name = force.name, platform_index = platform.index,
+		platform_name = platform.name, surface_index = surface.index,
+		original_hidden = original_hidden, original_platform_hidden = original_platform_hidden,
+		original_paused = original_paused, active_states = active_states, held_tick = game.tick,
+		preparation_failed = true,
+	}
+	if fail_closed then holds[transfer_id] = hold end
 	local staged_ok, staged_err = pcall(function()
 		platform.paused = true
 		force.set_surface_hidden(surface, true)
@@ -146,6 +159,9 @@ function DestinationHold.stage(transfer_id, platform, force)
 	if not staged_ok then
 		log(string.format("[DestinationHold] stage failed for transfer %s on platform '%s': %s",
 			transfer_id, platform.name, tostring(staged_err)))
+		-- Production transfers retain the quarantine on a partial staging failure.
+		-- Only a successful destination discard may release this failed hold.
+		if fail_closed then return false, "Failed to stage destination hold: " .. tostring(staged_err) end
 		local restore_ok, restore_err = pcall(function()
 			restore_active_states(surface, active_states)
 			force.set_surface_hidden(surface, original_hidden == true)
@@ -159,20 +175,9 @@ function DestinationHold.stage(transfer_id, platform, force)
 		return false, "Failed to stage destination hold: " .. tostring(staged_err)
 	end
 
-	local hold = {
-		transfer_id = transfer_id,
-		force_name = force.name,
-		platform_index = platform.index,
-		platform_name = platform.name,
-		surface_index = surface.index,
-		original_hidden = original_hidden,
-		original_platform_hidden = original_platform_hidden,
-		original_paused = original_paused,
-		active_states = active_states,
-		deactivated_count = deactivated,
-		pod_completion = pod_completion,
-		held_tick = game.tick,
-	}
+	hold.preparation_failed = nil
+	hold.deactivated_count = deactivated
+	hold.pod_completion = pod_completion
 	holds[transfer_id] = hold
 	log(string.format("[DestinationHold] staged transfer %s on platform '%s' (idx=%s, surface=%s, deactivated=%d, pods=%d/%d, recovered=%d)",
 		transfer_id, platform.name, tostring(platform.index), tostring(surface.index), deactivated,
@@ -182,8 +187,18 @@ end
 
 function DestinationHold.go_live(transfer_id)
 	local holds = ensure_storage()
+	local receipt = Receipts.get("destination_live", transfer_id)
+	if receipt then
+		if holds[transfer_id] then return false, "Released transfer also has a hold" end
+		local released = find_platform(game.forces[receipt.force_name], receipt.platform_index)
+		if not released or not released.surface.valid or released.surface.index ~= receipt.surface_index then
+			return false, "Released destination is missing or has changed identity"
+		end
+		return true, receipt
+	end
 	local hold, force, platform, err = resolve_hold(transfer_id)
 	if err then return false, err end
+	if hold.preparation_failed then return false, "Destination preparation did not finish" end
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
 	force.set_surface_hidden(surface, hold.original_hidden == true)
@@ -191,6 +206,10 @@ function DestinationHold.go_live(transfer_id)
 		platform.hidden = hold.original_platform_hidden
 	end
 	platform.paused = hold.original_paused == true
+	Receipts.put("destination_live", transfer_id, {
+		transfer_id = transfer_id, platform_index = hold.platform_index,
+		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,
+	})
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d)",
 		transfer_id, platform.name, restored, kept_inactive))
@@ -225,6 +244,7 @@ function DestinationHold.discard(transfer_id)
 		return false, err
 	end
 	local deleted = GameUtils.delete_platform(platform)
+	if not deleted then return false, "Held destination deletion was refused" end
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] discarded transfer %s platform '%s' (deleted=%s)",
 		transfer_id, hold.platform_name, tostring(deleted)))

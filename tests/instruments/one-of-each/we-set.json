@@ -19,12 +19,12 @@
 			"capture": [
 				"module/core/export-pipeline.lua",
 				"module/export_scanners/blueprint-diff.lua",
-				"module/export_scanners/census-accumulator.lua",
 				"module/export_scanners/connection-scanner.lua",
 				"module/export_scanners/entity-handlers.lua",
 				"module/export_scanners/entity-scanner.lua",
 				"module/export_scanners/fluid-registry.lua",
 				"module/export_scanners/inventory-scanner.lua",
+				"module/export_scanners/source-cargo-integrity.lua",
 				"module/export_scanners/tile_scanner.lua"
 			],
 			"restore": [
@@ -32,6 +32,7 @@
 				"module/core/import-completion.lua",
 				"module/core/import-pipeline.lua",
 				"module/import_phases/active_state_restoration.lua",
+				"module/import_phases/belt_batches.lua",
 				"module/import_phases/belt_restoration.lua",
 				"module/import_phases/connection_restoration.lua",
 				"module/import_phases/entity_creation.lua",
@@ -1295,7 +1296,7 @@
 				"plane": "entity",
 				"field": "entity_id",
 				"sites": [
-					"core/import-completion.lua:ImportCompletion.run_phase2",
+					"core/import-completion.lua:restore_inventories",
 					"core/import-pipeline.lua:ImportPipeline.process_batch",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
@@ -1425,7 +1426,7 @@
 					"core/deserializer.lua:Deserializer.restore_inventories",
 					"core/deserializer.lua:Deserializer.restore_proxy_targets",
 					"core/deserializer.lua:restore_slot_filters",
-					"core/import-completion.lua:ImportCompletion.run_phase1",
+					"core/import-completion.lua:restore_belt_batch",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore",
 					"import_phases/active_state_restoration.lua:ActiveStateRestoration.restore_held_items_only",
 					"import_phases/active_state_restoration.lua:restore_inserter_held",
@@ -1449,7 +1450,7 @@
 				"field": "type",
 				"sites": [
 					"core/deserializer.lua:Deserializer.create_entity",
-					"core/import-completion.lua:ImportCompletion.run_phase2",
+					"core/import-completion.lua:restore_inventories",
 					"import_phases/entity_creation.lua:EntityCreation.process_batch",
 					"import_phases/latch_rearm.lua:LatchRearm.schedule"
 				]
@@ -1677,7 +1678,7 @@
 				"plane": "specific_data",
 				"field": "items",
 				"sites": [
-					"core/import-completion.lua:ImportCompletion.run_phase1",
+					"core/import-completion.lua:restore_belt_batch",
 					"import_phases/belt_restoration.lua:BeltRestoration.attribute_lines",
 					"import_phases/entity_creation.lua:EntityCreation.process_batch"
 				]

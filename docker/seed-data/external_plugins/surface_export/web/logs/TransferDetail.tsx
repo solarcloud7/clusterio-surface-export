@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Collapse, Descriptions, Empty, Space, Spin, Table, Tabs, Tag, Tooltip, message as antMessage } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import type { JsonObject, LogDetail, SurfaceExportPlugin, TransferSummary } from "../view-models";

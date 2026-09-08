@@ -161,14 +161,18 @@ function AsyncProcessor.process_tick()
 			if job.pending_beacon_tick then
 				if game.tick >= job.pending_beacon_tick then
 					job.pending_beacon_tick = nil
+					job.phase2_started = true
 					ImportCompletion.run_phase2(job)
 				end
-			elseif job.phase1_started then
+			elseif job.phase2_started then
+				ImportCompletion.run_phase2(job)
+			elseif job.entities_complete or job.phase1_started then
 				ImportCompletion.run_phase1(job)
 			else
 				local done = ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				if done then
-					ImportCompletion.run_phase1(job)
+					-- End this callback before starting completion work on the next tick.
+					job.entities_complete = true
 				end
 			end
 		end

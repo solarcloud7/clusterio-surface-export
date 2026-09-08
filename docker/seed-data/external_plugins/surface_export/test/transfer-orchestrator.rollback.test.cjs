@@ -21,6 +21,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 	const plugin = {
 		logger: { error: noop, warn: noop, info: noop },
 		persistPendingTransfer: (intent) => { calls.pendingPersisted = intent; },
+		persistPendingTransfers: async () => {},
 		removePendingTransfer: (id) => { calls.pendingRemoved = id; },
 		isInstanceOnline: (id) => (calls.offlineInstances ? !calls.offlineInstances.has(id) : true),
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
@@ -68,6 +69,121 @@ function onlyTransfer(activeTransfers) {
 	const all = [...activeTransfers.values()];
 	assert.equal(all.length, 1, "exactly one transfer record expected");
 	return all[0];
+}
+
+test("successful transfer verifies the held destination, deletes source, then activates once", async () => {
+	const order = [];
+	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }), msg => {
+		if (msg.constructor.name === "TransferStatusUpdate") return { success: true };
+		order.push(msg.action || msg.constructor.name);
+		return { success: true };
+	});
+	const result = await orch.transferPlatform("export_1", 2);
+	await Promise.all([1, 2].map(() => orch.handleTransferValidation({ transferId: result.transferId, success: true })));
+	assert.deepEqual(order, ["verify", "DeleteSourcePlatformRequest", "go_live"]);
+	assert.equal(onlyTransfer(activeTransfers).status, "completed");
+	assert.equal(calls.pendingRemoved, result.transferId);
+	assert.equal(calls.openPhases.has("cleanup"), false);
+});
+
+for (const restart of [false, true]) {
+	test(`recovery retries a lost deletion reply without importing again (restart=${restart})`, async () => {
+		let deletionCalls = 0, releases = 0;
+		const h = makeHarness(() => ({ success: true }), msg => {
+			if (msg.constructor.name === "DeleteSourcePlatformRequest" && ++deletionCalls === 1) throw sessionLost();
+			if (msg.action === "go_live") releases++;
+			return { success: true };
+		});
+		const start = await h.orch.transferPlatform("1:export_1", 2);
+		await h.orch.handleTransferValidation({ transferId: start.transferId, success: true });
+		assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
+		h.plugin.pendingTransfers = new Map([[start.transferId, h.calls.pendingPersisted]]);
+		if (restart) {
+			h.activeTransfers.clear();
+			h.orch = new TransferOrchestrator(h.plugin, messages);
+		}
+		await Promise.all([h.orch.recoverPendingTransfers(), h.orch.recoverPendingTransfers()]);
+		assert.equal(onlyTransfer(h.activeTransfers).status, "completed");
+		assert.equal(onlyTransfer(h.activeTransfers).error, null);
+		assert.equal(h.calls.importSends, 1);
+		assert.equal(deletionCalls, 2);
+		assert.equal(releases, 1);
+		assert.equal(h.calls.pendingRemoved, start.transferId);
+	});
+}
+
+test("recovery does not delete on missing destination evidence or overwrite an active import", async () => {
+	let deletions = 0;
+	const h = makeHarness(() => ({ success: true }), msg => {
+		if (msg.constructor.name === "DeleteSourcePlatformRequest") deletions++;
+		return { success: false, error: "hold unavailable" };
+	});
+	const start = await h.orch.transferPlatform("1:export_1", 2);
+	h.plugin.pendingTransfers = new Map([[start.transferId, h.calls.pendingPersisted]]);
+	const original = onlyTransfer(h.activeTransfers);
+	await h.orch.recoverPendingTransfers();
+	assert.equal(onlyTransfer(h.activeTransfers), original);
+	assert.equal(original.status, "awaiting_validation");
+	await h.orch.handleTransferValidation({ transferId: start.transferId, success: true });
+	await h.orch.recoverPendingTransfers();
+	assert.equal(deletions, 0);
+	assert.equal(h.calls.importSends, 1);
+	assert.equal(h.calls.pendingRemoved, undefined);
+});
+
+test("failed recovery-intent persistence prevents source deletion", async () => {
+	const sends = [];
+	const h = makeHarness(() => ({ success: true }), msg => { sends.push(msg.constructor.name); return { success: true }; });
+	const start = await h.orch.transferPlatform("1:export_1", 2);
+	h.plugin.persistPendingTransfers = async () => { throw new Error("disk full"); };
+	await h.orch.handleTransferValidation({ transferId: start.transferId, success: true });
+	assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
+	assert.equal(sends.includes("DeleteSourcePlatformRequest"), false);
+	assert.equal(h.calls.pendingRemoved, undefined);
+});
+
+test("actual timeout retains uncertainty and accepts a later genuine verdict", async () => {
+	const timers = [], original = global.setTimeout;
+	const h = makeHarness(() => ({ success: true }));
+	let start;
+	global.setTimeout = (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer; };
+	try { start = await h.orch.transferPlatform("1:export_1", 2); }
+	finally { global.setTimeout = original; }
+	await timers.find(timer => timer.ms === 30_000).fn();
+	const transfer = onlyTransfer(h.activeTransfers);
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.equal(transfer.validationResult, undefined, "missing reply is not failed cargo evidence");
+	assert.equal(h.calls.unlockRouteTaken, 0);
+	assert.equal(h.calls.pendingRemoved, undefined);
+	await h.orch.handleTransferValidation({ transferId: start.transferId, success: true,
+		validation: { itemCountMatch: true, fluidCountMatch: true } });
+	assert.equal(transfer.status, "completed");
+	assert.equal(transfer.validationResult.itemCountMatch, true);
+	assert.equal(h.calls.importSends, 1);
+});
+
+for (const failure of ["verify", "delete-refused", "delete-lost", "activate-lost"]) {
+	test(`transfer gate fails closed on ${failure}`, async () => {
+		const order = [];
+		const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }), msg => {
+			if (msg.constructor.name === "TransferStatusUpdate") return { success: true };
+			const step = msg.action || msg.constructor.name;
+			order.push(step);
+			if (failure === "verify" && step === "verify") return { success: false, error: "hold missing" };
+			if (failure === "delete-refused" && step === "DeleteSourcePlatformRequest") return { success: false, error: "deletion failed" };
+			if ((failure === "delete-lost" && step === "DeleteSourcePlatformRequest")
+				|| (failure === "activate-lost" && step === "go_live")) throw sessionLost();
+			return { success: true };
+		});
+		const result = await orch.transferPlatform("export_1", 2);
+		await orch.handleTransferValidation({ transferId: result.transferId, success: true });
+		assert.equal(onlyTransfer(activeTransfers).status, "cleanup_failed");
+		assert.equal(calls.pendingRemoved, undefined, "uncertain outcome retains recovery intent");
+		assert.equal(calls.unlockRouteTaken, 0, "uncertain deletion cannot authorize rollback");
+		assert.equal(calls.openPhases.has("cleanup"), false);
+		if (failure === "verify") assert.deepEqual(order, ["verify"]);
+		else if (failure !== "activate-lost") assert.deepEqual(order, ["verify", "DeleteSourcePlatformRequest"]);
+	});
 }
 
 test("isSessionLostError: true only for code === 'SessionLost'", () => {
@@ -243,7 +359,7 @@ test("#106: validation fails but source unlock SUCCEEDS → failed drops the int
 });
 
 
-test("W1 guard: a late genuine SUCCESS after a validation timeout must NOT drive a source delete", async () => {
+test("W1 guard: a late genuine SUCCESS after a recorded validation failure must NOT drive a source delete", async () => {
 	const { orch, activeTransfers, calls, plugin } = makeHarness(() => ({ success: true }));
 	const res = await orch.transferPlatform("export_1", 2);
 	const transfer = onlyTransfer(activeTransfers);
@@ -260,9 +376,9 @@ test("W1 guard: a late genuine SUCCESS after a validation timeout must NOT drive
 	await orch.handleTransferValidation({
 		transferId: res.transferId, success: false,
 		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
-		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation rejected by destination" },
 	});
-	assert.equal(transfer.status, "failed", "the timeout settles the transfer as failed (rollback ran)");
+	assert.equal(transfer.status, "failed", "the explicit rejection settles the transfer as failed (rollback ran)");
 	assert.equal(calls.unlockRouteTaken, 1, "the rollback unlocked the source");
 
 	await orch.handleTransferValidation({
@@ -279,7 +395,7 @@ test("W1 guard: a late genuine SUCCESS after a validation timeout must NOT drive
 		+ "cleanup_failed (its one meaning) - leaving it 'failed' (the one status retries may replace) "
 		+ "turned the 'retry works' guidance into a second copy imported beside the orphan");
 	assert.match(String(transfer.validationResult && transfer.validationResult.mismatchDetails),
-		/timeout/i, "the settled record's verdict must not be overwritten by the late one");
+		/rejected/i, "the settled record's verdict must not be overwritten by the late one");
 	assert.ok(calls.events.includes("validation_after_settle"),
 		"the refusal must be LOUD: a validation_after_settle event names the live-destination residual");
 
@@ -298,7 +414,7 @@ test("W1 guard: a late genuine FAILURE carrying destinationPreserved is ADOPTED 
 	await orch.handleTransferValidation({
 		transferId: res.transferId, success: false,
 		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
-		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation rejected by destination" },
 	});
 	assert.equal(transfer.status, "failed");
 
@@ -414,7 +530,7 @@ test("W1 guard: a late FAILURE reporting cleanup_failed marks the ACCIDENTAL orp
 	await orch.handleTransferValidation({
 		transferId: res.transferId, success: false,
 		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
-		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation rejected by destination" },
 	});
 	assert.equal(transfer.status, "failed");
 

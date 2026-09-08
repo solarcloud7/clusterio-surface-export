@@ -152,11 +152,13 @@ configuration through Clusterio's `ControllerConfigGetRequest` and `ControllerCo
 It uses `core.controller.get_config` for reading and `core.controller.update_config` for saving;
 only changed, writable plugin fields are submitted. There is no additional configuration store.
 
-Gateway layout requires a matching mod-pack startup setting and instance/client restarts. Payload
-retention is checked when an export is stored, detail retention on its next retention pass, and
-validation timeout on the next transfer. Each field states its application boundary in the UI.
-Instance links lead to the existing configuration editor for batching and debug settings, which
-are sent to Lua when the instance starts.
+Gateway layout is omitted from this editor while multi-gateway configuration is deferred. The
+underlying configuration remains compatible with existing deployments. **Stored Payload Downloads**
+limits downloadable platform files; **Saved Detailed Transfer Logs** limits saved timings and audit
+evidence. Neither removes the basic transfer-history entry. Payload retention is checked when an
+export is stored, detail retention on its next retention pass, and validation timeout on the next
+transfer. The sidebar links to the instance list without repeating individual instance names.
+Instance batching and debug settings are sent to Lua when the instance starts.
 
 `node tests/integration/settings/run-tests.mjs` verifies the real browser and config reads while
 intercepting every configuration write. It covers changed-field saves, discard, read/save errors,

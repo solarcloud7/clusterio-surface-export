@@ -110,7 +110,12 @@ local function run(label,items,fluids,fel,iol,rejected,expected_success,forced_h
  local job={job_id='probe',transfer_id='review',started_tick=90,metrics={},entity_map={},entities_to_create={},platform_name='review',total_entities=1,target_surface=surface,platform_data={verification={item_counts=items or {['iron-plate']=5},fluid_counts=fluids or {}}},failed_entity_losses=fel,inventory_overflow_losses=iol}
  job.test_forced_entity_failure=forced_hook
  captured=nil
- local good,err=pcall(completion.run_phase2,job)
+ local good,err
+ for _=1,3 do
+  good,err=pcall(completion.run_phase2,job)
+  if not good then break end
+  env.game.tick=env.game.tick+1
+ end
  assert(not good and tostring(err):find('REVIEW_BOUNDARY',1,true),tostring(err))
  assert(captured and captured.success==expected_success,label)
  print('PASS '..label..': success='..tostring(captured.success)..' expectedItems='..captured.totalExpectedItems..' actualItems='..captured.totalActualItems..' expectedFluids='..captured.totalExpectedFluids..' actualFluids='..captured.totalActualFluids)

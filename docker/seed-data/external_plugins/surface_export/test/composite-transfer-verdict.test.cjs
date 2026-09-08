@@ -326,7 +326,7 @@ test("the discard contract is unconditional — observability and guards never g
 	const bankAt = importCompletion.indexOf("pcall(bank_failure_black_box");
 	const configAt = importCompletion.indexOf("local config = storage.surface_export_config", bankAt);
 	const evacuateAt = importCompletion.indexOf("pcall(Gateway.evacuate_passengers", bankAt);
-	const deleteAt = importCompletion.indexOf("pcall(GameUtils.delete_platform", bankAt);
+	const deleteAt = importCompletion.indexOf("local delete_ok, delete_result = pcall(", bankAt);
 	assert.ok(bankAt !== -1 && configAt > bankAt && evacuateAt > configAt && deleteAt > evacuateAt,
 		"the failure-discard block must keep its shape: bank -> config/preserve -> evacuate -> delete");
 
@@ -343,9 +343,9 @@ test("the discard contract is unconditional — observability and guards never g
 	assert.doesNotMatch(evacuateSegment, /\breturn\b/,
 		"nor may an evacuation failure EXIT before the delete — an `if not evacuated then return` "
 		+ "re-gate is the same orphan through the other door (reconciliation-review note)");
-	assert.match(importCompletion.slice(deleteAt - 60, deleteAt + 50),
-		/local\s+delete_ok\s*,\s*delete_result\s*=\s*pcall\(GameUtils\.delete_platform/,
-		"the delete must be an unconditional direct pcall assignment");
+	assert.match(importCompletion.slice(deleteAt, deleteAt + 500),
+		/pcall\(function\(\)[\s\S]*DestinationHold\.discard\(job.transfer_id\)[\s\S]*return GameUtils\.delete_platform\(job.target_platform\)/,
+		"the unconditional pcall must discard held targets through their owner, and delete ordinary targets directly");
 
 	const invalidAt = importCompletion.indexOf("nothing to discard", bankAt);
 	const consumeAt = importCompletion.indexOf("config.preserve_failed_destination = nil", bankAt);
@@ -443,8 +443,10 @@ test("belt forensic census survives the legacy purge; recovery machinery is gone
 		"force insertion restored the retained 5,772 stacks exactly; coordinate scans and merging must not change their positions or state");
 	assert.match(restoration, /VersionCompat\.belt_force_insert_at\(line, k \/ 256, stack_def, count\)/,
 		"the force API returns void; physical side-group checks below remain the authority");
-	assert.match(restoration, /k >= 0 and k \/ 256 <= line\.line_length/,
-		"the engine's position clamping must not silently repair an invalid captured position");
+	assert.match(restoration, /type\(k\) == 'number' and k == k and math\.abs\(k\) < math\.huge/,
+		"nonfinite positions must be refused before insertion");
+	assert.match(restoration, /k = math\.max\(0, math\.min\(k, line\.line_length \* 256\)\)/,
+		"a shorter rebuilt line may clamp distance without changing the captured lane");
 	assert.doesNotMatch(restoration, /recover_deficits_to_hub|function BeltRestoration\.restore\s*\(|line_needs_consolidation|MIN_SPACING/,
 		"the legacy consolidation restore and hub-deficit recovery must stay deleted (owner order 2026-07-27)");
 });

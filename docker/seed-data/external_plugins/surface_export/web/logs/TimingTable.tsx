@@ -1,4 +1,3 @@
-import React from "react";
 import { Empty, Table } from "antd";
 import type { GanttRow, TimelineAttribution } from "../view-models";
 import type { OperationTiming } from "../../shared/timing";

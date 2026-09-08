@@ -3,7 +3,7 @@ import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { buildAuditRow } from "./audit-ledger";
 import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention";
-import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages";
 import { TimingClock } from "./timing";
 import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
 import { getErrorMessage, PLUGIN_NAME } from "../helpers";

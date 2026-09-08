@@ -182,6 +182,11 @@ export class LuaInterface {
 		);
 	}
 
+	async destinationTransferGate(transferId: string, action: "verify" | "go_live"): Promise<string> {
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "destination_hold_json", `
+			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
+	}
+
 	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null): Promise<string> {
 		const jobArg = exportId ? `, "${escapeString(exportId)}"` : ", nil";
 		return this.host.sendRcon(
