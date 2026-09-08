@@ -70,6 +70,7 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	observedDurationMs?: number | null;
 	transferId: string;
 	operationType: "transfer" | "export" | "import";
 	exportId: string | null;
@@ -146,6 +147,7 @@ export interface HostNodeModel {
 export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
+	observedDurationMs?: number | null;
 	v: number;
 	transferId: string;
 	rowKind: AuditRowKind;
@@ -196,14 +198,14 @@ export interface ExportMetrics {
 }
 
 export interface ImportMetrics {
-	total_ticks: number;
-	tiles_ms: number;
-	entities_ms: number;
-	fluids_ms: number;
-	belts_ms: number;
-	state_ms: number;
-	validation_ms: number;
-	total_ms: number;
+	total_ticks?: number;
+	tiles_ms?: number;
+	entities_ms?: number;
+	fluids_ms?: number;
+	belts_ms?: number;
+	state_ms?: number;
+	validation_ms?: number;
+	total_ms?: number;
 	tiles_placed: number;
 	entities_created: number;
 	entities_failed: number;
@@ -225,6 +227,7 @@ export interface ImportMetrics {
 	total_items: number;
 	total_fluids: number;
 	phaseSpans?: PhaseSpan[];
+	phaseTicks?: Array<{ name: string; start_tick: number; end_tick: number; ticks_elapsed: number }>;
 }
 
 export interface PayloadMetrics {

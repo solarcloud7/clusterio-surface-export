@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
+import { timed, timedSync, timingContext } from "./lib/timing";
 import fs from "fs/promises";
 import path from "path";
 import { BaseControllerPlugin } from "@clusterio/controller";
@@ -145,6 +148,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
 
+		this.c.handle(messages.OperationTimingEvent, async (event: messages.OperationTimingEvent) => {
+			this.txLogger.acceptTiming(event.record);
+		});
 		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
 		this.c.handle(messages.ListExportsRequest, this.handleListExportsRequest.bind(this));
 		this.c.handle(messages.GetStoredExportRequest, this.handleGetStoredExportRequest.bind(this));
@@ -199,12 +205,17 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
+		const id = makeCanonicalTransferId(event.instanceId, event.exportId);
+		return timingContext.run(this.txLogger.clock(id), () => timed("Artifact receipt and storage", "inclusive", () => this.handlePlatformExportMeasured(event)));
+	}
+
+	async handlePlatformExportMeasured(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		const sourceExportId = event.exportId;
 		const canonicalExportId = makeCanonicalTransferId(event.instanceId, sourceExportId);
 		this.logger.info(`Received platform export: ${canonicalExportId} (source ${sourceExportId}) from instance ${event.instanceId} (${event.platformName})`);
 
 		try {
-			const serializedSize = Buffer.byteLength(JSON.stringify(event.exportData), "utf8");
+			const serializedSize = timedSync("Artifact serialization", () => Buffer.byteLength(JSON.stringify(event.exportData), "utf8"));
 			this.platformStorage.set(canonicalExportId, {
 				exportId: canonicalExportId,
 				sourceExportId,
@@ -218,12 +229,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			});
 
 			this.logger.info(`Stored platform export: ${canonicalExportId}`);
+			this.txLogger.captureStoredTiming(this.platformStorage.get(canonicalExportId)!);
 
 			const maxStorage = Number(this.cfg(`${PLUGIN_NAME}.max_storage_size`));
 			if (Number.isFinite(maxStorage) && this.platformStorage.size > maxStorage) {
 				this.cleanupOldExports(maxStorage);
 			}
-			await this.persistStorage();
+			await timed("Artifact storage write", "inclusive", () => this.persistStorage());
 			this.subscriptions.queueTreeBroadcast("player");
 		} catch (err: unknown) {
 			this.logger.error(`Error handling platform export: ${getErrorMessage(err)}`);
@@ -306,11 +318,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		});
 		await this.txLogger.archiveRecycledTransferId(operation.transferId, operation.startedAt);
 		this.activeTransfers.set(operation.transferId, operation);
+		const observation = timingContext.getStore();
+		if (observation) this.txLogger.bindObservation(observation.jobId, operation.transferId);
+		else this.txLogger.beginObservation(operation.transferId);
 		await this.recordTransferStarted(operation);
 		return operation;
 	}
 
 	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
+		const result = await timingContext.run(clock, () => this.handleImportUploadedExportRequestMeasured(request));
+		if (!result.success && !clock.operationId) {
+			try { await this.txLogger.rejectObservation(clock.jobId, { ...request, operationType: "import" }, result.error || "Import request rejected"); }
+			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
+		}
+		return result;
+	}
+
+	async handleImportUploadedExportRequestMeasured(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
 		const { targetInstanceId, exportData, forceName, platformName, targetPlanet } = request;
 
 		if (!exportData || typeof exportData !== "object" || Array.isArray(exportData)) {
@@ -336,7 +361,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			targetInstanceId: resolved.id,
 		});
 		(importData as Record<string, unknown>)._operationId = operation.transferId;
-		const payloadSizeBytes = Buffer.byteLength(JSON.stringify(importData), "utf8");
+		const payloadSizeBytes = timedSync("Payload serialization", () => Buffer.byteLength(JSON.stringify(importData), "utf8"));
 		operation.artifactSizeBytes = payloadSizeBytes;
 		this.txLogger.logTransactionEvent(operation.transferId, "import_requested",
 			`Upload import requested for ${operation.platformName}`, {
@@ -347,7 +372,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const uploadExportId = generateOperationId("uploaded");
 
 		try {
-			const response = await this.c.sendTo(
+			const response = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: resolved.id },
 				new messages.ImportPlatformRequest({
 					exportId: uploadExportId,
@@ -355,7 +380,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					forceName: resolvedForceName,
 					targetPlanet: targetPlanet ?? null,
 				}),
-			) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
+			)) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
 			if (!response?.success) {
 				const error = response?.error || "Import failed on target instance";
 				operation.error = error;
@@ -392,6 +417,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handleExportPlatformForDownloadRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
+		const result = await timingContext.run(clock, () => this.handleExportPlatformForDownloadRequestMeasured(request));
+		if (!result.success && !clock.operationId) {
+			try { await this.txLogger.rejectObservation(clock.jobId, { ...request, operationType: "export" }, result.error || "Export request rejected"); }
+			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
+		}
+		return result;
+	}
+
+	async handleExportPlatformForDownloadRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		const sourcePlatformIndex = Number(request.sourcePlatformIndex);
 		const forceName = request.forceName || "player";
@@ -423,27 +458,30 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.subscriptions.emitTransferUpdate(operation);
 
 		try {
-			const exportRequestStartMs = Date.now();
-			const exportResponse = await this.c.sendTo(
+			const exportRequestStartMs = performance.now();
+			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.ExportPlatformRequest({
+					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId,
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: null,
 				}),
-			) as messages.SimpleResponse & { exportId?: string; error?: string };
-			const exportRequestMs = Date.now() - exportRequestStartMs;
+			)) as messages.SimpleResponse & { exportId?: string; error?: string };
+			const exportRequestMs = performance.now() - exportRequestStartMs;
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				const error = exportResponse?.error || "Export failed";
 				operation.error = error;
 				await this.failOperation(operation, "export_failed", `Export request failed: ${error}`, { error, exportRequestMs });
 				return { success: false, error };
 			}
-			const waitForStoreStartMs = Date.now();
+			const waitForStoreStartMs = performance.now();
 
 			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
-			const stored = await this.orchestrator.waitForStoredExport(canonicalExportId, 60000);
-			const waitForStoredMs = Date.now() - waitForStoreStartMs;
+			operation.exportId = canonicalExportId;
+			operation.sourceExportId = exportResponse.exportId;
+			const stored = await timed("Await artifact storage", "wait", () => this.orchestrator.waitForStoredExport(canonicalExportId, 60000));
+			const waitForStoredMs = performance.now() - waitForStoreStartMs;
 			operation.platformName = stored.platformName || operation.platformName;
 			operation.sourceInstanceId = stored.instanceId;
 			operation.sourceInstanceName = this.platformTree.resolveInstanceName(stored.instanceId);
@@ -457,7 +495,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.artifactSizeBytes = stored.size ?? operation.artifactSizeBytes ?? null;
 			operation.status = "completed";
 			operation.completedAt = Date.now();
-			const durationMs = operation.completedAt - operation.startedAt;
+			const durationMs = this.txLogger.getObservedDuration(operation);
 			this.txLogger.logTransactionEvent(operation.transferId, "export_completed",
 				`Export ready for download: ${stored.exportId}`, {
 					exportId: stored.exportId,
@@ -522,7 +560,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (event.success) {
 			operation.status = "completed";
 			operation.completedAt = Date.now();
-			const durationMs = operation.completedAt - operation.startedAt;
+			const durationMs = this.txLogger.getObservedDuration(operation);
 			this.txLogger.logTransactionEvent(operation.transferId, "import_completed",
 				`Import completed on instance ${operation.targetInstanceId}`, {
 					durationMs,
@@ -934,13 +972,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 		try {
 			const gateways = this.resolveGateways(sourceInstanceId);
-			const response = await this.c.sendTo(
+			const response = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.PushGatewayConfigRequest({
 					gateways,
 					activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
 				}),
-			) as { success?: boolean; error?: string } | undefined;
+			)) as { success?: boolean; error?: string } | undefined;
 			if (!response?.success) {
 				const reason = response?.error || "the instance rejected the gateway config";
 				this.logger.error(`Instance ${sourceInstanceId} did not apply the gateway config: ${reason}`);
@@ -1079,4 +1117,3 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return { instances };
 	}
 }
-

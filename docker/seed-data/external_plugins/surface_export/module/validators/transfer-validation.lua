@@ -5,6 +5,7 @@ local SurfaceCounter = require("modules/surface_export/validators/surface-counte
 local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 
 local TransferValidation = {}
+local Timing = require("modules/surface_export/utils/operation-timing")
 
 local EXACT_EPSILON = 1e-6
 
@@ -100,6 +101,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         ["rocket-silo"] = true,
     }
 
+    Timing.start(options.timing_job_id, "item_census", "execution", "exact_verification")
     local entities = surface.find_entities_filtered({})
     
     local storage_item_counts = {}
@@ -146,8 +148,12 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         storage_item_counts[key] = (storage_item_counts[key] or 0) + count
     end
 
+    Timing.stop(options.timing_job_id, "item_census")
     local strict = options.strict == true
+    Timing.start(options.timing_job_id, "fluid_census", "execution", "exact_verification")
     local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps)
+    Timing.stop(options.timing_job_id, "fluid_census")
+    Timing.start(options.timing_job_id, "item_comparison", "execution", "exact_verification")
 
     
     local item_mismatches = {}
@@ -204,11 +210,16 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         end
     end
 
+    Timing.stop(options.timing_job_id, "item_comparison")
+    if not item_match then Timing.fail(options.timing_job_id, "item_comparison") end
+    Timing.start(options.timing_job_id, "fluid_comparison", "execution", "exact_verification")
     local fluid_mismatches = {}
     local fluid_match, fluid_reconciliation = true, nil
     fluid_match, fluid_mismatches, fluid_reconciliation = validate_fluid_counts(
         expected_verification.fluid_counts or {}, actual_fluid_counts or {}, strict)
 
+    Timing.stop(options.timing_job_id, "fluid_comparison")
+    if not fluid_match then Timing.fail(options.timing_job_id, "fluid_comparison") end
     local mismatch_details = nil
     if not item_match or not fluid_match then
         local details_parts = {}

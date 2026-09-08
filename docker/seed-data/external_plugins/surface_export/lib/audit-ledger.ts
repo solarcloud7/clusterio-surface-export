@@ -32,6 +32,7 @@ type RowInput = {
 		artifactSizeBytes?: number | null;
 		status?: string | null;
 		startedAt?: number | null;
+		observedDurationMs?: number | null;
 		completedAt?: number | null;
 		failedAt?: number | null;
 		error?: string | null;
@@ -67,6 +68,7 @@ export function buildAuditRow(input: RowInput): AuditRow {
 	if (truncated) {
 		row.errorTruncated = true;
 	}
+	if (info.observedDurationMs !== undefined) row.observedDurationMs = info.observedDurationMs;
 	return row;
 }
 

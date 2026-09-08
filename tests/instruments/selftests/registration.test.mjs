@@ -10,6 +10,8 @@ const remoteInterface = path.join(repoRoot, "docker", "seed-data", "external_plu
 	"surface_export", "module", "interfaces", "remote-interface.lua");
 
 const DEDICATED_RUNNERS = {
+	// Needs two RCON callbacks and raw profiler log parsing; the generic single-call runner cannot verify waits.
+	timing: path.join(repoRoot, "tools", "surface-export", "probe-timing.mjs"),
 	fluid_segment_law: path.join(repoRoot, "tests", "instruments", "fluid-segment-law", "run-tests.mjs"),
 	pole_copper_prune: path.join(repoRoot, "tests", "instruments", "pole-copper-prune", "run-tests.mjs"),
 };

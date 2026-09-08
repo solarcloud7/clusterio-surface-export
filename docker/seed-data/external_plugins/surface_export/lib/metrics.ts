@@ -26,27 +26,11 @@ const entitiesTransferredTotal = new lib.Counter(
 	{ labels: ["operation"] },
 );
 
-const exportStallSeconds = new lib.Histogram(
-	"surface_export_export_stall_seconds",
-	"Source-side async export span in seconds (the tick-stall window that can drop a connected player), per operation.",
-	{ labels: ["operation"], buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 40, 60] },
+const exportTicks = new lib.Histogram(
+ "surface_export_export_ticks",
+ "Simulation ticks elapsed during source export; not elapsed seconds or a stall measurement.",
+ { labels: ["operation"], buckets: [0, 1, 5, 10, 25, 50, 100, 500, 1000] },
 );
-
-function exportStallSecondsValue(exportMetrics: unknown): number | null {
-	if (!exportMetrics || typeof exportMetrics !== "object") {
-		return null;
-	}
-	const m = exportMetrics as Record<string, unknown>;
-	const ms = Number(m.instanceAsyncExportMs);
-	if (Number.isFinite(ms) && ms >= 0) {
-		return ms / 1000;
-	}
-	const sec = Number(m.instanceAsyncExportSeconds);
-	if (Number.isFinite(sec) && sec >= 0) {
-		return sec;
-	}
-	return null;
-}
 
 export function recordOperationOutcome(operation: ActiveTransfer | null | undefined): void {
 	if (!operation || operation.metricsRecorded) {
@@ -64,7 +48,7 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 	operationsTotal.labels({ operation: operationLabel, result, failure_stage: failureStage }).inc();
 
 	const endMs = operation.completedAt || operation.failedAt || Date.now();
-	const durationSec = (endMs - operation.startedAt) / 1000;
+	const durationSec = (operation.observedDurationMs ?? (operation.timing?.v === 1 ? NaN : endMs - operation.startedAt)) / 1000;
 	if (Number.isFinite(durationSec) && durationSec >= 0) {
 		operationDurationSeconds.labels({ operation: operationLabel, result, failure_stage: failureStage }).observe(durationSec);
 	}
@@ -74,8 +58,8 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 		entitiesTransferredTotal.labels({ operation: operationLabel }).inc(entitiesCreated);
 	}
 
-	const stallSeconds = exportStallSecondsValue(operation.exportMetrics);
-	if (stallSeconds !== null) {
-		exportStallSeconds.labels({ operation: operationLabel }).observe(stallSeconds);
-	}
+	const ticks = operation.exportMetrics?.instanceAsyncExportTicks;
+ if (typeof ticks === "number" && Number.isFinite(ticks) && ticks >= 0) {
+  exportTicks.labels({ operation: operationLabel }).observe(ticks);
+ }
 }

@@ -479,6 +479,11 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 
 		const existing = this.state.logDetails[transferId] || { events: [] };
+		if ((event.event as JsonObject)?.eventType === "timing_updated") {
+			const timing = (event.event as JsonObject).timing;
+			this.setState({ lastLogRevision: revision, logDetails: { ...this.state.logDetails, [transferId]: { ...existing, summary: { ...existing.summary, timing } } } });
+			return;
+		}
 		const events = [...existing.events];
 		const incoming = (event.event || {}) as LogEvent;
 		const lastEvent = events.length ? events[events.length - 1] : null;

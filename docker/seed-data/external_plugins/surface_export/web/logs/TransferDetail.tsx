@@ -7,6 +7,7 @@ import { formatMs } from "../../shared/utils";
 import { diagnosticReport, downloadJson, duration, evidence, record, route, terminal } from "./evidence";
 import AuditTable, { auditLabel } from "./AuditTable";
 import TimingTable from "./TimingTable";
+import type { OperationTiming } from "../../shared/timing";
 
 export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false }: {
 	row: TransferSummary; detail?: LogDetail; loading?: boolean; error?: string; onRetry?: () => void;
@@ -21,7 +22,7 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 	}, [row.status]);
 	const model = useMemo(() => evidence(row, detail), [row, detail]);
 	const flow = useMemo(() => buildGanttRows(model.retained ? detail?.events || [] : [], model.summary as JsonObject | null), [detail, model.summary, model.retained]);
-	const elapsed = duration(row, now);
+	const elapsed = model.summary?.totalDurationMs ?? duration(row, now);
 	const failure = model.validation.failedStage;
 	const reason = row.error || model.summary?.error;
 	const canDownload = !preview && !!plugin && !!row.downloadable && !!row.exportId;
@@ -50,7 +51,7 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 		})}</div>
 		<p className="se-muted">Each recorded item and fluid key is available for inspection. Audit verdicts come from validation; equal totals alone do not prove a match.</p>
 		<div className="se-section-heading"><h3>Recorded stage timings</h3><Button type="link" onClick={() => setActiveTab("timing")}>View every recorded step</Button></div>
-		<TimingTable rows={flow.rows} attribution={flow.attribution} compact />
+		<TimingTable timing={model.summary?.timing as OperationTiming | undefined} rows={flow.rows} attribution={flow.attribution} compact />
 	</>;
 	const metrics = buildOperationCountRows(record(model.summary?.export), record(model.summary?.import));
 	const technical = <>
@@ -91,7 +92,7 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 			{!detail && <Empty description="Detailed evidence is unavailable" />}
 			<Tabs activeKey={activeTab} onChange={setActiveTab} items={[
 				{ key: "overview", label: "Overview", children: overview },
-				{ key: "timing", label: "Timing", children: <TimingTable rows={flow.rows} attribution={flow.attribution} /> },
+				{ key: "timing", label: "Timing", children: <><p className="se-muted">{String(detail?.summary?.timingBoundary || "Historical controller observation; precise boundaries may be unavailable.")}</p><TimingTable timing={model.summary?.timing as OperationTiming | undefined} rows={flow.rows} attribution={flow.attribution} /></> },
 				{ key: "items", label: "Items", children: <AuditTable model={model} kind="items" /> },
 				{ key: "fluids", label: "Fluids", children: <AuditTable model={model} kind="fluids" /> },
 				{ key: "technical", label: "Technical details", children: technical },

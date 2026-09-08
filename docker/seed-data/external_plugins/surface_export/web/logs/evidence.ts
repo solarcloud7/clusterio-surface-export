@@ -25,6 +25,7 @@ export function route(row: TransferSummary): string {
 	return `${instance(row.sourceInstanceName, row.sourceInstanceId)} → ${instance(row.targetInstanceName, row.targetInstanceId)}`;
 }
 export function duration(row: TransferSummary, now: number): number | null {
+	if (row.observedDurationMs !== undefined) return row.observedDurationMs;
 	const end = row.completedAt ?? row.failedAt ?? (terminal(row.status) ? row.lastEventAt : now);
 	return row.startedAt != null && end != null ? Math.max(0, end - row.startedAt) : null;
 }

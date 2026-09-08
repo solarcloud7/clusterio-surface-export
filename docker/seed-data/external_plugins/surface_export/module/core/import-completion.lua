@@ -1,3 +1,4 @@
+local Timing = require("modules/surface_export/utils/operation-timing")
 local Deserializer = require("modules/surface_export/core/deserializer")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
@@ -69,7 +70,7 @@ local function subtract_fluids_by_name(counts, subtractions)
 	return adjusted
 end
 
-local function emit_debug_import_result(job, validation_result, duration_seconds)
+local function emit_debug_import_result(job, validation_result, duration_ticks)
 	if not job.transfer_id then return end
 	local ok, err = pcall(function()
 		DebugExport.export_import_result({
@@ -77,8 +78,8 @@ local function emit_debug_import_result(job, validation_result, duration_seconds
 			transfer_id = job.transfer_id,
 			validation_success = validation_result and validation_result.success == true,
 			validation_result = validation_result,
+			duration_ticks = duration_ticks,
 			total_entities = job.total_entities,
-			duration_seconds = duration_seconds
 		}, job.platform_name)
 	end)
 	if not ok then
@@ -318,13 +319,14 @@ function ImportCompletion.run_phase1(job)
 	job.metrics.proxies_linked = state_result and state_result.proxies_linked or 0
 	job.created_logistic_groups = state_result and state_result.created_logistic_groups or nil
 
+	Timing.start(job.job_id, "deferred_beacon_wait", "wait")
 	job.pending_beacon_tick = game.tick + 1
 	log(string.format("[Import] Phase 1 complete (tick %d). Inventory restore scheduled for tick %d", game.tick, job.pending_beacon_tick))
 end
 
 function ImportCompletion.run_phase2(job)
+	Timing.stop(job.job_id, "deferred_beacon_wait")
 	local duration_ticks = game.tick - job.started_tick
-	local duration_seconds = duration_ticks / 60
 	job.metrics = job.metrics or {}
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
@@ -427,8 +429,8 @@ function ImportCompletion.run_phase2(job)
 	log("[Import] Post-processing complete")
 
 	local message = string.format(
-		"[Import Complete] %s (%d entities in %.1fs)",
-		job.platform_name, job.total_entities, duration_seconds
+		"[Import Complete] %s (%d entities; %d ticks elapsed)",
+		job.platform_name, job.total_entities, duration_ticks
 	)
 	game.print(message, {0, 1, 0})
 	log(message)
@@ -437,6 +439,7 @@ function ImportCompletion.run_phase2(job)
 		rcon.print(string.format("IMPORT_COMPLETE:%s", job.platform_name))
 	end
 
+	Timing.start(job.job_id, "verdict_handling", "inclusive")
 	job.metrics.validation_started_tick = game.tick
 
 	local validation_result = nil
@@ -445,6 +448,7 @@ function ImportCompletion.run_phase2(job)
 	local has_verification = has_platform_data and job.platform_data.verification ~= nil
 
 	if is_transfer and has_verification then
+		Timing.start(job.job_id, "verification_preparation")
 
 		local adjusted_verification = {
 			item_counts = copy_counts(job.platform_data.verification.item_counts),
@@ -553,11 +557,13 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 
+		Timing.stop(job.job_id, "verification_preparation")
+		Timing.start(job.job_id, "exact_verification")
 		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,
 			adjusted_verification,
-			{ strict = true, segment_temps = fluids_result and fluids_result.segment_temps }
+			{ strict = true, segment_temps = fluids_result and fluids_result.segment_temps, timing_job_id = job.job_id }
 		)
 
 		local _cfg = storage.surface_export_config
@@ -597,6 +603,8 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
+		Timing.stop(job.job_id, "exact_verification")
+		if not success then Timing.fail(job.job_id, "exact_verification") end
 
 		job.metrics.validation_done_tick = game.tick
 		validation_result = result
@@ -624,6 +632,7 @@ function ImportCompletion.run_phase2(job)
 		if job.transfer_id and job.target_surface and job.target_surface.valid then
 			local debug_success, debug_err = pcall(function()
 				if DebugExport.is_enabled() then
+					Timing.start(job.job_id, "diagnostic_capture")
 					local scanned_entities, scanned_fluid_segments = scan_surface_with_registry(job.target_surface)
 					local destination_schedule = nil
 					if job.target_platform and job.target_platform.valid then
@@ -646,7 +655,8 @@ function ImportCompletion.run_phase2(job)
 							schedule = destination_schedule,
 						},
 					}
-					DebugExport.export_destination_platform(destination_data, job.platform_name)
+					Timing.stop(job.job_id, "diagnostic_capture")
+					Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_destination_platform, destination_data, job.platform_name)
 				else
 					log("[DebugExport] Skipping destination platform export: debug_mode is not enabled")
 				end
@@ -665,7 +675,10 @@ function ImportCompletion.run_phase2(job)
 				result.mismatchDetails or "Unknown error"
 			), {1, 0, 0})
 
+			Timing.start(job.job_id, "failure_diagnostics")
 			local black_box_ok, black_box_result = pcall(bank_failure_black_box, job, result)
+			Timing.stop(job.job_id, "failure_diagnostics")
+			if not black_box_ok or black_box_result ~= true then Timing.fail(job.job_id, "failure_diagnostics") end
 			if not black_box_ok or black_box_result ~= true then
 				log(string.format("[Validation] ERROR: failed to bank failure black box: %s — "
 					.. "discarding the destination anyway (observability never gates the contract; "
@@ -683,13 +696,19 @@ function ImportCompletion.run_phase2(job)
 				result.destinationPreserved = true
 				log("[Validation] Failed destination preserved paused by one-shot debug configuration; flag consumed")
 			else
+				Timing.start(job.job_id, "passenger_evacuation")
 				local evacuated, evacuation_err = pcall(Gateway.evacuate_passengers, job.target_platform)
+				Timing.stop(job.job_id, "passenger_evacuation")
+				if not evacuated then Timing.fail(job.job_id, "passenger_evacuation") end
 				if not evacuated then
 					log(string.format("[Validation] WARNING: passenger evacuation failed (%s) — proceeding "
 						.. "with discard; the engine returns players to a planet on hub loss natively",
 						tostring(evacuation_err)))
 				end
+				Timing.start(job.job_id, "destination_recovery")
 				local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
+				Timing.stop(job.job_id, "destination_recovery")
+				if not delete_ok or delete_result ~= true then Timing.fail(job.job_id, "destination_recovery") end
 				if delete_ok and delete_result == true then
 					log("[Validation] Failed destination discarded after black-box capture")
 					sweep_created_logistic_groups(job)
@@ -804,7 +823,6 @@ function ImportCompletion.run_phase2(job)
 		platform_name = job.platform_name,
 		total_entities = job.total_entities,
 		duration_ticks = duration_ticks,
-		duration_seconds = duration_seconds,
 		progress = 100,
 		requester = job.requester,
 		validation = validation_result,
@@ -815,7 +833,7 @@ function ImportCompletion.run_phase2(job)
 		local m = job.metrics
 		local t0 = m.delivery_started_tick or job.started_tick or 0
 		local phase_spans = PhaseRecorder.build_spans(job, t0)
-		emit_debug_import_result(job, validation_result, duration_seconds)
+		emit_debug_import_result(job, validation_result, duration_ticks)
 
 		local event_payload = {
 			job_id = job.job_id,
@@ -850,7 +868,7 @@ function ImportCompletion.run_phase2(job)
 				proxies_linked = job.metrics.proxies_linked or 0,
 				total_items = job.total_items or 0,
 				total_fluids = job.total_fluids or 0,
-				phase_spans = phase_spans,
+				phase_ticks = phase_spans,
 			}
 		}
 		event_payload.success = validation_result and validation_result.success == true
@@ -883,12 +901,18 @@ function ImportCompletion.run_phase2(job)
 		clusterio_api.send_json("surface_export_import_complete", event_payload)
 	end
 
+	Timing.stop(job.job_id, "verdict_handling")
+	if validation_result and validation_result.success == false then
+		Timing.fail(job.job_id, "verdict_handling")
+		if validation_result.failedStage == "belts" then Timing.fail(job.job_id, "belts") end
+	end
+	Timing.finish(job.job_id, validation_result and validation_result.success == false and "failed" or "completed")
 	local perf = PhaseProfiler.get(job.job_id)
 	if perf then
 		local function phase_ms_display(name)
 			local ticks = PhaseRecorder.phase_ticks(job, name)
 			if not ticks then return "n/a" end
-			return string.format("%dms", math.floor(ticks * 16.67))
+			return string.format("%d ticks elapsed", ticks)
 		end
 		game.print({"", "[Perf] Import '", job.platform_name, "' (", job.total_entities, " entities)"})
 		game.print({"", "  Setup:         ", perf.queue_setup})

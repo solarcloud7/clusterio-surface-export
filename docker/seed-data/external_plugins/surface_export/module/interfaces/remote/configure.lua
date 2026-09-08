@@ -19,6 +19,9 @@ local function configure(config)
   if config.max_export_cache_size then
     AsyncProcessor.set_max_export_cache_size(config.max_export_cache_size)
   end
+  if config.profile_batches ~= nil then
+    storage.surface_export_config.profile_batches = config.profile_batches == true
+  end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
   end

@@ -3,8 +3,10 @@ import { Alert, Button, Modal, Select } from "antd";
 import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
 import recorded from "./recorded-fixtures";
 import TransferDetail from "./TransferDetail";
+import measuredTiming from "./timing-fixture";
 
 const options = [
+	["profiling", "Recorded profiling sample"], ["tick-only", "Ticks with missing profiler output"],
 	["success", "Recorded success"], ["failure", "Recorded failure and rollback"],
 	["unconfirmed", "Failure, recovery unknown"], ["cleanup", "Cleanup needs attention"],
 	["pending", "Validation pending"], ["missing", "Missing audit evidence"],
@@ -18,6 +20,19 @@ function scenario(name: string): { row: TransferSummary; detail: LogDetail } {
 	const { row, detail } = data;
 	const summary = detail.summary!;
 	const validation = summary.validation as JsonObject;
+	if (name === "profiling" || name === "tick-only") {
+		row.platformName = "Timing sample"; row.observedDurationMs = name === "profiling" ? 1428.17746 : null;
+		row.startedAt = summary.startedAt = 1788729734413;
+		row.completedAt = summary.completedAt = name === "profiling" ? 1788729735841 : null;
+		detail.events = []; summary.validation = null; summary.export = null; summary.import = null;
+		summary.totalDurationMs = row.observedDurationMs; summary.totalDurationStr = null;
+		summary.timing = structuredClone(measuredTiming) as unknown as JsonObject;
+		summary.timingBoundary = "Recorded local-clock measurements. Audit evidence is omitted from this timing-only sample.";
+		if (name === "tick-only") summary.timing = { v: 1, records: [{
+			...measuredTiming.records.find(record => record.owner === "source-lua" && record.stage === "entities")!,
+			startMs: null, endMs: null, executionMs: null, status: "interrupted", error: "Profiler output unavailable",
+		}] } as unknown as JsonObject;
+	}
 	if (name === "unconfirmed") detail.events = detail.events.filter(event => !String(event.eventType).startsWith("rollback_"));
 	if (name === "cleanup") { row.status = "cleanup_failed"; row.error = "Destination discard did not complete"; }
 	if (name === "pending") {

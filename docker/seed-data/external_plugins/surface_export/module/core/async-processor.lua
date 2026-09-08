@@ -1,3 +1,4 @@
+local Timing = require("modules/surface_export/utils/operation-timing")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local ImportSession = require("modules/surface_export/core/import-session")
 local ExportCache = require("modules/surface_export/utils/export-cache")
@@ -135,11 +136,11 @@ function AsyncProcessor.process_tick()
 		for _, entry in ipairs(job_list) do
 			local job = entry.job
 			local elapsed = game.tick - (job.started_tick or game.tick)
-			log(string.format("[Process Tick] job=%s, type=%s, platform='%s', progress=%d/%d (%d%%), elapsed=%d ticks (%.1fs)",
+			log(string.format("[Process Tick] job=%s, type=%s, platform='%s', progress=%d/%d (%d%%), elapsed=%d ticks",
 				entry.id, job.type, job.platform_name or "?",
 				job.current_index or 0, job.total_entities or 0,
 				calculate_progress(job),
-				elapsed, elapsed / 60))
+				elapsed))
 		end
 	end
 
@@ -152,7 +153,7 @@ function AsyncProcessor.process_tick()
 		local job = entry.job
 
 		if job.type == "export" then
-			local done = ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
+			local done = Timing.scope(job.job_id, "entities", ExportPipeline.process_batch, job, get_batch_size, should_show_progress)
 			if done then
 				ExportPipeline.complete(job)
 			end
