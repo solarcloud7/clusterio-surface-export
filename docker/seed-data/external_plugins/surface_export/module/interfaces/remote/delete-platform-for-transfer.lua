@@ -3,8 +3,9 @@ local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 
-local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id)
+local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   if expected_job_id == "" then return "ERROR:empty source job identity" end
   local force = game.forces[force_name]
   if not force then
@@ -22,6 +23,12 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   local id_ok, id_reason = SurfaceLock.transfer_delete_identity_ok(lock, platform and platform.surface, expected_job_id)
   if not id_ok then
     return "ERROR:" .. tostring(id_reason) .. " — refusing to delete platforms[" .. tostring(platform_index) .. "]"
+  end
+
+  if expected_uid then
+    if not SourceRecovery.matches(platform, expected_uid) then return "ERROR:source retirement identity changed" end
+    local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
+    if not committed then return "ERROR:" .. tostring(commit_error) end
   end
 
   -- Retain identity and the frozen source until deletion actually succeeds.
@@ -56,11 +63,11 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   return "ERROR:delete_platform could not remove '" .. tostring(platform_name) .. "' (no valid surface)"
 end
 
-return function(platform_index, platform_name, force_name, expected_job_id)
+return function(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   storage.surface_export_timing_sequence = (storage.surface_export_timing_sequence or 0) + 1
  local id = "recovery_" .. storage.surface_export_timing_sequence
  Timing.begin(id, "recovery-lua", nil, expected_job_id)
- local result = table.pack(Timing.scope(id, "source_deletion", delete_platform_for_transfer, platform_index, platform_name, force_name, expected_job_id))
+ local result = table.pack(Timing.scope(id, "source_deletion", delete_platform_for_transfer, platform_index, platform_name, force_name, expected_job_id, expected_uid))
  local failed = result[1] == false or (type(result[1]) == "string" and result[1]:sub(1, 6) == "ERROR:")
  Timing.finish(id, failed and "failed" or "completed")
  return table.unpack(result, 1, result.n)

@@ -53,12 +53,14 @@ export async function recoveryCase(lab,report,save) {
     if(report.case==="crash-source-before-save") {
       report.interruption={kind:"SIGKILL source host",checkpoint};save();
       await lab.load(1,checkpoint,{crash:true});
-      // Observe beyond one unchanged 30-second recovery interval.
-      await sleep(35_000);
-      report.outcome=summary(lab,report.transferId);
+      report.samples.push(sample(lab,name));save();
+      report.outcome=await terminal(lab,report.transferId);
     } else {
       report.interruption={kind:"controller SIGKILL after held successful reply"};save();
       lab.mutateContainer("kill",lab.controller,["--signal","KILL"]);
+      if(report.case==="aged-recovery-intent") {
+        report.agedIntent=lab.ageRecoveryIntent(report.transferId);save();
+      }
       lab.mutateContainer("start",lab.controller);
       await lab.ready();
       report.outcome=await terminal(lab,report.transferId);

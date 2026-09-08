@@ -39,7 +39,7 @@ export function evaluateCopies(before, samples, minimumSamples=2) {
 export function analyze(report) {
   assert.equal(report.schemaVersion,1);
   assert.ok(!report.error,"report contains a harness failure");
-  assert.ok(["performance","lost-source-reply","lost-destination-reply","crash-source-before-save","restore-old-source"].includes(report.case),"unknown acceptance case");
+  assert.ok(["performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="performance") {
     for(const m of report.measurements||[]) {
@@ -85,17 +85,31 @@ export function analyze(report) {
   assert.equal(imports.length,1,"must observe exactly one production import request");
   const result=evaluateCopies(report.before,report.samples);
   if(result.verdict==="STOP") return result;
-  if(report.case.startsWith("lost-")) {
+  const crashLiveness=report.case==="crash-source-before-save"&&report.contract?.schemaVersion>=2;
+  if(crashLiveness) {
+    const last=report.samples.at(-1);
+    if(report.outcome?.status!=="completed"||last.source.present||!last.destination.usable)
+      return {verdict:"STOP",violations:["source crash recovery did not complete with one usable destination"]};
+    assert.ok(report.events[1].filter(e=>e.kind==="call"&&e.action==="source"&&e.id.includes(report.name)).length>=2,
+      "source crash recovery did not retry the real deletion");
+  }
+  if(report.case==="aged-recovery-intent") {
+    assert.equal(report.agedIntent?.transferId,report.transferId,"wrong aged recovery intent");
+    assert.equal(report.agedIntent.changedField,"startedAt");
+    assert.equal(report.agedIntent.observedAt-report.agedIntent.after,24*60*60*1000,"one-day age injection required");
+  }
+  if(report.case.startsWith("lost-")||report.case==="aged-recovery-intent") {
     const last=report.samples.at(-1);
     assert.ok(report.outcome?.status,"recovery outcome unavailable");
     if(report.outcome.status!=="completed") return {...result,verdict:"STOP",violations:["recovery did not complete within the observation window"]};
     assert.equal(last.source.present,false); assert.equal(last.destination.usable,true);
-    const action=report.case==="lost-source-reply"?"source":"destination";
+    const action=report.case==="lost-destination-reply"?"destination":"source";
     const host=action==="source"?1:2;
     assert.ok(report.events[host].filter(e=>e.kind==="call"&&e.action===action&&e.id.includes(report.name)
       &&(action!=="destination"||e.gate==="go_live")).length>=2,"real recovery retry not observed");
   }
-  return {...result,reason:report.case==="crash-source-before-save"
+  return {...result,reason:crashLiveness ? "Source crash recovered with exact cargo and one usable destination"
+    : report.case==="crash-source-before-save"
     ? "Sampled safety invariant preserved; inspect outcome separately for recovery liveness"
     : report.case==="restore-old-source" ? "Sampled safety invariant survived older source restore"
       : "Lost reply recovered with exact cargo and one usable destination"};

@@ -21,16 +21,19 @@ function DebugExport.is_enabled()
   return enabled
 end
 
-function DebugExport.write_json(filename, data, description)
+function DebugExport.write_json(filename, data, description, encoded_json)
   if not DebugExport.is_enabled() then
     return false
   end
   
   local full_filename = "debug_" .. filename
   
-  local success, json_data = pcall(function()
-    return Util.encode_json_compat(data)
-  end)
+  local success, json_data = true, encoded_json
+  if encoded_json == nil then
+    success, json_data = pcall(function()
+      return Util.encode_json_compat(data)
+    end)
+  end
   
   if not success then
     log(string.format("[DebugExport] ERROR: Failed to encode JSON for %s: %s", full_filename, tostring(json_data)))
@@ -76,7 +79,7 @@ function DebugExport.write_failure_black_box(filename, data)
   return full_filename
 end
 
-function DebugExport.export_source_platform(platform_data, platform_name)
+function DebugExport.export_source_platform(platform_data, platform_name, encoded_json)
   if not DebugExport.is_enabled() then
     log(string.format("[DebugExport] Skipping source platform export for '%s': debug mode disabled", tostring(platform_name)))
     return false
@@ -85,7 +88,7 @@ function DebugExport.export_source_platform(platform_data, platform_name)
   local safe_name = string.gsub(platform_name or "unknown", "[^%w_-]", "_")
   local filename = string.format("source_platform_%s_%d.json", safe_name, game.tick)
   
-  return DebugExport.write_json(filename, platform_data, "Source platform export: " .. (platform_name or "unknown"))
+  return DebugExport.write_json(filename, platform_data, "Source platform export: " .. (platform_name or "unknown"), encoded_json)
 end
 
 function DebugExport.export_census_pass(verdict, platform_name)

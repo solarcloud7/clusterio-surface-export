@@ -143,7 +143,7 @@ test("process_batch records paired reads in the SAME loop as serialize_entity, b
 	const body = functionBody(
 		exportPipelineSource(),
 		"function ExportPipeline.process_batch(",
-		"function ExportPipeline.complete(",
+		"local function prepare_completion(",
 	);
 	assert.match(body, /EntityScanner\.serialize_entity\s*\(\s*entity\s*\)/,
 		"process_batch must serialize each entity");
@@ -156,8 +156,8 @@ test("process_batch records paired reads in the SAME loop as serialize_entity, b
 test("the atomic belt scan pairs each belt AFTER its serialized items are patched (same tick)", () => {
 	const body = functionBody(
 		exportPipelineSource(),
-		"function ExportPipeline.complete(",
-		"function ExportPipeline.abort_transfer_on_census_mismatch(",
+		"local function prepare_completion(",
+		"local function publish_completion(",
 	);
 	assert.match(
 		body,
@@ -197,8 +197,8 @@ test("the census mismatch bundle is always-on (NOT debug-gated) and the abort pr
 test("ground items are intentionally NOT census-paired (documented deviation from task item 4)", () => {
 	const body = functionBody(
 		exportPipelineSource(),
-		"function ExportPipeline.complete(",
-		"function ExportPipeline.abort_transfer_on_census_mismatch(",
+		"local function prepare_completion(",
+		"local function publish_completion(",
 	);
 	assert.match(body, /table\.insert\(job\.export_data\.entities, ground_item\)/,
 		"the ground-item scan must still append ground items to the payload");

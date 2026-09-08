@@ -364,7 +364,8 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
         return false, "Platform surface not valid"
     end
 
-    if LatchRearm.pending_on_surface(surface.index) then
+    local startup = lock_opts and lock_opts.kind == "startup"
+    if not startup and LatchRearm.pending_on_surface(surface.index) then
         return false, "Circuit memory restoration is still pending on this platform"
     end
 
@@ -405,7 +406,10 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     platform.hidden = true
 
     local hub = platform.hub
-    local descending, ascending, items = complete_cargo_pods(surface, hub)
+    local descending, ascending, items = 0, 0, 0
+    if not startup then
+        descending, ascending, items = complete_cargo_pods(surface, hub)
+    end
     
     if descending > 0 or ascending > 0 then
         game.print(string.format("[Lock] Completed %d incoming (%d items) and %d outgoing cargo pods", 
@@ -437,7 +441,10 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     return true, nil
 end
 
-function SurfaceLock.unlock_platform(platform_index, expected_name)
+function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_bootstrap)
+	if storage.source_recovery_ready == false and not recovery_bootstrap then
+		return false, "Startup recovery has not authorized platform use"
+	end
     if not storage.locked_platforms then
         return false, "No locked platforms"
     end

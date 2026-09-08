@@ -55,8 +55,8 @@ test platforms after cleanup. This verifies admission behavior, not a throughput
 [`AsyncProcessor.process_tick()`](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)
 services pending mining-progress restoration, latch rearming, gateway staging, and
 import-session cleanup, then sorts jobs by `started_tick`. It visits at most
-`max_concurrent_jobs` entries sequentially. Export completion still runs in the final
-entity callback. Import completion starts on the next eligible tick.
+`max_concurrent_jobs` entries sequentially. Export and import completion start on the
+next eligible tick after the final entity batch.
 
 The limit counts job visits per tick, not admitted jobs, threads, or milliseconds.
 An import waiting for its deferred phase still occupies a visit. Earlier jobs can
@@ -71,6 +71,14 @@ and batch size 50, a tick can examine up to 150 entity entries plus other work.
 Export batches skip belt-item capture and retain belt references. Completion reads
 their contents in one synchronous pass without simulation updates between those
 reads. That consistency boundary can be expensive and is not limited by `batch_size`.
+
+Export capture and cargo checks remain in one callback. JSON serialization runs on
+the next visit; compression, cache output and publication follow on another visit.
+Source diagnostic files reuse the serialized JSON bytes instead of encoding the same
+payload again. Encoding itself remains an indivisible synchronous operation. The Lua
+regression `tests/lua/export-phase-yields.lua` checks these callback boundaries and
+the identical diagnostic bytes; live callback measurements are recorded in the manual
+Docker acceptance notes. This does not bound export setup or a large connected belt network.
 
 Import visits yield after tiles, beacon pre-placement, the final entity batch, hub
 contents, the final belt batch, inventories, and held items. Each next phase starts

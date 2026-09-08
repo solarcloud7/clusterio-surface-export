@@ -19,6 +19,7 @@ for _, committed in ipairs({false, true}) do
         local env = setmetatable({storage = {locked_platforms = {[3] = lock}},
             game = {forces = {player = {platforms = {[3] = platform}}}, print = noop}}, {__index = _G})
         local modules = {
+            ["core/source-recovery"] = {matches = function() return true end},
             ["utils/operation-timing"] = {begin = noop, finish = noop, scope = function(_, _, fn, ...) return fn(...) end},
             ["core/gateway"] = {evacuate_passengers = noop},
             ["utils/game-utils"] = {pcall_warn = function(_, fn) return fn() end, delete_platform = function()

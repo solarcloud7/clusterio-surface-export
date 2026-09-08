@@ -189,6 +189,19 @@ export class DockerLab {
       'const f=require("fs"),p="/clusterio/data/manual-events.jsonl";if(f.existsSync(p))process.stdout.write(f.readFileSync(p))']);
     return raw.trim()?raw.trim().split("\n").map(line=>JSON.parse(line)):[];
   }
+  ageRecoveryIntent(transferId) {
+    this.assertOwned("container",this.controller);
+    const [controller]=JSON.parse(this.docker(["container","inspect",this.controller]));
+    assert.equal(controller.State.Running,false,"controller must be stopped before fault injection");
+    const volume=`${this.run}-controller-data`;
+    this.assertOwned("volume",volume);
+    const name=`${this.run}-age-intent`;
+    this.containers.push(name);
+    const raw=this.docker(["run","--name",name,"--label",`${LABEL}=${this.run}`,"--network","none",
+      "-v",`${volume}:/data`,"-v",`${join(ROOT,"tests/manual/transfer-reliability/age-intent.mjs")}:/age-intent.mjs:ro`,
+      "node:24-bookworm-slim","node","/age-intent.mjs",transferId,this.run]);
+    return JSON.parse(raw);
+  }
   captureLogs(name,execute=execFileSync) {
     const limit=1048576;let output,truncated=false;
     try {output=execute("docker",["logs","--tail","1500",name],{timeout:30_000,maxBuffer:limit,stdio:["pipe","pipe","pipe"]});}

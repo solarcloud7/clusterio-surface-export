@@ -36,8 +36,7 @@ type GatewayLinkUpdate = {
 	sourceInstanceId: number;
 	gateways: Array<{ gatewayName: string; targets: messages.GatewayLink[] }>;
 };
-export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
-export const SOURCE_COMMIT_MARKER_RETENTION_MS = PENDING_TRANSFER_INTENT_RETENTION_MS * 2;
+export const SOURCE_COMMIT_MARKER_RETENTION_MS = 30 * 60 * 1000;
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -177,7 +176,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.logger.warn(`${this.pendingTransfers.size} pending transfer(s); recovery requires a validated destination hold and matching source identity or deletion receipt.`);
 		}
 		this.recoveryTimer = setInterval(() => {
-			void this.prunePendingTransfers().then(() => this.orchestrator.recoverPendingTransfers()).catch(error => {
+			void this.orchestrator.recoverPendingTransfers().catch(error => {
 				this.logger.error(`Transfer recovery failed: ${getErrorMessage(error)}`);
 			});
 		}, 30_000);
@@ -854,7 +853,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					}
 				}
 			}
-			await this.prunePendingTransfers();
 			if (this.pendingTransfers.size > 0) {
 				this.logger.info(`Loaded ${this.pendingTransfers.size} pending transfer intent(s) from disk`);
 			}
@@ -881,30 +879,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	persistPendingTransfer(intent: messages.PendingTransferIntent): void {
-		this.prunePendingTransfersInMemory();
+		// Unresolved recovery authority is not log retention. Only explicit resolution removes it.
 		this.pendingTransfers.set(intent.transferId, intent);
 		void this.persistPendingTransfers();
-	}
-
-	async prunePendingTransfers(now = Date.now()): Promise<number> {
-		const pruned = this.prunePendingTransfersInMemory(now);
-		if (pruned > 0) {
-			this.logger.info(`Pruned ${pruned} stale pending transfer intent(s); Phase 1 recovery is source-side TTL unlock`);
-			await this.persistPendingTransfers();
-		}
-		return pruned;
-	}
-
-	private prunePendingTransfersInMemory(now = Date.now()): number {
-		let pruned = 0;
-		for (const [transferId, intent] of this.pendingTransfers) {
-			const startedAt = Number(intent.startedAt);
-			if (!Number.isFinite(startedAt) || now - startedAt > PENDING_TRANSFER_INTENT_RETENTION_MS) {
-				this.pendingTransfers.delete(transferId);
-				pruned++;
-			}
-		}
-		return pruned;
 	}
 
 	removePendingTransfer(transferId: string): void {

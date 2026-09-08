@@ -249,7 +249,7 @@ test("#106: validation fails AND source unlock fails → status is plain 'failed
 		+ "leftover-platform status");
 	assert.match(String(transfer.error), /unlock failed: source offline/,
 		"the unlock failure still rides in the error text");
-	assert.equal(calls.pendingRemoved, undefined, "the recovery intent must be KEPT until bounded retention pruning");
+	assert.equal(calls.pendingRemoved, undefined, "the recovery intent must be KEPT until explicit resolution");
 });
 
 test("a failed DESTINATION discard is cleanup_failed — a platform was left behind", async () => {

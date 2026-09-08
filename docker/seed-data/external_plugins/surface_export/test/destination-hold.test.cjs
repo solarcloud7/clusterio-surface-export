@@ -119,7 +119,7 @@ test("surface lock cargo pod completion preserves descending overflow via recove
 });
 test("unlock_platform defers not-live ownership to an active destination hold", () => {
 	const lock = read("module/utils/surface-lock.lua");
-	const unlockAt = lock.indexOf("function SurfaceLock.unlock_platform(platform_index, expected_name)");
+	const unlockAt = lock.indexOf("function SurfaceLock.unlock_platform(platform_index, expected_name,");
 	const identityAt = lock.indexOf("Platform index reused since lock", unlockAt);
 	const holdCheckAt = lock.indexOf("SurfaceLock.destination_hold_owns_surface", unlockAt);
 	const restoreAt = lock.indexOf("local restored = unfreeze_entities", unlockAt);
