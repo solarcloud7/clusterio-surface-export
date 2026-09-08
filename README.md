@@ -64,7 +64,7 @@ Readiness review: 2026-09-08. These are remaining acceptance gates, not guarante
 
 | Priority | Work | Why it matters / acceptance evidence | Effort |
 |---|---|---|---|
-| Blocking | Complete and fault-test transfer commit/recovery ordering | Destination activation currently precedes the source-delete acknowledgement. Prove the intended no-duplicate/no-loss behavior across interrupted commits, lost replies, restarts, and source cleanup failure. [Current protocol and pending work](docs/TRANSFER_2PC.md). | Large |
+| Blocking | Establish crash durability and backup reconciliation | Destination activation now follows acknowledged source deletion; refusal, replay and controller restart fixtures pass. Prove recovery through abrupt process loss and older-save restoration, including expired intents and receipts. [Current protocol and pending work](docs/TRANSFER_2PC.md). | Large |
 | Blocking | Define a production deployment profile | Compose currently mounts writable source, patches static caching for development, exposes HTTP, and seeds debug-enabled public instances. Define immutable artifacts, intended exposure/authentication, and diagnostic defaults. | Medium |
 | Blocking | Exercise backup and restore | Restore controller state, artifacts, tokens, and paired instance saves after a simulated loss; document the recovery point and reconcile in-flight transfers. Local pre-deploy saves alone do not establish this. | Medium |
 | Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
