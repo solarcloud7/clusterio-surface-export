@@ -58,6 +58,10 @@ lua tests/lua/import-phase-yields.lua
 
 Run build/deploy/browser workflows sequentially; they share a checkout lock. Live suites can transfer or reset fixtures, so use their documented prerequisites. See [tests](tests/README.md), [testing contracts](docs/testing.md), and [CI](docs/CI_CD.md).
 
+For manually triggered, automated reply-loss, crash, save-rollback and callback-cost experiments,
+run `npm run test:manual:transfers -- --list`. The [manual Docker lab](tests/manual/transfer-reliability/README.md)
+creates a disposable cluster and preserves the live development cluster. These cases do not run in ordinary CI.
+
 ## Before production
 
 Readiness review: 2026-09-08. These are remaining acceptance gates, not guarantees supplied by the existing green tests.

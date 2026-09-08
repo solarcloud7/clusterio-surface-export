@@ -69,6 +69,7 @@ jobs:
           lua5.2 tests/lua/source-delete-gate.lua
           lua5.2 tests/lua/destination-transfer-gate.lua
           lua5.2 tests/lua/callback-profiler.lua
+          lua5.2 tests/manual/transfer-reliability/performance.test.lua
           lua5.2 tests/lua/debug-destination-snapshot.lua
 
   # ===========================================================================

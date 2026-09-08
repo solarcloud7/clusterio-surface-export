@@ -81,6 +81,15 @@ verifies automatic completion of the same transfer, including after controller r
 Receipt replay leaves cargo unchanged. A separate graceful Factorio reload preserved the
 hold and source lock. These are bounded observations, not abrupt-crash durability evidence.
 
+The opt-in [manual Docker lab](../tests/manual/transfer-reliability/README.md) now exercises
+accepted actions whose replies are withheld, followed by a real controller kill/restart.
+Both deletion and release cases recovered with exact physical cargo and one import request.
+Killing the source host before its receipt was saved preserved sampled safety after reload,
+but left the destination held and the operation `cleanup_failed`; automatic recovery did not finish.
+Restoring only an earlier source save **after completion reproduced two usable copies**.
+Backup reconciliation therefore remains a demonstrated production blocker, not merely an
+untested precaution. The manual lab retains the negative evidence and removes its disposable worlds.
+
 The same suite tests empty and populated hubs. Import setup removes generated starter
 cargo before restoring the payload, including payloads that omit empty inventories.
 
