@@ -205,10 +205,18 @@ export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }
 
 export function preflightState(host) {
 	return lua(host, `local function n(t) return table_size(t or {}) end;` +
+		`local evidence={}; for id,t in pairs(storage.committed_source_transfer_tombstones or {}) do ` +
+		`t=type(t)=='table' and t or {}; ` +
+		`local valid=t.transfer_id==id and type(t.surface_index)=='number' and t.surface_index>0 ` +
+		`and type(t.platform_index)=='number' and t.platform_index>0 and type(t.force_name)=='string'; ` +
+		`local s=valid and game.surfaces[t.surface_index]; local f=valid and game.forces[t.force_name]; ` +
+		`local p=f and f.platforms[t.platform_index]; evidence[#evidence+1]={validIdentity=valid,` +
+		`deletedTick=t.source_deleted_tick or false,surfacePresent=(s and s.valid) or false,` +
+		`platformPresent=(p and p.valid) or false}; end;` +
 		`return {success=true,tick=game.tick,players=#game.connected_players,paused=game.tick_paused==true,` +
 		`plugin=remote.interfaces['surface_export']~=nil,` +
 		`jobs=n(storage.async_jobs),locks=n(storage.locked_platforms),holds=n(storage.destination_holds),` +
-		`tombstones=n(storage.committed_source_transfer_tombstones)}`);
+		`tombstones=n(storage.committed_source_transfer_tombstones),tombstoneEvidence=evidence}`);
 }
 
 export function assertLeaseClean(host, state, phase) {
@@ -217,8 +225,17 @@ export function assertLeaseClean(host, state, phase) {
 	if (state.players > 0) problems.push(`${state.players} connected player(s)`);
 	if (state.paused) problems.push("game is tick-paused");
 	if (!state.plugin) problems.push("surface_export remote missing");
-	for (const key of ["jobs", "locks", "holds", "tombstones"]) {
+	for (const key of ["jobs", "locks", "holds"]) {
 		if (state[key] !== 0) problems.push(`${key}=${state[key]}`);
+	}
+	// Deletion receipts are retained for replay safety, not active leases. Accept them only
+	// with a completed deletion and independently absent source surface/platform; never clear them.
+	if (state.tombstones !== 0 && !(Array.isArray(state.tombstoneEvidence)
+		&& state.tombstoneEvidence.length === state.tombstones
+		&& state.tombstoneEvidence.every(record => record?.validIdentity === true
+			&& Number.isSafeInteger(record.deletedTick) && record.deletedTick >= 0
+			&& record.surfacePresent === false && record.platformPresent === false))) {
+		problems.push(`unresolved tombstones=${state.tombstones}`);
 	}
 	if (problems.length) {
 		throw new Error(`${phase}: host ${host} lease/preflight REFUSED (never repaired): ${problems.join("; ")}`);
