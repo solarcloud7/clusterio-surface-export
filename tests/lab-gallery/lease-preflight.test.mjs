@@ -1,10 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertLeaseClean } from "./batch-lifecycle.mjs";
+import { assertLeaseClean, assertLegacySaveJournal } from "./batch-lifecycle.mjs";
 
 const clean = { success: true, players: 0, paused: false, plugin: true, jobs: 0, locks: 0, holds: 0, tombstones: 0 };
 const receipt = { validIdentity: true, deletedTick: 0, surfacePresent: false, platformPresent: false };
 const observed = evidence => ({ ...clean, tombstones: evidence.length, tombstoneEvidence: evidence });
+
+test("legacy save loading refuses existing recovery history without changing it", () => {
+	assert.doesNotThrow(() => assertLegacySaveJournal(1, { v: 1, id: "fresh", retirements: [] }));
+	for (const journal of [undefined, {}, { v: 1, id: "", retirements: [] },
+		{ v: 1, id: "existing", retirements: [{ platformUid: "retired" }] }]) {
+		const before = structuredClone(journal);
+		assert.throws(() => assertLegacySaveJournal(1, journal), /fresh disposable instance/);
+		assert.deepEqual(journal, before);
+	}
+});
 
 test("completed source receipts do not prevent the next fixture, and remain untouched", () => {
 	const state = observed([{ ...receipt }, { ...receipt, deletedTick: 100 }]);

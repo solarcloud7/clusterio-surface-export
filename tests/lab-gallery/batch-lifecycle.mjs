@@ -287,6 +287,14 @@ export function readContainerJson(host, path) {
 	return JSON.parse(docker(["exec", HOSTS[host].container, "cat", path]));
 }
 
+export function assertLegacySaveJournal(host, journal) {
+	if (journal?.v !== 1 || typeof journal.id !== "string" || !journal.id
+		|| !Array.isArray(journal.retirements) || journal.retirements.length !== 0) {
+		throw new Error(`Legacy gallery saves require a fresh disposable instance on host ${host}; `
+			+ "recovery history is present or unavailable. Refusing before replacing either world; do not clear the journal.");
+	}
+}
+
 export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerPrefix }) {
 	if (!goldenSourceSave || !goldenDestSave || !markerPrefix) {
 		throw new Error("createBatchLifecycle needs goldenSourceSave, goldenDestSave, markerPrefix");
@@ -354,6 +362,12 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	}, snapshots);
 
 	async function loadGoldenPair(manifest, phase) {
+		// Golden saves predate platform identities. They may only bootstrap against a fresh
+		// journal; an existing instance's recovery history must never be reset for a fixture.
+		for (const host of [1, 2]) {
+			assertLegacySaveJournal(host, readContainerJson(host,
+				instancePath(host, "surface_export_source_retirements.json")));
+		}
 		await session.prepare();
 		await session.enter(async () => {
 			for (const host of [1, 2]) ctl("instance", "stop", HOSTS[host].instance);

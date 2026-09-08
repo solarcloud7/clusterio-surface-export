@@ -78,8 +78,14 @@ jobs:
   # Integration Tests — spin up the full Docker cluster and run the suite
   # ===========================================================================
   integration-tests:
-    name: Integration Tests
+    name: ${{ matrix.suite == 'gallery' && 'Gallery save tests' || 'Integration Tests' }}
     runs-on: ubuntu-latest
+    # Legacy golden saves predate recovery identities. Give them their own fresh journal,
+    # rather than loading them after another suite has retired source platforms.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [gallery, remaining]
     # 25, not 15: the suite outgrew 15 min when belt-corner-recovery (+2 min) landed — a job timeout
     # surfaces as conclusion "cancelled" with zero failing steps, which reads as a mystery cancellation.
     timeout-minutes: 25
@@ -354,7 +360,12 @@ jobs:
       # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs}: the dir set is the
       # single source of truth, so adding a test dir wires it in here with no step to maintain.
       - name: Run integration suite
-        run: node tools/tests/run-integration-tests.mjs
+        run: |
+          if [ "${{ matrix.suite }}" = gallery ]; then
+            node tools/tests/run-integration-tests.mjs --only '^gallery-suite$'
+          else
+            node tools/tests/run-integration-tests.mjs --skip '^gallery-suite$'
+          fi
 
       # if: always() — the one-of-each sweep's per-type report (stagedOnFixture, maxDrift, per-row
       # source/destination samples) is only worth citing from a GREEN run, which the failure-only
@@ -363,7 +374,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: instrument-reports
+          name: instrument-reports${{ matrix.suite == 'gallery' && '-gallery' || '' }}
           path: ci-artifacts/*.json
           retention-days: 14
           if-no-files-found: ignore
@@ -477,7 +488,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: failing-repro
+          name: failing-repro${{ matrix.suite == 'gallery' && '-gallery' || '' }}
           path: ci-artifacts/
           retention-days: 5
           if-no-files-found: warn
