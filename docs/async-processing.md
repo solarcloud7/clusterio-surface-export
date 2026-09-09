@@ -120,6 +120,16 @@ Sources: [export-pipeline.lua](../docker/seed-data/external_plugins/surface_expo
 
 ## Import phase-yield acceptance (2026-09-08)
 
+Unexpected import exceptions stop the job instead of replaying partially applied work
+on subsequent ticks. The saved job reports `interrupted` with its error; its destination
+is quarantined where the engine permits, and the hold is marked as failed preparation.
+It cannot authorize source deletion or destination release. This requires operator
+inspection, not an automatic restart of the failed phase. Other jobs continue scheduling.
+The Lua regressions inject hub, inventory, state, held-item and fluid failures, reload
+module locals, and check that no side effects repeat. A separate real hold-module test
+checks that interruption quarantine cannot be released. These are simulated engine
+failures, not evidence of live crash recovery.
+
 Factorio 2.1.17, save-patched Lua 0.10.281: the disposable 1,359-entity fixture
 completed host 1 -> 2 and host 2 -> 1, then deliberately rejected a third transfer.
 Every tested phase boundary above advanced to a later tick. Entity creation used

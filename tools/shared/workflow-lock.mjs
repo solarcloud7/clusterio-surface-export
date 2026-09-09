@@ -23,13 +23,16 @@ export function acquireWorkflowLock(path = workflowLockPath) {
 	process.env.SE_WORKFLOW_TOKEN = randomUUID();
 	writeFileSync(fd, JSON.stringify({ pid: process.pid, token: process.env.SE_WORKFLOW_TOKEN }));
 	let released = false;
-	return () => {
+	const release = () => {
 		if (released) return;
 		released = true;
+		process.removeListener("exit", release);
 		if (previous === undefined) delete process.env.SE_WORKFLOW_TOKEN;
 		else process.env.SE_WORKFLOW_TOKEN = previous;
 		closeSync(fd); unlinkSync(path);
 	};
+	process.once("exit", release);
+	return release;
 }
 
 export async function withWorkflowLock(work, path = workflowLockPath) {

@@ -24,6 +24,7 @@ export class TransferRequestQueue {
 	private stopped = false;
 	private pumping = false;
 	private path?: string;
+	private unavailable?: Error;
 
 	constructor(private hooks: {
 		run(entry: QueueEntry): Promise<void>;
@@ -34,8 +35,16 @@ export class TransferRequestQueue {
 
 	async init(path: string) {
 		this.path = path;
+		try { await this.load(); }
+		catch (error) {
+			this.unavailable = new Error(`Transfer queue unavailable; repair its journal and restart: ${String(error)}`);
+			this.hooks.error(this.unavailable);
+		}
+	}
+
+	private async load() {
 		let saved: QueueEntry[];
-		try { saved = JSON.parse(await fs.readFile(path, "utf8")); }
+		try { saved = JSON.parse(await fs.readFile(this.path!, "utf8")); }
 		catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
 		if (!Array.isArray(saved) || saved.length > 100 || saved.some(entry => !entry?.id || !entry.request || !entry.operation)) {
 			throw new Error("Invalid transfer queue journal; preserved for diagnosis");
@@ -52,6 +61,7 @@ export class TransferRequestQueue {
 	}
 
 	async add(entry: QueueEntry) {
+		if (this.unavailable) throw this.unavailable;
 		if (this.stopped) throw new Error("Controller is shutting down; transfer was not queued");
 		if (this.entries.size >= 100) throw new Error("Transfer queue is full (100 requests)");
 		this.entries.set(entry.id, entry);
@@ -61,6 +71,7 @@ export class TransferRequestQueue {
 	}
 
 	async persist() {
+		if (this.unavailable) throw this.unavailable;
 		if (!this.path) return;
 		// Timers and profiler state are not durable queue state.
 		const value = JSON.stringify([...this.entries.values()].map(entry => ({ ...entry,
@@ -78,7 +89,7 @@ export class TransferRequestQueue {
 	}
 
 	async pump() {
-		if (this.pumping || this.stopped) return;
+		if (this.pumping || this.stopped || this.unavailable) return;
 		this.pumping = true;
 		try {
 			let removed = false;

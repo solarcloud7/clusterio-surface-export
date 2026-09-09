@@ -71,6 +71,27 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+test("acknowledged recovery releases the queue reservation; failed cleanup retains it", async () => {
+	let accepted = false;
+	const h = makeHarness(() => ({success: true}), msg =>
+		msg.constructor.name === "DeleteSourcePlatformRequest" ? {success: accepted, error: "offline"} : {success: true});
+	const start = await h.orch.transferPlatform("1:reserved", 2);
+	const transfer = onlyTransfer(h.activeTransfers);
+	clearTimeout(transfer.validationTimeout);
+	h.orch.handleStartPlatformTransferRequestMeasured = async () => ({success: false, error: "reply unavailable"});
+	await h.orch.runQueuedRequest({id: "request:reserved", request: {}, operation: transfer});
+	assert.equal(transfer.status, "cleanup_failed", "admission failure must remain eligible for recovery");
+	assert.equal(transfer.timingPendingRecovery, true);
+	h.plugin.pendingTransfers = new Map([[start.transferId, h.calls.pendingPersisted]]);
+	await h.orch.recoverPendingTransfers();
+	assert.equal(transfer.timingPendingRecovery, true);
+	accepted = true;
+	await h.orch.recoverPendingTransfers();
+	assert.equal(transfer.status, "completed");
+	assert.equal(transfer.timingPendingRecovery, false);
+	assert.equal(h.calls.importSends, 1, "recovery must not repeat import");
+});
+
 test("successful transfer verifies the held destination, deletes source, then activates once", async () => {
 	const order = [];
 	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }), msg => {

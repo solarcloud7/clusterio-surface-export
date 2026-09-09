@@ -9,7 +9,10 @@ local function scenario(options)
     local env = setmetatable({game = {tick = 100, print = noop, forces = {}}, log = noop,
         storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {}},
         prototypes = {entity = {beacon = {type = "beacon"}}}, table_size = size}, {__index = _G})
-    local function mark(name) events[#events + 1] = {name = name, tick = env.game.tick} end
+    local function mark(name)
+        events[#events + 1] = {name = name, tick = env.game.tick}
+        if options.errorAt == name then error("injected " .. name .. " error") end
+    end
     local function start(_, name, kind)
         local s = spans[name] or {startTick = env.game.tick, callbacks = 0}
         spans[name] = s
@@ -94,7 +97,9 @@ local function scenario(options)
     }
     env.require = function(path)
         local name = path:match("^modules/surface_export/(.*)$")
-        if not name then return {} end -- no event transport in this unit test
+        if not name then
+            return options.errorAt == "publish" and {send_json = function() mark("publish") end} or {}
+        end
         if not cache[name] then cache[name] = assert(loadfile(root .. name .. ".lua", "t", env))() end
         return cache[name]
     end
@@ -118,10 +123,22 @@ local function scenario(options)
         processor.set_show_progress(false)
         local ok, err = pcall(processor.process_tick)
         assert(scratch == 0, "scratch inventory survived the callback")
-        if options.inventoryError and not ok then
-            assert(tostring(err):find("injected inventory error", 1, true), tostring(err))
-            assert(not job.phase2_stage and not spans.activation and not spans.fluids)
-            print("PASS inventory exception releases scratch and cannot advance to activation")
+        if options.errorAt and (not ok or job.completion_interrupted) then
+            -- Re-enter through the real scheduler after reloading Lua modules, as on later ticks.
+            local count = #events
+            for _ = 1, 3 do
+                env.game.tick = env.game.tick + 1
+                cache["core/async-processor"] = nil
+                processor = env.require("modules/surface_export/core/async-processor")
+                pcall(processor.process_tick)
+            end
+            assert(#events == count, "interrupted " .. options.errorAt .. " repeated side effects")
+            assert(job.completion_interrupted, "missing durable interruption evidence")
+            assert(not spans.activation or options.errorAt == "publish", "advanced after interruption")
+            if options.errorAt == "publish" then
+                assert(env.storage.async_job_results.test.complete == false, "interrupted publication reported completion")
+            end
+            print("PASS " .. options.errorAt .. " exception cannot replay after module reload")
             return
         end
         assert(ok, tostring(err))
@@ -180,4 +197,6 @@ scenario({label = "belt failure", beltFailure = true})
 scenario({label = "hold failure", holdFailure = true})
 scenario({label = "hold identity collision", holdFailure = true, foreignHold = true})
 scenario({label = "existing deferred job", legacyWait = true})
-scenario({inventoryError = true})
+for _, phase in ipairs({"hub", "inventory", "state", "held_items", "fluids", "publish"}) do
+    scenario({errorAt = phase})
+end

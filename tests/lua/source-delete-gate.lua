@@ -44,6 +44,11 @@ for _, committed in ipairs({false, true}) do
         modules["utils/transfer-receipts"] = assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))()
         env.require = function(name) return assert(modules[name:gsub("^modules/surface_export/", "")], name) end
         local remove = assert(loadfile(root .. "interfaces/remote/delete-platform-for-transfer.lua", "t", env))()
+        for _, missing in ipairs({false, "", 7}) do
+            assert(remove(3, "fixture", "player", missing):sub(1, 6) == "ERROR:")
+        end
+        assert(remove(3, "fixture", "player", nil):sub(1, 6) == "ERROR:")
+        assert(deleteCalls == 0, "unidentified deletion reached the engine")
         local result = remove(3, "fixture", "player", "job")
         if outcome == "success" then
             assert(result == "SUCCESS" and not env.storage.locked_platforms[3])

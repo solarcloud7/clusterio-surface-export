@@ -25,6 +25,30 @@ local JobResults = require("modules/surface_export/core/job-results")
 
 local ImportCompletion = {}
 
+-- An exception can follow a partial write or a published verdict. Never replay that
+-- callback. Retain the job for diagnosis and quarantine its destination for review.
+function ImportCompletion.interrupt(job, err)
+	job.completion_interrupted = {error = tostring(err), tick = game.tick}
+	local result = (storage.async_job_results or {})[job.job_id]
+	if result then
+		result.status, result.complete, result.error = "interrupted", false, tostring(err)
+	end
+	local protected, protection_error = pcall(function()
+		local platform = job.target_platform
+		if not (platform and platform.valid) then return end
+		local id = job.transfer_id or ("interrupted:" .. job.job_id)
+		local held, hold_error = DestinationHold.stage(id, platform, game.forces[job.force_name or "player"], true)
+		local hold = DestinationHold.get(id)
+		if hold and hold.platform_index == platform.index and hold.surface_index == job.target_surface.index then
+			-- This is not a validated hold: recovery must not delete the source for it.
+			hold.preparation_failed = true
+		end
+		assert(held, hold_error)
+	end)
+	if not protected then log("[Import] Interrupted destination protection failed: " .. tostring(protection_error)) end
+	Timing.finish(job.job_id, "interrupted")
+end
+
 local function aggregate_fluid_counts_by_name(counts)
 	local totals = {}
 	for key, amount in pairs(counts or {}) do

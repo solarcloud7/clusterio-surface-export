@@ -588,6 +588,7 @@ export class TransferOrchestrator {
 				if (!activated.success) return failed(`Source deleted; destination activation not confirmed: ${activated.error}`);
 				const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
 				transfer.status = "completed";
+				transfer.timingPendingRecovery = false;
 				transfer.awaitingLateVerdict = false;
 				transfer.error = null;
 				transfer.completedAt = Date.now();
@@ -625,6 +626,7 @@ export class TransferOrchestrator {
 		await this.broadcastTransferStatus(transfer, "Validation failed ✗ — rolling back...", "red");
 
 		const rollbackError = await this.tryUnlockSource(transferId, transfer);
+		if (!rollbackError && !destinationCleanupError) transfer.timingPendingRecovery = false;
 		if (rollbackError) {
 			await this.broadcastTransferStatus(transfer, `⚠ Rollback failed: ${rollbackError}`, "red");
 		} else {
@@ -726,7 +728,7 @@ export class TransferOrchestrator {
 				// A canonical operation with no terminal result may already have reached the destination.
 				// Keep its reservation until recovery is resolved; an exception is not a cleanup acknowledgement.
 				if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;
-				entry.operation.status = "failed";
+				entry.operation.status = entry.operation.timingPendingRecovery ? "cleanup_failed" : "failed";
 				entry.operation.error = result.error || "Transfer request failed";
 				entry.operation.failedAt = Date.now();
 				this.txLogger.logTransactionEvent(entry.operation.transferId, "transfer_failed", entry.operation.error, {});

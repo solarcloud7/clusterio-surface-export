@@ -6,7 +6,9 @@ local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 
 local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id, expected_uid)
-  if expected_job_id == "" then return "ERROR:empty source job identity" end
+  if type(expected_job_id) ~= "string" or expected_job_id == "" then
+    return "ERROR:missing source job identity"
+  end
   local force = game.forces[force_name]
   if not force then
     return "ERROR:Force not found: " .. tostring(force_name)

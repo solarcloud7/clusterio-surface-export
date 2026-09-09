@@ -107,33 +107,31 @@ local function validate_import(surface, expected_verification, options)
 
     for _, entity in ipairs(entities) do
         assert(entity.valid, "Cargo integrity: destination entity became unavailable")
-        if entity.valid then
-            local entity_name = entity.name
-            entity_type_counts[entity_name] = (entity_type_counts[entity_name] or 0) + 1
-            local entity_type = entity.type
-            local is_storage = STORAGE_ENTITY_TYPES[entity_type]
-            local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
+        local entity_name = entity.name
+        entity_type_counts[entity_name] = (entity_type_counts[entity_name] or 0) + 1
+        local entity_type = entity.type
+        local is_storage = STORAGE_ENTITY_TYPES[entity_type]
+        local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
 
-            for key, count in pairs(CargoCounter.count_entity_items(entity, "inventories")) do
+        for key, count in pairs(CargoCounter.count_entity_items(entity, "inventories")) do
+            total_item_counts[key] = (total_item_counts[key] or 0) + count
+            if is_storage then
+                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+            elseif is_consumer then
+                consumer_item_counts[key] = (consumer_item_counts[key] or 0) + count
+            end
+        end
+
+        if GameUtils.BELT_ENTITY_TYPES[entity_type] then
+            for key, count in pairs(CargoCounter.count_entity_items(entity, "belts")) do
                 total_item_counts[key] = (total_item_counts[key] or 0) + count
-                if is_storage then
-                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
-                elseif is_consumer then
-                    consumer_item_counts[key] = (consumer_item_counts[key] or 0) + count
-                end
+                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
             end
-
-            if GameUtils.BELT_ENTITY_TYPES[entity_type] then
-                for key, count in pairs(CargoCounter.count_entity_items(entity, "belts")) do
-                    total_item_counts[key] = (total_item_counts[key] or 0) + count
-                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
-                end
-            end
-            if entity_type == "inserter" then
-                for key, count in pairs(CargoCounter.count_entity_items(entity, "held")) do
-                    total_item_counts[key] = (total_item_counts[key] or 0) + count
-                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
-                end
+        end
+        if entity_type == "inserter" then
+            for key, count in pairs(CargoCounter.count_entity_items(entity, "held")) do
+                total_item_counts[key] = (total_item_counts[key] or 0) + count
+                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
             end
         end
     end

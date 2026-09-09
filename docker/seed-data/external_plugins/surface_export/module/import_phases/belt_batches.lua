@@ -53,27 +53,24 @@ function BeltBatches.plan(groups, entity_map, budget)
             return atomic("external underground connection")
         end
     end
-    local components, ordered = {}, {}
-    for i, g in ipairs(groups) do
+    local roots, networks = {}, 0
+    for i in ipairs(groups) do
         local key = root(i)
-        if not components[key] then
-            components[key] = { indices = {}, cost = 0 }
-            ordered[#ordered + 1] = components[key]
+        if not roots[key] then
+            roots[key] = true
+            networks = networks + 1
         end
-        local component = components[key]
-        component.indices[#component.indices + 1] = i
-        component.cost = component.cost + math.max(#g.slots, #g.members, 1)
     end
     local batches, current = {}, nil
     for i, group in ipairs(groups) do
-        local component = { indices = { i }, cost = math.max(#group.slots, #group.members, 1) }
-        if not current or current.cost + component.cost > budget then
+        local cost = math.max(#group.slots, #group.members, 1)
+        if not current or current.cost + cost > budget then
             current = { indices = {}, cost = 0 }; batches[#batches + 1] = current
         end
-        for _, i in ipairs(component.indices) do current.indices[#current.indices + 1] = i end
-        current.cost = current.cost + component.cost
+        current.indices[#current.indices + 1] = i
+        current.cost = current.cost + cost
     end
-    return { batches = batches, cursor = 1, networks = #ordered }
+    return { batches = batches, cursor = 1, networks = networks }
 end
 
 return BeltBatches
