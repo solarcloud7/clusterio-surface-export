@@ -356,18 +356,27 @@ local function restore_inventories(job, budget)
 		local work = 0
 		while work < budget do
 			if cursor.index > #entities_to_create then
-				if not cursor.beacons then break end
-				cursor.beacons, cursor.index = false, 1
+				if cursor.disabling_beacons then break end
+				if cursor.beacons then cursor.beacons = false
+				else cursor.disabling_beacons = true end
+				cursor.index = 1
 			end
 			local entity_data = entities_to_create[cursor.index]
 			if not entity_data then break end
 			work = work + 1
-			if entity_data.entity_id and ((entity_data.type == "beacon") == cursor.beacons) then
+			if cursor.disabling_beacons then
+				local entity = entity_data.entity_id and entity_map[entity_data.entity_id]
+				if entity and entity.valid and entity.type == "beacon" then entity.disabled_by_script = true end
+			elseif entity_data.entity_id and ((entity_data.type == "beacon") == cursor.beacons) then
 				local entity = entity_map[entity_data.entity_id]
 				if entity and entity.valid then
 					Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses, inv_item_state)
-					-- Reassert dormancy before every yield, not after the entire inventory pass.
-					if GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then entity.disabled_by_script = true end
+					-- Beacon speed effects determine ingredient slot capacity. Keep them through
+					-- all inventory writes; disable them in the final bounded pass. Production
+					-- entities remain dormant throughout restoration and between callbacks.
+					if entity.type ~= "beacon" and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
+						entity.disabled_by_script = true
+					end
 					for _, inventory in ipairs((entity_data.specific_data or {}).inventories or {}) do
 						work = work + #(inventory.items or {})
 					end
@@ -382,7 +391,7 @@ local function restore_inventories(job, budget)
 	record_item_state(job, inv_item_state)
 	if not inv_ok then error(inv_err, 0) end
 	PhaseRecorder.stop(job, "inventories")
-	if cursor.beacons or cursor.index <= #entities_to_create then
+	if not cursor.disabling_beacons or cursor.index <= #entities_to_create then
 		job.metrics.inventories_completed_tick = nil
 		return false
 	end

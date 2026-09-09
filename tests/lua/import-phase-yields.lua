@@ -38,7 +38,7 @@ local function scenario(options)
         "utils/phase-profiler", "utils/transaction-history", "core/job-results", "core/gateway",
         "export_scanners/inventory-scanner", "export_scanners/fluid-registry",
         "export_scanners/entity-scanner", "utils/debug-export"}) do cache[name] = stub end
-    cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true},
+    cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true, beacon = true},
         delete_platform = function(platform) mark("discard"); platform.valid = false; return true end}
     cache["core/destination-hold"] = {
         get = function() if options.foreignHold then return {platform_index = 999, surface_index = 999} end end,
@@ -56,6 +56,10 @@ local function scenario(options)
         release_item_state_session = function() scratch = scratch - 1 end,
         restore_inventories = function(entity)
             mark("inventory")
+            if options.largeInventory and entity.type ~= "beacon" then
+                assert(not env.storage.async_jobs.test.entity_map[2].disabled_by_script,
+                    "beacon disabled before dependent inventory capacity was restored")
+            end
             if options.inventoryError then error("injected inventory error") end
             -- Completion must re-disable an entity before handing control back to the game.
             entity.disabled_by_script = false
@@ -88,6 +92,10 @@ local function scenario(options)
         restore = function(_, map) mark("activate"); map[1].disabled_by_script = false end,
     }
     cache["import_phases/fluid_restoration"] = {restore = function()
+        if options.largeInventory then
+            assert(env.storage.async_jobs.test.entity_map[2].disabled_by_script,
+                "beacon still active after inventory restoration")
+        end
         mark("fluids"); return {count = 0, segment_temps = {witness = 15}}
     end}
     cache["validators/transfer-validation"] = {
@@ -152,6 +160,7 @@ local function scenario(options)
             return
         end
         assert(ok, tostring(err))
+        assert(not job.completion_interrupted, job.completion_interrupted and job.completion_interrupted.error)
         for name, kind in pairs(open) do assert(kind == "wait", "execution spans ticks: " .. name) end
         if not env.storage.async_jobs.test then break end
         assert(job.entity_map[1].disabled_by_script, "entity active between phases")

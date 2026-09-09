@@ -116,7 +116,44 @@ This is a negative engine experiment, not a passing fidelity test. The 2.1.17 AP
 declares `LuaItemStack.count` writable (`uint32`); writability did not bypass this
 slot's capacity. Neither telemetry nor a repair container can make that a pass.
 
-The simpler large acceptance remains valid for its defined cargo. The richer
-inventory fixture has **not passed**, and universal inventory fidelity remains
-unproven. Investigate capacity/effect setup and the original source state before
-changing restoration policy. The strict cargo gate remains unchanged.
+The simpler large acceptance remains valid for its defined cargo. That initial richer inventory run **did not pass**. The next section records the
+subsequent root cause and repeat; it does not erase this failure evidence.
+The strict cargo gate remains unchanged.
+
+
+## Beacon capacity correction — 2026-09-09
+
+The isolated unchanged-deserializer clamp above did **not** establish a pre-existing
+production defect: that fixture omitted the original beacon effects. A read of the
+protected source crusher found crafting speed 17.375 and 12 input chunks. The new
+inventory batching had disabled beacons immediately after restoring their modules;
+the original completion function disabled them after all inventories were restored.
+
+`crafter-dormancy.mjs --beacons` varies beacon activation during insertion, with
+all three production machines disabled throughout. On/off/on yielded exact input
+counts 9/7/9 and crafting speeds 17.375/1.75/17.375. After switching the beacon off,
+three later observations retained 9/7/9. This reproduces the loss mechanism and
+falsifies a need to let the crushers run. An injected build failure verified owned
+cleanup (`transfer-cleanup-crafter-mttovapu.json`). The first observation is
+`transfer-cleanup-crafter-mttovnce.json`; the independent repeat with explicit
+assertions passed in `transfer-cleanup-crafter-mttp1evr.json`. These use one shared
+legendary beacon, two legendary speed modules, three legendary crushers, a power
+source and one temporary platform; there is no cargo repair or altered recipe.
+The source constructor's earlier Lua syntax error is retained as HARNESS_ERROR,
+not engine evidence. Request/read/deadline bounds remain those stated above.
+
+The corrected inventory scheduler keeps beacon effects through all dependent
+inventory writes, then disables beacons in a final bounded scan. Other production
+entities remain dormant between callbacks. The regression fails against commit
+7a71cad with "beacon disabled before dependent inventory capacity was restored"
+and passes against the corrected code; it also asserts beacon shutdown before
+fluid restoration and validation. Interruption/reload regressions still pass.
+
+Preserving deployment backed up both saves as `predeploy-20260909-020151-585.zip`.
+The identical richer blueprint/book fixture then passed for
+`836570928:232_invstate-mttozmpc`: successful cargo gate, independent physical
+blueprint content and book-page checks, applied=4/declined=0/failed=0 in both engine
+logs and stored details, and owned cleanup. Full output is retained in
+`ci-artifacts/batching-beacon-inventory-state.log`. This fixture's whole-cargo
+verdict comes from the runtime gate; its independent physical checks cover the
+blueprints/books, not every item. Universal inventory fidelity is not claimed.
