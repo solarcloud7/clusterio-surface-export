@@ -16,7 +16,9 @@ local function scenario(options)
     local function start(_, name, kind)
         local s = spans[name] or {startTick = env.game.tick, callbacks = 0}
         spans[name] = s
-        assert(not open[name], "measurement left running: " .. name)
+        -- Real Timing.start returns when a stage is already running. Throwing here
+        -- would accidentally prevent the very replay this regression must detect.
+        if open[name] then return end
         open[name] = kind or "execution"
         s.callbacks = s.callbacks + 1
     end
