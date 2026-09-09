@@ -75,7 +75,8 @@ resurrected source remains quarantined, with no automatic deletion or re-import.
 ## Startup and operator recovery
 
 Clusterio's save-patch startup event protects existing platforms before the Node
-`onStart` reconciliation. The ordinary Lua scheduler and unlock/expiry path wait for
+background reconciliation, launched by `onStart` without holding Clusterio's hook open.
+The ordinary Lua scheduler and unlock/expiry path wait for
 reconciliation. Normal startup locks are released; retired sources keep committed
 locks. This uses the server-startup event, not `on_load`, which also runs on client join.
 Startup protection does not force-finish cargo pods or reject pending circuit restoration;
@@ -85,7 +86,10 @@ regression reproduced the unwanted pod call before that separation was added.
 Platform identities combine a persisted creation epoch with hub identity. A different
 journal ID, corrupt journal, unidentified older platform when retirements exist, or
 roster over 500 platforms refuses automatic reconciliation. Startup protection and
-reconciliation are synchronous/bounded by that roster limit, not a proven frame budget.
+Lua reconciliation calls are synchronous/bounded by that roster limit, not a proven
+frame budget. RCON requests run sequentially outside the startup hook. Stop/restart
+invalidates the worker before its next request, including `finish`. A failed reply or
+journal refusal logs an explicit protected-startup error; repair the cause and restart.
 
 When recovery refuses:
 
@@ -100,6 +104,12 @@ When recovery refuses:
    operator adjudication. There is no force-release fallback. Do not delete the journal
    or unlock the duplicate to make the warning disappear.
 
+Unresolved intents reserve both participating instances, including after loss of the
+active timing record. Unrelated instance pairs may still transfer. This can require
+operator intervention indefinitely; age or lack of active retry is not proof that
+another transfer is safe. A startup refusal to unlock remains a failed recovery
+acknowledgement, never a benign/successful unlock.
+
 Restoring older copies of the external journal/controller state as well as the worlds,
 destination rollback after release, journal loss, and storage-device failure are not
 covered by the successful source-only restore test. Journal entries are not age-pruned;
@@ -107,6 +117,27 @@ backup retention and journal compaction need a separate, explicit policy.
 
 Restart recovery retains available audit evidence and starts timing on a new process clock.
 It does not manufacture one continuous measured duration across the restart.
+
+### PR #305 review verification
+
+| Finding | Disposition and evidence |
+|---|---|
+| Startup hook budget | Reproduced a held RCON reply blocking `onStart`. Background recovery now returns the hook, visits a 500-entry simulated roster before finish, reports refusal, and stops after an old-runtime reply. No live 500-platform performance claim. |
+| Export callback replay | Faults in entity work, belt capture, verification, serialization, compression, cache output and post-publication pruning now interrupt the saved job. Scheduler reload cannot repeat the work; recorded completion is invalidated after a publication exception. Source lock expiry and controller recovery remain separate mechanisms. |
+| Permanent queue reservation | Retained deliberately. Regression proves orphan intents block both participants without an active record and unrelated pairs still run. Releasing on missing `timingPendingRecovery` would bypass unknown outcomes. |
+| Startup unlock refusal | Retained as a recovery failure. Classifying it as benign would assert source resolution without acknowledgement. Use the recovery procedure above. |
+| Invalid hub reference | Reproduced invalid-member access; recovery now checks validity and refuses cleanly. |
+| Optional retirement identity | Missing, empty, non-string or mismatched UID cannot authorize deletion. Evacuation fixtures now obtain the runtime identity explicitly. These direct Lua fixtures test evacuation, not journal durability. |
+| Uncompressed JSON between ticks | Retained deliberately to separate synchronous encoding and compression, reuse diagnostic bytes and resume across save/load. Combining both calls would undo a requested phase yield. Save size/peak-memory impact remains unmeasured; no memory optimization claim. |
+| Bare identity JSON parse | Shared reply parser now retains bounded raw evidence and refuses malformed/unsuccessful replies. Regression reproduced the missing diagnostic. |
+| Repeated identity lookup | Existing identity is read once during assignment. |
+| Separate CI worlds | Retained. Deleting retirement authority between suites would change the test's recovery guarantees; matrix legs run concurrently, so duplicate setup increases runner use but does not imply double wall-clock duration. |
+
+Executable checks: `test/gateway-config-chunking.test.cjs`,
+`test/transfer-request-queue.test.cjs` in the plugin, and
+`tests/lua/export-phase-yields.lua`, `tests/lua/source-recovery.lua`,
+`tests/lua/source-delete-gate.lua`. Engine/RCON fault injection is simulated; these
+regressions do not establish arbitrary crash safety or a live callback-time bound.
 
 ## Executable evidence
 

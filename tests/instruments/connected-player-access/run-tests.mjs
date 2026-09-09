@@ -193,7 +193,9 @@ local ok,err=pcall(function()
     expires_tick=game.tick+locks.DEFAULT_TRANSFER_LOCK_TTL_TICKS})
   assert(locked,why)
   local index=p.index
-  local result=remote.call('surface_export','delete_platform_for_transfer',index,p.name,force.name,job_id)
+  local identity=helpers.json_to_table(remote.call('surface_export','source_recovery_identity',index,force.name,job_id))
+  assert(identity.success and identity.platformUid,identity.error)
+  local result=remote.call('surface_export','delete_platform_for_transfer',index,p.name,force.name,job_id,identity.platformUid)
   if result=='SUCCESS' then deleted[index]=true end
   arms[#arms+1]={remote_view=remoteView,teleport_into_hidden=teleported,physical_aboard=physical,
     script_remote_view_into_hidden=remoteAllowed,

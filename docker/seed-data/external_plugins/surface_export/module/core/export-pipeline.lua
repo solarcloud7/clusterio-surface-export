@@ -581,6 +581,14 @@ local function publish_completion(job)
 	storage.async_jobs[job.job_id] = nil
 end
 
+function ExportPipeline.interrupt(job, err)
+	-- Do not replay capture, cache writes or publication after partial execution.
+	job.completion_interrupted = {error = tostring(err), tick = game.tick}
+	local result = (storage.async_job_results or {})[job.job_id]
+	if result then result.status, result.complete, result.error = "interrupted", false, tostring(err) end
+	Timing.finish(job.job_id, "interrupted")
+end
+
 function ExportPipeline.complete(job)
 	-- Each call is one scheduler tick. Capture and its cargo checks remain atomic;
 	-- serialization and publication operate on that captured payload on later ticks.

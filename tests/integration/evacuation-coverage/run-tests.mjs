@@ -53,7 +53,9 @@ try {
 		+ `local ok, err=locks.lock_platform(force.platforms[${setup.index}], force, `
 		+ `{kind='transfer', job_id='${PROBE}', expires_tick=game.tick+locks.DEFAULT_TRANSFER_LOCK_TTL_TICKS}) `
 		+ `if not ok then return {locked=false, err=tostring(err)} end `
-		+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', '${PROBE}') `
+		+ `local identity=helpers.json_to_table(remote.call('surface_export','source_recovery_identity',${setup.index},'player','${PROBE}')) `
+		+ `assert(identity.success and identity.platformUid, identity.error) `
+		+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', '${PROBE}', identity.platformUid) `
 		+ `return {locked=true, result=result} end)()`,
 	);
 	check(driven.locked === true, "production transfer lock acquired", driven.err);

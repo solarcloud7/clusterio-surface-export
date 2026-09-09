@@ -5,7 +5,7 @@ local Recovery = {}
 local function identity(platform)
 	local record = (storage.source_recovery_identities or {})[platform.index]
 	if record and record.surface_index == platform.surface.index
-		and platform.hub and record.hub_unit_number == platform.hub.unit_number then return record.uid end
+		and platform.hub and platform.hub.valid and record.hub_unit_number == platform.hub.unit_number then return record.uid end
 	local epoch = (storage.source_recovery_surface_epochs or {})[platform.surface.index]
 	if epoch and platform.hub and platform.hub.valid and platform.hub.unit_number then
 		return epoch .. ":" .. tostring(platform.hub.unit_number)
@@ -14,7 +14,8 @@ local function identity(platform)
 end
 
 local function assign(platform)
-	if identity(platform) then return identity(platform) end
+	local existing = identity(platform)
+	if existing then return existing end
 	if not storage.source_recovery_epoch then return nil end
 	local hub = platform.hub
 	if not (hub and hub.valid and hub.unit_number) then return nil end

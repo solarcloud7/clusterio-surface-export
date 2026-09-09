@@ -120,8 +120,10 @@ Sources: [export-pipeline.lua](../docker/seed-data/external_plugins/surface_expo
 
 ## Import phase-yield acceptance (2026-09-08)
 
-Unexpected import exceptions stop the job instead of replaying partially applied work
-on subsequent ticks. The saved job reports `interrupted` with its error; its destination
+Unexpected export and import exceptions stop the job instead of replaying partially applied work
+on subsequent ticks. The saved job reports `interrupted` with its error. Exports retain
+their captured state for inspection and do not automatically retry capture or publication.
+The existing source-lock expiry and controller recovery rules still apply. An import's destination
 is quarantined where the engine permits, and the hold is marked as failed preparation.
 It cannot authorize source deletion or destination release. This requires operator
 inspection, not an automatic restart of the failed phase. Other jobs continue scheduling.

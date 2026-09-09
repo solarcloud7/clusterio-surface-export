@@ -250,3 +250,73 @@ test("Lua source grounding: staging refusals, registration, prune placement, no 
 	assert.ok(pruneAt !== -1 && earlyReturnAt !== -1 && pruneAt < earlyReturnAt,
 		"the staging prune must run BEFORE the async_jobs early-return or an idle instance never prunes");
 });
+
+test("startup hook returns while recovery waits; stop prevents stale finish and configuration", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	plugin.logger = noopLogger;
+	Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => {} } });
+	plugin.ensureLuaConsoleUnlocked = async () => {};
+	plugin.retirementJournal = { snapshot: () => ({ id: "journal", retirements: [] }) };
+	const calls = [];
+	let release;
+	plugin.lua = { sourceRecovery: async action => {
+		calls.push(action);
+		if (action === "begin") return new Promise(resolve => { release = resolve; });
+		return '{"success":true}';
+	} };
+	plugin.sendConfigurationToLua = async () => calls.push("config");
+	plugin.sendGatewayConfigToLua = async () => calls.push("gateways");
+	let hookReturned = false;
+	const hook = plugin.onStart().then(() => { hookReturned = true; });
+	for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+	assert.equal(hookReturned, true, "startup hook must not wait for the roster RCON reply");
+	assert.deepEqual(calls, ["begin"]);
+	await plugin.onStop();
+	release('{"success":true,"platforms":[{"platformIndex":3,"platformUid":"u"}]}');
+	await hook;
+	for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(calls, ["begin"], "stopped runtime issued reconciliation/configuration");
+});
+
+test("source identity parse failures include bounded raw evidence and cannot authorize deletion", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	plugin.logger = noopLogger;
+	plugin.lua = { sourceRecovery: async () => 'RCON truncated: <bad reply>',
+		deleteSourcePlatform: async () => { assert.fail("invalid reply authorized deletion"); } };
+	const response = await plugin.handleDeleteSourcePlatformMeasured({ platformIndex: 3, platformName: "p", exportId: "job" });
+	assert.equal(response.success, false);
+	assert.match(response.error, /Source recovery identity returned invalid JSON: RCON truncated/);
+});
+
+test("background recovery visits all 500 identities before finish and reports a refused roster", async () => {
+	for (const refuse of [false, true]) {
+		const plugin = Object.create(InstancePlugin.prototype);
+		const errors = [], calls = [];
+		plugin.logger = { ...noopLogger, error: message => errors.push(message) };
+		Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => {} } });
+		plugin.ensureLuaConsoleUnlocked = async () => {};
+		plugin.retirementJournal = { snapshot: () => ({ id: "journal", retirements: [{ platformUid: "u499", exportId: "retired" }] }) };
+		plugin.lua = { sourceRecovery: async (action, ...args) => {
+			calls.push([action, ...args]);
+			await new Promise(resolve => setImmediate(resolve));
+			if (action === "begin") return JSON.stringify(refuse ? { success: false, error: "wrong journal" }
+				: { success: true, platforms: Array.from({ length: 500 }, (_, i) => ({ platformIndex: i, platformUid: `u${i}` })) });
+			return '{"success":true}';
+		} };
+		let done = false;
+		plugin.sendConfigurationToLua = async () => calls.push(["config"]);
+		plugin.sendGatewayConfigToLua = async () => { done = true; };
+		await plugin.onStart();
+		assert.equal(done, false);
+		for (let i = 0; i < 550 && !done && !errors.length; i++) await new Promise(resolve => setImmediate(resolve));
+		if (refuse) {
+			assert.match(errors[0], /platforms remain protected.*wrong journal/);
+			assert.deepEqual(calls.map(call => call[0]), ["begin"]);
+		} else {
+			assert.equal(done, true);
+			assert.equal(calls.filter(call => call[0] === "reconcile").length, 500);
+			assert.deepEqual(calls[500], ["reconcile", 499, "u499", "retired"]);
+			assert.deepEqual(calls.slice(-2), [["finish"], ["config"]]);
+		}
+	}
+});

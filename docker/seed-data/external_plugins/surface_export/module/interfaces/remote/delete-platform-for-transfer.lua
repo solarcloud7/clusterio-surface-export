@@ -9,6 +9,9 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   if type(expected_job_id) ~= "string" or expected_job_id == "" then
     return "ERROR:missing source job identity"
   end
+  if type(expected_uid) ~= "string" or expected_uid == "" then
+    return "ERROR:missing source retirement identity"
+  end
   local force = game.forces[force_name]
   if not force then
     return "ERROR:Force not found: " .. tostring(force_name)
@@ -19,6 +22,7 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   local receipt = expected_job_id and Receipts.get("source_deleted", expected_job_id)
   if receipt then
     if receipt.platform_index == platform_index and receipt.force_name == force_name
+        and (not receipt.platform_uid or receipt.platform_uid == expected_uid)
         and not (platform and platform.valid) then return "SUCCESS" end
     return "ERROR:source deletion receipt identity mismatch"
   end
@@ -27,11 +31,9 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     return "ERROR:" .. tostring(id_reason) .. " — refusing to delete platforms[" .. tostring(platform_index) .. "]"
   end
 
-  if expected_uid then
-    if not SourceRecovery.matches(platform, expected_uid) then return "ERROR:source retirement identity changed" end
-    local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
-    if not committed then return "ERROR:" .. tostring(commit_error) end
-  end
+  if not SourceRecovery.matches(platform, expected_uid) then return "ERROR:source retirement identity changed" end
+  local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
+  if not committed then return "ERROR:" .. tostring(commit_error) end
 
   -- Retain identity and the frozen source until deletion actually succeeds.
   -- A failed request must not unlock it or publish a source-deleted tombstone.
@@ -55,6 +57,7 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     if expected_job_id then
       Receipts.put("source_deleted", expected_job_id, {
         platform_index = platform_index, force_name = force_name,
+        platform_uid = expected_uid,
         surface_index = lock.surface_index, tick = game.tick,
       })
     end

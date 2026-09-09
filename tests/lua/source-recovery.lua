@@ -58,6 +58,11 @@ recovery.startup()
 assert(not recovery.begin("boot-c", "journal-a", true).success)
 assert(platform.hidden and not env.storage.source_recovery_ready)
 assert(not recovery.finish().success)
+-- Factorio throws on member reads from invalid entity handles.
+env.storage.source_recovery_identities[3] = {surface_index = 8, hub_unit_number = 16, uid = "boot-b:16"}
+platform.hub = setmetatable({valid = false}, {__index = function() error("invalid LuaEntity read") end})
+local valid_read, result = pcall(recovery.begin, "boot-d", "journal-a", true)
+assert(valid_read and not result.success, "invalid hub crashed recovery instead of refusing")
 print("PASS startup protection, retired identity quarantine, replay binding, and untracked-save refusal")
 
 -- Startup must not perform transfer-only cargo preparation or wait for scheduler work
