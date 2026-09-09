@@ -259,6 +259,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 
+	override onExit() {
+		// Clusterio also calls this on abrupt exit, without a preceding onStop.
+		this.timingEpoch = randomUUID();
+	}
+
 	async handleExportComplete(data: Record<string, unknown>) {
 		return this.withTiming(String(data.export_id || "export-completion"), String(data.export_id || ""), "handleExportComplete", () => this.handleExportCompleteMeasured(data));
 	}

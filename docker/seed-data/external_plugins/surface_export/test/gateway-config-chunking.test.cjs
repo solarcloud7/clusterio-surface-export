@@ -16,7 +16,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 		};
 	}
 	if (request === "@clusterio/host") {
-		return { BaseInstancePlugin: class {} };
+		return { BaseInstancePlugin: class { onExit() {} } };
 	}
 	return originalLoad.call(this, request, parent, isMain);
 };
@@ -252,6 +252,7 @@ test("Lua source grounding: staging refusals, registration, prune placement, no 
 });
 
 test("startup hook returns while recovery waits; stop prevents stale finish and configuration", async () => {
+	for (const stopHook of ["onStop", "onExit"]) {
 	const plugin = Object.create(InstancePlugin.prototype);
 	plugin.logger = noopLogger;
 	Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => {} } });
@@ -271,11 +272,12 @@ test("startup hook returns while recovery waits; stop prevents stale finish and 
 	for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
 	assert.equal(hookReturned, true, "startup hook must not wait for the roster RCON reply");
 	assert.deepEqual(calls, ["begin"]);
-	await plugin.onStop();
+	await plugin[stopHook]();
 	release('{"success":true,"platforms":[{"platformIndex":3,"platformUid":"u"}]}');
 	await hook;
 	for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
 	assert.deepEqual(calls, ["begin"], "stopped runtime issued reconciliation/configuration");
+	}
 });
 
 test("source identity parse failures include bounded raw evidence and cannot authorize deletion", async () => {

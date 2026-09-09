@@ -87,7 +87,7 @@ Platform identities combine a persisted creation epoch with hub identity. A diff
 journal ID, corrupt journal, unidentified older platform when retirements exist, or
 roster over 500 platforms refuses automatic reconciliation. Startup protection and
 Lua reconciliation calls are synchronous/bounded by that roster limit, not a proven
-frame budget. RCON requests run sequentially outside the startup hook. Stop/restart
+frame budget. RCON requests run sequentially outside the startup hook. Stop, abrupt exit or restart
 invalidates the worker before its next request, including `finish`. A failed reply or
 journal refusal logs an explicit protected-startup error; repair the cause and restart.
 
