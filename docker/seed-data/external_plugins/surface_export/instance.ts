@@ -11,6 +11,7 @@ import * as messages from "./messages";
 import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
+import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
 
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
@@ -26,6 +27,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private controllerManagedTransferExports: Set<string> = new Set();
 	private pendingTransfer: PendingTransfer | null = null;
 	private lua!: LuaInterface;
+	private retirementJournal!: SourceRetirementJournal;
+	private retirementLoadError?: string;
 	private timingEpoch = randomUUID();
 	private async withTiming<T>(jobId: string, exportId: string | undefined, stage: string, fn: () => Promise<T>): Promise<T> {
 		const clock = new TimingClock(jobId, "instance", record => {
@@ -73,6 +76,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
 		this.lua = new LuaInterface(this, this.logger);
+		this.retirementJournal = new SourceRetirementJournal(this.i.path("surface_export_source_retirements.json"));
+		try { await this.retirementJournal.load(); }
+		catch (error) {
+			this.retirementLoadError = getErrorMessage(error);
+			this.logger.error(`Source recovery journal unavailable: ${this.retirementLoadError}`);
+		}
 
 		this.i.server.handle("surface_export_complete", this.handleExportComplete.bind(this));
 
@@ -103,12 +112,61 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 	override async onStart() {
 		this.timingEpoch = randomUUID();
+		const epoch = this.timingEpoch;
+		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
+		// Lua's startup gate remains closed until reconciliation acknowledges finish.
+		void this.startRuntime(epoch).catch(error => {
+			if (this.timingEpoch === epoch) this.logger.error(`Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: ${getErrorMessage(error)}`);
+		});
+	}
+
+	private assertRecoveryRuntime(epoch: string) {
+		if (this.timingEpoch !== epoch) throw new Error("Source recovery runtime stopped or replaced");
+	}
+
+	private async startRuntime(epoch: string): Promise<void> {
 		try { await this.i.sendTo("controller", new messages.OperationTimingEvent({ v: 1, id: "runtime_started", clockId: this.timingEpoch, jobId: "runtime", instanceId: this.i.id, owner: "instance", stage: "runtime_started", kind: "inclusive", status: "completed", revision: 1, startMs: null, endMs: null, executionMs: null })); }
 		catch (error) { this.logger.warn(`Runtime profiling notification failed: ${getErrorMessage(error)}`); }
-		this.logger.info("Instance started - Surface Export plugin ready");
+		this.assertRecoveryRuntime(epoch);
 		await this.ensureLuaConsoleUnlocked();
+		this.assertRecoveryRuntime(epoch);
+		await this.reconcileSourceRetirements(epoch);
+		this.assertRecoveryRuntime(epoch);
 		await this.sendConfigurationToLua();
+		this.assertRecoveryRuntime(epoch);
 		await this.sendGatewayConfigToLua();
+		this.assertRecoveryRuntime(epoch);
+		this.logger.info("Instance started - Surface Export recovery reconciled and plugin ready");
+	}
+
+	private async sourceRecoveryCall(action: "begin" | "reconcile" | "finish" | "identity", ...args: Array<string | number | boolean | null>) {
+		const raw = await this.lua.sourceRecovery(action, ...args);
+		let response;
+		try { response = JSON.parse(raw); }
+		catch (error) { throw new Error(`Source recovery ${action} returned invalid JSON: ${raw.slice(0, 500)}`, { cause: error }); }
+		if (!response || response.success !== true) throw new Error(String(response?.error || "Source recovery refused"));
+		return response;
+	}
+
+	private async reconcileSourceRetirements(epoch: string): Promise<void> {
+		if (this.retirementLoadError) throw new Error(this.retirementLoadError);
+		const journal = this.retirementJournal.snapshot();
+		const call = async (action: "begin" | "reconcile" | "finish", ...args: Array<string | number | boolean | null>) => {
+			this.assertRecoveryRuntime(epoch);
+			const response = await this.sourceRecoveryCall(action, ...args);
+			this.assertRecoveryRuntime(epoch);
+			return response;
+		};
+		const begin = await call("begin", randomUUID(), journal.id, journal.retirements.length > 0);
+		const roster = Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {});
+		let quarantined = 0;
+		for (const platform of roster as Array<{ platformIndex: number; platformUid: string }>) {
+			const retired = journal.retirements.find(record => record.platformUid === platform.platformUid);
+			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null);
+			if (response.quarantined) quarantined++;
+		}
+		await call("finish");
+		if (quarantined) this.logger.warn(`${quarantined} retired source platform(s) restored from a save remain quarantined; matching pending transfers may retry deletion.`);
 	}
 
 	async sendConfigurationToLua() {
@@ -197,7 +255,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	override async onStop() {
+		this.timingEpoch = randomUUID(); // Invalidate work awaiting an old RCON reply.
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
+	}
+
+	override onExit() {
+		// Clusterio also calls this on abrupt exit, without a preceding onStop.
+		this.timingEpoch = randomUUID();
 	}
 
 	async handleExportComplete(data: Record<string, unknown>) {
@@ -772,11 +836,26 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
+			if (!request.exportId) return { success: false, error: "Source retirement requires an export identity" };
+			const forceName = String(request.forceName || "player");
+			const identity = await this.sourceRecoveryCall("identity", platformIndex, forceName, request.exportId);
+			let retirement: SourceRetirement;
+			if (identity.missing === true) {
+				const prior = this.retirementJournal.snapshot().retirements.find(record => record.exportId === request.exportId
+					&& record.platformIndex === platformIndex && record.forceName === forceName);
+				if (!prior) return { success: false, error: "Missing source has no external retirement evidence" };
+				retirement = prior;
+			} else {
+				retirement = { platformUid: identity.platformUid, surfaceIndex: identity.surfaceIndex,
+					platformIndex, forceName, exportId: request.exportId };
+				await this.retirementJournal.retire(retirement);
+			}
 			const result = await this.lua.deleteSourcePlatform(
 				platformIndex,
 				String(request.platformName || ""),
 				String(request.forceName || "player"),
 				request.exportId ?? null,
+				retirement.platformUid,
 			);
 
 			const trimmedResult = result.trim();

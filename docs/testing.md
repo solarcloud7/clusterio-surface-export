@@ -33,6 +33,22 @@ and the oracle do.
 Static guards enforce repository rules across these categories; they are not substitutes for physical or
 integration evidence.
 
+### Legacy gallery save isolation
+
+CI runs `gallery-suite` in its own fresh cluster; the remaining suites share a separate
+cluster. The gallery's golden saves predate source recovery identities. Loading them after
+other tests have retired platforms correctly triggers the unidentified-save guard. Run
+34288000057 reproduced this refusal; the original instance snapshots were restored.
+
+The gallery loader now checks both external recovery journals before replacing either world.
+It requires empty retirement history and refuses missing or malformed authority. Use fresh
+disposable instances for this fixture; never clear an existing recovery journal to run it.
+Both CI partitions are required to cover the full suite. Their artifacts are
+`instrument-reports-gallery` and `instrument-reports` (failure bundles use the same suffix).
+Completed source-deletion receipts remain in ordinary fixture worlds for replay protection;
+preflight accepts them only with completed deletion evidence and an absent source surface
+and platform. Pending locks, holds and unresolved receipts still refuse a fixture.
+
 ### Pipeline timing baseline — 2026-09-07
 
 These are observed command/job durations, not Factorio processing time. Two successful CI runs

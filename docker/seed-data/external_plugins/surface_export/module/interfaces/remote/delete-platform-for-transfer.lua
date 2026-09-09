@@ -3,10 +3,14 @@ local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 
-local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id)
+local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   if type(expected_job_id) ~= "string" or expected_job_id == "" then
     return "ERROR:missing source job identity"
+  end
+  if type(expected_uid) ~= "string" or expected_uid == "" then
+    return "ERROR:missing source retirement identity"
   end
   local force = game.forces[force_name]
   if not force then
@@ -18,6 +22,7 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   local receipt = expected_job_id and Receipts.get("source_deleted", expected_job_id)
   if receipt then
     if receipt.platform_index == platform_index and receipt.force_name == force_name
+        and (not receipt.platform_uid or receipt.platform_uid == expected_uid)
         and not (platform and platform.valid) then return "SUCCESS" end
     return "ERROR:source deletion receipt identity mismatch"
   end
@@ -25,6 +30,10 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   if not id_ok then
     return "ERROR:" .. tostring(id_reason) .. " — refusing to delete platforms[" .. tostring(platform_index) .. "]"
   end
+
+  if not SourceRecovery.matches(platform, expected_uid) then return "ERROR:source retirement identity changed" end
+  local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
+  if not committed then return "ERROR:" .. tostring(commit_error) end
 
   -- Retain identity and the frozen source until deletion actually succeeds.
   -- A failed request must not unlock it or publish a source-deleted tombstone.
@@ -48,6 +57,7 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     if expected_job_id then
       Receipts.put("source_deleted", expected_job_id, {
         platform_index = platform_index, force_name = force_name,
+        platform_uid = expected_uid,
         surface_index = lock.surface_index, tick = game.tick,
       })
     end
@@ -58,11 +68,11 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   return "ERROR:delete_platform could not remove '" .. tostring(platform_name) .. "' (no valid surface)"
 end
 
-return function(platform_index, platform_name, force_name, expected_job_id)
+return function(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   storage.surface_export_timing_sequence = (storage.surface_export_timing_sequence or 0) + 1
  local id = "recovery_" .. storage.surface_export_timing_sequence
  Timing.begin(id, "recovery-lua", nil, expected_job_id)
- local result = table.pack(Timing.scope(id, "source_deletion", delete_platform_for_transfer, platform_index, platform_name, force_name, expected_job_id))
+ local result = table.pack(Timing.scope(id, "source_deletion", delete_platform_for_transfer, platform_index, platform_name, force_name, expected_job_id, expected_uid))
  local failed = result[1] == false or (type(result[1]) == "string" and result[1]:sub(1, 6) == "ERROR:")
  Timing.finish(id, failed and "failed" or "completed")
  return table.unpack(result, 1, result.n)

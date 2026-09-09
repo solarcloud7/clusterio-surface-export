@@ -44,7 +44,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
     const directory=join(ROOT,"ci-artifacts",run);mkdirSync(directory,{recursive:true});
     const report={schemaVersion:1,case:chosen.id,run,contract,startedAt:new Date().toISOString(),
       head:execFileSync("git",["rev-parse","HEAD"],{cwd:ROOT,encoding:"utf8"}).trim(),hashes:{},cleanup:{success:false}};
-    for(const file of ["docker-lab.mjs","cases.mjs","fault-hook.cjs","performance.lua","oracle.mjs","contract.json"])
+    for(const file of ["docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
     for(const file of ["dist/node/controller.js","dist/node/instance.js","module/core/import-completion.lua","module/utils/transfer-receipts.lua"])
       report.hashes[`plugin/${file}`]=hash(join(PLUGIN,file));

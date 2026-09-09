@@ -7,7 +7,7 @@ const path = require("node:path");
 
 const pluginDir = path.join(__dirname, "..");
 const distNode = path.join(pluginDir, "dist", "node");
-const { ControllerPlugin, PENDING_TRANSFER_INTENT_RETENTION_MS, SOURCE_COMMIT_MARKER_RETENTION_MS } = require(path.join(distNode, "controller.js"));
+const { ControllerPlugin, SOURCE_COMMIT_MARKER_RETENTION_MS } = require(path.join(distNode, "controller.js"));
 
 function read(rel) {
 	return fs.readFileSync(path.join(pluginDir, rel), "utf8");
@@ -84,19 +84,30 @@ test("required recovery persistence refuses a missing intent before writing an e
 		/Recovery intent unavailable for 1:expired/);
 });
 
-test("pending transfer observability store prunes stale entries", async () => {
+test("new transfers and recovery ticks retain unresolved intents across clock jumps", async () => {
 	const now = Date.now();
 	const { plugin, calls } = makeControllerHarness([
 		pendingIntent({ transferId: "fresh", startedAt: now - 1_000 }),
-		pendingIntent({ transferId: "stale", startedAt: now - PENDING_TRANSFER_INTENT_RETENTION_MS - 1 }),
-		pendingIntent({ transferId: "invalid", startedAt: "not-a-number" }),
+		pendingIntent({ transferId: "old", startedAt: now - 24 * 60 * 60 * 1000 }),
 	]);
 
-	const pruned = await plugin.prunePendingTransfers(now);
-
-	assert.equal(pruned, 2, "stale/invalid persisted intents should be pruned");
-	assert.deepEqual([...plugin.pendingTransfers.keys()], ["fresh"]);
-	assert.equal(calls.persisted, 1, "pruning should persist the compacted observability store");
+	const old = plugin.pendingTransfers.get("old");
+	plugin.persistPendingTransfer(pendingIntent({transferId: "new"}));
+	assert.equal(plugin.pendingTransfers.get("old"), old, "new work must not erase unresolved recovery");
+	const originalInterval = global.setInterval, originalNow = Date.now;
+	let callback, observed;
+	plugin.orchestrator = { recoverPendingTransfers: async () => { observed = plugin.pendingTransfers.get("old"); } };
+	global.setInterval = fn => { callback = fn; return { unref() {} }; };
+	try {
+		plugin.startRecovery();
+		Date.now = () => now + 365 * 24 * 60 * 60 * 1000;
+		callback();
+		await new Promise(resolve => setImmediate(resolve));
+		assert.equal(observed, old, "elapsed wall time does not invalidate recovery authority");
+	} finally { global.setInterval = originalInterval; Date.now = originalNow; }
+	plugin.removePendingTransfer("old");
+	assert.equal(plugin.pendingTransfers.has("old"), false, "explicit resolution still removes the intent");
+	assert.equal(calls.persisted, 2);
 });
 
 test("COMMIT-transmitted markers persist write-ahead but are bounded and non-authoritative", async () => {

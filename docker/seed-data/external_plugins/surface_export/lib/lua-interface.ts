@@ -187,11 +187,19 @@ export class LuaInterface {
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
 	}
 
-	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null): Promise<string> {
+	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity", ...args: Array<string | number | boolean | null>): Promise<string> {
+		const values = args.map(value => value === null ? "nil"
+			: typeof value === "string" ? `"${escapeString(value)}"` : String(value));
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "source_recovery_${action}"`
+			+ `${values.length ? ", " + values.join(", ") : ""}))`);
+	}
+
+	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null, platformUid?: string): Promise<string> {
 		const jobArg = exportId ? `, "${escapeString(exportId)}"` : ", nil";
+		const uidArg = platformUid ? `, "${escapeString(platformUid)}"` : "";
 		return this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
-			`${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"${jobArg}))`,
+			`${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"${jobArg}${uidArg}))`,
 		);
 	}
 

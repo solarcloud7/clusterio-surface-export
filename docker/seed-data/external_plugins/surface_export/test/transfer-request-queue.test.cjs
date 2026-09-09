@@ -32,6 +32,23 @@ function entry(id, source = 1, target = 2) {
 	return { id, request: { sourceInstanceId: source, targetInstanceId: target, sourcePlatformIndex: Number(id) },
 		operation: { transferId: id, status: "queued", sourceInstanceId: source, targetInstanceId: target } };
 }
+
+test("orphan recovery authority reserves both instances even without an active timing record", async t => {
+	const plugin = { activeTransfers: new Map(), pendingTransfers: new Map([["1:old", {
+		sourceInstanceId: 1, targetInstanceId: 2,
+	}]]) };
+	const orchestrator = new TransferOrchestrator(plugin, messages);
+	t.after(() => orchestrator.requestQueue.stop());
+	const started = [];
+	orchestrator.runQueuedRequest = async item => { started.push(item.id); };
+	await orchestrator.requestQueue.add(entry("1"));
+	await orchestrator.requestQueue.add(entry("2", 3, 4));
+	await orchestrator.requestQueue.pump(); await flush();
+	assert.deepEqual(started, ["2"], "retained authority must block only the affected instances");
+	plugin.pendingTransfers.clear(); // Models acknowledged recovery, not age-based expiry.
+	await orchestrator.requestQueue.pump(); await flush();
+	assert.deepEqual(started, ["2", "1"]);
+});
 test("three requests sharing instances serialize through terminal recovery; unrelated routes can run", async t => {
 	const started = [], errors = [];
 	const queue = new TransferRequestQueue({ run: async item => { started.push(item.id); item.operation.status = "awaiting_validation"; },

@@ -155,9 +155,17 @@ function AsyncProcessor.process_tick()
 		local job = entry.job
 
 		if job.type == "export" then
-			local done = Timing.scope(job.job_id, "entities", ExportPipeline.process_batch, job, get_batch_size, should_show_progress)
-			if done then
-				ExportPipeline.complete(job)
+			local ok, err = pcall(function()
+				if job.entities_complete then
+					ExportPipeline.complete(job)
+				else
+					local done = Timing.scope(job.job_id, "entities", ExportPipeline.process_batch, job, get_batch_size, should_show_progress)
+					if done then job.entities_complete = true end
+				end
+			end)
+			if not ok then
+				log("[Export] Job " .. tostring(job.job_id) .. " interrupted; automatic execution stopped: " .. tostring(err))
+				ExportPipeline.interrupt(job, err)
 			end
 		elseif job.type == "import" then
 			local ok, err = pcall(function()

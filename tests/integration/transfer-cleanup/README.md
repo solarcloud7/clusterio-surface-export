@@ -62,6 +62,9 @@ ordinary recovery worker to complete the same canonical transfer. It checks sour
 usability and exact physical cargo again. The normal leg also replays source deletion and destination
 release and verifies unchanged cargo. Integration discovery runs the populated-hub case followed by an
 empty-hub case that restarts only the controller while the handoff is unresolved.
+The source replay supplies the UID captured from the locked source in the same Lua
+callback that starts the transfer. It does not infer identity from a deleted platform
+or manufacture a UID from the destination. The artifact retains `sourcePlatformUid`.
 Abrupt crashes, lost acknowledgements, TTL expiry and restoration of older saves remain separate live
 acceptance cases. The controller unit suite covers lost replies and concurrent duplicate verdicts.
 Callback profiling raises only the fixture response cap to 256 KiB; see the
@@ -98,6 +101,12 @@ actual controller failure retained rather than claiming the deletion fault was t
 
 This is one live deletion-fault reproduction. Offline analyzer tests are not additional live trials.
 No universal zero-loss, crash-safety, or production-readiness claim follows from this bounded test.
+
+CI run `34302612345` on `582a211` exposed an outdated caller in this harness: the
+baseline transfer completed, source absence and destination cargo checks passed, but
+the replay omitted the newly required retirement UID. This was `HARNESS_ERROR` with
+successful cleanup; the injected deletion-failure leg was not reached. The harness
+now reuses the original source UID and surfaces Lua refusal text in assertion errors.
 
 The final fixture's injected construction-failure cleanup passed in
 `ci-artifacts/transfer-cleanup-mtsmbjbf.json`. Its intentional error exits 1; `cleanup.success` is true.

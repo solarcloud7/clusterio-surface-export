@@ -67,7 +67,7 @@ if (args[0] === "--analyze") {
       report.callbackProfile.readings.push({ instance: host, ...JSON.parse(json), executionMs, raw: line });
     }
     const result = JSON.parse(raw.trim().split(/\r?\n/).at(-1));
-    assert.equal(result.success, true, result.error || "Lua command failed");
+    assert.equal(result.success, true, result.error || String(result.result || "Lua command failed"));
     return result;
   }
   const probe = (host, action, name) => lua(host, `local probe=(function() ${code} end)(); return probe('${action}','${name}')`);
@@ -103,7 +103,10 @@ if (args[0] === "--analyze") {
           if candidate.name=='${name}' then assert(not p);p=candidate end end
           assert(p); local trigger=assert(package.loaded['__level__/modules/surface_export/core/transfer-trigger.lua'])
           local job,err=trigger.start(game.forces.player,p.index,${ids[2]});assert(job,err)
-          return {success=true,job=job}`);
+          local identity=helpers.json_to_table(remote.call('surface_export','source_recovery_identity',p.index,'player',job))
+          assert(identity.success and identity.platformUid,identity.error)
+          return {success=true,job=job,platformUid=identity.platformUid}`);
+        leg.sourcePlatformUid = start.platformUid;
         leg.transferId = `${ids[1]}:${start.job}`;
         leg.outcome = await until(() => {
           const rows = fetchTransferSummaries({ limit: 200 });
@@ -119,7 +122,7 @@ if (args[0] === "--analyze") {
           assert.deepEqual(leg.after.destination.cargo, leg.before.cargo, "control cargo changed");
           leg.replay = {
             source: lua(1, `local remove=assert(package.loaded['__level__/modules/surface_export/interfaces/remote/delete-platform-for-transfer.lua'])
-              local result=remove(${leg.before.index},'${name}','player','${start.job}')
+              local result=remove(${leg.before.index},'${name}','player','${start.job}',${JSON.stringify(start.platformUid)})
               return {success=result=='SUCCESS',result=result}`),
             destination: lua(2, `local holds=assert(package.loaded['__level__/modules/surface_export/core/destination-hold.lua'])
               local ok,result=holds.go_live('${leg.transferId}');return {success=ok==true,result=result}`),

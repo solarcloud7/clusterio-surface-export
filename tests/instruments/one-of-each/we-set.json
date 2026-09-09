@@ -1206,7 +1206,7 @@
 			{
 				"field": "specific_data",
 				"sites": [
-					"core/export-pipeline.lua:ExportPipeline.complete",
+					"core/export-pipeline.lua:prepare_completion",
 					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
 				]
 			},

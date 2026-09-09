@@ -1,6 +1,7 @@
 local RemoteInterface = {}
 
 local Base = require("modules/surface_export/interfaces/remote/base")
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 
 local module_version = require("modules/surface_export/version")
 local function get_module_version()
@@ -107,6 +108,10 @@ RemoteInterface.get_validation_result_json = Base.json_wrap(get_validation_resul
 
 function RemoteInterface.register()
   remote.add_interface("surface_export", {
+    source_recovery_begin = Base.json_wrap(SourceRecovery.begin),
+    source_recovery_reconcile = Base.json_wrap(SourceRecovery.reconcile),
+    source_recovery_finish = Base.json_wrap(SourceRecovery.finish),
+    source_recovery_identity = Base.json_wrap(SourceRecovery.source_identity),
     export_platform = export_platform,
     export_platform_to_file = export_platform_to_file,
     get_export = get_export,

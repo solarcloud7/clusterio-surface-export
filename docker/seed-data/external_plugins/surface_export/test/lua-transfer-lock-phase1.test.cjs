@@ -81,20 +81,15 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(selftest, /source_query_committed_ignores_rename/, "live selftest must prove committed query is rename-robust");
 	assert.match(selftest, /committed_tombstone_pruned/, "live selftest must prove tombstone retention is bounded");
 });
-test("source commit seam is intentionally unwired until protocol PR", () => {
-	const productionFiles = [
-		path.join("core", "export-pipeline.lua"),
-		path.join("core", "transfer-trigger.lua"),
-		path.join("interfaces", "remote", "delete-platform-for-transfer.lua"),
-		path.join("interfaces", "remote-interface.lua"),
-		path.join("interfaces", "commands", "resume-platform.lua"),
-	].map(readModule).join("\n");
-	const controller = fs.readFileSync(path.join(pluginDir, "controller.ts"), "utf8");
-	const orchestrator = fs.readFileSync(path.join(pluginDir, "lib", "transfer-orchestrator.ts"), "utf8");
-
-	assert.doesNotMatch(productionFiles, /commit_source_transfer_lock\s*\(/, "PR-2 adds the commit seam but production Lua must not call it until PR-3 wiring");
-	const markerRefs = [...(controller + "\n" + orchestrator).matchAll(/recordCommitTransmitted\s*\(/g)].length;
-	assert.equal(markerRefs, 1, "PR-2 commit marker must have only its declaration; no production caller until PR-3 immediate-abort gate wiring");
+test("source deletion commits its lock only after matching the external retirement identity", () => {
+	const deletion = readModule(path.join("interfaces", "remote", "delete-platform-for-transfer.lua"));
+	const identity = deletion.indexOf("SourceRecovery.matches(platform, expected_uid)");
+	const commit = deletion.indexOf("SurfaceLock.commit_source_transfer_lock(");
+	const remove = deletion.indexOf("GameUtils.delete_platform(platform)");
+	assert.ok(identity >= 0 && identity < commit && commit < remove);
+	const instance = fs.readFileSync(path.join(pluginDir, "instance.ts"), "utf8");
+	const persist = instance.indexOf("await this.retirementJournal.retire(retirement)");
+	assert.ok(persist >= 0 && persist < instance.indexOf("await this.lua.deleteSourcePlatform("));
 });
 test("export-platform-to-file reports queued success and leaves async writing to the pipeline", () => {
 	const remote = readModule(path.join("interfaces", "remote", "export-platform-to-file.lua"));

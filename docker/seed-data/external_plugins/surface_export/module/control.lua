@@ -10,6 +10,7 @@ local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gatewa
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 
 local SurfaceExportModule = {}
 
@@ -53,6 +54,7 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
+		if storage.source_recovery_ready == false then return end
 		AsyncProcessor.process_tick()
 		if game.tick % 60 == 0 then
 			SurfaceLock.scan_transfer_expiries()
@@ -61,9 +63,14 @@ SurfaceExportModule.events = {
 
 	[clusterio_api.events.on_server_startup] = function()
 		initialize_storage()
+		SourceRecovery.startup()
 		Gateway.discover_and_unlock()
 		TeleportGui.ensure_permission_group()
 		log("[Surface Export] Connected to Clusterio controller")
+	end,
+
+	[e.on_surface_created] = function(event)
+		SourceRecovery.surface_created(event.surface_index)
 	end,
 
 	[clusterio_api.events.on_instance_updated] = function()

@@ -83,8 +83,16 @@ Diagnostic log tails are capped at 1 MiB per container; `cleanup.logs[].truncate
 records that limit. This does not truncate the required physical observations or profiler records.
 Missing or truncated measurement records invalidate the performance comparison.
 
-Older-save restoration can legitimately produce STOP with the current save-local receipt design.
-Do not turn that into an expected-success assertion or describe these cases as universal crash safety.
+The original save-local receipt design produced STOP on older-source restoration.
+The retirement-journal follow-up passes the same sampled safety contract. Retain both
+results; neither establishes universal crash safety. Contract version 2 also requires
+source-crash recovery to complete, whereas version 1 only required sampled safety.
+
+`aged-recovery-intent` withholds a real deletion reply, stops the controller, and changes
+only that owned transfer's persisted `startedAt` to one day earlier. It then restarts the
+controller and requires a real retry, one import, completed recovery and exact physical
+cargo. It tests retention/reload behavior without waiting a day; it does not simulate
+a day of Factorio ticks or change receipt capacity or recovery timers.
 
 To exercise cleanup after an intentional harness error:
 
@@ -128,6 +136,30 @@ setup failure is retained in `ci-artifacts/se-manual-mtsws6ko-0e05708b/result.js
 parent lacked its child mount directory. Cleanup was corrected to discover containers that Docker
 created but failed to start; a subsequent owner-checked cleanup removed those resources.
 
+- `se-manual-mtt3ae7g-789d3838`: prototype **HARNESS_ERROR** before transfer. An invalid
+  Factorio event registration prevented startup; cleanup succeeded. Corrected to the
+  supported surface-creation event, retaining the creation epoch before the hub exists.
+- `se-manual-mtt3iyih-1db46f1d`: prototype **HARNESS_ERROR** before transfer. Recovery
+  functions were not registered in the remote interface; seed locks remained and the
+  preflight refused them. Registration was corrected; cleanup succeeded.
+- `se-manual-mtt3mop4-023b3790`: older-source restore **PASS**. Completed transfer first
+  left only the destination. Reloading the earlier checkpoint restored a protected source;
+  both subsequent observations retained one usable destination and exact physical cargo.
+- `se-manual-mtt3qqj0-030e24a4`: source crash before save **PASS for safety and liveness**.
+  Real source deletion was retried after loading the checkpoint; recovery completed with
+  source absent, one usable destination, exact physical cargo and one import request.
+  Both successful follow-up runs verified Docker resource removal.
+- `se-manual-mtt46hbt-7d62d5ad`: aged recovery intent **PASS**. With only the stopped
+  controller's matching `startedAt` changed to one day earlier, restart retried the real
+  source deletion and completed with exact physical cargo and one import. Cleanup succeeded.
+- `se-manual-mtt3yb2o-a3a8c621`: export callback follow-up matrix **PASS**, all 18
+  transfers preserved physical cargo and required profiler records; cleanup succeeded.
+  Capture/checks, serialization and publication now run on separate scheduler visits,
+  and the source diagnostic output reuses the serialized JSON. Maximum callbacks for
+  the 518-entity source scheduler were 76.12/71.47/75.42 ms (off/normal/debug), compared
+  with 150.20/153.57/156.68 ms in the earlier run. This is a fixture comparison, not a
+  universal speedup or a simulation frame-budget guarantee.
+
 - `se-manual-mtswxtzf-eb6c6d0c`: lost source reply **PASS**, exact cargo, one import, real retry,
   completed destination, and verified resource removal. This predates the additional idle-seed
   preflight checks and does not prove the other cases.
@@ -169,3 +201,18 @@ The long source callback exists with operation timing disabled. The variation be
 especially setup, prevents a precise overhead percentage from these three repetitions alone.
 The seeds retained debug mode; full destination snapshots and belt tracing were off. The complete
 config snapshot, raw readings, tick boundaries, sample counts and percentiles are in the artifact.
+
+Follow-up matrix `se-manual-mtt3yb2o-a3a8c621`, maximum callback milliseconds:
+
+| Fixture / boundary | Timing off | Normal timing | Batch timing |
+| --- | ---: | ---: | ---: |
+| 6 entities: source setup | 102.25 | 123.29 | 74.77 |
+| 6 entities: source scheduler | 4.92 | 19.44 | 3.72 |
+| 518 entities: source setup | 94.49 | 104.78 | 135.99 |
+| 518 entities: source scheduler | 76.12 | 71.47 | 75.42 |
+| 518 entities: destination setup | 55.39 | 53.34 | 52.51 |
+| 518 entities: destination scheduler | 63.27 | 60.50 | 62.12 |
+
+Large source setup, JSON encoding and destination tile work remain synchronous. The
+small-fixture normal-mode spike and setup variation also remain visible; these three
+repetitions do not isolate instrumentation overhead from host scheduling noise.

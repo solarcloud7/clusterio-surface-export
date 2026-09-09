@@ -301,9 +301,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	return job.current_index >= job.total_entities
 end
 
-function ExportPipeline.complete(job)
-	local export_id = job.job_id
-
+local function prepare_completion(job)
 	PhaseProfiler.start(job.job_id, "completion")
 
 	storage.platform_exports = storage.platform_exports or {}
@@ -409,7 +407,16 @@ function ExportPipeline.complete(job)
 	end
 
 	Timing.stop(job.job_id, "finalize_payload")
-	local json_string = Timing.scope(job.job_id, "serialization", Util.encode_json_compat, job.export_data)
+	job.completion_belt_scan_count = belt_scan_count
+	job.completion_belt_item_total = belt_item_total
+	job.completion_stage = "serialize"
+end
+
+local function publish_completion(job)
+	local export_id = job.job_id
+	local json_string = job.completion_json
+	local belt_scan_count = job.completion_belt_scan_count
+	local belt_item_total = job.completion_belt_item_total
 	local compressed = Timing.scope(job.job_id, "compression", helpers.encode_string, json_string)
 	Timing.start(job.job_id, "cache_output")
 
@@ -451,7 +458,7 @@ function ExportPipeline.complete(job)
 	)
 
 	if job.destination_instance_id then
-		Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_source_platform, job.export_data, job.platform_name)
+		Timing.scope(job.job_id, "diagnostic_output", DebugExport.export_source_platform, job.export_data, job.platform_name, json_string)
 	end
 
 	local message = string.format(
@@ -572,6 +579,29 @@ function ExportPipeline.complete(job)
 
 	Timing.finish(job.job_id, "completed")
 	storage.async_jobs[job.job_id] = nil
+end
+
+function ExportPipeline.interrupt(job, err)
+	-- Do not replay capture, cache writes or publication after partial execution.
+	job.completion_interrupted = {error = tostring(err), tick = game.tick}
+	local result = (storage.async_job_results or {})[job.job_id]
+	if result then result.status, result.complete, result.error = "interrupted", false, tostring(err) end
+	Timing.finish(job.job_id, "interrupted")
+end
+
+function ExportPipeline.complete(job)
+	-- Each call is one scheduler tick. Capture and its cargo checks remain atomic;
+	-- serialization and publication operate on that captured payload on later ticks.
+	if job.completion_stage == nil then
+		prepare_completion(job)
+	elseif job.completion_stage == "serialize" then
+		job.completion_json = Timing.scope(job.job_id, "serialization", Util.encode_json_compat, job.export_data)
+		job.completion_stage = "publish"
+	elseif job.completion_stage == "publish" then
+		publish_completion(job)
+	else
+		error("Unknown export completion stage: " .. tostring(job.completion_stage))
+	end
 end
 
 function ExportPipeline.run_blueprint_diff(job)

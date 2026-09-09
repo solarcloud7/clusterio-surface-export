@@ -205,10 +205,18 @@ export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }
 
 export function preflightState(host) {
 	return lua(host, `local function n(t) return table_size(t or {}) end;` +
+		`local evidence={}; for id,t in pairs(storage.committed_source_transfer_tombstones or {}) do ` +
+		`t=type(t)=='table' and t or {}; ` +
+		`local valid=t.transfer_id==id and type(t.surface_index)=='number' and t.surface_index>0 ` +
+		`and type(t.platform_index)=='number' and t.platform_index>0 and type(t.force_name)=='string'; ` +
+		`local s=valid and game.surfaces[t.surface_index]; local f=valid and game.forces[t.force_name]; ` +
+		`local p=f and f.platforms[t.platform_index]; evidence[#evidence+1]={validIdentity=valid,` +
+		`deletedTick=t.source_deleted_tick or false,surfacePresent=(s and s.valid) or false,` +
+		`platformPresent=(p and p.valid) or false}; end;` +
 		`return {success=true,tick=game.tick,players=#game.connected_players,paused=game.tick_paused==true,` +
 		`plugin=remote.interfaces['surface_export']~=nil,` +
 		`jobs=n(storage.async_jobs),locks=n(storage.locked_platforms),holds=n(storage.destination_holds),` +
-		`tombstones=n(storage.committed_source_transfer_tombstones)}`);
+		`tombstones=n(storage.committed_source_transfer_tombstones),tombstoneEvidence=evidence}`);
 }
 
 export function assertLeaseClean(host, state, phase) {
@@ -217,8 +225,17 @@ export function assertLeaseClean(host, state, phase) {
 	if (state.players > 0) problems.push(`${state.players} connected player(s)`);
 	if (state.paused) problems.push("game is tick-paused");
 	if (!state.plugin) problems.push("surface_export remote missing");
-	for (const key of ["jobs", "locks", "holds", "tombstones"]) {
+	for (const key of ["jobs", "locks", "holds"]) {
 		if (state[key] !== 0) problems.push(`${key}=${state[key]}`);
+	}
+	// Deletion receipts are retained for replay safety, not active leases. Accept them only
+	// with a completed deletion and independently absent source surface/platform; never clear them.
+	if (state.tombstones !== 0 && !(Array.isArray(state.tombstoneEvidence)
+		&& state.tombstoneEvidence.length === state.tombstones
+		&& state.tombstoneEvidence.every(record => record?.validIdentity === true
+			&& Number.isSafeInteger(record.deletedTick) && record.deletedTick >= 0
+			&& record.surfacePresent === false && record.platformPresent === false))) {
+		problems.push(`unresolved tombstones=${state.tombstones}`);
 	}
 	if (problems.length) {
 		throw new Error(`${phase}: host ${host} lease/preflight REFUSED (never repaired): ${problems.join("; ")}`);
@@ -246,13 +263,14 @@ export function readPlatformPause(host, name) {
 }
 
 
-export async function waitReady(host, timeoutMs = 180_000) {
+export async function waitReady(host, timeoutMs = 180_000, read = lua) {
 	const deadline = Date.now() + timeoutMs;
 	let lastError;
 	while (Date.now() < deadline) {
 		try {
-			const state = lua(host, `return {success=true,tick=game.tick,plugin=remote.interfaces['surface_export']~=nil}`);
-			if (state.success && state.plugin) return state;
+			const state = read(host, `return {success=true,tick=game.tick,plugin=remote.interfaces['surface_export']~=nil,` +
+				`recoveryReady=storage.source_recovery_ready==true}`);
+			if (state.success && state.plugin && state.recoveryReady === true) return state;
 			lastError = new Error(`plugin not ready: ${JSON.stringify(state)}`);
 		} catch (error) { lastError = error; }
 		await sleep(2000);
@@ -268,6 +286,14 @@ export async function assignSave(host, saveName) {
 
 export function readContainerJson(host, path) {
 	return JSON.parse(docker(["exec", HOSTS[host].container, "cat", path]));
+}
+
+export function assertLegacySaveJournal(host, journal) {
+	if (journal?.v !== 1 || typeof journal.id !== "string" || !journal.id
+		|| !Array.isArray(journal.retirements) || journal.retirements.length !== 0) {
+		throw new Error(`Legacy gallery saves require a fresh disposable instance on host ${host}; `
+			+ "recovery history is present or unavailable. Refusing before replacing either world; do not clear the journal.");
+	}
 }
 
 export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerPrefix }) {
@@ -337,6 +363,12 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	}, snapshots);
 
 	async function loadGoldenPair(manifest, phase) {
+		// Golden saves predate platform identities. They may only bootstrap against a fresh
+		// journal; an existing instance's recovery history must never be reset for a fixture.
+		for (const host of [1, 2]) {
+			assertLegacySaveJournal(host, readContainerJson(host,
+				instancePath(host, "surface_export_source_retirements.json")));
+		}
 		await session.prepare();
 		await session.enter(async () => {
 			for (const host of [1, 2]) ctl("instance", "stop", HOSTS[host].instance);

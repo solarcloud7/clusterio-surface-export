@@ -1,16 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, statSync, unlinkSync, rmdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, statSync, unlinkSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
 import { DockerLab, validRun } from "./docker-lab.mjs";
 import { evaluateCopies, analyze, performanceCargo } from "./oracle.mjs";
+import { ageIntent } from "./age-intent.mjs";
 
 const run="se-manual-offline-12345678";
 const copy=()=>({present:true,usable:true,tick:10,platformHidden:false,surfaceHidden:false,
   locked:false,held:false,canary:{active:true,disabled:false},cargo:performanceCargo(0)});
 const absent=()=>({present:false,tick:10});
+test("age injection only changes the exact owned intent timestamp",t=>{
+  const directory=mkdtempSync(join(tmpdir(),"se-age-intent-"));
+  const file=join(directory,"surface_export_pending_transfers.json"),id=`1:${run}:job`;
+  t.after(()=>{unlinkSync(file);rmdirSync(directory);});
+  const entries=[{transferId:id,startedAt:100,cargo:"untouched",source:1},{transferId:"foreign",startedAt:90}];
+  writeFileSync(file,JSON.stringify(entries));
+  assert.throws(()=>ageIntent(directory,"foreign",run,1000),/foreign transfer/);
+  const result=ageIntent(directory,id,run,1000);
+  assert.equal(result.after,1000-86400000);
+  entries[0].startedAt=result.after;
+  assert.deepEqual(JSON.parse(readFileSync(file)),entries);
+});
 test("independent physical oracle detects duplication and changed cargo",()=>{
   const before=copy(), sample={source:absent(),destination:copy()};
   assert.equal(evaluateCopies(before,[sample,sample]).verdict,"PASS");
@@ -46,6 +59,22 @@ test("recovery oracle requires a real fault, exactly one import, and a retry",()
   report.events[2].push(report.events[2][0]);assert.throws(()=>analyze(report),/exactly one/);report.events[2].pop();
   report.events[1].pop();assert.throws(()=>analyze(report),/retry/);report.events[1].push(report.events[1][0]);
   report.held.success=false;assert.throws(()=>analyze(report),/not accepted/);
+});
+test("source crash contract distinguishes historical safety from recovery completion",()=>{
+  const id=`1:transfer-cleanup-${run}-a`, heldCopy={...copy(),usable:false,held:true};
+  const sample={source:copy(),destination:heldCopy};
+  const report={schemaVersion:1,contract:{schemaVersion:1},case:"crash-source-before-save",
+    cleanup:{success:true},name:`transfer-cleanup-${run}-a`,transferId:id,before:copy(),
+    held:{success:true,id},samples:[sample,sample],outcome:{status:"cleanup_failed"},
+    events:{1:[{kind:"call",action:"source",id}],2:[{kind:"call",action:"import",id}]}};
+  assert.equal(analyze(report).verdict,"PASS","historical result only asserted safety");
+  report.contract.schemaVersion=2;
+  assert.equal(analyze(report).verdict,"STOP","retained protection is not completed recovery");
+  report.outcome.status="completed";
+  report.samples.push({source:absent(),destination:copy()});
+  assert.throws(()=>analyze(report),/retry/);
+  report.events[1].push(report.events[1][0]);
+  assert.equal(analyze(report).verdict,"PASS");
 });
 test("fault hook calls the real implementation and holds only an accepted scoped reply once",async()=>{
   let calls=0, rule={run,enabled:true,name:`transfer-cleanup-${run}-a`,action:"source"}; const events=[];
