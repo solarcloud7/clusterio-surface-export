@@ -69,6 +69,10 @@ jobs:
           lua5.2 tests/lua/source-delete-gate.lua
           lua5.2 tests/lua/source-recovery.lua
           lua5.2 tests/lua/export-phase-yields.lua
+          lua5.2 tests/lua/preparation-timing.lua
+          lua5.2 tests/lua/tile-scanner.lua
+          lua5.2 tests/lua/tile-batching.lua
+          lua5.2 tests/lua/payload-encoder.lua
           lua5.2 tests/lua/destination-transfer-gate.lua
           lua5.2 tests/lua/callback-profiler.lua
           lua5.2 tests/manual/transfer-reliability/performance.test.lua

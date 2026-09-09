@@ -73,7 +73,7 @@ return function(action, name)
     assert(not package.loaded[HOOK], "foreign fault hook")
     return {success=true,world=world,engine=script.active_mods.base,mods=script.active_mods,
       module=remote.call("surface_export","get_module_version")}
-  elseif action == "build" or action == "build-empty" then
+  elseif action == "build" or action == "build-empty" or action == "build-large" then
     assert(not find(name), "fixture already exists")
     local p = assert(game.forces.player.create_space_platform{name=name,planet="nauvis",starter_pack="space-platform-starter-pack"})
     p.apply_starter_pack()
@@ -83,6 +83,14 @@ return function(action, name)
     local tiles={}
     for x=-12,12 do for y=-8,8 do tiles[#tiles+1]={name="space-platform-foundation",position={x,y}} end end
     p.surface.set_tiles(tiles)
+    if action == "build-large" then
+      -- Bounded scale fixture; ordinary inert cargo avoids production consumption.
+      for x=-64,63 do
+        local row={}
+        for y=-64,63 do row[#row+1]={name="space-platform-foundation",position={x,y}} end
+        p.surface.set_tiles(row)
+      end
+    end
     if action == "build-empty" then
       for i=1,p.hub.get_max_inventory_index() do
         local inv=p.hub.get_inventory(i)
@@ -102,6 +110,21 @@ return function(action, name)
       local belt=create("transport-belt",x,5)
       assert(belt.get_transport_line(1).insert_at_back{name="iron-plate",quality=n==1 and "normal" or "rare"})
       assert(belt.get_transport_line(2).insert_at_back{name="copper-plate",quality=n==1 and "rare" or "normal"})
+    end
+    if action == "build-large" then
+      for x=16,35 do for y=16,35 do
+        local c=create("steel-chest",x,y)
+        local inv=c.get_inventory(defines.inventory.chest)
+        assert(#inv==48, "large fixture requires 48-slot steel chests")
+        for slot=1,#inv do
+          assert(inv[slot].set_stack{name="iron-plate",count=slot,quality="rare"})
+        end
+      end end
+      for x=-60,-41 do for y=16,35 do
+        local b=create("transport-belt",x,y*2-32)
+        assert(b.get_transport_line(1).insert_at_back{name="iron-plate"})
+        assert(b.get_transport_line(2).insert_at_back{name="copper-plate",quality="rare"})
+      end end
     end
     return {success=true,state=observe(name)}
   elseif action == "arm" then
@@ -131,6 +154,15 @@ return function(action, name)
     return {success=true,present=find(name)~=nil}
   elseif action == "read" then
     return {success=true,state=observe(name)}
+  elseif action == "tiles" then
+    local p=assert(find(name), "fixture missing")
+    local result={}
+    for _, t in pairs(p.surface.find_tiles_filtered{name={"empty-space","out-of-map"},invert=true}) do
+      result[#result+1]=t.name .. "@" .. t.position.x .. "," .. t.position.y
+    end
+    assert(#result<=20000,"tile observation exceeds fixture bound")
+    table.sort(result)
+    return {success=true,tiles=result}
   elseif action == "unlock" then
     local p=assert(find(name), "fixture missing")
     local lock=assert((storage.locked_platforms or {})[p.index], "fixture lock missing")

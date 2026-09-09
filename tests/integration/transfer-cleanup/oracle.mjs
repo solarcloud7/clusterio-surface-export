@@ -43,9 +43,30 @@ function usable(state) {
 // Pure analysis: never imports a cluster helper or accepts its verdict as physical evidence.
 export function analyze(report) {
   assert.equal(report.schemaVersion, 1);
-  assert.ok(report.fixture === undefined || ["starter-hub", "empty-hub"].includes(report.fixture), "unknown fixture contract");
+  assert.ok(report.fixture === undefined || ["starter-hub", "empty-hub", "large"].includes(report.fixture), "unknown fixture contract");
   const cargo = structuredClone(expectedCargo);
   if (report.fixture === "empty-hub") cargo.inventories["space-platform-hub@0,0:1"] = {};
+  if (report.fixture === "large") {
+    for (let x = 16; x <= 35; x++) for (let y = 16; y <= 35; y++) {
+      const key = `steel-chest@${x + 0.5},${y + 0.5}`;
+      cargo.entities.push(key);
+      cargo.inventories[`${key}:1`] = { "iron-plate/rare": 1176 };
+    }
+    for (let x = -60; x <= -41; x++) for (let y = 16; y <= 35; y++) {
+      const key = `transport-belt@${x + 0.5},${2 * y - 32 + 0.5}`;
+      cargo.entities.push(key);
+      cargo.lanes[`${key}:1`] = { "iron-plate/normal": 1 };
+      cargo.lanes[`${key}:2`] = { "copper-plate/rare": 1 };
+    }
+    cargo.entities.sort();
+    const tiles = [];
+    for (let x = -64; x < 64; x++) for (let y = -64; y < 64; y++) tiles.push(`space-platform-foundation@${x},${y}`);
+    tiles.sort();
+    for (const leg of [report.baseline, report.fault]) {
+      assert.deepEqual(leg.tilesBefore, tiles, "large fixture tile construction differs from contract");
+      assert.deepEqual(leg.tilesAfter, tiles, "large fixture tiles changed during transfer");
+    }
+  }
   const { baseline, fault } = report;
   assert.ok(usable(baseline.before), "baseline source must be usable");
   assert.deepEqual(baseline.before.cargo, cargo, "fixture differs from literal construction contract");

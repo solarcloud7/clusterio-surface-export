@@ -157,7 +157,7 @@ function AsyncProcessor.process_tick()
 		if job.type == "export" then
 			local ok, err = pcall(function()
 				if job.entities_complete then
-					ExportPipeline.complete(job)
+					ExportPipeline.complete(job, get_batch_size())
 				else
 					local done = Timing.scope(job.job_id, "entities", ExportPipeline.process_batch, job, get_batch_size, should_show_progress)
 					if done then job.entities_complete = true end
@@ -173,10 +173,10 @@ function AsyncProcessor.process_tick()
 					if game.tick >= job.pending_beacon_tick then
 						job.pending_beacon_tick = nil
 						job.phase2_started = true
-						ImportCompletion.run_phase2(job)
+						ImportCompletion.run_phase2(job, get_batch_size())
 					end
 				elseif job.phase2_started then
-					ImportCompletion.run_phase2(job)
+					ImportCompletion.run_phase2(job, get_batch_size())
 				elseif job.entities_complete or job.phase1_started then
 					ImportCompletion.run_phase1(job)
 				else

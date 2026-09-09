@@ -65,22 +65,25 @@ and batch size 50, a tick can examine up to 150 entity entries plus other work.
 
 | Path | Count-limited work | Work outside the entity batch limit |
 |---|---|---|
-| Export | Entity serialization | Queue preparation; final belt capture/cargo integrity; verification construction; encoding, compression, and completion |
-| Import | General entity creation; captured belt side groups | Payload preparation and platform creation; tiles; beacon pre-placement; hub, oversized side groups/unsupported belt networks, state, inventory, held-item and fluid restoration; validation, activation, and reporting |
+| Export | Entity capture; payload entity/tile array encoding | Queue preparation; final belt capture/cargo integrity; verification construction; individual large values, compression and completion |
+| Import | Tile inspection/placement; beacon pre-placement; general entities; captured belt side groups; inventory passes | Payload preparation and platform creation; hub, oversized side groups/unsupported belt networks, state, a single large entity inventory, held items and fluids; validation, activation and reporting |
 
 Export batches skip belt-item capture and retain belt references. Completion reads
 their contents in one synchronous pass without simulation updates between those
 reads. That consistency boundary can be expensive and is not limited by `batch_size`.
 
-Export capture and cargo checks remain in one callback. JSON serialization runs on
-the next visit; compression, cache output and publication follow on another visit.
+Export capture and cargo checks remain in one callback. JSON serialization starts on
+the next visit and splits large entity/tile arrays across visits; compression, cache
+output and publication follow after encoding finishes on another visit.
 Source diagnostic files reuse the serialized JSON bytes instead of encoding the same
-payload again. Encoding itself remains an indivisible synchronous operation. The Lua
+payload again. Each native encoding call remains synchronous; array batches and
+object fields are joined into the existing JSON format. No new wire format is introduced.
+One large entity or metadata field can still exceed the intended work allowance. The Lua
 regression `tests/lua/export-phase-yields.lua` checks these callback boundaries and
 the identical diagnostic bytes; live callback measurements are recorded in the manual
 Docker acceptance notes. This does not bound export setup or a large connected belt network.
 
-Import visits yield after tiles, beacon pre-placement, the final entity batch, hub
+Import visits yield between tile and beacon batches and after the final entity batch, hub
 contents, the final belt batch, inventories, and held items. Each next phase starts
 on a later eligible tick. Hub mapping runs once before beacons. Belt writes and their
 immediate physical checks remain together within each batch. State restoration still
@@ -95,6 +98,23 @@ change fluid amounts or temperatures. The failure branch still discards the fail
 destination and reports its verdict for source rollback. No phase yield enables
 early activation or removes the cargo gate. A phase can still be individually
 expensive; these boundaries separate consecutive work, not arbitrary parts of a phase.
+
+### Count budgets added in September 2026
+
+Tile restoration inspects at most `batch_size * 20` payload entries per visit.
+It finishes the complete foundation pass before starting the overlay pass. A failed
+placement interrupts the job before entity creation. Beacon pre-placement inspects
+at most `batch_size` entities per visit. Inventory restoration visits beacon
+inventories first, then others, with a soft allowance of `batch_size * 10` scanned
+entities plus serialized item stacks. It finishes one entity's inventories before
+yielding and releases its scratch inventory each visit. The next cursor is saved
+on the job; an exception interrupts the job instead of retrying partial writes.
+
+Payload encoding uses at most `max(1, floor(batch_size / 5))` entities or 100 times
+that many tiles in each native array-encoding call. Small payloads retain their
+single-call path. These are deterministic work counts, not millisecond deadlines.
+See [the large-fixture acceptance](../tests/instruments/callback-profile/batching.md)
+for physical parity, callback measurements and remaining unbounded paths.
 
 The 2026-09-07 force-insertion change replaces belt placement, not scheduling. Captured
 positions are passed to `force_insert_at`; alternate-position scans and stack merging are
@@ -178,8 +198,9 @@ Two other preparation readings were 20,095.605 and 20,084.829 ms (operations
 Original log messages put the long gap after schedule capture and before the
 scanned-entities/tiles message. That narrows the unmeasured substeps to entity
 collection, placement sorting, and tile scanning; it does not identify which one
-caused the delay. `tile_scanner.lua` currently requests every tile and only then
-excludes empty space in Lua. Split those measurements before choosing a fix.
+caused the delay. At that revision, `tile_scanner.lua` requested every tile and only
+then excluded empty space in Lua. The later preparation breakdown and paired tile
+query experiment below identify and reduce that extra work.
 
 These are stage execution intervals, not exclusive CPU times or complete callback
 measurements. Do not add maxima from different operations, nested validation stages,
@@ -187,6 +208,30 @@ or parent stages and their debug batches. In the debug subset, the largest recor
 source entity batch was 51.791 ms and destination entity batch 14.448 ms. These are
 limited samples, not global maxima. The scheduler has no enclosing callback timer;
 stage totals alone cannot establish the maximum pause across several jobs.
+
+### Preparation measurement boundaries
+
+Source `preparation` now contains separate measured children for `schedule_capture`,
+`entity_collection`, `entity_sorting`, `tile_scan` and `export_job_setup`.
+Destination `platform_preparation` contains `platform_naming`, `target_resolution`,
+`platform_creation`, `starter_pack`, `starter_cleanup`, `platform_parking`,
+`schedule_restoration` and `import_cargo_totals`. Each child records its parent ID,
+local profiler offsets, execution interval and separate tick boundaries. Parent
+boundaries are unchanged; nested durations must not be added together.
+
+Creation includes `force.create_space_platform`; starter pack includes
+`apply_starter_pack` and clearing generated hub cargo. The source tile scan includes
+the engine query and payload projection. These measurements add no yields
+and do not change transfer gates. Handled failures mark the responsible child;
+unexecuted children remain skipped. The [bounded measurement contract](../tests/instruments/callback-profile/preparation.md)
+defines the fixture, limits and evidence needed before selecting a batching change.
+
+The [tile-query comparison](../tests/instruments/callback-profile/tile-query.md)
+verified exact tile names and positions on three existing pads, with two paired
+measurements each. Export now excludes `out-of-map` and `empty-space` using the
+engine's inverted name filter. It retains every other tile, including modded tiles,
+without an area or result limit. The query and projection remain synchronous;
+this optimization does not establish a callback deadline.
 
 ### Candidate limits and required consistency checks
 
@@ -330,7 +375,7 @@ before a job exists are observed by Clusterio, without a fabricated Lua job.
 | Destination Lua | compatibility checks | Schema, required metadata, schedule and verification checks | Before platform creation |
 | Destination Lua | platform preparation | Target creation/starter pack and schedule setup → queued | Synchronous setup |
 | Destination Lua | scheduler wait | Enqueued → first import visit | Wait, no execution accumulator |
-| Destination Lua | tiles; beacons; entities; hub mapping | Actual restoration callbacks | Tiles/beacons synchronous; entity batches accumulate across ticks |
+| Destination Lua | tiles; beacons; entities; hub mapping | Actual restoration callbacks | Tiles/beacons/entities accumulate execution across batches; hub mapping runs once |
 | Destination Lua | hub; belts; state | Phase-1 restoration calls | Separate phase totals |
 | Destination Lua | deferred beacon wait | Phase 1 sets pending tick → phase-2 callback entry | Wait excluded from execution |
 | Destination Lua | inventories; held items; fluids | Phase-2 restoration calls | Separate phase totals |

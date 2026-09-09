@@ -1,0 +1,71 @@
+{
+  "entity_id": 87123,
+  "name": "crusher",
+  "type": "assembling-machine",
+  "position": {
+    "x": -10.5,
+    "y": 41
+  },
+  "direction": 12,
+  "force": "player",
+  "health": 875,
+  "quality": "legendary",
+  "orientation": 0.75,
+  "destructible": false,
+  "specific_data": {
+    "inventories": [
+      {
+        "type": "crafter_input",
+        "items": [
+          {
+            "name": "metallic-asteroid-chunk",
+            "count": 9,
+            "quality": "normal",
+            "health": 1,
+            "spoil_percent": 0,
+            "slot": 1
+          }
+        ]
+      },
+      {
+        "type": "crafter_output",
+        "items": [
+          {
+            "name": "iron-ore",
+            "count": 40,
+            "quality": "normal",
+            "health": 1,
+            "spoil_percent": 0,
+            "slot": 1
+          }
+        ]
+      },
+      {
+        "type": "crafter_modules",
+        "items": [
+          {
+            "name": "productivity-module-3",
+            "count": 1,
+            "quality": "legendary",
+            "health": 1,
+            "spoil_percent": 0,
+            "slot": 1
+          },
+          {
+            "name": "productivity-module-3",
+            "count": 1,
+            "quality": "legendary",
+            "health": 1,
+            "spoil_percent": 0,
+            "slot": 2
+          }
+        ]
+      }
+    ],
+    "recipe": "metallic-asteroid-crushing",
+    "crafting_progress": 1,
+    "result_quality": "normal",
+    "energy": 25280,
+    "bonus_progress": 0.8696874355028072
+  }
+}

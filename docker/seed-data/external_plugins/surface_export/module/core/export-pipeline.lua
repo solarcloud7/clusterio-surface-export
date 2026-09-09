@@ -10,6 +10,7 @@ local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
+local PayloadEncoder = require("modules/surface_export/utils/payload-encoder")
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local clusterio_api = require("modules/clusterio/api")
@@ -191,8 +192,11 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	end
 	Timing.start(job_id, "preparation")
 
+	Timing.start(job_id, "schedule_capture", "execution", "preparation")
 	local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
+	Timing.stop(job_id, "schedule_capture")
 	if not platform_schedule then
+		Timing.fail(job_id, "schedule_capture")
 		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index)
 		Timing.finish(job_id, "failed")
 		return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
@@ -203,14 +207,21 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		schedule_summary.interrupt_count,
 		tostring(schedule_summary.group)))
 
+	Timing.start(job_id, "entity_collection", "execution", "preparation")
 	local entities = surface.find_entities_filtered({})
+	Timing.stop(job_id, "entity_collection")
 	local fluid_registry = FluidRegistry.new()
 
+	Timing.start(job_id, "entity_sorting", "execution", "preparation")
 	entities = sort_entities_for_placement(entities)
+	Timing.stop(job_id, "entity_sorting")
 
+	Timing.start(job_id, "tile_scan", "execution", "preparation")
 	local tiles = TileScanner.scan_surface(surface)
+	Timing.stop(job_id, "tile_scan")
 	log(string.format("[Export] Scanned %d tiles and %d entities from platform %s (sorted for placement, locked)", #tiles, #entities, platform.name))
 
+	Timing.start(job_id, "export_job_setup", "execution", "preparation")
 	storage.async_jobs[job_id] = {
 		type = "export",
 		job_id = job_id,
@@ -250,6 +261,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		}
 	}
 
+	Timing.stop(job_id, "export_job_setup")
 	Timing.stop(job_id, "preparation")
 	Timing.start(job_id, "scheduler_wait", "wait")
 	PhaseProfiler.init(job_id, {"completion", "total"})
@@ -589,14 +601,14 @@ function ExportPipeline.interrupt(job, err)
 	Timing.finish(job.job_id, "interrupted")
 end
 
-function ExportPipeline.complete(job)
+function ExportPipeline.complete(job, batch_size)
 	-- Each call is one scheduler tick. Capture and its cargo checks remain atomic;
 	-- serialization and publication operate on that captured payload on later ticks.
 	if job.completion_stage == nil then
 		prepare_completion(job)
 	elseif job.completion_stage == "serialize" then
-		job.completion_json = Timing.scope(job.job_id, "serialization", Util.encode_json_compat, job.export_data)
-		job.completion_stage = "publish"
+		job.completion_json = Timing.scope(job.job_id, "serialization", PayloadEncoder.process, job, batch_size)
+		if job.completion_json then job.completion_stage = "publish" end
 	elseif job.completion_stage == "publish" then
 		publish_completion(job)
 	else

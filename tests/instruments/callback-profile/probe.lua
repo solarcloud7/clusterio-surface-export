@@ -1,11 +1,12 @@
 local KEY = "surface_export_callback_profile_fixture"
 local module = assert(package.loaded["__level__/modules/surface_export/core/async-processor.lua"])
-return function(action, prefix)
+return function(action, prefix, limit)
   assert(type(prefix) == "string" and prefix:sub(1, 17) == "transfer-cleanup-", "fixture prefix required")
   local state = package.loaded[KEY]
   if action == "arm" then
     assert(not state, "another callback profiler is installed")
-    state = {original = module.process_tick, records = {}, prefix = prefix}
+    assert(limit == nil or limit == 512, "unsupported callback sample limit")
+    state = {original = module.process_tick, records = {}, prefix = prefix, limit = limit or 64}
     package.loaded[KEY] = state
     module.process_tick = function(...)
       local jobs = {}
@@ -13,7 +14,7 @@ return function(action, prefix)
         if (job.platform_name or ""):sub(1, #prefix) == prefix then jobs[#jobs + 1] = id end
       end
       if #jobs == 0 then return state.original(...) end
-      if #state.records >= 64 then state.truncated = true; return state.original(...) end
+      if #state.records >= state.limit then state.truncated = true; return state.original(...) end
       local profiler = helpers.create_profiler()
       local result = table.pack(pcall(state.original, ...))
       profiler.stop()
