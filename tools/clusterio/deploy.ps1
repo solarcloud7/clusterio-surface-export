@@ -9,15 +9,16 @@ param(
     [switch]$RestartController,
     [switch]$RestartHosts,
     [switch]$SkipIncrement,
-    [switch]$KeepData
+    [switch]$KeepData,
+    [switch]$KeepSaves
 )
 
 $ErrorActionPreference = 'Stop'
 
 $scopeParams = @{
     artifacts = @('Target', 'Fresh', 'RestartController', 'RestartHosts')
-    lua       = @()
-    plugin    = @()
+    lua       = @('KeepSaves')
+    plugin    = @('KeepSaves')
     cluster   = @('SkipIncrement', 'KeepData')
 }
 $suppliedNames = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'Scope' -and $_ -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable') })
@@ -31,21 +32,32 @@ if ($rejected.Count -gt 0) {
 
 $here = $PSScriptRoot
 . (Join-Path $here '../shared/cluster-utils.ps1')
+. (Join-Path $here '../shared/workflow-lock.ps1')
 
+Invoke-WorkflowLock {
 switch ($Scope) {
     'artifacts' {
         $childArgs = @{ Target = $Target }
         if ($Fresh) { $childArgs.Fresh = $true }
-        if ($RestartHosts) { $childArgs.RestartHosts = $true }
         & (Join-Path $here 'build-plugin.ps1') @childArgs
 
         Sync-ControllerWebBundle -Force:$RestartController
+        if ($RestartHosts) {
+            docker restart surface-export-host-1 surface-export-host-2 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Host restart failed.' }
+        }
+        node "$here/../tests/cluster-readiness.mjs" --runtime
+        if ($LASTEXITCODE -ne 0) { throw 'Deployment runtime readiness failed.' }
     }
     'lua' {
-        & (Join-Path $here 'patch-and-reset.ps1') -LuaOnly
+        if ($KeepSaves) { Assert-PluginArtifactsFresh; & (Join-Path $here 'reload-saves.ps1') }
+        else { & (Join-Path $here 'patch-and-reset.ps1') -LuaOnly }
     }
     'plugin' {
-        & (Join-Path $here 'patch-and-reset.ps1')
+        if ($KeepSaves) {
+            & (Join-Path $here 'build-plugin.ps1') all
+            & (Join-Path $here 'reload-saves.ps1')
+        } else { & (Join-Path $here 'patch-and-reset.ps1') }
     }
     'cluster' {
         $childArgs = @{}
@@ -56,3 +68,4 @@ switch ($Scope) {
 }
 
 Write-Host "`ndeploy -Scope ${Scope}: complete." -ForegroundColor Green
+}

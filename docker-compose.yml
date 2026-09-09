@@ -48,11 +48,13 @@ services:
     # DEV: revalidate static assets (max-age=0) instead of the image's immutable 1y, so plugin web
     # rebuilds show up without a manual hard-refresh. Idempotent; runs before the real entrypoint.
     # See docker/patches/disable-immutable-cache.js.
-    entrypoint: ["/bin/bash", "-c", "node /patches/disable-immutable-cache.js || true; exec /controller-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "-c", "mkdir -p /clusterio/static && chown clusterio:clusterio /clusterio/static || exit 1; node /patches/disable-immutable-cache.js || true; exec /controller-entrypoint.sh"]
     ports:
       - "${CONTROLLER_HTTP_PORT:-8080}:${CONTROLLER_HTTP_PORT:-8080}"
     volumes:
       - surface-export-controller-data:/clusterio/data
+      # ExportManifest lives in the database; its locale/icons must survive container recreation too.
+      - surface-export-controller-static:/clusterio/static
       - surface-export-tokens:/clusterio/tokens
       - ./docker/seed-data:/clusterio/seed-data:ro
       # Mount external plugins (auto-discovered by install-plugins.sh)
@@ -125,6 +127,7 @@ networks:
 
 volumes:
   surface-export-controller-data:    # All controller persistent data
+  surface-export-controller-static:  # Generated locale, prototypes, metadata and icon sheets
   surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
   surface-export-host-2-data:        # Host 2 persistent data
   surface-export-tokens:             # Token exchange between controller and hosts

@@ -18,7 +18,7 @@ test("destination hold primitive is registered for explicit proof runs", () => {
 
 test("destination hold primitive exposes stage, go_live, discard, and get", () => {
 	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force\)/);
+	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed\)/);
 	assert.match(hold, /function DestinationHold\.go_live\(transfer_id\)/);
 	assert.match(hold, /function DestinationHold\.discard\(transfer_id\)/);
 	assert.match(hold, /function DestinationHold\.get\(transfer_id\)/);
@@ -51,10 +51,10 @@ test("stage first moves the platform toward not-live, then deactivates entities 
 	assert.ok(pcallAt < pauseAt, "stage mutation block must be pcall-guarded");
 	assert.ok(errorLogAt > pcallAt, "stage pcall failure must be surfaced to logs");
 });
-test("stage failure rolls back partial not-live mutations", () => {
+test("default stage failure retains the primitive's rollback behavior", () => {
 	const hold = read("module/core/destination-hold.lua");
 	const failureAt = hold.indexOf("if not staged_ok then");
-	const returnAt = hold.indexOf("return false, \"Failed to stage destination hold", failureAt);
+	const returnAt = hold.indexOf("hold.preparation_failed = nil", failureAt);
 	const failureBlock = hold.slice(failureAt, returnAt);
 
 	assert.notEqual(failureAt, -1);
@@ -89,10 +89,11 @@ test("destination hold remote fails loud for unknown force names", () => {
 	assert.match(remote, /local force = game\.forces\[selected_force_name\]/);
 	assert.doesNotMatch(remote, /game\.forces\[force_name or "player"\] or game\.forces\.player/);
 });
-test("normal transfer import path is not yet gated on destination hold", () => {
+test("normal transfer finalization stages the destination before reporting completion", () => {
 	const importCompletion = read("module/core/import-completion.lua");
-	assert.doesNotMatch(importCompletion, /DestinationHold/);
-	assert.match(importCompletion, /Platform .* UNPAUSED after successful validation/);
+	assert.match(importCompletion, /DestinationHold\.stage\(job.transfer_id/);
+	assert.ok(importCompletion.indexOf("DestinationHold.stage(job.transfer_id")
+		< importCompletion.indexOf('clusterio_api.send_json("surface_export_import_complete"'));
 });
 
 test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {

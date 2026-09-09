@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Button, Modal, Select } from "antd";
 import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
 import recorded from "./recorded-fixtures";

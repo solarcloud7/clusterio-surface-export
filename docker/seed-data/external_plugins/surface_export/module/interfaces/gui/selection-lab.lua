@@ -6,7 +6,7 @@ local ActiveStateRestoration = require("modules/surface_export/import_phases/act
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
-local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
+local CargoCounter = require("modules/surface_export/validators/cargo-counter")
 local Util = require("modules/surface_export/utils/util")
 
 local SelectionLab = {}
@@ -778,11 +778,11 @@ function SelectionLab.audit(event)
 					item_n = item_n + e.stack.count
 				end
 			else
-				for key, count in pairs(SurfaceCounter.count_entity_items(e)) do
+				for key, count in pairs(CargoCounter.count_entity_items(e)) do
 					item_totals[key] = (item_totals[key] or 0) + count
 					item_n = item_n + count
 				end
-				for key, amount in pairs(SurfaceCounter.count_entity_fluids(e, fluid_state)) do
+				for key, amount in pairs(CargoCounter.count_entity_fluids(e, fluid_state)) do
 					local name = Util.parse_fluid_temp_key(key)
 					fluid_totals[name] = (fluid_totals[name] or 0) + amount
 					fluid_n = fluid_n + amount

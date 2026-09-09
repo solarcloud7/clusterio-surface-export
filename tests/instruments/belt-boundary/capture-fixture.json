@@ -1,0 +1,31 @@
+{
+  "engine": "2.1.17",
+  "maxPollsPerStep": 24,
+  "maxCalls": 100,
+  "maxRuntimeMs": 150000,
+  "cases": {
+    "straight": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-transport-belt","x":5.5,"y":4.5,"direction":"east"}
+    ],
+    "splitter": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-splitter","x":5.5,"y":4,"direction":"east"},
+      {"id":"C","name":"transport-belt","x":6.5,"y":3.5,"direction":"east"},
+      {"id":"D","name":"transport-belt","x":6.5,"y":4.5,"direction":"east"}
+    ],
+    "loop": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-transport-belt","x":5.5,"y":4.5,"direction":"south"},
+      {"id":"C","name":"transport-belt","x":5.5,"y":5.5,"direction":"west"},
+      {"id":"D","name":"fast-transport-belt","x":4.5,"y":5.5,"direction":"north"}
+    ],
+    "smoke": [
+      {"id":"A","name":"transport-belt","x":4.5,"y":4.5,"direction":"east"},
+      {"id":"B","name":"fast-transport-belt","x":5.5,"y":4.5,"direction":"south"},
+      {"id":"C","name":"fast-splitter","x":8.5,"y":4,"direction":"east"},
+      {"id":"D","name":"underground-belt","x":4.5,"y":8.5,"direction":"east","type":"input"},
+      {"id":"E","name":"underground-belt","x":7.5,"y":8.5,"direction":"east","type":"output"}
+    ]
+  }
+}

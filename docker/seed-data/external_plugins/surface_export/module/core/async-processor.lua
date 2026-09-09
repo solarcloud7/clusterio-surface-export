@@ -128,7 +128,9 @@ function AsyncProcessor.process_tick()
 
 	local job_list = {}
 	for job_id, job in pairs(storage.async_jobs) do
-		table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0})
+		if not job.completion_interrupted then
+			table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0})
+		end
 	end
 	table.sort(job_list, function(a, b) return a.started < b.started end)
 
@@ -158,16 +160,28 @@ function AsyncProcessor.process_tick()
 				ExportPipeline.complete(job)
 			end
 		elseif job.type == "import" then
-			if job.pending_beacon_tick then
-				if game.tick >= job.pending_beacon_tick then
-					job.pending_beacon_tick = nil
+			local ok, err = pcall(function()
+				if job.pending_beacon_tick then
+					if game.tick >= job.pending_beacon_tick then
+						job.pending_beacon_tick = nil
+						job.phase2_started = true
+						ImportCompletion.run_phase2(job)
+					end
+				elseif job.phase2_started then
 					ImportCompletion.run_phase2(job)
-				end
-			else
-				local done = ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
-				if done then
+				elseif job.entities_complete or job.phase1_started then
 					ImportCompletion.run_phase1(job)
+				else
+					local done = ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
+					if done then
+						-- End this callback before starting completion work on the next tick.
+						job.entities_complete = true
+					end
 				end
+			end)
+			if not ok then
+				log("[Import] Job " .. tostring(job.job_id) .. " interrupted; automatic execution stopped: " .. tostring(err))
+				ImportCompletion.interrupt(job, err)
 			end
 		end
 
@@ -200,7 +214,8 @@ function AsyncProcessor.get_job_status(job_id)
 	if storage.async_jobs[job_id] then
 		local job = storage.async_jobs[job_id]
 		return {
-			status = "active",
+			status = job.completion_interrupted and "interrupted" or "active",
+			error = job.completion_interrupted and job.completion_interrupted.error,
 			complete = false,
 			type = job.type,
 			job_id = job_id,

@@ -1,241 +1,125 @@
 #!/usr/bin/env node
-// latch-rearm-liveness — does a DARK decider get deferred instead of forced and falsely cleared?
-//
-// requires: a running surface-export cluster (host-2), module 0.10.253+
-// produces: exit 0 when the powered latch re-arms and the dark one reports the unpowered outcome
-// does not: perform a transfer, or assert anything about the canvas
-//
-// No export, no import, no race. The stage machine is scheduled DIRECTLY against two real deciders
-// on two real platforms, so the fixture cannot drift out from under the assertion.
-//
-// TWO platforms, not one. On lab-transfer-fixture-v1 every one of its 526 networked entities measured
-// onto a SINGLE electric network (id 9, 2026-08-11), so on that fixture a powered and a dark decider
-// cannot coexist. That is a fixture measurement, not a law — a decider out of reach of any pole would
-// form its own network. Two platforms is the shape that holds either way, and it is why whole-job
-// power deferral is cheap in practice: a platform's deciders are usually all lit or all dark together.
+// Requires the installed module and an idle host-2. Exercises the production stage machine
+// with one powered and one unpowered self-feedback decider on owned platforms.
+// Independently reads exact signals and original parameters; no helper supplies memory.
+// Does not replace the full-transfer circuit-memory fixture or measure wall-time performance.
+import assert from 'node:assert/strict';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {lua, sleep, preflightState, assertLeaseClean} from '../../lab-gallery/batch-lifecycle.mjs';
+import {withWorkflowLock} from '../../../tools/shared/workflow-lock.mjs';
 
-import { execFileSync } from "node:child_process";
-
-const INSTANCE = "clusterio-host-2-instance-1";
-const TAG = Date.now().toString(36);
-const LIT = `latchlive-lit-${TAG}`;
-const DARK = `latchlive-dark-${TAG}`;
-
-// POWER_WAIT_TICKS is 1800 (30s) plus the 60-tick poll; allow margin for a loaded cluster.
-const DEFERRAL_WAIT_MS = 42000;
-
-// The Lua is flattened to ONE line before it is sent. JSON.stringify turns real newlines into literal
-// \n escape sequences, which arrive at Factorio outside any Lua string and are a syntax error — the
-// command then fails silently and every downstream read returns "". None of the Lua below uses --
-// comments, so joining on whitespace is safe.
-const rcon = (lua) => execFileSync("docker", [
-	"exec", "surface-export-controller", "sh", "-c",
-	`npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error `
-	+ `instance send-rcon "${INSTANCE}" ${JSON.stringify("/sc " + lua.replace(/\s*\n\s*/g, " ").trim())}`,
-], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).trim();
-
-// An empty RCON reply means the command did not run. Treating that as data is how a broken probe
-// reports success — every assertion below goes through here first.
-const answered = (value, label) => {
-	if (value === "" || value === undefined) {
-		check(false, label, "RCON returned NOTHING — the command did not execute; this is not a result");
-		return false;
-	}
-	return true;
-};
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-let failures = 0;
-const check = (ok, label, detail = "") => {
-	console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
-	// Set at the point of failure, not only at the terminal exit(): an early return past that exit
-	// would report a recorded FAILURE as a green run — the vacuous-pass class again.
-	if (!ok) { failures += 1; process.exitCode = 1; }
-};
-
-// Builds one platform holding one self-feedback decider, already latched to S=1.
-// `withPower` decides whether a solar panel exists: without one the decider reads low_power,
-// which is the dark instrument this test exists for (measured: low_power, NOT no_power — the
-// decider is still ON the platform's global network, there is simply no production).
-const buildLua = (name, withPower) => `
-local p = game.forces.player.create_space_platform{name='${name}', planet='nauvis',
-  starter_pack='space-platform-starter-pack'}
-if not p then return end
-p.apply_starter_pack()
-p.paused = false
-local s, force = p.surface, game.forces.player
-local tiles = {}
-for x = 5, 13 do for y = 0, 7 do tiles[#tiles+1] = { name='space-platform-foundation', position={x, y} } end end
-s.set_tiles(tiles)
-${withPower ? `s.create_entity{ name='solar-panel', position={7.5,5.5}, force=force }` : ``}
-local cc = s.create_entity{ name='constant-combinator', position={6.5,1.5}, force=force }
-local dc = s.create_entity{ name='decider-combinator', position={9.5,1.5}, force=force,
-  direction=defines.direction.east }
-local sec = cc.get_control_behavior().get_section(1) or cc.get_control_behavior().add_section()
-sec.set_slot(1, { value={type='virtual',name='signal-A',quality='normal'}, min=1 })
-dc.get_control_behavior().parameters = {
-  conditions = {
-    { first_signal={type='virtual',name='signal-A'}, comparator='>', constant=0 },
-    { first_signal={type='virtual',name='signal-S'}, comparator='>', constant=0, compare_type='or' },
-  },
-  outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }},
+const tag=`latchlive-${Date.now()}`;
+const names=[`${tag}-lit`,`${tag}-dark`];
+const artifact='ci-artifacts/latch-readiness-liveness.json';
+const cells=`local cells=storage.__latchlive_readiness assert(cells and cells.tag=='${tag}','foreign or missing fixture')`;
+const map=signals=>Object.fromEntries(Object.values(signals??{}).map(s=>[s.signal.name,s.count]));
+const construct=`
+  assert(not storage.__latchlive_readiness,'foreign fixture storage')
+  local cells={tag='${tag}',items={}} storage.__latchlive_readiness=cells
+  for i,name in ipairs({'${names[0]}','${names[1]}'}) do
+    local p=assert(game.forces.player.create_space_platform{name=name,planet='nauvis',starter_pack='space-platform-starter-pack'})
+    local item={platform=p} cells.items[i]=item p.apply_starter_pack()
+    local tiles={} for x=5,13 do for y=0,7 do tiles[#tiles+1]={name='space-platform-foundation',position={x,y}} end end
+    p.surface.set_tiles(tiles)
+    if i==1 then assert(p.surface.create_entity{name='solar-panel',position={7.5,5.5},force='player'}) end
+    local e=assert(p.surface.create_entity{name='decider-combinator',position={9.5,1.5},direction=defines.direction.east,force='player'})
+    item.entity=e assert(e.type=='decider-combinator')
+    local cb=e.get_control_behavior()
+    cb.parameters={conditions={{first_signal={type='virtual',name='signal-S'},comparator='>',constant=0}},
+      outputs={{signal={type='virtual',name='signal-S'},copy_count_from_input=true}},else_outputs={}}
+    item.parameters=cb.parameters
+    local wc=defines.wire_connector_id
+    assert(e.get_wire_connector(wc.combinator_output_red,true).connect_to(e.get_wire_connector(wc.combinator_input_red,true)))
+  end return {ok=true,engine=script.active_mods.base}`;
+const snapshot=()=>lua(2,`${cells}
+  local out={tick=game.tick,items={}}
+  local statuses={} for k,v in pairs(defines.entity_status) do statuses[v]=k end
+  for i,item in ipairs(cells.items) do
+    local e=item.entity local cb=e.get_control_behavior()
+    out.items[i]={status=statuses[e.status],signals=cb.signals_last_tick,parameters=cb.parameters,
+      original=item.parameters,result=(storage.latch_rearm_results or {})[item.platform.name],
+      pending=(storage.latch_rearm_jobs or {})[item.platform.name]~=nil}
+  end return out`);
+function analyze(report){
+  const [lit,dark]=report.after.items;
+  for(const item of [lit,dark]){
+    assert.equal(item.pending,false);
+    assert.deepEqual(item.parameters,item.original);
+    assert.equal(item.result.cleared,0);
+    assert.equal(item.result.first_seed_tick-item.result.scheduled_tick,2);
+    assert.equal(item.result.finished_tick-item.result.scheduled_tick,6);
+  }
+  assert.equal(lit.result.rearmed,1); assert.equal(lit.result.failed,0);
+  assert.deepEqual(map(lit.signals),{'signal-S':7});
+  assert.equal(dark.result.rearmed,0); assert.equal(dark.result.failed,1);
+  assert.deepEqual(map(dark.signals),{});
+  const detail=Object.values(dark.result.details)[0];
+  assert.ok(['no_power','low_power','not_plugged_in_electric_network'].includes(detail.first_seed_status));
+  assert.match(detail.outcome,/decider not evaluating at restoration:/);
+  assert.equal(detail.seed_tick,undefined);
+  return {status:'PASS',restorationTicks:6,reason:'exact powered memory; unpowered failure without seed writes; original rules preserved'};
 }
-cc.get_wire_connector(defines.wire_connector_id.circuit_red, true)
-  .connect_to(dc.get_wire_connector(defines.wire_connector_id.combinator_input_red, true))
-dc.get_wire_connector(defines.wire_connector_id.combinator_output_red, true)
-  .connect_to(dc.get_wire_connector(defines.wire_connector_id.combinator_input_red, true))
-storage.__latchlive = storage.__latchlive or {}
-storage.__latchlive['${name}'] = { platform = p.index, dc = dc.unit_number }
-rcon.print(p.index .. '|' .. dc.unit_number)
-`;
-
-// Schedules the REAL stage machine against a live decider, synthesizing the record shape
-// LatchRearm.schedule expects: a self-feedback circuit_connection so has_self_feedback passes, and a
-// non-empty output_signals so the arming gate admits it. Nothing here is a test hook — schedule() is
-// the production entry point, called with production-shaped data.
-const scheduleLua = (name) => `
-local st = storage.__latchlive['${name}']
-local p for _,pl in pairs(game.forces.player.platforms) do if pl.index == st.platform then p = pl end end
-local dc for _,e in pairs(p.surface.find_entities_filtered{type='decider-combinator'}) do
-  if e.unit_number == st.dc then dc = e end end
-if not dc then rcon.print('NO DECIDER') return end
-local wc = defines.wire_connector_id
-local LatchRearm = package.loaded['__level__/modules/surface_export/import_phases/latch_rearm.lua']
-if not LatchRearm then rcon.print('NO MODULE') return end
-local captured = dc.get_control_behavior().parameters
-local n = LatchRearm.schedule({
-  job_id = 'latchlive_${name}',
-  platform_name = '${name}',
-  entity_map = { [st.dc] = dc },
-  entities_to_create = {{
-    type = 'decider-combinator',
-    entity_id = st.dc,
-    position = { x = 9.5, y = 1.5 },
-    control_behavior = { parameters = captured },
-    circuit_connections = {{
-      target_entity_id = st.dc,
-      source_circuit_id = wc.combinator_output_red,
-      target_circuit_id = wc.combinator_input_red,
-    }},
-    specific_data = {
-      parameters = captured,
-      output_signals = {{ signal = {type='virtual',name='signal-S'}, count = 1 }},
-    },
-  }},
-})
-rcon.print('scheduled=' .. tostring(n))
-`;
-
-const resultLua = (name) => `
-local r = (storage.latch_rearm_results or {})['latchlive_${name}']
-if not r then rcon.print('PENDING') return end
-local outcomes = {}
-for _, d in ipairs(r.details or {}) do outcomes[#outcomes+1] = d.outcome end
-rcon.print(r.reason .. ' || rearmed=' .. r.rearmed .. ' cleared=' .. r.cleared
-  .. ' failed=' .. r.failed .. ' || ' .. table.concat(outcomes, ' ~~ '))
-`;
-
-const pauseLua = (name, paused) => `
-local st = storage.__latchlive['${name}']
-for _,pl in pairs(game.forces.player.platforms) do
-  if pl.index == st.platform then pl.paused = ${paused} end end
-rcon.print('paused=${paused}')
-`;
-
-const statusLua = (name) => `
-local st = storage.__latchlive['${name}']
-local p for _,pl in pairs(game.forces.player.platforms) do if pl.index == st.platform then p = pl end end
-local dc for _,e in pairs(p.surface.find_entities_filtered{type='decider-combinator'}) do
-  if e.unit_number == st.dc then dc = e end end
-local names = {} for k,id in pairs(defines.entity_status) do names[id] = k end
-local conds = dc.get_control_behavior().parameters.conditions
-rcon.print(tostring(names[dc.status]) .. '|conditions=' .. #conds)
-`;
-
-async function main() {
-	console.log(`=== latch re-arm liveness (${TAG}) ===`);
-	try {
-		rcon(buildLua(LIT, true));
-		rcon(buildLua(DARK, false));
-		await sleep(5000);
-
-		const litStatus = rcon(statusLua(LIT));
-		const darkStatus = rcon(statusLua(DARK));
-		if (!answered(litStatus, "powered decider status readable")) { return; }
-		if (!answered(darkStatus, "dark decider status readable")) { return; }
-		check(litStatus.startsWith("working|"), "powered decider reports working", litStatus);
-		// A dark decider reports no_power when the platform never had a producer, and low_power when a
-		// producer existed and was removed — both measured 2026-08-11/12. Asserting one of them alone
-		// over-fits to how the fixture went dark; asserting only "not working" would pass on a garbage
-		// status, so the check requires a KNOWN dark status.
-		const DARK_STATUSES = ["no_power", "low_power", "not_plugged_in_electric_network"];
-		check(DARK_STATUSES.some(s => darkStatus.startsWith(`${s}|`)),
-			"dark decider reports a known unpowered status", darkStatus);
-		const darkConditionsBefore = Number(darkStatus.split("conditions=")[1]);
-
-		// Gateway-parked transfers re-pause the platform, and the force write gates on
-		// status == "working". If pausing changed the status, every parked transfer would burn the full
-		// deferral and finalize "unpowered" — the regression this guard would otherwise introduce. The
-		// fact is asserted here rather than written down, so a future engine pin re-measures it.
-		rcon(pauseLua(LIT, true));
-		await sleep(2500);
-		const litPaused = rcon(statusLua(LIT));
-		rcon(pauseLua(LIT, false));
-		if (answered(litPaused, "paused decider status readable")) {
-			check(litPaused.startsWith("working|"),
-				"a POWERED decider still reports working while its platform is PAUSED", litPaused);
-		}
-
-		check(rcon(scheduleLua(LIT)) === "scheduled=1", "powered latch scheduled");
-		check(rcon(scheduleLua(DARK)) === "scheduled=1", "dark latch scheduled");
-
-		await sleep(6000);
-		const lit = rcon(resultLua(LIT));
-		check(lit !== "PENDING" && lit.includes("rearmed=1"), "powered latch re-armed promptly", lit);
-
-		const darkEarly = rcon(resultLua(DARK));
-		check(darkEarly === "PENDING", "dark latch is DEFERRED, not resolved immediately", darkEarly);
-
-		console.log(`  … waiting out the ${DEFERRAL_WAIT_MS / 1000}s power deferral`);
-		await sleep(DEFERRAL_WAIT_MS);
-
-		const dark = rcon(resultLua(DARK));
-		if (!answered(dark, "dark latch result readable")) { return; }
-		check(dark !== "PENDING", "dark latch finalized rather than hanging", dark);
-		check(dark.includes("unpowered — re-arm not evaluated"),
-			"dark latch finalizes as unpowered, never evaluated", dark);
-		check(dark !== "PENDING" && !dark.includes("cleared to 0"),
-			"dark latch NEVER reports a verified clear",
-			"an empty register on a dark decider read as 'stable' and licensed the clear — the PENDING "
-			+ "guard is here so a job that never ran cannot pass this by absence");
-		check(dark.includes("failed=1") && dark.includes("cleared=0"),
-			"the unpowered outcome buckets as failed, not cleared", dark);
-
-		const darkAfter = rcon(statusLua(DARK));
-		check(Number(darkAfter.split("conditions=")[1]) === darkConditionsBefore,
-			"dark decider's parameters are untouched", `${darkStatus} -> ${darkAfter}`);
-	} finally {
-		for (const name of [LIT, DARK]) {
-			rcon(`local st = (storage.__latchlive or {})['${name}']
-if st then for _,pl in pairs(game.forces.player.platforms) do
-  if pl.index == st.platform and pl.name == '${name}' then game.delete_surface(pl.surface) end end
-  storage.__latchlive['${name}'] = nil end
-storage.latch_rearm_results = storage.latch_rearm_results or {}
-storage.latch_rearm_results['latchlive_${name}'] = nil
-rcon.print('swept')`);
-		}
-		const left = rcon(`local n = {} for _,p in pairs(game.forces.player.platforms) do
-if string.find(p.name, 'latchlive-', 1, true) then n[#n+1] = p.name end end
-rcon.print(table.concat(n, ','))`);
-		check(left === "", "probe platforms swept", left || "(none)");
-	}
-
-	console.log(failures === 0 ? "\nlatch-rearm-liveness: PASS" : `\nlatch-rearm-liveness: ${failures} FAILURE(S)`);
-	process.exit(failures === 0 ? 0 : 1);
-}
-
-main().catch((err) => {
-	console.error(`latch-rearm-liveness: ${err.message}`);
-	process.exit(1);
+if(process.argv.includes('--analyze')){
+  console.log(JSON.stringify(analyze(JSON.parse(readFileSync(artifact,'utf8')))));
+}else await withWorkflowLock(async()=>{
+  const start=performance.now(),report={tag,mutationOccurred:false,
+    fingerprint:createHash('sha256').update(readFileSync(new URL(import.meta.url))).digest('hex')};
+  assertLeaseClean(2,preflightState(2),'before circuit readiness');
+  assert.equal(lua(2,'return {pending=table_size(storage.latch_rearm_jobs or {})}').pending,0);
+  const cleanup=async()=>{
+    const removed=lua(2,`local cells=storage.__latchlive_readiness
+      if not cells then return {ok=true} end assert(cells.tag=='${tag}','foreign fixture storage')
+      for _,item in ipairs(cells.items) do
+        if item.platform and item.platform.valid then item.platform.destroy(0) end
+      end return {ok=true}`);
+    assert.equal(removed.ok,true);
+    // Let production finalize removed entities; never erase a pending restoration job.
+    for(let i=0;i<10;i++){
+      const done=lua(2,`for _,name in ipairs({'${names[0]}','${names[1]}'}) do
+        if (storage.latch_rearm_jobs or {})[name] then return {done=false} end end return {done=true}`);
+      if(done.done)break;
+      assert.ok(i<9,'owned restoration did not finalize after entity removal'); await sleep(100);
+    }
+    assert.equal(lua(2,`for _,name in ipairs({'${names[0]}','${names[1]}'}) do
+      if storage.latch_rearm_results then storage.latch_rearm_results[name]=nil end
+      for _,p in pairs(game.forces.player.platforms) do assert(p.name~=name,'fixture left behind') end end
+      if storage.__latchlive_readiness then assert(storage.__latchlive_readiness.tag=='${tag}') end
+      storage.__latchlive_readiness=nil return {ok=true}`).ok,true);
+    assertLeaseClean(2,preflightState(2),'after circuit readiness');
+  };
+  try{
+    report.mutationOccurred=true;
+    const fault=lua(2,construct.replace('p.apply_starter_pack()',"error('owned construction fault')"));
+    assert.match(fault.error,/owned construction fault/); await cleanup(); report.failureCleanup=true;
+    report.construction=lua(2,construct); assert.equal(report.construction.ok,true,JSON.stringify(report.construction));
+    assert.equal(report.construction.engine,'2.1.17');
+    for(let i=0;i<20;i++){
+      report.before=snapshot();
+      if(report.before.items[0].status==='working')break;
+      assert.ok(i<19,'powered fixture never became ready'); await sleep(100);
+    }
+    for(const item of report.before.items)assert.deepEqual(map(item.signals),{},'no pre-existing memory or helper signal');
+    assert.equal(lua(2,`${cells}
+      local module=assert(package.loaded['__level__/modules/surface_export/import_phases/latch_rearm.lua'])
+      local wc=defines.wire_connector_id
+      for _,item in ipairs(cells.items) do
+        local e=item.entity local id=e.unit_number
+        assert(module.schedule({job_id=item.platform.name,platform_name=item.platform.name,entity_map={[id]=e},
+          entities_to_create={{type='decider-combinator',entity_id=id,position=e.position,
+            control_behavior={parameters=item.parameters},
+            circuit_connections={{target_entity_id=id,source_circuit_id=wc.combinator_output_red,target_circuit_id=wc.combinator_input_red}},
+            specific_data={output_signals={{signal={type='virtual',name='signal-S'},count=7}}}}}})==1)
+      end return {ok=true}`).ok,true);
+    for(let i=0;i<20;i++){
+      report.after=snapshot();
+      if(report.after.items.every(item=>item.result&&!item.pending))break;
+      assert.ok(i<19,'restoration did not finish within bounded observation'); await sleep(100);
+    }
+    report.verdict=analyze(report); console.log(JSON.stringify(report.verdict));
+  }catch(error){report.verdict={status:'FAIL',error:error.message};throw error;}
+  finally{
+    try{await cleanup();report.cleanup=true;}
+    finally{report.wallMs=performance.now()-start;mkdirSync('ci-artifacts',{recursive:true});writeFileSync(artifact,JSON.stringify(report,null,2));}
+  }
 });

@@ -1,4 +1,5 @@
 import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
+import type { EntityEvidence } from "../../shared/entity-evidence";
 import { buildDetailedLogSummary, buildExpectedActualRows } from "../utils";
 
 export function record(value: unknown): JsonObject {
@@ -14,6 +15,7 @@ export const terminal = (status?: string) => ["completed", "failed", "error", "c
 export const outcomeGroup = (status?: string) => status === "completed" ? "completed"
 	: ["failed", "error", "cleanup_failed"].includes(status || "") ? "attention" : "active";
 export const statusLabel = (status?: string) => ({
+	queued: "Queued", preparing: "Preparing export",
 	completed: "Completed", failed: "Failed", error: "Error", cleanup_failed: "Cleanup needs attention",
 	transporting: "In transit", awaiting_validation: "Validating", awaiting_completion: "Finishing", in_progress: "In progress",
 }[status || ""] || status || "Unknown");
@@ -42,9 +44,10 @@ export function evidence(row: TransferSummary, detail?: LogDetail) {
 	const operation = row.operationType || summary?.operationType || "transfer";
 	const audit = (kind: "Item" | "Fluid") => {
 		const expected = countMap(validation[`expected${kind}Counts`] ?? source[kind === "Item" ? "itemCounts" : "fluidCounts"]);
-		const actual = countMap(validation[`actual${kind}Counts`]);
+		const actual = validation.measurementAvailable === false ? null : countMap(validation[`actual${kind}Counts`]);
 		const verdict = retained ? validation[kind === "Item" ? "itemCountMatch" : "fluidCountMatch"] : undefined;
-		const state = operation === "export" ? "not-applicable" : verdict === false ? "mismatch" : verdict === true ? "passed"
+		const state = operation === "export" ? "not-applicable" : validation.measurementAvailable === false ? "unavailable"
+			: verdict === false ? "mismatch" : verdict === true ? "passed"
 			: !terminal(status) ? "pending" : "unavailable";
 		const rows = expected && actual ? buildExpectedActualRows(expected, actual) : [];
 		return { expected, actual, rows, state,
@@ -55,6 +58,27 @@ export function evidence(row: TransferSummary, detail?: LogDetail) {
 		};
 	};
 	const items = audit("Item"), fluids = audit("Fluid");
+	const placement = retained ? record(summary?.import) : {};
+	const measuredCount = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+	const entityTypes = retained ? countMap(validation.entityTypeBreakdown) : null;
+	const structuralStage = ["belts", "entities", "state"].includes(String(validation.failedStage))
+		|| validation.testForcedEntityFailure === true;
+	const entityFailure = structuralStage || Number(placement.entities_failed) > 0
+		|| Number(record(validation.failedEntityLosses).entity_count) > 0;
+	const entities = {
+		diagnostic: retained ? validation.entityEvidence as EntityEvidence | undefined : undefined,
+		// Cargo validation success is not an entity-state verdict. A census alone cannot pass this audit.
+		state: operation === "export" ? "not-applicable" : entityFailure ? "mismatch"
+			: !terminal(status) ? "pending" : entityTypes ? "partial" : "unavailable",
+		failure: entityFailure ? String(validation.mismatchDetails || "Entity placement failures were recorded.") : null,
+		failedStage: entityFailure ? String(validation.failedStage || "entities") : null,
+		types: entityTypes,
+		census: measuredCount(validation.entityCount),
+		payload: measuredCount(validation.reportedEntityCount),
+		created: measuredCount(placement.entities_created),
+		failed: measuredCount(placement.entities_failed),
+		skipped: measuredCount(placement.entities_skipped),
+	};
 	const events = retained ? detail?.events || [] : [];
 	const recovery = [...events].reverse().find(event => ["rollback_success", "rollback_failed", "rollback_attempt"].includes(String(event.eventType)));
 	const recoveryText = recovery?.eventType === "rollback_success" ? "Rollback succeeded"
@@ -82,7 +106,7 @@ export function evidence(row: TransferSummary, detail?: LogDetail) {
 			status: aggregate.reconciled === true ? "Reconciled" : aggregate.reconciled === false ? "Not reconciled" : "Verdict unavailable",
 			reconciled: aggregate.reconciled === true, category: "Thermal" };
 	});
-	return { summary, validation, retained, status, operation, items, fluids, fluidRows, outcome, tone, recoveryText,
+	return { summary, validation, retained, status, operation, items, fluids, entities, fluidRows, outcome, tone, recoveryText,
 		isTest: validation.testForcedFailure === true || validation.testForcedEntityFailure === true,
 		reconciled: Object.values(aggregates).some(value => record(value).reconciled === true),
 	};

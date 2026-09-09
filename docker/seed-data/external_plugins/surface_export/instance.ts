@@ -1,4 +1,5 @@
 import fs from "fs";
+import { readEntityEvidence } from "./lib/entity-evidence";
 import { randomUUID } from "node:crypto";
 import { parseLuaTiming, TIMING_MARKER, TimingClock, timingContext, timed, timedSync } from "./lib/timing";
 import type { ParsedFactorioOutput } from "@clusterio/lib";
@@ -86,9 +87,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.server.handle("surface_teleport_roster_request", this.handleTeleportRosterRequest.bind(this));
 
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
+		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
+		this.i.handle(messages.DestinationTransferGateRequest, this.handleDestinationTransferGate.bind(this));
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		this.i.handle(messages.GetSourceTransferLockStateRequest, this.handleGetSourceTransferLockState.bind(this));
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
@@ -117,6 +120,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const maxExportCacheSize = this.cfg<number>("surface_export.max_export_cache_size");
 
 			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode, maxExportCacheSize,
+				beltBatchSize: this.cfg<number>("surface_export.belt_batch_size"),
+				beltTrace: this.cfg<boolean>("surface_export.belt_trace"),
+				debugDestinationSnapshot: this.cfg<boolean>("surface_export.debug_destination_snapshot"),
 				profileBatches: this.cfg<boolean>("surface_export.profile_batches") });
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, max_export_cache_size=${maxExportCacheSize}`);
 		} catch (err: unknown) {
@@ -694,7 +700,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const success = hasValidationPayload
 				&& typeof data.success === "boolean"
 				&& data.success === true
-				&& validationSaysSuccess;
+				&& validationSaysSuccess && validation.measurementAvailable !== false;
 
 			let normalizedMetrics: Record<string, unknown> | undefined;
 			if (metrics && typeof metrics === "object") {
@@ -737,6 +743,18 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.logger.error(`Failed to send failure validation: ${getErrorMessage(sendErr)}`);
 			}
 		}
+	}
+
+	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live" }) {
+		return this.withTiming(request.transferId, undefined, "Destination transfer gate", async () => {
+			try {
+				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action));
+				return response.success === true ? { success: true }
+					: { success: false, error: String(response.error || "Destination gate refused") };
+			} catch (error) {
+				return { success: false, error: getErrorMessage(error) };
+			}
+		});
 	}
 
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {

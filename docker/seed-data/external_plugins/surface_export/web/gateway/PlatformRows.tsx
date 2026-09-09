@@ -1,4 +1,3 @@
-import React from "react";
 import { Handle, Position } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
 import { CaretRightOutlined, DownloadOutlined } from "@ant-design/icons";

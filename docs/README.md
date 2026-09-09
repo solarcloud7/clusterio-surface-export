@@ -1,198 +1,23 @@
-# Surface Export Plugin
+# Documentation
 
-Clusterio plugin for exporting and importing Factorio 2.0 space platforms between instances. Supports full platform state: entities, tiles, inventories, equipment grids, fluids, belt items, circuit connections, and control behaviors.
+Start with the [project overview and production gates](../README.md). Keep implementation details in the references below rather than copying configuration tables or timing estimates between guides.
 
-This is the plugin-level documentation index. For project-level setup, performance, and the full development workflow, see the [main README](../README.md).
+| Reference | Purpose |
+|---|---|
+| [Docker setup](../docker/README.md) | Local cluster, preserving saves, and Steam client mod sync |
+| [Transfer walkthrough](QUICK_START.md) | Start a transfer and inspect its outcome |
+| [Commands](commands-reference.md) | In-game, RCON, and remote interfaces |
+| [Export/import flow](EXPORT_IMPORT_FLOW.md) | Message routes and restoration boundaries |
+| [Batching and timing](async-processing.md) | Tick scheduling, synchronous limits, profiler measurements, and acceptance evidence |
+| [Durability and commit protocol](TRANSFER_2PC.md) | Shipped recovery safeguards and the pending commit protocol |
+| [Engineering FAQ](ENGINEERING_FAQ.md) | Failure scenarios and unresolved decisions |
+| [Transfer logs](TRANSFER_LOGS.md) | Audit records and inspection |
+| [Configuration](config-survey.md) | Configuration ownership and wiring |
+| [Testing](testing.md) | Fixture contracts, physical oracles, and live-test rules |
+| [CI](CI_CD.md) | Checks, integration environment, and publishing |
+| [Lint guards](lint-guards.md) | Static correctness checks |
+| [Clusterio core development](clusterio-core-dev.md) | Testing changes to the sibling Clusterio checkout |
 
-## Table of Contents
+Design references: [gateway behavior](GATEWAY_TRANSFER_PRD.md), [gateway canvas](CANVAS_UI_PRD.md), and [connected-client checks](l2-client-session-script.md). These include planned behavior; consult the implementation status before treating a design as shipped.
 
-- [Architecture](#architecture)
-- [Docker Setup](#docker-setup)
-- [In-Game Commands](#in-game-commands)
-- [CLI Commands](#cli-commands)
-- [Remote Interface](#remote-interface)
-- [Configuration](#configuration)
-- [Plugin Layout](#plugin-layout)
-- [Documentation](#documentation)
-
-## Architecture
-
-```
-Source Instance (Lua) ←send_json event→ Instance Plugin (TS) ←WebSocket link→ Controller Plugin (TS) ←WebSocket link→ Destination Instance Plugin (TS) ←send_json event→ Destination Instance (Lua)
-```
-
-The plugin is written in TypeScript (compiled to `dist/node/`); the Factorio module is Lua, save-patched into instances.
-
-**Components:**
-
-| Component | Source | Role |
-|-----------|--------|------|
-| Lua module | `module/` | Save-patched into Factorio instances. Serialization, async processing, locking, validation. |
-| Instance plugin | `instance.ts` | Bridges Lua ↔ Controller. RCON chunking, send_json event handlers. |
-| Controller plugin | `controller.ts` | Stores exports, orchestrates transfers, manages transaction logs. |
-| CLI | `control.ts` | `clusterioctl surface-export` subcommands. |
-| Web UI | `web/` | React + Module Federation tabs (manual transfer, exports, transaction logs). |
-
-## Docker Setup
-
-This plugin is deployed as an external plugin via the clusterio-surface-export project. See the [main README](../README.md) for Docker setup.
-
-```bash
-# From repo root
-docker compose up -d
-
-# Verify plugin loaded (controller-origin logs appear on controller stdout)
-docker logs surface-export-controller 2>&1 | grep "surface_export"
-```
-
-## In-Game Commands
-
-These run in-game via the chat console or remotely via RCON. They are registered in `module/interfaces/commands/`. See [commands-reference.md](commands-reference.md) for full usage and arguments.
-
-> The authoritative command list is `module/interfaces/commands.lua` (this table is a convenience subset —
-> notably `/gateway-transfer`, `/gateway-gui`, and debug commands also exist; see CLAUDE.md "In-Game Commands").
-
-| Command | Description |
-|---------|-------------|
-| `/export-platform <index>` | Export platform asynchronously |
-| `/export-platform-file <index>` | Export to disk file in `script-output/` |
-| `/export-sync-mode [on\|off]` | Toggle single-tick (sync) processing for debugging |
-| `/transfer-platform <index> <dest_id>` | Transfer platform to another instance |
-| `/list-platforms` | List all space platforms |
-| `/list-exports` | List exports in memory |
-| `/list-surfaces` | List all surfaces |
-| `/lock-platform <index>` | Lock platform (hide from players) |
-| `/unlock-platform <name>` | Unlock a locked platform |
-| `/lock-status` | Show lock status of all platforms |
-| `/resume-platform <name>` | Unpause a paused platform |
-| `/plugin-import-file <file> <name>` | Import from file via plugin |
-| `/transaction-dashboard [limit]` | Open in-game transaction history GUI |
-| `/step-tick [count]` | Debug: unpause the game to allow async processing |
-| `/test-entity <json>` | Debug: test a single entity import |
-| `/test-entity-at <x> <y> <json>` | Debug: test a single entity import at a position |
-
-## CLI Commands
-
-Registered under `clusterioctl surface-export` in `control.ts`:
-
-```bash
-# List stored exports on the controller
-npx clusterioctl surface-export list
-
-# List recent transfer RECORDS as JSON (machine-readable; used by the gallery suite's
-# canonical-ID collision preflight). Best-effort: `limit` windows the result, and the
-# in-memory registry is pruned above 100 entries, so a CLEAR answer proves nothing —
-# only a hit does. Each record carries `registrySource`: "active" means the retry guard
-# will refuse that ID (a controller restart clears it); "persisted" means the guard never
-# reads it, so it is history and a restart will NOT remove it.
-npx clusterioctl surface-export list-transfers [limit]   # 1-500, default 50
-
-# Download a stored export payload as JSON
-npx clusterioctl surface-export get-export <exportId> [outputFile]
-
-# Upload a JSON export file and import it onto a target instance
-npx clusterioctl surface-export upload-import <file> <targetInstanceId> [forceName] [platformName]
-
-# Start a transfer through the controller orchestration path (same path as the web UI)
-npx clusterioctl surface-export start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]
-
-# Import a stored export onto a target instance
-npx clusterioctl surface-export transfer <exportId> <instanceId>
-```
-
-## Remote Interface
-
-The Lua module registers as `"surface_export"`. Functions are defined in `module/interfaces/remote/` and wired up in `module/interfaces/remote-interface.lua`.
-
-> The authoritative remote list is `module/interfaces/remote-interface.lua` (this is a convenience subset —
-> also registered: `destination_hold(_json)`, `delete_platform_for_transfer`, `transfer_lock_selftest(_json)`,
-> `no_tick_sync_selftest(_json)`, `version_selftest`, `gateway_selftest`, `schedule_selftest`, `clone_platform_json`, …).
-
-```lua
--- Export
-remote.call("surface_export", "export_platform", platform_index, force_name)
-remote.call("surface_export", "export_platform_to_file", platform_index, force_name, filename)
-remote.call("surface_export", "get_export", export_id)
-remote.call("surface_export", "get_export_json", export_id)
-remote.call("surface_export", "list_exports")
-remote.call("surface_export", "list_exports_json")
-remote.call("surface_export", "list_platforms")
-remote.call("surface_export", "list_platforms_json")
-remote.call("surface_export", "clear_old_exports", max_to_keep)
-
--- Import (chunked — Factorio 2.0 cannot read files at runtime)
-remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data, chunk_num, total_chunks, force_name)
-
--- Platform locking
-remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
-remote.call("surface_export", "unlock_platform", platform_name)
-
--- Validation
-remote.call("surface_export", "get_validation_result", platform_name)
-remote.call("surface_export", "get_validation_result_json", platform_name)
-
--- Configuration
-remote.call("surface_export", "configure", config_table)
-
--- Debug/testing
-remote.call("surface_export", "clone_platform", source_index, dest_name)  -- source by UNIQUE index (names collide), 2 args
-remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
-remote.call("surface_export", "run_tests")
-```
-
-## Configuration
-
-Config fields are defined in `index.ts`.
-
-**Instance config:**
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `surface_export.max_export_cache_size` | number | 10 | Max exports cached per instance |
-| `surface_export.batch_size` | number | 50 | Entities processed per tick during async operations |
-| `surface_export.max_concurrent_jobs` | number | 3 | Max concurrent async import/export jobs |
-| `surface_export.show_progress` | boolean | true | Show progress notifications for async operations |
-| `surface_export.debug_mode` | boolean | true | Export JSON comparison files for transfer validation |
-
-**Controller config:**
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `surface_export.max_storage_size` | number | 20 | Max exports stored on the controller |
-
-## Plugin Layout
-
-Plugin root: `docker/seed-data/external_plugins/surface_export/`. The full project tree is in the [main README](../README.md) under Project Structure.
-
-| Path | Contents |
-|------|----------|
-| `index.ts` | Plugin definition, config fields, message registration |
-| `controller.ts` | Controller: export storage, transfer orchestration, transaction logs |
-| `instance.ts` | Instance: RCON bridge, chunking, send_json event handlers |
-| `control.ts` | CLI: `surface-export` subcommands |
-| `messages.ts` | Plugin message type definitions |
-| `helpers.ts` | `sendChunkedJson`, Lua escaping helpers |
-| `lib/` | TypeScript modules (platform tree, subscription manager, transaction logger, transfer orchestrator, metrics) |
-| `web/` | React web UI (Ant Design + Module Federation) |
-| `module/` | Lua module, save-patched into Factorio (`core/`, `export_scanners/`, `import_phases/`, `interfaces/`, `utils/`, `validators/`, `locale/`) |
-| `test/` | Message round-trip test harness |
-| `scripts/` | Build/lint helpers (Lua-invariant and webpack-cache guards) |
-| `dist/` | Build output (`dist/node/`, `dist/web/`), gitignored |
-
-| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what is shipped, and what is not yet built) |
-For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md).
-
-## Documentation
-
-| Doc | Covers |
-|-----|--------|
-| [QUICK_START.md](QUICK_START.md) | End-to-end platform transfer walkthrough |
-| [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) | "What if the user does X?" edge-case checklist — how each transfer/lock/failure case is engineered today, with OPEN items flagged for a human call |
-| [testing.md](testing.md) | The single testing doc: Physical Truth Lab Standard (taxonomy, baked-fixture lifecycle, evidence rules), how transfer fidelity is measured (two meters, freeze policy, guarantee boundary), and the hands-on E2E validation checklist |
-| [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
-| [TRANSFER_2PC.md](TRANSFER_2PC.md) | Transfer durability, identity (surface.index not name), and two-phase-commit design + current state — single source of truth |
-| [clusterio-core-dev.md](clusterio-core-dev.md) | Working on Clusterio core itself: the sibling fork checkout, the two test loops, and promotion paths |
-| [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
-| [async-processing.md](async-processing.md) | Tick-batched jobs, performance controls, and timing limitations |
-| [config-survey.md](config-survey.md) | Every hardcoded operational value classified TUNABLE / LAW / INTERNAL, with the rule that decides which — plus the four-place wiring pattern an instance→Lua field must follow or it silently drops |
-| [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
+Runtime entry points live under [the plugin directory](../docker/seed-data/external_plugins/surface_export/): `index.ts` registers configuration and messages, `controller.ts` coordinates transfers, `instance.ts` bridges RCON and Lua, `control.ts` exposes the CLI, `web/` contains the UI, and `module/control.lua` is the save-patched entry point.

@@ -14,29 +14,31 @@ especially how Factorio is provisioned — that you need to debug or extend it.
 
 ## Pipeline overview
 
-`.github/workflows/ci.yml` runs on PRs to `main`, pushes to `main`, and `v*` tags.
-Two jobs:
+`.github/workflows/ci.yml` runs on pull requests (including stacked PRs), pushes to `main`,
+`v*` tags, and manual dispatch. Three jobs:
 
+- **Fast checks** (every run) — lint, plugin and root unit tests, and Lua regressions.
+  TypeScript builds reject unused locals and parameters. This runs alongside integration tests.
 - **Integration Tests** (every PR/push) — build the plugin, stand up the full Docker
   cluster (controller + 2 hosts + 2 instances), and run the full integration suite
   against it via `tools/tests/run-integration-tests.mjs`, which auto-discovers every
   `tests/integration/*/run-tests.{ps1,mjs}`.
-- **Publish to npm** (tags only) — build and publish the plugin after tests pass,
+- **Publish to npm** (tags only) — build and publish the plugin after both test jobs pass,
   verifying the git tag matches `package.json`'s version (`--provenance`).
 
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (correctness guards: TS/eslint, Lua invariants, webpack-cache,
+2. **Parallel fast checks** — `npm run lint` (correctness guards: TS/eslint, Lua invariants, webpack-cache,
    test-grounding, pcall-logging, catch-swallow, test-hooks, allow-manifest — see
    the guard table in CLAUDE.md "General Style", which is the one place that enumerates them).
    (`doc-refs`, `evidence-claims`, and `lint-commit-labels` are all retired — the first two with the
    pitfall/evidence corpus they policed, the label guard 2026-08-09 with the move away from
    doc-oracle commit boundaries.)
-3. **Test** — `npm test` (message round-trip + wire contract).
+3. **Unit tests in fast checks** — plugin `npm test`, root `npm test`, and the workflow's Lua regressions.
 4. **Verify the pins** — `CLUSTERIO_IMAGE_TAG` is set in `.env`, and both instances pin the same
    Factorio version (see [Version pinning](#version-pinning-single-source-of-truth)). Both are guards
-   only; nothing consumes the values since the bake was removed.
+   only: Compose consumes the image tag, and Clusterio downloads each instance's pinned Factorio version at runtime.
 5. **Create `factorio-client-2117` volume** — compose declares it `external: true`; CI has no
    game client, but the volume must exist or `docker compose up` fails with
    "external volume not found".

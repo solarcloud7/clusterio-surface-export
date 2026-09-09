@@ -1,5 +1,6 @@
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local BeltBatches = require("modules/surface_export/import_phases/belt_batches")
 
 local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
 
@@ -478,6 +479,34 @@ local function belt_side_restore_selftest(opts)
   end
 
   local next_id = 10
+  do
+    local map, groups = {}, {}
+    for i = 1, 6 do
+      map[i] = { valid = true, unit_number = i, type = "transport-belt",
+        belt_neighbours = { inputs = {}, outputs = {} } }
+      groups[i] = { members = {{ id = i, li = 1 }}, slots = {{ct = 1}} }
+    end
+    map[3].type = "splitter"
+    map[1].belt_neighbours.outputs = {map[3]}
+    map[3].belt_neighbours.outputs = {map[2]}
+    map[4].type, map[5].type = "underground-belt", "underground-belt"
+    map[4].underground_belt_neighbour, map[5].underground_belt_neighbour = map[5], map[4]
+    groups[7] = { members = {{id = 1, li = 2}}, slots = {{ct = 1}} }
+    local plan = BeltBatches.plan(groups, map, 1)
+    local which = {}
+    for i, batch in ipairs(plan.batches) do for _, gi in ipairs(batch.indices) do which[gi] = i end end
+    check("batch_can_yield_between_connected_lanes", #plan.batches == 7 and which[1] ~= which[7])
+    check("batch_can_yield_between_underground_groups", which[4] ~= which[5])
+    check("network_count_is_independent_of_batch_count", plan.networks == 3)
+    groups[1].members = {{id = 1, li = 1}, {id = 2, li = 1}}
+    local large_group = BeltBatches.plan(groups, map, 1).batches[1]
+    check("one_group_may_exceed_soft_budget", large_group.cost == 2 and #large_group.indices == 1)
+    map[6].type = "loader"
+    check("loaders_use_atomic_fallback", #BeltBatches.plan(groups, map, 1).batches == 1)
+    map[6].type = "transport-belt"
+    map[6].belt_neighbours.outputs = {{ valid = true, unit_number = 99 }}
+    check("external_connection_uses_atomic_fallback", #BeltBatches.plan(groups, map, 1).batches == 1)
+  end
   local function new_stack(name, quality, count)
     next_id = next_id + 1
     return { id = next_id, name = name, quality = quality, count = count }
@@ -497,7 +526,7 @@ local function belt_side_restore_selftest(opts)
       return out
     end
     line.can_insert_at = function() return true end
-    line.insert_at = function(_position, stack, count)
+    line.force_insert_at = function(_position, stack, count)
       line.contents[#line.contents + 1] = new_stack(stack.name, stack.quality, count)
       return true
     end
@@ -523,7 +552,7 @@ local function belt_side_restore_selftest(opts)
   local target = make_line()
   local neighbour = make_line({ new_stack("iron-plate", "normal", 5) })
   local insert_count = 0
-  target.insert_at = function(_position, stack, count)
+  target.force_insert_at = function(_position, stack, count)
     insert_count = insert_count + 1
     local destination = insert_count == 1 and neighbour or target
     destination.contents[#destination.contents + 1] = new_stack(stack.name, stack.quality, count)
@@ -562,7 +591,7 @@ local function belt_side_restore_selftest(opts)
     "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
 
   local lie_line = make_line()
-  lie_line.insert_at = function() return true end
+  lie_line.force_insert_at = function() return true end
   local lie_map = { [7] = { valid = true, prototype = prototype, get_transport_line = function() return lie_line end } }
   local lie_groups = {
     { members = { { id = 7, li = 1 } },
@@ -597,32 +626,30 @@ local function belt_side_restore_selftest(opts)
       item_source_positions = { 11, 1, 200, 11, 1, 100 } },
   }
   local mplaced, munplaced, manomalies = BeltRestoration.restore_side_groups(merge_groups, merge_map)
-  check("merge_lands_single_oversized_stack",
+  check("crowded_stacks_remain_separate",
     mplaced == 5 and munplaced == 0 and manomalies == 0
-      and #merge_line.contents == 1 and merge_line.contents[1].count == 5,
-    string.format("merge must land one oversized stack of 5; placed=%d unplaced=%d anomalies=%d stacks=%d",
+      and #merge_line.contents == 2 and merge_line.contents[1].count == 2 and merge_line.contents[2].count == 3,
+    string.format("force insertion must retain two separate stacks; placed=%d unplaced=%d anomalies=%d stacks=%d",
       mplaced, munplaced, manomalies, #merge_line.contents))
 
-  local decline_line = make_line()
-  decline_line.can_insert_at = function() return #decline_line.contents == 0 end
-  decline_line.insert_at = function(_position, stack, count)
-    if count > 2 then return false end
-    decline_line.contents[#decline_line.contents + 1] = new_stack(stack.name, stack.quality, count)
-    return true
+  local clamped_groups = {{ members = {{ id = 9, li = 1 }},
+    slots = {{ n = "iron-plate", q = "normal", ct = 1 }}, item_source_positions = {9, 1, 257} }}
+  local clamped_position
+  local honest_insert = honest_line.force_insert_at
+  honest_line.force_insert_at = function(position, stack, count)
+    clamped_position = position
+    return honest_insert(position, stack, count)
   end
-  local decline_map = { [13] = { valid = true, prototype = prototype, get_transport_line = function() return decline_line end } }
-  local decline_groups = {
-    { members = { { id = 13, li = 1 } },
-      slots = { { n = "iron-plate", q = "normal", ct = 2 }, { n = "iron-plate", q = "normal", ct = 3 } },
-      item_source_positions = { 13, 1, 200, 13, 1, 100 } },
-  }
-  local dplaced, dunplaced, danomalies = BeltRestoration.restore_side_groups(decline_groups, decline_map)
-  check("merge_decline_restores_partner",
-    dplaced == 2 and dunplaced == 3 and danomalies == 0
-      and #decline_line.contents == 1 and decline_line.contents[1].count == 2,
-    string.format("a declined merge must put the partner back and stay bracket-silent; placed=%d unplaced=%d anomalies=%d stacks=%d count=%s",
-      dplaced, dunplaced, danomalies, #decline_line.contents,
-      decline_line.contents[1] and tostring(decline_line.contents[1].count) or "none"))
+  local cp, cu, ca = BeltRestoration.restore_side_groups(clamped_groups, honest_map)
+  check("shorter_local_line_keeps_quantity_on_captured_lane",
+    cp == 1 and cu == 0 and ca == 0 and clamped_position == honest_line.line_length
+      and #honest_line.contents == 3,
+    "clamp longitudinal position on the same physical line, preserving its quantity")
+  clamped_groups[1].item_source_positions[3] = math.huge
+  -- intentional probe; failure expected, no log
+  local invalid_ok = pcall(BeltRestoration.restore_side_groups, clamped_groups, honest_map)
+  check("nonfinite_position_refused_before_insertion", not invalid_ok and #honest_line.contents == 3,
+    "nonfinite positions must fail without adding an item")
 
   local UNKNOWN_ENTITY = "modded-entity-the-destination-lacks"
   local bp_inv = game.create_inventory(2)

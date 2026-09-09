@@ -6,6 +6,7 @@ export { groupEdgeShips, shipPhaseFor } from "../../shared/transfer-status";
 export type { EdgeShipGroups, EdgeStatusMarker, ShipPhase, ShipTone } from "../../shared/transfer-status";
 
 const LEGEND_LABELS: Record<ShipTone, string> = {
+	queued: "queued",
 	active: "in transit",
 	holding: "validating",
 	success: "arrived",

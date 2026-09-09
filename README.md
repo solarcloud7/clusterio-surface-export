@@ -1,340 +1,96 @@
 # Clusterio Surface Export
 
-A Clusterio plugin and Factorio mod that serializes complete Space Age platform state for cluster-wide platform transfer. Captures every entity, item, fluid, and tile on a platform with full verification.
+Transfer Factorio Space Age platforms between Clusterio instances. The project contains a TypeScript plugin, a save-patched Lua module, and the gateway mod.
 
-## Table of Contents
+**Status: development / pre-production.** Local transfer and rollback fixtures pass, but crash-safe commit ordering and a production operating profile remain unfinished. The included Docker cluster is a development environment.
 
-1. [Features](#features)
-2. [Performance](#performance)
-3. [Installation](#installation)
-4. [Usage](#usage)
-   - [Transfer a Platform](#transfer-a-platform)
-   - [Export a Platform](#export-a-platform)
-   - [Import a Platform](#import-a-platform)
-5. [How It Works](#how-it-works)
-   - [Export Pipeline](#export-pipeline)
-   - [Import Pipeline](#import-pipeline)
-   - [Atomic Belt Scan](#atomic-belt-scan)
-   - [Verification](#verification)
-6. [Data Format](#data-format)
-7. [Development](#development)
-   - [Docker Workflow](#docker-workflow)
-   - [Hot Reload](#hot-reload)
-   - [Integration Tests](#integration-tests)
-   - [Transaction Logs](#transaction-logs)
-   - [Project Structure](#project-structure)
-8. [Troubleshooting](#troubleshooting)
-9. [Contributing](#contributing)
-10. [License](#license)
+## What it does
 
----
+- Captures supported entity state, tiles, inventories, belt items, fluids, and connections.
+- Restores entities and belt groups in batches, with yields between safe import phases.
+- Checks destination item quantities by item and quality, and fluid quantities through the transfer validation gate. A failed check triggers recovery; item loss is not an acceptable tolerance.
+- Shows transfer progress on the gateway map and retains transaction summaries, detailed audit evidence, and measured timings according to configured limits.
+- Exposes controller retention and timeout settings in the Settings tab; batching and diagnostics are configured per instance.
 
-## Features
+Lua work runs synchronously within each callback. Source belt capture, serialization, tiles, and other individual phases can still stall the simulation. Tick counts and measured milliseconds are separate signals. See [batching and timing](docs/async-processing.md) for boundaries and measured fixture results; there is no general no-lag or transfer-time guarantee.
 
-- **Complete Platform Serialization**: Every entity, tile, inventory, fluid, belt item, circuit connection, and control behavior
-- **Async Processing**: Export/import across multiple ticks — zero game freezing on any platform size
-- **Atomic Belt Scan**: Belt item positions captured in a single tick for consistent snapshots (belts can't be deactivated in Factorio)
-- **Platform Locking**: Cargo pods completed, entities frozen, surface hidden during export for stable state
-- **Platform Pause**: Destination platform paused during import to prevent fuel consumption
-- **Transfer Validation**: Post-import item/fluid count verification with automatic rollback on failure
-- **Deferred Activation**: Entities stay deactivated through validation — machines never process resources during transfer
-- **Clusterio Integration**: Full plugin with controller storage, chunked RCON transport, and inter-instance transfer
-- **Transaction Logging**: Every transfer recorded with phase timing, entity breakdowns, per-item verification
-- **Integration Tests**: The pad-fixture system (`/test-run` + the consolidated `gallery-suite`) — see `tests/integration/gallery-suite/run-tests.mjs` (its header is the runner-deletion ledger)
-- **Factorio 2.0 / Space Age**: Handles quality, stacked belt items, fusion, cargo bays, and all read-only API changes
+## Local development
 
-## Performance
+Use the canonical checkout with Docker Desktop and PowerShell 7. The current seed instances pin Factorio **2.1.17**; package dependencies pin Clusterio **2.0.0-alpha.27**. The container image tag is pinned separately in [.env.example](.env.example).
 
-**Platform transfer (1359 entities, 4350 tiles, 5600+ items):** ~1-2 seconds end-to-end
-
-| Phase | Typical Time |
-|-------|-------------|
-| Export (async, 50 entities/tick) | ~450ms |
-| Transmission (compressed, ~55KB) | ~110ms |
-| Import (entity creation + restoration) | ~450ms |
-| Validation | <1ms |
-| **Total transfer** | **~1s** |
-
-The async processor handles 50 entities per tick (configurable), so even platforms with thousands of entities process without any game lag.
-
-## Installation
-
-### For Clusterio Clusters (Recommended)
-
-This project is designed for Clusterio 2.0 clusters. It uses pre-built Docker images from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker).
-
-**Prerequisites**:
-- Docker Desktop
-- Factorio Space Age DLC
-
-**Setup** (see [docker/README.md](docker/README.md) for detailed instructions):
-
-1. Clone this repository
-2. Copy `.env.example` to `.env` and set `INIT_CLUSTERIO_ADMIN`
-3. Place save files in `docker/seed-data/hosts/<hostname>/<instance>/` directories
-4. Create external volume: `docker volume create factorio-client-2117`
-5. Run `docker compose up -d`
-
-**Factorio Game Client** (optional — needed for export-data / icon spritesheets):
-
-The cluster uses its own `factorio-client-2117` external Docker volume to persist the Factorio game client across restarts and `docker compose down -v`. External volume names are GLOBAL to the Docker host, so each cluster on a machine needs its OWN name — two sharing one clobber each other's client install. To populate it:
-- Set `FACTORIO_USERNAME` and `FACTORIO_TOKEN` in `.env` — host-1 downloads the client automatically on first startup
-- Or verify an existing install: `docker exec <host> /opt/factorio-client/bin/x64/factorio --version`
-
-Host-2 has `SKIP_CLIENT=true` by default (only host-1 needs the game client for export-data).
-
-The plugin is bind-mounted from `seed-data/external_plugins/surface_export/` and auto-installed.
-
-### For Development
-
-**Quick Commands**:
+Follow [Docker setup](docker/README.md) for first startup and client-mod synchronization. Once the cluster is running:
 
 ```powershell
-# Create external volume for Factorio game client (one-time)
-docker volume create factorio-client-2117
+# Web-only changes
+./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController
 
-# Pull pre-built images and start the cluster
-docker compose pull
-docker compose up -d
+# Lua changes: back up and reload the current saves
+./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves
 
-# View logs
-docker logs -f surface-export-controller
-docker logs -f surface-export-host-1
+# Plugin + web + Lua changes, preserving current saves
+./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves
 
-# Stop the cluster
-docker compose down
+# Read cluster logs
+node tools/clusterio/read-cluster-logs.mjs --help
 
-# Clean restart (wipe all data — factorio-client-2117 persists, it's external)
-docker compose down -v
-docker compose up -d
+# List the integration suites before choosing a live test
+node tools/tests/run-integration-tests.mjs --list
 ```
 
-**Hot Reload**: rebuild only what you changed (web / TypeScript / Lua) instead of a full redeploy — see [Hot Reload](#hot-reload) below for the per-change commands, or use the matching VS Code "Build: …" / "Patch and Reset" tasks.
+Use the isolated build helper instead of installing dependencies into the live bind-mounted plugin directory. Save-preserving reload creates local pre-deploy saves and checks the resulting world; it is not an off-host backup service. Destructive reset commands belong only on disposable development/test clusters.
 
-**Development Files**:
-- **Clusterio Plugin**: `docker/seed-data/external_plugins/surface_export/` (Node.js code)
-- **Factorio Mod**: `docker/seed-data/external_plugins/surface_export/module/` (Lua code)
-- **Save Files**: `docker/seed-data/hosts/<hostname>/<instance>/` (per-instance `.zip` saves)
-- **Mods**: `docker/seed-data/mods/` (additional Factorio mods as `.zip` files)
-- **Database Seeds**: `docker/seed-data/controller/database/` (users, roles)
+## Use
 
-## Usage
+Open **Surface Export -> Gateways**, select a platform, and confirm its destination. The controller queues overlapping requests. Follow the operation in **Transaction Logs**, including its validation evidence and cleanup or rollback result.
 
-### Transfer a Platform
+The in-game command is `/transfer-platform <platform_index> <destination_instance_id>`. Use actual instance IDs, not host numbers. See the [transfer walkthrough](docs/QUICK_START.md) and [command reference](docs/commands-reference.md).
 
-Transfer a platform between instances in a single command:
-```
-/transfer-platform <platform_index_or_name> <target_instance>
-```
+Export/import can also create independent copies; it is distinct from a transfer that removes the source after destination validation.
 
-This performs the full pipeline: lock → export → transmit → import → validate → activate → unlock. Progress messages appear throughout. See [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) for the detailed phase breakdown.
-
-### Export a Platform
-
-```
-/export-platform <platform_index_or_name>
-```
-
-Exports are processed asynchronously (50 entities/tick by default). Exported data is stored on the controller and available to all instances.
-
-### Import a Platform
-
-```
-/plugin-import-file <file> <name>
-```
-
-Creates a new platform and restores all entities, tiles, inventories, and belt items. Use `/list-exports` to see available exports.
-
-See [docs/commands-reference.md](docs/commands-reference.md) for the command reference (the authoritative list is `module/interfaces/commands.lua` — counts drift).
-
-## How It Works
-
-### Export Pipeline
-
-1. **Lock Platform** — Complete any in-flight cargo pods, freeze entities, hide the surface from players
-2. **Async Entity Scan** — Process 50 entities/tick: serialize position, settings, inventories, circuit connections (belt items are deferred)
-3. **Tile Scan** — Capture all platform tiles in a single tick
-4. **Atomic Belt Scan** — Scan all belt item positions in a single tick for a consistent snapshot
-5. **Verification Snapshot** — Count all items/fluids from the serialized data
-6. **Compress & Transmit** — Deflate-compress the JSON, send via chunked RCON to the controller
-
-### Import Pipeline
-
-1. **Create Platform** — Build a new platform with floor tiles
-2. **Entity Creation** — Place entities in dependency order (inserters last), deactivated
-3. **Inventory Restoration** — Fill all inventories, set recipes, configure behaviors
-4. **Belt Item Restoration** — Re-insert items onto belts at correct positions
-5. **Circuit Wiring** — Reconnect all circuit network connections
-6. **Pause Platform** — Keep platform paused to prevent fuel consumption during validation
-7. **Validation** — Compare post-import item/fluid counts against export verification data
-8. **Activation** — Activate all entities, unpause platform — transfer complete
-
-### Atomic Belt Scan
-
-Transport belts move items continuously and cannot be paused in Factorio. During async export (which spans many ticks), items would shift positions between scan batches, causing duplication or loss in the snapshot.
-
-The solution: during entity scanning, belt item extraction is **skipped**. After all entities are serialized, a dedicated pass scans every belt entity's items in a **single game tick**, then patches the serialized data. This guarantees a point-in-time consistent snapshot of all belt contents.
-
-### Verification
-
-After import, the system counts every item and fluid across all entities and compares against the export snapshot:
-- Each item type tracked separately (with quality level)
-- Each fluid type tracked separately (with temperature)
-- Discrepancies reported in-game with exact counts
-- Automatic rollback on validation failure
-
-## Data Format
-
-Export data is **deflate-compressed** by default (70-90% size reduction). The outer envelope:
-
-```json
-{
-  "compressed": true,
-  "compression": "deflate",
-  "payload": "<base64-encoded compressed JSON>",
-  "platform_name": "Platform Alpha",
-  "tick": 1735259234,
-  "timestamp": 1737896234000,
-  "stats": {
-    "entities": 1359,
-    "items": 5618,
-    "fluids": 8,
-    "tiles": 4350,
-    "size_bytes": 55000
-  },
-  "verification": {
-    "item_counts": { "iron-plate": 500, "copper-plate": 300 },
-    "fluid_counts": { "water": 50000 }
-  }
-}
-```
-
-The `verification` block stays uncompressed at the top level so the destination instance can validate counts without decompressing the full payload.
-
-## Development
-
-### Docker Workflow
+## Checks
 
 ```powershell
-docker compose pull              # Pull pre-built images
-docker compose up -d             # Start cluster
-docker compose down              # Stop cluster
-docker compose down -v && docker compose up -d   # Clean restart
+./tools/clusterio/build-plugin.ps1 -Target lint
+./tools/clusterio/build-plugin.ps1 -Target test
+npm test
+lua tests/lua/import-phase-yields.lua
 ```
 
-### Hot Reload
+Run build/deploy/browser workflows sequentially; they share a checkout lock. Live suites can transfer or reset fixtures, so use their documented prerequisites. See [tests](tests/README.md), [testing contracts](docs/testing.md), and [CI](docs/CI_CD.md).
 
-After code changes, rebuild **only what changed** — no full redeploy. `build-plugin.ps1` builds in an
-isolated `node:24` container, so it never touches the running cluster's `node_modules`:
+For manually triggered, automated reply-loss, crash, save-rollback and callback-cost experiments,
+run `npm run test:manual:transfers -- --list`. The [manual Docker lab](tests/manual/transfer-reliability/README.md)
+creates a disposable cluster and preserves the live development cluster. These cases do not run in ordinary CI.
 
-| Changed | Command |
-|---------|---------|
-| Web UI (`*.tsx` / `*.css`) | `.\tools\clusterio\deploy.ps1 -Scope artifacts -Target web -RestartController` |
-| TypeScript (`*.ts`) | `.\tools\clusterio\deploy.ps1 -Scope artifacts -Target node -RestartHosts` |
-| Lua (`module/`) | `.\tools\clusterio\deploy.ps1 -Scope plugin` (or `-Scope lua` to skip the build) |
+## Before production
 
-Lua is **save-patched**, so a Lua change needs the save reset that `patch-and-reset.ps1` performs (it
-also rebuilds the plugin and restarts the cluster — the one-shot for a mixed change). A plain container
-restart reuses the old patched `script.dat` and won't pick up Lua edits.
+Readiness review: 2026-09-08. These are remaining acceptance gates, not guarantees supplied by the existing green tests.
 
-The matching VS Code tasks ("Build: Web UI …", "Build: Node/TypeScript …", "Patch and Reset …") run
-these for you.
+| Priority | Work | Why it matters / acceptance evidence | Effort |
+|---|---|---|---|
+| Blocking | Establish crash durability and backup reconciliation | Destination activation now follows acknowledged source deletion; refusal, replay and controller restart fixtures pass. Prove recovery through abrupt process loss and older-save restoration, including expired intents and receipts. [Current protocol and pending work](docs/TRANSFER_2PC.md). | Large |
+| Blocking | Define a production deployment profile | Compose currently mounts writable source, patches static caching for development, exposes HTTP, and seeds debug-enabled public instances. Define immutable artifacts, intended exposure/authentication, and diagnostic defaults. | Medium |
+| Blocking | Exercise backup and restore | Restore controller state, artifacts, tokens, and paired instance saves after a simulated loss; document the recovery point and reconcile in-flight transfers. Local pre-deploy saves alone do not establish this. | Medium |
+| Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
+| Release gate | Test the exact release artifact and upgrade path | Run full CI plus fresh-install, preserved-save upgrade, and rollback checks against the version being shipped. Publishing already waits for both CI jobs; a published version alone is not production acceptance. | Medium |
 
-> ⚠️ Don't run `npm run build` / `npm install` directly in the plugin dir on a running cluster — it
-> re-adds the `@clusterio/*` peer deps into the bind-mounted `node_modules` and breaks `clusterioctl`.
-> Always build via `build-plugin.ps1` (isolated container) or `deploy-cluster.ps1`.
+## Repository map
 
-### Integration Tests
-
-Two test suites verify platform transfer correctness:
-
-```powershell
-# Pad transfer suite: real cross-instance transfers of every transfer-act pad fixture
-node tests/integration/gallery-suite/run-tests.mjs
-
-```
-
-Tests run against the Docker cluster and verify item counts, entity positions, and data integrity.
-
-### Transaction Logs
-
-Every transfer is logged with phase timing and per-item breakdowns:
-
-```powershell
-.\tools\surface-export\list-transaction-logs.ps1      # List all transfers
-.\tools\surface-export\get-transaction-log.ps1        # Show latest transfer details
-```
-
-Or use VS Code tasks: "List Transaction Logs", "Get Latest Transaction Log".
-
-### Project Structure
-
-```
-clusterio-surface-export/
-├── docker/
-│   ├── seed-data/
-│   │   ├── controller/
-│   │   │   └── database/                 # Pre-seeded users.json, roles.json
-│   │   ├── external_plugins/
-│   │   │   └── surface_export/           # Clusterio Plugin + Mod
-│   │   │       ├── index.js              # Plugin entry point
-│   │   │       ├── controller.js         # Controller-side logic
-│   │   │       ├── instance.js           # Instance-side logic
-│   │   │       ├── messages.js           # Plugin message definitions
-│   │   │       ├── helpers.js            # Utility functions
-│   │   │       ├── package.json          # Node.js dependencies
-│   │   │       └── module/               # Factorio Mod (Lua)
-│   │   │           ├── control.lua       # Mod entry point
-│   │   │           ├── module.json       # Module metadata
-│   │   │           ├── core/             # Core export/import logic
-│   │   │           ├── export_scanners/  # Entity scanning
-│   │   │           ├── import_phases/    # Import phases
-│   │   │           ├── interfaces/       # Remote interfaces
-│   │   │           ├── utils/            # Utilities
-│   │   │           └── validators/       # Validation logic
-│   │   ├── hosts/                        # Seed instances (folder convention)
-│   │   │   ├── clusterio-host-1/
-│   │   │   │   └── clusterio-host-1-instance-1/
-│   │   │   │       └── test.zip          # Save file for instance 1
-│   │   │   └── clusterio-host-2/
-│   │   │       └── clusterio-host-2-instance-1/
-│   │   │           └── MinSeed.zip       # Save file for instance 2
-│   │   ├── saves/                        # Legacy save storage
-│   │   └── mods/                         # Additional Factorio mods (.zip)
-
-│   └── README.md                         # Docker setup docs
-├── docker-compose.yml                    # Cluster definition (uses GHCR images)
-├── tools/                                # PowerShell helper scripts
-├── tests/                                # Integration tests
-├── docs/                                 # Documentation
-└── README.md                             # This file
-```
+| Path | Purpose |
+|---|---|
+| [Plugin](docker/seed-data/external_plugins/surface_export/) | Controller, instance bridge, CLI, web UI, shared types, and Lua module |
+| [Gateway mod](docker/seed-data/mods-src/surfexp_gateways/) | Factorio prototypes and gateway graphics |
+| [Tools](tools/) | Build, deployment, diagnostics, and test helpers |
+| [Tests](tests/) | Unit tests, live regressions, retained experiments, and fixtures |
+| [Documentation](docs/README.md) | Focused reference index |
 
 ## Troubleshooting
 
-### Import shows item count warnings
-Item count discrepancies of ~5-6% are expected due to items in non-scannable locations (e.g., items consumed during the final tick before locking). Large discrepancies may indicate a mod version mismatch between instances.
-
-### Docker containers won't start
-- Ensure Docker Desktop is running
-- Check port availability (8080, 34100-34109, 34200-34209)
-- Ensure external volume exists: `docker volume create factorio-client-2117`
-- Review logs: `docker compose logs`
-- Ensure GHCR images are accessible: `docker pull ghcr.io/solarcloud7/clusterio-docker-controller`
-
-### Server doesn't tick (headless)
-Set `auto_pause: false` in server settings. Headless servers with no connected players will pause by default, blocking async processing.
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Follow Factorio Lua style guidelines
-2. Add tests for new features
-3. Update documentation
+- **Validation failed:** inspect the failed stage and item/entity/fluid evidence in Transaction Logs. Preserve the diagnostic report; do not dismiss item differences as expected loss.
+- **Cleanup failed:** inspect both instances before retrying. The destination may already exist while the source remains. Follow the [recovery contract](docs/TRANSFER_2PC.md).
+- **Jobs do not advance:** check that the instance is running and game ticks are advancing. A paused simulation cannot process tick-batched jobs.
+- **Old web UI or Lua code:** use the matching deployment command above; web builds and save-patched Lua have separate reload paths.
 
 ## License
 
-MIT License - See [LICENSE.md](LICENSE.md) for details.
-
-Built for [Clusterio 2.0](https://github.com/clusterio/clusterio) with Factorio 2.0 Space Age.
+[MIT](LICENSE.md).

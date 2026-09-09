@@ -3,3 +3,11 @@ docker/clusterio-containers
 .vscode
 .git
 .gitignore
+.env
+.agents
+.codex
+.claude
+ci-artifacts
+graphify-out
+backups
+controller-logs.txt

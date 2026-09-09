@@ -17,6 +17,7 @@
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
+import { parseStateCounters } from "./state-counters.mjs";
 
 const SOURCE_HOST = 1;
 const DEST_HOST = 2;
@@ -441,7 +442,7 @@ function adjudicateStoredCounters(transferId, counters) {
 	for (const [field, prop] of Object.entries(STORED_COUNTER_FIELDS)) {
 		if (stored[field] !== counters[prop]) {
 			fail(`summary.import.${field} reads ${JSON.stringify(stored[field])}, the destination's own log `
-				+ `line says ${counters[prop]} — the store is the only copy that outlives the instance log, `
+				+ `batch records total ${counters[prop]} — the store is the only copy that outlives the instance log, `
 				+ "so a disagreement here is the number every later reader gets");
 			return;
 		}
@@ -454,23 +455,17 @@ function adjudicateStoredCounters(transferId, counters) {
 	pass(`summary.import carries applied=${stored.belt_state_applied} `
 		+ `unmatched=${stored.belt_state_unmatched} failed=${stored.belt_state_failed} `
 		+ `merge-discarded=${stored.belt_state_merge_discarded} declined=${stored.belt_state_declined}, `
-		+ "each agreeing with the destination's log line");
+		+ `each agreeing with the destination's ${counters.records} item-state batch log record(s)`);
 }
 
 async function readStateCounters(host) {
 	const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
 	for (let attempt = 1; attempt <= STATE_LOG_ATTEMPTS; attempt++) {
 		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
-			`grep -aF '${STATE_LOG_MARKER}' ${path} | tail -1 || true`]);
-		const hit = out.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop();
-		if (hit) {
-			const nums = hit.match(
-				/applied (\d+) \| unmatched (\d+) \| failed (\d+) \| merge-discarded (\d+) \| declined (\d+)/);
-			if (nums) {
-				return { line: hit, applied: Number(nums[1]), unmatched: Number(nums[2]),
-					failed: Number(nums[3]), mergeDiscarded: Number(nums[4]), declined: Number(nums[5]) };
-			}
-		}
+			`grep -aF '${STATE_LOG_MARKER}' ${path} || true`]);
+		// Called after arrival: restore has finished, including every item-state batch.
+		const counters = parseStateCounters(out, CLONE);
+		if (counters) return counters;
 		if (attempt < STATE_LOG_ATTEMPTS) await sleep(1000);
 	}
 	return null;
@@ -648,6 +643,7 @@ async function main() {
 
 		say("\n=== DESTINATION: the restore's own item-state counters ===");
 		const counters = await readStateCounters(DEST_HOST);
+		if (counters) say(counters.line);
 		if (counters === null) {
 			fail(`the destination emitted no "${STATE_LOG_MARKER}" line for THIS clone — the belt restore either `
 				+ "never applied any item state or never reported it, and the rows above cannot distinguish "

@@ -1,6 +1,4 @@
 import type {
-	HostNodeModel,
-	InstanceNodeModel,
 	PlatformModel,
 	StoredExportSummaryModel,
 	TransactionLogEntryModel,
@@ -8,10 +6,8 @@ import type {
 	ExportMetrics,
 	ImportMetrics,
 	PayloadMetrics,
-	PhaseSpan,
 	ValidationResult,
 	GatewayLink,
-	ResolvedGatewayTarget,
 	ResolvedGateway,
 	AuditRow,
 } from "./shared/dto";
@@ -698,6 +694,7 @@ export class StartPlatformTransferRequest {
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
+			platformName: { type: "string", maxLength: 500 },
 			sourceInstanceId: { type: "integer" },
 			sourcePlatformIndex: { type: "integer" },
 			targetInstanceId: { type: "integer" },
@@ -708,13 +705,15 @@ export class StartPlatformTransferRequest {
 		additionalProperties: false,
 	};
 
+	platformName?: string;
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
 	targetInstanceId: number;
 	forceName: string;
 	targetPlanet: string | null;
 
-	constructor(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	constructor(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+		this.platformName = json.platformName;
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
 		this.targetInstanceId = json.targetInstanceId;
@@ -722,12 +721,12 @@ export class StartPlatformTransferRequest {
 		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	static fromJSON(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return new StartPlatformTransferRequest(json);
 	}
 
 	toJSON() {
-		return { sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
+		return { platformName: this.platformName, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {
@@ -1148,6 +1147,31 @@ export class ImportOperationCompleteEvent {
 	}
 }
 
+export class DestinationTransferGateRequest {
+	declare ["constructor"]: typeof DestinationTransferGateRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live"] } },
+		required: ["transferId", "action"], additionalProperties: false,
+	};
+	transferId: string;
+	action: "verify" | "go_live";
+	constructor(json: { transferId: string; action: "verify" | "go_live" }) {
+		this.transferId = json.transferId;
+		this.action = json.action;
+	}
+	static fromJSON(json: { transferId: string; action: "verify" | "go_live" }) { return new DestinationTransferGateRequest(json); }
+	toJSON() { return { transferId: this.transferId, action: this.action }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
 export class DeleteSourcePlatformRequest {
 	declare ["constructor"]: typeof DeleteSourcePlatformRequest;
 	static plugin = PLUGIN_NAME;
@@ -1316,6 +1340,24 @@ export class TransferStatusUpdate {
 	};
 }
 
+export class ReadEntityEvidenceRequest {
+	declare ["constructor"]: typeof ReadEntityEvidenceRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = { type: "object", properties: {
+		transferId: { type: "string" }, file: { type: "string", maxLength: 512 }, tick: { type: "integer", minimum: 0 },
+	}, required: ["transferId", "file", "tick"], additionalProperties: false };
+	constructor(public transferId: string, public file: string, public tick: number) {}
+	static fromJSON(json: { transferId: string; file: string; tick: number }) { return new ReadEntityEvidenceRequest(json.transferId, json.file, json.tick); }
+	toJSON() { return { transferId: this.transferId, file: this.file, tick: this.tick }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { status: { enum: ["available", "unavailable"] }, file: { type: "string" }, rows: { type: "array" }, totalRows: { type: "integer" }, truncated: { type: "boolean" }, reason: { type: "string" } }, required: ["status", "file", "rows", "totalRows", "truncated"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as import("./shared/entity-evidence").EntityEvidence; },
+	};
+}
+
 export class GetTransactionLogRequest {
 	declare ["constructor"]: typeof GetTransactionLogRequest;
 	static plugin = PLUGIN_NAME;
@@ -1391,6 +1433,8 @@ export class PlatformStateChangedEvent {
 export type OperationType = "transfer" | "export" | "import";
 
 export type TransferStatus =
+	| "queued"
+	| "preparing"
 	| "transporting"
 	| "in_progress"
 	| "awaiting_validation"
@@ -1408,6 +1452,8 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	awaitingLateVerdict?: boolean;
+	queuedRequestId?: string;
 	timingPendingRecovery?: boolean;
 	timing?: OperationTiming;
 	observedDurationMs?: number;
@@ -1432,7 +1478,7 @@ export interface ActiveTransfer {
 	exportMetrics?: ExportMetrics | null;
 	importMetrics?: ImportMetrics | null;
 	validationResult?: ValidationResult | null;
-	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
+	failedStage?: ValidationResult['failedStage'];
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
 	armedValidationTimeoutMs?: number | null;
@@ -1480,6 +1526,7 @@ export type InstanceRecordLike = {
 
 export interface PendingTransferIntent {
 	transferId: string;
+	sourceExportId?: string | null;
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
 	sourcePlatformName: string;
@@ -1499,7 +1546,9 @@ export interface SourceCommitMarker {
 }
 
 export interface IControllerPlugin {
+	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
+	persistPendingTransfers(requiredTransferId?: string): Promise<void>;
 	removePendingTransfer(transferId: string): void;
 	isInstanceOnline(instanceId: number): boolean;
 	controller: {

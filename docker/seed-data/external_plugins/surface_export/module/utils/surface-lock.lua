@@ -1,5 +1,6 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
+local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 
 local SurfaceLock = {}
 
@@ -361,6 +362,10 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     local surface = platform.surface
     if not surface or not surface.valid then
         return false, "Platform surface not valid"
+    end
+
+    if LatchRearm.pending_on_surface(surface.index) then
+        return false, "Circuit memory restoration is still pending on this platform"
     end
 
     if not storage.locked_platforms then

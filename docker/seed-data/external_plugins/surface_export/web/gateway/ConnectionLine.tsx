@@ -1,4 +1,3 @@
-import React from "react";
 import { useConnection } from "@xyflow/react";
 import type { ConnectionLineComponentProps } from "@xyflow/react";
 

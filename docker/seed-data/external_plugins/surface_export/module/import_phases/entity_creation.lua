@@ -91,7 +91,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
               job.entity_map[entity_data.entity_id] = entity
             end
             
-            if job.transfer_id and entity.type ~= "beacon" and entity.type ~= "radar"
+            if entity.type ~= "beacon" and entity.type ~= "radar"
                 and entity.type ~= "item-request-proxy" then
               local ok, err = pcall(function()
                 if entity.active then

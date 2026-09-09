@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Alert, Empty, Input, Radio, Switch, Table, Tag } from "antd";
 import { ItemIcon, FluidIcon } from "../icons";
 import { formatNumeric, formatSigned, parseFluidTemperatureKey } from "../utils";

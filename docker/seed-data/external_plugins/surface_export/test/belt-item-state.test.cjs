@@ -156,13 +156,9 @@ test("the declined counter reaches the log line and the import-complete metrics"
 		"and the import-complete event's metrics whitelist, or nothing off-instance can see a decline");
 });
 
-test("the over-compression merge declares which of two merged states survives", () => {
+test("compressed stacks retain individual state without merging", () => {
 	const restoration = read("import_phases", "belt_restoration.lua");
-	assert.match(restoration, /partner\.slot = \{ n = slot\.n, q = slot\.q, ct = merged_ct, src = partner\.slot\.src, st = merged_st \}/,
-		"the rebuilt ledger slot must carry the partner's state forward — a fresh four-key table silently drops it");
-	assert.match(restoration, /landed_k = scan_place\(merged_ct, merged_st\)/,
-		"the merge removes the partner and re-places it, so the state must be re-applied to the merged stack");
-	assert.match(restoration, /state_stats\.merge_discarded = state_stats\.merge_discarded \+ 1[\s\S]{0,300}?MERGE DISCARDED/,
-		"one physical stack carries one state: the incoming slot's state is lost by construction and must be "
-		+ "counted and logged, not dropped in silence");
+	assert.doesNotMatch(restoration, /merged_ct|merged_st|partner\.slot|state_stats\.merge_discarded = state_stats\.merge_discarded \+ 1/);
+	assert.match(restoration, /if before_ids then apply_state\(line, before_ids, st, stack_def, count\) end/,
+		"each new physical stack must receive its own captured state after insertion");
 });

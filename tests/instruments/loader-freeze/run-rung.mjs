@@ -8,7 +8,7 @@
 // produces: per-loader refill counts for three arms (control, disabled_by_script=true, re-enabled) on
 //           the built rigs, readback of the written flag, per-arm status names, and a verdict on
 //           docs/testing.md's "freeze the feed with disabled_by_script = true" instruction
-// does not: measure transport-belt behavior (tests/instruments/belt-freeze covers that),
+// does not: measure transport-belt behavior,
 //           measure paused-platform behavior, assert item conservation, measure the save's four
 //           feed-less native loaders, or touch a protected fixture (it clones and sweeps)
 

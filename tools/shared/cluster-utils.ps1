@@ -128,6 +128,21 @@ function Sync-ControllerWebBundle {
         "On disk $onDisk, still advertising '$advertised'.")
 }
 
+function Assert-PluginArtifactsFresh {
+    $pluginRoot = Join-Path $script:RepoRoot 'docker/seed-data/external_plugins/surface_export'
+    $inputs = @(
+        Get-ChildItem "$pluginRoot/lib", "$pluginRoot/shared", "$pluginRoot/web" -File -Recurse
+        Get-ChildItem $pluginRoot -File | Where-Object { $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.js' }
+    )
+    $newest = ($inputs | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
+    foreach ($tree in 'node', 'web') {
+        $stamp = Join-Path $pluginRoot "dist/$tree/.prepare-build-stamp"
+        if (-not (Test-Path $stamp) -or (Get-Item $stamp).LastWriteTimeUtc -lt $newest) {
+            throw "dist/$tree is missing or older than the build inputs. Run deploy.ps1 -Scope plugin -KeepSaves to build and reload."
+        }
+    }
+}
+
 function Get-ControllerAdvertisedWebBundle {
     param([string]$Container = "surface-export-controller")
 

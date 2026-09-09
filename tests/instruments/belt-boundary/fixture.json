@@ -1,0 +1,369 @@
+{
+  "engine": "2.1.17",
+  "operation": "836570928:099_lab-transfer-fixture-v1",
+  "entities": [
+    {
+      "id": 50020,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -9.5,
+        "y": -1.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50021,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -9.5,
+        "y": -0.5
+      },
+      "direction": 4
+    },
+    {
+      "id": 50039,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -8.5,
+        "y": -1.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50040,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -8.5,
+        "y": -0.5
+      },
+      "direction": 4
+    },
+    {
+      "id": 50073,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -7.5,
+        "y": -1.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50074,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -7.5,
+        "y": -0.5
+      },
+      "direction": 4
+    },
+    {
+      "id": 50105,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -6.5,
+        "y": -2.5
+      },
+      "direction": 8
+    },
+    {
+      "id": 50106,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -6.5,
+        "y": -1.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50107,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -6.5,
+        "y": -0.5
+      },
+      "direction": 4
+    },
+    {
+      "id": 50134,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -5.5,
+        "y": -2.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50135,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -5.5,
+        "y": -1.5
+      },
+      "direction": 12
+    },
+    {
+      "id": 50136,
+      "name": "turbo-transport-belt",
+      "position": {
+        "x": -5.5,
+        "y": -0.5
+      },
+      "direction": 0
+    }
+  ],
+  "groups": [
+    {
+      "members": [
+        {
+          "id": 50039,
+          "li": 2
+        },
+        {
+          "id": 50073,
+          "li": 2
+        },
+        {
+          "id": 50106,
+          "li": 2
+        }
+      ],
+      "slots": [
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50039,
+            "li": 2,
+            "k": 10
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50039,
+            "li": 2,
+            "k": 74
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50039,
+            "li": 2,
+            "k": 138
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50039,
+            "li": 2,
+            "k": 202
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50073,
+            "li": 2,
+            "k": 10
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50073,
+            "li": 2,
+            "k": 74
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50073,
+            "li": 2,
+            "k": 138
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50073,
+            "li": 2,
+            "k": 202
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50106,
+            "li": 2,
+            "k": 10
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50106,
+            "li": 2,
+            "k": 74
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50106,
+            "li": 2,
+            "k": 118
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50106,
+            "li": 2,
+            "k": 182
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50106,
+            "li": 2,
+            "k": 246
+          }
+        }
+      ],
+      "item_source_positions": [
+        50039,
+        2,
+        10,
+        50039,
+        2,
+        74,
+        50039,
+        2,
+        138,
+        50039,
+        2,
+        202,
+        50073,
+        2,
+        10,
+        50073,
+        2,
+        74,
+        50073,
+        2,
+        138,
+        50073,
+        2,
+        202,
+        50106,
+        2,
+        10,
+        50106,
+        2,
+        74,
+        50106,
+        2,
+        118,
+        50106,
+        2,
+        182,
+        50106,
+        2,
+        246
+      ]
+    },
+    {
+      "members": [
+        {
+          "id": 50135,
+          "li": 2
+        }
+      ],
+      "slots": [
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50135,
+            "li": 2,
+            "k": 54
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50135,
+            "li": 2,
+            "k": 118
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50135,
+            "li": 2,
+            "k": 182
+          }
+        },
+        {
+          "n": "explosive-rocket",
+          "q": "normal",
+          "ct": 4,
+          "src": {
+            "id": 50135,
+            "li": 2,
+            "k": 246
+          }
+        }
+      ],
+      "item_source_positions": [
+        50135,
+        2,
+        54,
+        50135,
+        2,
+        118,
+        50135,
+        2,
+        182,
+        50135,
+        2,
+        246
+      ]
+    }
+  ]
+}

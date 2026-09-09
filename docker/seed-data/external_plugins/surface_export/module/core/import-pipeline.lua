@@ -197,6 +197,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	local ok, err = pcall(function()
 		new_platform.apply_starter_pack()
+		-- Starter cargo belongs to platform construction, not the imported payload.
+		-- Empty source inventories may be omitted, so restoration cannot clear it later.
+		local hub = new_platform.hub
+		assert(hub and hub.valid, "starter pack did not create a valid hub")
+		local inventory = hub.get_inventory(defines.inventory.hub_main)
+		assert(inventory, "starter hub has no main inventory")
+		inventory.clear()
 	end)
 
 	if not ok then
@@ -436,13 +443,16 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	end
 	if not job.tiles_placed then
 		Timing.scope(job.job_id, "tiles", TileRestoration.process, job)
-	end
-	if job.tiles_placed and not job.metrics.tiles_completed_tick then
-		PhaseRecorder.stop(job, "tiles")
-		job.metrics.tiles_placed = #(job.tiles_to_place or {})
+		if job.tiles_placed and not job.metrics.tiles_completed_tick then
+			PhaseRecorder.stop(job, "tiles")
+			job.metrics.tiles_placed = #(job.tiles_to_place or {})
+		end
+		return false
 	end
 
-	Timing.scope(job.job_id, "hub_mapping", PlatformHubMapping.process, job)
+	if not job.hub_mapped then
+		Timing.scope(job.job_id, "hub_mapping", PlatformHubMapping.process, job)
+	end
 
 	if not job.beacons_placed and job.tiles_placed then
 		PhaseRecorder.start(job, "beacons")
@@ -470,6 +480,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 		if beacons_created > 0 or beacons_skipped > 0 then
 			log(string.format("[Import] Beacon pre-placement: %d placed, %d failed (tick %d)", beacons_created, beacons_skipped, game.tick))
 		end
+		return false
 	end
 
 	if not job.metrics.entities_started_tick and job.tiles_placed then

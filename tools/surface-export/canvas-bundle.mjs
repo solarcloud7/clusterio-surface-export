@@ -21,6 +21,19 @@ export function bundleOnDisk() {
 	return entry.split("/").pop();
 }
 
+export async function assertControllerBundle(base = process.env.SE_WEB_URL || "http://localhost:8080", {
+	fetcher = fetch, expected = bundleOnDisk(),
+} = {}) {
+	const response = await fetcher(new URL("/api/plugins", base), { signal: AbortSignal.timeout(10000) });
+	if (!response.ok) throw new Error(`Controller readiness: /api/plugins returned ${response.status}`);
+	const plugins = await response.json();
+	const plugin = plugins.find(p => p.name === "surface_export");
+	const advertised = plugin?.web?.main ?? plugin?.web?.["surface_export.js"];
+	if (!plugin || plugin.enabled === false || plugin.loaded === false || !advertised || advertised.split("/").pop() !== expected) {
+		throw new Error(`Controller bundle readiness: expected ${expected}, advertised ${advertised ?? "plugin unavailable"}. Run deploy.ps1 -Scope artifacts -Target web -RestartController.`);
+	}
+}
+
 export async function bundleInPage(page) {
 	return page.evaluate(() => {
 		const script = [...document.querySelectorAll('script[src*="surface_export."]')]

@@ -257,53 +257,33 @@ black box, discards the destination, reports `failedStage=items|fluids|belts`, a
 Post-activation recounts are reporting only and cannot rewrite the verdict.
 
 **Q: What if I have circuit LATCHES, counters, or other circuit-network SIGNAL STATE?**
-A: ✅ for self-feedback DECIDER latches; ⚠️ for everything else. Circuit STRUCTURE always arrives verbatim
-(wires, combinator parameters, conditions). The decider's output register itself is not script-writable
-(circuit-latch-rearm R1), so raw signal state cannot be restored — but since 2026-07-30 the
-**post-activation latch re-arm pass** (`module/import_phases/latch_rearm.lua`) re-derives it for TRUE
-latches only (deciders whose own output is wired back into their own input — ordinary deciders re-derive
-naturally and are never touched): export captures the live register (`signals_last_tick`), and the import
-preflights that the captured config writes, briefly forces the condition true for one evaluated tick,
-restores it, then PHYSICALLY verifies the register against the capture (quality-keyed). On a count
-mismatch (an output with `copy_count_from_input=false` emits 1, so a register holding e.g. 47 is not
-reproducible) the pass first samples the register five times at pairwise-coprime gaps (13/17/19/23
-ticks, `utils/signal-stability.lua`; uniform spacing would alias any register whose period divides the
-gap) — wiring cannot distinguish a latch from a self-fed COUNTER, and a moving register is "not a
-latch" and receives NO clearing write (it was still briefly forced and restored before classification,
-like every scheduled decider). Only a register that held still across every sample is CLEARED back to
-the pre-fix predictable 0, reported per decider — nothing fake stays in the network. The
-`omnibus-decider-latch` pad asserts a transferred latch arrives ARMED on the destination board;
-`tests/integration/latch-rearm-adversarial` asserts a latch and a counter on one platform get told
-apart. Honest limits: an INDIRECT feedback loop (through a pole) is not detected and keeps the old
-arrives-at-0 behavior; a register whose period exceeds the ~72-tick sampling window can still read
-stable and be cleared. Gateway-parked transfers get the re-arm
-— combinators evaluate on paused platforms (pause-rung, 2026-08-11; the old 30 s patience wait guarded
-nothing and is deleted).
+A: Direct self-feedback deciders receive a post-activation memory restoration pass
+(`module/import_phases/latch_rearm.lua`). The engine register is read-only, but Factorio 2.1.17
+supports explicit signed output counts through `DeciderCombinatorOutput.constant`. The pass
+writes temporary outputs for every captured signal, with input copying disabled; verifies the
+complete quality-keyed register after engine evaluation; then restores the original rules.
+It never samples mismatches to decide whether to clear a circuit. The old destructive clearing
+heuristic was removed after the retained experiment reproduced nonzero-memory loss in 3/3 cases.
 
-**A dark decider is not a still one.** The sampler compares registers and cannot see power, so an
-unpowered decider — which returns an empty register on every sample — used to classify "stable",
-license the clear, and then be recorded `cleared to 0 (verified)` on a read that returned nothing.
-Since 2026-08-12 liveness is required at both moments a decider can be dark. Before the force write the
-job DEFERS on a bounded deadline (1800 ticks, polled every 60) and on timeout finalizes
-`unpowered — re-arm not evaluated` with the captured parameters preflight already wrote — no force, no
-clear, and never a `rearmed` claim for a decider that never evaluated. During sampling, a decider that
-stops evaluating is excluded from the clear entirely. Only `status == "working"` counts as a live
-instrument.
+The pass records `rearmed` when the restored register still matches, or `seed verified; original
+rules resumed` when it changes after the original rules resume. The latter does **not** establish
+counter phase continuity or fidelity of an arbitrary coupled circuit. Indirect feedback loops,
+arithmetic register state and whole-network tick alignment remain outside this guarantee.
+See [the experiment and acceptance record](../tests/instruments/circuit-latch-rearm/README.md).
 
-Measured on 2.1.11 and **asserted by `tests/integration/latch-rearm-liveness` rather than recorded
-here**: a powered decider reports `working` including while its platform is PAUSED — which is why this
-gate does not break parked transfers — and a dark one reports `no_power` when the platform never had a
-producer, or `low_power` when its producer was removed. That test also mutation-kills the guard:
-rebinding `status_is_live` to always-true reproduces the false `cleared to 0 (verified)` on a real
-unpowered decider.
-
-Non-latch signal state (accumulated counters in networks, arithmetic-combinator
-derived values) still re-derives or resets after transfer — engine simulation state with no
-capture/restore API.
+Only a decider reporting `working` at the seed callback is seeded. A non-evaluating decider
+retains its original rules and records failure with its actual status; it does not delay ready
+siblings or retry when power returns later. The inherited 1800-tick power wait was removed.
+The transfer's cargo verdict does not certify circuit memory.
+A new export is refused while restoration is pending so it cannot capture temporary rules.
+If writing original rules fails, the job retains that export guard and retries; errors are retained.
+Completed per-entity results remain bounded in Lua storage. Normal completion is quiet and the
+old permanent `Latch rearm scheduled` UI notice is removed. These results are not yet part of the
+persisted controller transaction verdict.
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
-A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is
-not falsely failed; each failure is logged per entity (failed-entity loss attribution).
+A: Restoration fails even if the missing entity contains no cargo. Lost items and fluids remain
+failure evidence; they are not subtracted from the original cargo expectations to make validation pass.
 
 **Q: What if I have cargo pods waiting to launch (`awaiting_launch`) when I transfer?**
 A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) recovers the pod's loaded

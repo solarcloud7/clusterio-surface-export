@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { unavailableEvidence } from "./lib/entity-evidence";
 import { performance } from "node:perf_hooks";
 import { timed, timedSync, timingContext } from "./lib/timing";
 import fs from "fs/promises";
@@ -21,19 +22,14 @@ import type {
 	ActiveTransfer,
 	ExportData,
 	OperationOptions,
-	ExportVerification,
-	ExportStats,
 	OperationType,
-	HostNodeModel,
-	InstanceNodeModel,
 	SubscriptionState,
-	TransferSummaryModel,
 	StoredExport,
 	TransactionLogEntryModel,
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 type GatewayLinkUpdate = {
@@ -88,6 +84,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	pendingTransfersPath!: string;
 	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
 	sourceCommitMarkersPath!: string;
+	private recoveryTimer?: ReturnType<typeof setInterval>;
 
 	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -147,6 +144,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadGatewayConfig();
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
+		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"));
 
 		this.c.handle(messages.OperationTimingEvent, async (event: messages.OperationTimingEvent) => {
 			this.txLogger.acceptTiming(event.record);
@@ -171,19 +169,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
+		this.startRecovery();
 	}
 
-	async onStart() {
-		this.logger.info("Controller started - Surface Export plugin ready");
-		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
-		await this.prunePendingTransfers();
-		await this.pruneSourceCommitMarkers();
+	private startRecovery() {
 		if (this.pendingTransfers.size > 0) {
-			this.logger.warn(`${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown. Phase 1 recovery is source-side TTL unlock; controller will not auto-delete or auto-unlock on boot.`);
+			this.logger.warn(`${this.pendingTransfers.size} pending transfer(s); recovery requires a validated destination hold and matching source identity or deletion receipt.`);
 		}
+		this.recoveryTimer = setInterval(() => {
+			void this.prunePendingTransfers().then(() => this.orchestrator.recoverPendingTransfers()).catch(error => {
+				this.logger.error(`Transfer recovery failed: ${getErrorMessage(error)}`);
+			});
+		}, 30_000);
+		this.recoveryTimer.unref();
 	}
 
 	override async onShutdown() {
+		if (this.recoveryTimer) clearInterval(this.recoveryTimer);
+		this.orchestrator.requestQueue.stop();
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
@@ -572,7 +575,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.error = error;
 			operation.failedAt = Date.now();
 			if (event.failedStage === "items" || event.failedStage === "fluids"
-				|| event.failedStage === "belts" || event.failedStage === "test_hook") {
+				|| event.failedStage === "belts" || event.failedStage === "test_hook"
+				|| event.failedStage === "entities" || event.failedStage === "cargo_integrity"
+				|| event.failedStage === "destination_hold") {
 				operation.failedStage = event.failedStage;
 			}
 			this.txLogger.logTransactionEvent(operation.transferId, "import_failed",
@@ -607,6 +612,29 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handleGetTransactionLog(request: { transferId?: string }) {
+		const detail = await this.readTransactionLog(request);
+		const summary = detail.summary;
+		const validation = summary?.validation;
+		if (!validation || typeof validation !== "object") return detail;
+		const reference = (validation as Record<string, unknown>).failureBlackBox as { file?: unknown; tick?: unknown } | undefined;
+		const instanceId = detail.transferInfo?.targetInstanceId;
+		if (typeof reference?.file !== "string" || typeof reference.tick !== "number" || !Number.isInteger(reference.tick)
+			|| !detail.transferId || !Number.isInteger(instanceId)) return detail;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const entityEvidence = await Promise.race([
+				this.c.sendTo({ instanceId: instanceId as number }, new messages.ReadEntityEvidenceRequest(detail.transferId, reference.file, reference.tick)),
+				new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Diagnostic request timed out")), 3000); }),
+			]);
+			return { ...detail, summary: { ...summary, validation: { ...validation, entityEvidence } } };
+		} catch (error) {
+			return { ...detail, summary: { ...summary, validation: { ...validation,
+				entityEvidence: unavailableEvidence(reference.file, `Destination diagnostic is unavailable: ${getErrorMessage(error)}. Reopen this operation to retry.`),
+			} } };
+		} finally { if (timer) clearTimeout(timer); }
+	}
+
+	async readTransactionLog(request: { transferId?: string }) {
 		const { transferId } = request;
 
 		if (!transferId || transferId === "latest") {
@@ -840,12 +868,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async persistPendingTransfers() {
+	async persistPendingTransfers(requiredTransferId?: string) {
 		try {
+			if (requiredTransferId && !this.pendingTransfers.has(requiredTransferId)) {
+				throw new Error(`Recovery intent unavailable for ${requiredTransferId}`);
+			}
 			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
 			await enqueueWrite(this.pendingTransfersPath, () => lib.safeOutputFile(this.pendingTransfersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
+			if (requiredTransferId) throw err;
 		}
 	}
 

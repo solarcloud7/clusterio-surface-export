@@ -1,4 +1,4 @@
-export type ShipTone = "active" | "holding" | "success" | "failure";
+export type ShipTone = "queued" | "active" | "holding" | "success" | "failure";
 
 export interface ShipPhase {
 	distance: number;
@@ -10,6 +10,14 @@ export interface ShipPhase {
 }
 
 const PHASES: Record<string, ShipPhase> = {
+	queued: {
+		distance: 0, holding: true, opening: false, terminal: false,
+		tone: "queued", label: "queued",
+	},
+	preparing: {
+		distance: 0, holding: true, opening: false, terminal: false,
+		tone: "active", label: "preparing export",
+	},
 	transporting: {
 		distance: 0.5, holding: false, opening: true, terminal: false,
 		tone: "active", label: "in transit",

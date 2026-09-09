@@ -140,7 +140,7 @@ surfaceExportCommands.add(new Command({
 			forceName: args.forceName || "player",
 		})) as ReturnType<typeof messages.StartPlatformTransferRequest.Response.fromJSON>;
 		if (response.success) {
-			console.log(`Transfer started: ${response.transferId || "pending"} (export=${response.exportId || "n/a"})`);
+			console.log(`${response.message || "Transfer accepted"}: ${response.transferId || "pending"}`);
 			return;
 		}
 		throw new Error(response.error || "Unknown transfer start failure");

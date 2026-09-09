@@ -23,7 +23,12 @@
 .se-route { color: #b8c5d6; margin: 6px 0 16px; overflow-wrap: anywhere; }
 .se-detail-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 16px 0; color: #a8b4c5; font-size: 12px; }
 .se-detail-meta strong { color: #e5edf8; }
-.se-audit-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.se-outcome-stage { margin-bottom: 6px; }
+.se-outcome-inspect { margin-top: 10px; }
+.se-outcome-recovery { display: grid; gap: 4px; border-top: 1px solid rgba(150,170,195,.2); margin-top: 14px; padding-top: 12px; }
+.se-outcome-recovery strong { color: #e5edf8; }
+.se-outcome-recovery .se-muted { font-size: 12px; }
+.se-audit-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .se-audit-card { display: grid; gap: 10px; background: rgba(255,255,255,.025); border: 1px solid #465367; border-radius: 8px; padding: 16px; text-align: left; color: inherit; cursor: pointer; }
 .se-audit-card:hover { background: rgba(255,255,255,.055); }
 .se-audit-card strong { font-size: 18px; }

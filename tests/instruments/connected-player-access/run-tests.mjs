@@ -186,10 +186,14 @@ local ok,err=pcall(function()
   local passenger=false
   for _,candidate in ipairs(aboard) do if candidate.index==player.index then passenger=true end end
   assert(passenger and chars==1,'connected passenger was missed')
-  local locked,why=remote.call('surface_export','lock_platform_for_transfer',p.index,force.name)
+  local locks=package.loaded['__level__/modules/surface_export/utils/surface-lock.lua']
+  assert(locks,'SurfaceLock not loaded')
+  local job_id=p.name
+  local locked,why=locks.lock_platform(p,force,{kind='transfer',job_id=job_id,
+    expires_tick=game.tick+locks.DEFAULT_TRANSFER_LOCK_TTL_TICKS})
   assert(locked,why)
   local index=p.index
-  local result=remote.call('surface_export','delete_platform_for_transfer',index,p.name,force.name,nil)
+  local result=remote.call('surface_export','delete_platform_for_transfer',index,p.name,force.name,job_id)
   if result=='SUCCESS' then deleted[index]=true end
   arms[#arms+1]={remote_view=remoteView,teleport_into_hidden=teleported,physical_aboard=physical,
     script_remote_view_into_hidden=remoteAllowed,

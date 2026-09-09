@@ -11,6 +11,7 @@ import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
+import SettingsTab from "./SettingsTab";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
@@ -88,7 +89,7 @@ function SurfaceExportPage() {
 	const [importModalOpen, setImportModalOpen] = useState(false);
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
-		return t && ["logs", "gateways"].includes(t) ? t : "gateways";
+		return t && ["logs", "gateways", "settings"].includes(t) ? t : "gateways";
 	});
 	function handleTabChange(key: string) {
 		setActiveTab(key);
@@ -110,6 +111,7 @@ function SurfaceExportPage() {
 		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
+	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} /> });
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "gateways";
 
 	useEffect(() => {
@@ -141,7 +143,6 @@ export class WebPlugin extends BaseWebPlugin {
 	private get link(): ControlLike { return this.control as unknown as ControlLike; }
 
 	private callbacks: Array<() => void>;
-	private liveUpdatesEnabled: boolean;
 	private state: SurfaceExportState;
 	private resubscribeTimer: number | null = null;
 	private lastConnectionEvent: ConnectionEvent | null = null;
@@ -150,7 +151,6 @@ export class WebPlugin extends BaseWebPlugin {
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		super(container, packageData, info as any, control as any, logger as any);
 		this.callbacks = [];
-		this.liveUpdatesEnabled = false;
 		this.state = {
 			tree: null,
 			loadingTree: false,
@@ -269,7 +269,6 @@ export class WebPlugin extends BaseWebPlugin {
 	async syncLiveState(): Promise<SyncOutcome> {
 		const shouldEnable = this.callbacks.length > 0;
 		if (!this.link.connector.connected) {
-			this.liveUpdatesEnabled = shouldEnable;
 			return "skipped";
 		}
 		const trySubscribe = (logs: boolean) => this.link.send(new SetSurfaceExportSubscriptionRequest({
@@ -291,7 +290,6 @@ export class WebPlugin extends BaseWebPlugin {
 			}
 		}
 
-		this.liveUpdatesEnabled = shouldEnable;
 		if (shouldEnable) {
 			await this.refreshSnapshots();
 			return "subscribed";
@@ -365,7 +363,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
 	}
 

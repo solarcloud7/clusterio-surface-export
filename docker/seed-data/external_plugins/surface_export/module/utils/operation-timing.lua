@@ -4,7 +4,7 @@ local jobs = {}
 local batch_limit = 2000
 local expected_stages = {
 	["source-lua"] = {"preflight", "locking", "preparation", "scheduler_wait", "entities", "belt_capture", "ground_items", "verification_census", "finalize_payload", "serialization", "compression", "cache_output", "diagnostic_output", "file_output", "source_unlock", "failure_diagnostics"},
-	["destination-lua"] = {"queue_setup", "decode", "decompression", "decode_payload", "compatibility_checks", "platform_preparation", "scheduler_wait", "tiles", "beacons", "entities", "hub_mapping", "hub", "belts", "state", "deferred_beacon_wait", "inventories", "held_items", "fluids", "verdict_handling", "verification_preparation", "exact_verification", "item_census", "fluid_census", "item_comparison", "fluid_comparison", "diagnostic_capture", "diagnostic_output", "failure_diagnostics", "passenger_evacuation", "destination_recovery", "activation", "loss_analysis"},
+	["destination-lua"] = {"queue_setup", "decode", "decompression", "decode_payload", "compatibility_checks", "platform_preparation", "scheduler_wait", "tiles", "beacons", "entities", "hub_mapping", "hub", "belts", "state", "deferred_beacon_wait", "inventories", "held_items", "fluids", "verdict_handling", "verification_preparation", "exact_verification", "item_census", "fluid_census", "item_comparison", "fluid_comparison", "diagnostic_capture", "diagnostic_output", "failure_diagnostics", "passenger_evacuation", "destination_recovery", "activation"},
 }
 
 local function snapshot(clock)

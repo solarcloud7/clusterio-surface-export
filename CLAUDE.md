@@ -13,7 +13,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 **Key Features**:
 - Complete platform state export/import (entities, inventories, fluids, tiles)
 - Tick-batched entity processing; synchronous phases can still cause hitches (see docs/async-processing.md)
-- Graceful handling of mod content mismatches
+- Refuse transfers with missing entities or cargo mismatches; preserve the source
 - Factorio 2.0 compatibility (handles read-only properties)
 - Chunked RCON protocol for large payloads (100 KB chunks — `RCON_CHUNK_SIZE` in `helpers.ts`)
 - In-game transaction dashboard with persistent profiler snapshots
@@ -79,8 +79,8 @@ destructive. A switch that does not belong to the chosen scope is REFUSED, not i
 ```powershell
 ./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts   # TS change: build + reload hosts
 ./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController  # web change: build + reload controller
-./tools/clusterio/deploy.ps1 -Scope lua                                    # Lua change: skip build, reset saves
-./tools/clusterio/deploy.ps1 -Scope plugin                                 # Lua + TS changed: build AND reset saves
+./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves                         # Lua change: verify artifacts, patch existing saves
+./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves                      # Lua + TS/web: build, back up, patch existing saves
 ./tools/clusterio/deploy.ps1 -Scope cluster                                # full rebuild (DESTROYS volumes)
 ./tools/clusterio/deploy.ps1 -Scope cluster -KeepData -SkipIncrement       # restart without wiping or bumping
 ```
@@ -88,8 +88,8 @@ destructive. A switch that does not belong to the chosen scope is REFUSED, not i
 | Scope | Builds | Resets saves | Destroys volumes |
 |---|---|---|---|
 | `artifacts` | yes | no | no |
-| `lua` | no (refuses if dist is stale) | YES | no |
-| `plugin` | yes | YES | no |
+| `lua` | no (refuses if dist is stale) | YES unless `-KeepSaves` | no |
+| `plugin` | yes | YES unless `-KeepSaves` | no |
 | `cluster` | yes | n/a (fresh) | YES unless `-KeepData` |
 
 Resetting saves disconnects anyone in-game; `predeploy-*.zip` rescue saves are taken first. The
@@ -117,20 +117,37 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
+- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves` (builds artifacts, confirms backups, patches existing saves on restart, checks Lua version and world/player preservation)
 - Clusterio automatically injects Lua code into saves at startup
-- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); the `lua`/`plugin` scopes do that for you
+- No compile step for Lua itself. The pinned Clusterio host patches the selected existing save before starting Factorio when `factorio.enable_save_patching` is enabled. Use `-KeepSaves` to back up, reload and verify the existing world; resetting is an explicit fixture-reset operation.
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
 2. Edit TypeScript files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts`
 3. Edit web (`*.tsx`) files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua` (skips the ~3-min container build —
-   Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
-   than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
-   instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
-   loudly instead of killing the instance silently.
+4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves`. Use `-Scope plugin -KeepSaves` when TS/web changed too. Both instances must be running with save patching and auto-start enabled. The reload compares surfaces, platform names, player roster and positions; do not move players during this maintenance check.
 5. **Or full rebuild**: `./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement`
+
+### Verification order
+
+Run `./tools/clusterio/build-plugin.ps1 smoke` first for timing or transfer lifecycle changes.
+It exercises the registered timing handler, pre-job rejection, canonical replay, late/duplicate
+measurements, retry clocks, standalone export association, rollback boundaries and import verdicts.
+Then run the relevant bounded live fixtures, browser/diagnostic reconciliation, local review, and
+full CI. Track each agreed acceptance case as pending, passed, failed or unverified before calling
+work ready to merge. A new code change invalidates the affected evidence.
+
+Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`. A conflicting
+command refuses with the owning PID. After a crash, confirm the owner is stopped before removing
+that specific lock. Do not build or install dependencies in the live plugin directory. The isolated
+build wrapper installs dependencies without the root prepare rebuild and mounts the lockfile read-only.
+The plugin's `.npmrc` sets `save=false` so runtime installation also leaves dependency metadata
+unchanged. Intentional dependency changes must explicitly pass `--save` in an isolated build environment.
+Browser startup verifies the controller's advertised bundle before checking page details.
+
+Version helpers preserve UTF-8 text and existing line endings. Use targeted patches for other edits;
+avoid implicit-encoding whole-file rewrites. `check-cluster-logs.ps1` selects bounded diagnostic
+fields, redacts credentials, and applies user filters outside shell commands.
 
 ### Cluster / transfer / RCON tools (`tools/`)
 
@@ -367,7 +384,7 @@ opt-in fork override); all environment config in gitignored `.env`.
   built-in `node --test` (zero deps; the glob is the selection — a new test file is picked up with no
   edit, which is how `module-version-stamp.test.cjs` came to run nowhere while two tools files cited it
   as gating) — not just the wire contract. They include transfer-orchestrator rollback,
-  transfer-lock state, canonical identity, destination-hold, persistence-read-failure, census-meter,
+  transfer-lock state, canonical identity, destination-hold, persistence-read-failure, cargo-integrity,
   verdict-aware fidelity and the guard self-tests, so a regression in any of those fires here.
   The message round-trip harness (`test/messages.roundtrip.test.cjs`) self-discovers every
   message class in `messages.ts` and, per class, asserts the static wire contract
@@ -602,24 +619,12 @@ Project invariants that still bite if changed:
   1.25 to 11.00. The ordering is retained (it is free, and `crafting_speed` genuinely does propagate in the
   same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
   [Import Phase Ordering](#import-phase-ordering-critical).
-- **Belt restoration.** The canonical belt-law section went with the deleted engine-notes doc
-  (2026-08-11); belt physics is re-measured when a change needs it, not cited —
-  `tests/instruments/belt-freeze` is the standing rung for what does and does not stop a belt.
-  What the pipeline relies on: the fidelity unit is one
-  continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
-  invariants — restoring position is handoff avoidance, not a new invariant). The production restore
-  places every item **at its captured source position** (2026-07-27): each payload side carries a compact
-  `item_source_positions` array (source entity/line/position per stack, ~12 bytes/stack) and each item is
-  placed back onto its own line at its own captured position, request offset one write-frame (the landing
-  comes out at request + one tick of `belt_speed`, clamped inward).
-  `item_source_positions` is REQUIRED — payloads without it are refused; the legacy consolidation
-  restore/hub recovery/first-fit fallback are DELETED (owner order 2026-07-27). Why placement at captured
-  positions: top-of-line writes trip the BELT-R16 boundary handoff (the item lands across the piece
-  boundary; cross-side handoffs are census-invisible and retried into duplicates — the measured workhorse
-  excess). The pipeline's two belt design constraints — transport-line identity is NOT a cross-import
-  key, and the export scan must be atomic because belts keep moving — live with the flow they constrain,
-  in [EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md); both are flagged there as unproven on this pin
-  (their rungs were pre-2.1.11 and were deleted 2026-07-31).
+- **Belt restoration.** Belts continue moving between callbacks. Each captured side group's
+  writes and physical delta check remain atomic; connected groups may span ticks. A single group
+  can exceed the soft budget. Preserve exact quantities by item, quality and lane; position within
+  a segment is not the acceptance criterion. `tests/lua/belt-batches.lua` checks packing and
+  `tests/lua/import-phase-yields.lua` checks scheduling. Physical cargo coverage belongs to the
+  belt-item-state and pad transfer fixtures. The removed belt-freeze instrument is not required.
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
   by our incremental id — engine segment ids differ across instances); entities reference it via
@@ -627,9 +632,8 @@ Project invariants that still bite if changed:
   storages via `set_fluid`). Plasma rides like any fluid — the `engine_owned` connection-category
   classification is **deleted** (owner ruling 2026-07-20/21). A member whose entity failed to place is simply
   absent: there is **no failed-member fluid accounting**, so a short segment fails the exact gate and the
-  two-phase commit preserves the source (fail => revert). The ONLY lawful fluid subtraction from expected
-  counts is `write_rejected` (a physical post-write measurement, not a category prediction); capacity overflow
-  (`dropped_fluids`) remains a gate failure. One pre-activation verdict covers exact items and aggregate-by-name
+  two-phase commit preserves the source (fail => revert). `write_rejected` and capacity overflow
+  (`dropped_fluids`) are diagnostic evidence, never allowances subtracted from expected cargo. One pre-activation verdict covers exact items and aggregate-by-name
   fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes (measured 16→30 on a wooden-chest)
@@ -638,29 +642,23 @@ Project invariants that still bite if changed:
   don't-reach-for-it note.
 
 ### Import Phase Ordering (Critical)
-The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase2` (`module/core/import-completion.lua:180,222`) is critical for correctness:
 
-```
-1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items             — belts keep moving (measured by tests/instruments/belt-freeze, which also
-                            finds disabled_by_script does nothing to a belt); single-tick restore is
-                            the current conservative implementation
-3. Entity state           — control behavior, filters, circuit connections
-4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
-                            Pass 2: everything else (ordering retained; the cap rationale is retracted)
-5. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
-6. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
-                            segment; segmentless storages via set_fluid) while the platform stays paused and
-                            entities disabled_by_script; plasma rides like any fluid, no engine-owned subtraction
-7. Exact validation       — one immutable verdict: exact items + by-name fluids
-8. Activation             — only after the verdict passes; then gateway park if requested
-9. Loss analysis          — post-activation reporting under `postActivationReport`; never changes verdict
-```
+`ImportCompletion.run_phase1` and `run_phase2` restore hub inventories, belt groups, entity
+state, inventories (beacons first), held items, then fluids and the exact cargo gate. Hub,
+belt, inventory and held-item phases yield before the next phase. Fluids, validation,
+activation and destination hold preparation share one callback. Source deletion must be
+acknowledged before destination release. See [batching boundaries](docs/async-processing.md)
+and [transfer recovery](docs/TRANSFER_2PC.md).
 
-**Why this order matters**:
-- There is **no beacon-activation step** — this list used to claim one. Beacons are simply never deactivated during entity creation (`module/import_phases/entity_creation.lua:116`), and nothing fills an energy buffer. `import-completion.lua:211-213` states it directly: populating `beacon_modules` in Pass 1 "immediately updates crafting_speed on nearby machines — no pre-activation needed."
-- Step 4 (inventories, 2 passes): Pass 1 populates all beacon modules, Pass 2 restores everything else. `crafting_speed` on a machine does update **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required (engine-repin B8, reproduced on 2.1.11). What this section used to claim beyond that — that Pass 2's `set_stack()` therefore gets a wider beacon-boosted cap, "cs=17.375 → 12 slots instead of cs=2.5 → 7 slots" — did NOT reproduce: probed 2026-07-31 on 2.1.11, the crafter-input cap is stack-derived and speed-invariant (164 for stack-100 ingredients, 264 for stack-200) from cs=1.25 through cs=11.00, across seven recipes, an assembling-machine-3 and an electromagnetic-plant. The ordering stays because it costs nothing, not because that cap effect is known to exist. Machines remain deactivated throughout — they cannot consume items.
-- Steps 5→7 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
+Failed entity placement, missing cargo and unavailable cargo measurements fail the transfer.
+No measured loss is subtracted to manufacture parity. Failure diagnostics describe the
+attempt before recovery; there is no post-activation loss-analysis scan.
+
+An unexpected import exception stops that job permanently, retains interruption evidence,
+and attempts destination quarantine. The scheduler does not replay partially applied work.
+Such a hold cannot authorize source deletion; inspect both copies before operator recovery.
+Latch original-rule failures keep the export guard and retry with bounded backoff. Never
+release that guard merely because the retry count is high: temporary circuit rules may remain.
 
 ## Additional Documentation
 

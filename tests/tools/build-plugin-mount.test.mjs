@@ -41,7 +41,7 @@ exit $LASTEXITCODE
 }
 
 test("lint and unit tests see the full checkout with isolated plugin dependencies", { skip }, t => {
-	for (const target of ["lint", "test"]) {
+	for (const target of ["lint", "test", "smoke"]) {
 		const result = run(t, target);
 		assert.equal(result.status, 0, result.stderr || result.stdout);
 		assert.deepEqual(result.calls.map(args => args[0]), ["version", "run"]);
@@ -50,7 +50,9 @@ test("lint and unit tests see the full checkout with isolated plugin dependencie
 		assert.equal(args[args.indexOf("-w") + 1], "/repo/docker/seed-data/external_plugins/surface_export");
 		assert.equal(args[args.indexOf("-v") + 1], "se_plugin_build_nm:/repo/docker/seed-data/external_plugins/surface_export/node_modules");
 		assert.ok(args.includes("node:24-bookworm-slim"));
-		assert.ok(args.at(-1).includes(target === "test" ? "npm test" : "npm run lint"));
+		assert.ok(args.at(-1).includes(target === "test" ? "npm test" : target === "smoke" ? "npm run test:lifecycle" : "npm run lint"));
+		assert.ok(args.includes(`type=bind,src=${join(repo, "docker/seed-data/external_plugins/surface_export/package-lock.json")},dst=/repo/docker/seed-data/external_plugins/surface_export/package-lock.json,readonly`));
+		assert.ok(args.at(-1).includes("SE_SKIP_PREPARE=1 npm ci"));
 	}
 });
 
@@ -90,3 +92,28 @@ ${buildCommand}
 			if (failure === "build:browser") assert.doesNotMatch(result.stdout, /fixture-npm:run build:web/);
 		});
 }
+
+test("disabled save patching refuses before any RCON save, stop or restart", { skip }, () => {
+	const command = `
+function global:docker {
+ $global:LASTEXITCODE = 0
+ if (($args -join ' ') -match 'instance config list') {
+  'factorio.enable_save_patching false'
+  'instance.auto_start true'
+ } elseif (($args -join ' ') -match 'instance list') {
+  'header'; '-----'
+  'clusterio-host-1-instance-1 | 1 | 1 | 34100 | running |'
+  'clusterio-host-2-instance-1 | 2 | 2 | 34200 | running |'
+ } else { throw 'UNEXPECTED_MUTATION' }
+}
+function global:node { throw 'UNEXPECTED_PROBE_OR_MUTATION' }
+try { & $env:RELOAD_SCRIPT }
+catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
+		{ encoding: "utf8", timeout: 15000, env: { ...process.env,
+			RELOAD_SCRIPT: fileURLToPath(new URL("../../tools/clusterio/reload-saves.ps1", import.meta.url)) } });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /save patching and auto-start must be enabled/);
+	assert.doesNotMatch(result.stderr, /UNEXPECTED/);
+});

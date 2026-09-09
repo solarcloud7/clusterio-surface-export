@@ -77,11 +77,12 @@ body.surface-export-page .site-layout-content-container {
 }
 
 .surface-export-ship-active { color: #1668dc; }
+.surface-export-ship-queued { color: #b7a5df; }
 .surface-export-ship-holding { color: #d89614; }
 .surface-export-ship-success { color: #49aa19; }
 .surface-export-ship-failure { color: #dc4446; }
 
-.surface-export-ship-holding {
+.surface-export-ship-holding, .surface-export-ship-queued {
 	animation: surface-export-ship-pulse 1.1s ease-in-out infinite;
 }
 
@@ -92,7 +93,7 @@ body.surface-export-page .site-layout-content-container {
 
 @media (prefers-reduced-motion: reduce) {
 	.surface-export-ship { transition: none; }
-	.surface-export-ship-holding { animation: none; }
+	.surface-export-ship-holding, .surface-export-ship-queued { animation: none; }
 }
 
 .surface-export-legend {

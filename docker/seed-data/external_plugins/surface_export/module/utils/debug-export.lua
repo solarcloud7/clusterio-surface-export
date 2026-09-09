@@ -2,6 +2,11 @@ local Util = require("modules/surface_export/utils/util")
 
 local DebugExport = {}
 
+function DebugExport.destination_snapshot_enabled()
+  local config = storage.surface_export_config
+  return config ~= nil and config.debug_mode == true and config.debug_destination_snapshot == true
+end
+
 function DebugExport.is_enabled()
   local enabled = storage.surface_export_config and storage.surface_export_config.debug_mode == true
   if not enabled then
@@ -107,8 +112,8 @@ function DebugExport.export_census_pass(verdict, platform_name)
 end
 
 function DebugExport.export_destination_platform(platform_data, platform_name)
-  if not DebugExport.is_enabled() then
-    log(string.format("[DebugExport] Skipping destination platform export for '%s': debug mode disabled", tostring(platform_name)))
+  if not DebugExport.destination_snapshot_enabled() then
+    log(string.format("[DebugExport] Skipping destination platform export for '%s': snapshot capture disabled", tostring(platform_name)))
     return false
   end
   

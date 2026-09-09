@@ -68,12 +68,12 @@ const profiledPhases = PHASES.filter((spec) => spec.profiled !== false);
 
 const EXPECTED_PROFILERS = [
 	"activation", "beacons", "belts", "fluids", "held_items", "hub_restore",
-	"inventories", "loss_analysis", "queue_setup", "state", "validation",
+	"inventories", "queue_setup", "state", "validation",
 ];
 
 const EXPECTED_SPANS = [
 	"delivery", "queue", "tiles", "entities", "hub", "belts", "state",
-	"inventories", "held_items", "fluids", "validation", "activation", "loss_analysis",
+	"inventories", "held_items", "fluids", "validation", "activation",
 ];
 
 test("R0: every phase has a unique name", () => {

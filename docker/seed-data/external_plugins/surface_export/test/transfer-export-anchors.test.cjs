@@ -53,6 +53,29 @@ function makeHarness() {
 
 const T0 = 1788580853517;
 
+test("queue handoff preserves measured wait and events under the canonical transfer ID", async () => {
+	const { orch, events } = makeHarness();
+	const canonical = "1315067557:queue-test", queuedId = "request:queue-test";
+	const wait = { v: 1, id: "wait", jobId: queuedId, operationId: queuedId, clockId: "controller:test",
+		owner: "controller", stage: "Transfer queue wait", kind: "wait", status: "completed", revision: 2,
+		startMs: 1, endMs: 501, executionMs: null };
+	const operation = { transferId: queuedId, startedAt: T0 - 500, status: "preparing", timing: { v: 1, records: [wait] } };
+	orch.plugin.transactionLogs = new Map([[queuedId, [{ eventType: "transfer_queued", timestampMs: T0 - 500 }]]]);
+	orch.plugin.persistedTransactionLogs = [];
+	orch.plugin.activeTransfers.set(queuedId, operation);
+	orch.requestQueue.entries.set(queuedId, { id: queuedId, operation, request: { sourceInstanceId: 1315067557, sourcePlatformIndex: 5, targetInstanceId: 382892492 } });
+	orch.txLogger.bindObservation(queuedId, canonical);
+	await require("../dist/node/lib/timing").timingContext.run(orch.txLogger.clock(canonical), () =>
+		orch.transferPlatform(canonical, 382892492, { requestExportAndLockMs: 100 }, T0));
+	const transferred = orch.plugin.activeTransfers.get(canonical);
+	assert.equal(transferred.queuedRequestId, queuedId);
+	assert.equal(transferred.startedAt, T0 - 500);
+	assert.deepEqual(transferred.timing.records, [{ ...wait, operationId: canonical }]);
+	assert.equal(orch.plugin.transactionLogs.get(canonical)[0].eventType, "transfer_queued");
+	assert.equal(orch.plugin.activeTransfers.has(queuedId), false);
+	assert.equal(events.find(event => event.type === "export_requested").atMs, T0, "Export offset excludes time spent waiting in queue");
+});
+
 test("export_requested / export_returned are logged before transfer_created, backdated to t0 and t0 + requestMs", async () => {
 	const { orch, events } = makeHarness();
 	try {

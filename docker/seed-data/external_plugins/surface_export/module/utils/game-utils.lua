@@ -163,8 +163,7 @@ function GameUtils.delete_platform(platform)
   if not (platform and platform.valid) then return false end
   local surface = platform.surface
   if surface and surface.valid then
-    VersionCompat.delete_platform(platform)
-    return true
+    return VersionCompat.delete_platform(platform) == true
   end
   log(string.format(
     "[GameUtils] delete_platform: platform '%s' has no valid surface; cannot fully remove (platform.destroy is a no-op)",

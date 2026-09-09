@@ -3,7 +3,7 @@ import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { buildAuditRow } from "./audit-ledger";
 import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention";
-import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages";
 import { TimingClock } from "./timing";
 import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
 import { getErrorMessage, PLUGIN_NAME } from "../helpers";
@@ -244,6 +244,7 @@ export class TransactionLogger {
 
 	buildTransferInfo(transfer: ActiveTransfer) {
 		return {
+			queuedRequestId: transfer.queuedRequestId,
 			transferId: transfer.transferId,
 			operationType: transfer.operationType || "transfer",
 			exportId: transfer.exportId,
@@ -283,6 +284,7 @@ export class TransactionLogger {
 				: null);
 		const downloadable = Boolean(storedExport?.exportData);
 		return {
+			queuedRequestId: info.queuedRequestId,
 			transferId,
 			operationType: info.operationType,
 			exportId: info.exportId || null,
@@ -462,6 +464,7 @@ export class TransactionLogger {
 				const storedExport = summary.exportId ? this.plugin.platformStorage.get(summary.exportId) : null;
 				return {
 					...summary,
+					queuedRequestId: summary.queuedRequestId ?? this.plugin.persistedTransactionLogs.find(log => log.transferId === summary.transferId)?.transferInfo.queuedRequestId,
 					artifactSizeBytes: summary.artifactSizeBytes ?? storedExport?.size ?? null,
 					downloadable: Boolean(storedExport?.exportData),
 				};

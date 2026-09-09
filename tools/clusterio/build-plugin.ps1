@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'node', 'web', 'lint', 'test')][string]$Target = 'all',
+    [ValidateSet('all', 'node', 'web', 'lint', 'test', 'smoke')][string]$Target = 'all',
     [switch]$Fresh,
     [switch]$RestartController,
     [switch]$RestartHosts
@@ -11,6 +11,11 @@ $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugi
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
 
+. "$PSScriptRoot/../shared/workflow-lock.ps1"
+Invoke-WorkflowLock {
+$lockPath = Join-Path $PluginPath 'package-lock.json'
+$lockHash = (Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash
+
 docker version --format '{{.Server.Version}}' 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
 
@@ -19,6 +24,7 @@ $BuildScript = switch ($Target) {
     'node' { 'npm run build:node' }
     'lint' { 'npm run lint' }
     'test' { 'npm test' }
+    'smoke' { 'npm run test:lifecycle' }
     default { 'npm run build' }
 }
 
@@ -30,10 +36,10 @@ if ($Fresh) {
 
 $Inner = "set -e; echo '[node] '`$(node -v); " +
          "if [ ! -x node_modules/.bin/webpack-cli ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then " +
-         "echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +
+         "echo '[deps] npm ci'; SE_SKIP_PREPARE=1 npm ci --no-audit --no-fund; fi; " +
          "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
 
-if ($Target -in @('lint', 'test')) {
+if ($Target -in @('lint', 'test', 'smoke')) {
     $RepoPath = (Resolve-Path "$PSScriptRoot/../..").Path
     $MountSrc = $RepoPath
     $MountDst = '/repo'
@@ -47,12 +53,16 @@ if ($Target -in @('lint', 'test')) {
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
 docker run --rm `
     --mount "type=bind,src=$MountSrc,dst=$MountDst" `
+    --mount "type=bind,src=$lockPath,dst=$WorkDir/package-lock.json,readonly" `
     -v "${DepsVolume}:$WorkDir/node_modules" `
     -w $WorkDir `
     $Image `
     sh -c $Inner
 
 if ($LASTEXITCODE -ne 0) { throw "Plugin build failed (exit $LASTEXITCODE)" }
+if ((Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash -ne $lockHash) {
+    throw 'package-lock.json changed during the build. Stop and inspect the concurrent writer; dependency metadata must stay unchanged.'
+}
 
 if ($RestartController) {
     Write-Host "Restarting controller to re-read dist/web/manifest.json ..." -ForegroundColor Cyan
@@ -69,3 +79,4 @@ if ($RestartHosts) {
 }
 
 Write-Host "Done: $Target build complete." -ForegroundColor Green
+}

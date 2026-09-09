@@ -33,6 +33,170 @@ and the oracle do.
 Static guards enforce repository rules across these categories; they are not substitutes for physical or
 integration evidence.
 
+### Pipeline timing baseline — 2026-09-07
+
+These are observed command/job durations, not Factorio processing time. Two successful CI runs
+provide the initial baseline: [34064616979](https://github.com/solarcloud7/clusterio-surface-export/actions/runs/34064616979)
+and [34048463170](https://github.com/solarcloud7/clusterio-surface-export/actions/runs/34048463170).
+They ran different revisions on hosted runners; the ranges are two observations, not percentiles
+or a controlled before/after benchmark. Neither run includes the current local circuit fix.
+
+| Layer or method | Observed elapsed time | What is included |
+| --- | --- | --- |
+| CI fast-check job | 1m07s–1m09s | Checkout/setup, dependency install, guards, plugin/root unit tests and gateway Lua tests |
+| CI plugin unit-test step (latest run) | 14s | Node compilation and unit execution |
+| CI root unit-test step (latest run) | 20s | Repository tooling/manifest/fixture contract tests |
+| CI gateway Lua step (latest run) | 8s | Lua setup and both gateway layouts |
+| CI integration job | 16m51s–18m55s | Cluster provisioning, readiness, browser setup, sequential tests, teardown |
+| Sequential live integration tests | 14m22s–16m08s | 36 suite subprocesses, including their own fixture construction, waits and cleanup |
+| CI integration overhead outside those suites | About 2m29s–2m47s | Build, images, seeding, readiness, browsers, runner overhead and teardown |
+| Warm local plugin unit command | 7.31s | Docker startup, cached build dependencies, TypeScript compilation and tests; test execution itself was 4.00s |
+| Local installed memory experiment | 15.48s | Preflight, construction, cleanup proof, six physical checks and final cleanup |
+| Local coupled-memory transfer experiment | 27.78s | Constructor cleanup proof, stable-source checks, real transfer, downstream readback and final cleanup |
+| Local latch/counter transfer regression | 29.43s | Fixture construction, payload inspection, real transfer, running-counter observations and cleanup |
+| Local powered/unpowered regression | 67.33s | Real power-status checks, deliberate power-deadline observation, original-rule checks and cleanup |
+| Local save-preserving plugin deployment | 65.95s–72.09s | Build, both save backups/reloads, controller restart and preservation checks; this is deployment cost, not a test |
+
+Largest individual CI suites across those two runs:
+
+| Suite | Observed seconds |
+| --- | --- |
+| belt-freeze (removed) | 65.9–100.8 |
+| latch-rearm-liveness | 64.4–65.8 |
+| gallery-suite | 56.0–60.9 |
+| platform-paused-restore | 49.6–52.2 |
+| config-attrs | 42.2–70.9 |
+| belt-item-state | 36.4–72.0 |
+
+The historical liveness test contained 55.5 seconds of fixed sleeps. Its replacement removes
+those sleeps and checks exact powered memory, unpowered failure, original rules and measured
+tick boundaries. The production 1800-tick power retry was removed after a real transfer showed
+readiness at the first seed callback (two ticks after scheduling). Before and after that change,
+the fixture restored memory in six ticks. The replacement live test took 9.80 seconds locally,
+including construction-failure cleanup proof and final cleanup, versus the earlier local 67.33
+seconds. This is a test-runtime observation, not a production speedup or a new CI measurement.
+Pause preservation is now checked on existing transfers: `ghost-tags` explicitly arms a paused
+source; `ghost-item-requests` arms an unpaused source. Both independently read destination
+`paused` and platform state, then read again on a later tick after verifying source deletion.
+The standalone `platform-paused-restore` runner, its ungraded power rig, two 15-second waits,
+and the source-text-only plugin tests were removed. Both modified suites passed locally;
+production validation was not changed and no new transfer or fixed sleep was added.
+
+Five read-only local control requests took 701–752 ms each (median 705 ms). This measures
+the whole `docker exec` + fresh `clusterioctl` process + RCON request/reply path, not wire latency
+or Lua execution alone. Raw samples: `ci-artifacts/test-rcon-roundtrip-timing.json`. Repeated
+CLI startup is therefore a concrete candidate for measurement and connection reuse; its share
+of each suite has not yet been instrumented.
+
+Next optimization work should measure setup, RCON/CLI round trips, observation waits, actual
+transfer and cleanup separately inside the slow suites. Then replace surplus fixed padding
+with bounded condition/tick checks, reuse a control connection where measured startup dominates,
+and run focused suites during development using `--only`. Keep the full regression gate.
+Do not parallelize suites that mutate the same two instances. Sharding would require independent
+cluster data and explicit ownership, and is not part of this change.
+
+Breakdown of the 16m51s integration job (run 34064616979):
+
+| Portion | Seconds |
+| --- | ---: |
+| Run integration suite | 864 |
+| Start cluster, seed saves, verify instances | 82 |
+| Pull Docker images | 21 |
+| Build plugin | 20 |
+| Root dependencies and browser cache/install | 15 |
+| Remaining setup, teardown and timestamp granularity | 9 |
+| **Total** | **1011** |
+
+The 36 child-suite durations sum to 861.7 seconds; the surrounding step takes 864 seconds.
+The eight largest suites account for 414.6 seconds (6m54.6s). The four canvas suites plus
+log-evidence total 59.3 seconds. The main cost is shared-game tests, not browser rendering.
+The runner deliberately uses synchronous child processes because these suites share mutable
+instance/save state.
+
+Existing timestamped CI output permits further attribution, with an important limit: intervals
+between log messages are inclusive envelopes, not instrumented processing spans.
+
+- **belt-freeze (removed):** the historical runs below include this retired experiment.
+  Its CI wrapper and research helpers have been removed; restoration, item-state and batching tests remain.
+- **latch-rearm-liveness, historical 65.8s:** 55.5s of explicit sleeps (5 + 2.5 + 6 + 42), plus
+  construction, status reads, CLI/RCON and cleanup. The 42s sleep alone occupies about 65%
+  of this suite. That timeout policy and these fixed sleeps have since been removed;
+  the replacement checks successful restoration and non-evaluating failure directly.
+- **gallery-suite, historical 56.0s:** reloads both golden saves, pushes/verifies the fixture roster,
+  tests a successful transfer, forced rejection/rollback and a refused upload, then restores
+  both live saves. Log envelopes are about 13.3s for initial load/preflight, 5.2s for the two
+  roster pushes, 9.7s for successful-transfer observation, 5.5s for refusal observation,
+  4.1s for rejected upload, and 13.4s from the final server-alive check through restoration.
+  These include control calls and polling; they are not pure transfer processing durations.
+  The current suite retains pad, transfer and rollback checks. The duplicate rejected-upload
+  case now belongs to `upload-import-verdict`, which also checks the exact missing-position
+  error. Its large legacy JSON fixture was deleted. Save handling now snapshots the current
+  worlds before loading golden fixtures and restores those snapshots afterward, rather than
+  replacing the developer's worlds with golden saves. Snapshot verification adds work; no
+  net runtime improvement is claimed without a new comparable measurement.
+- **platform-paused-restore, historical 52.2s (removed):** two cases, each watched for 15 seconds
+  after arrival. Those two windows alone are 30 seconds. Each transfer-to-terminal observation
+  takes about 4.3 seconds; each post-arrival read/wait/read envelope about 17.6 seconds.
+- **config-attrs, 42.2s:** broad attribute checks plus a cloned 1,359-entity platform.
+  Clone/ready log envelopes total about 10.5s; the transfer/arrival envelope is about 14.8s,
+  and the final cleanup verification includes about 4.6s. Its older run took 70.9s.
+
+<details>
+<summary>All 36 suite durations from run 34064616979</summary>
+
+| Suite | Seconds |
+| --- | ---: |
+| belt-freeze (removed) | 65.9 |
+| latch-rearm-liveness | 65.8 |
+| gallery-suite | 56.0 |
+| platform-paused-restore | 52.2 |
+| lab-force-resurrection | 48.1 |
+| transfer-shaped-upload | 42.5 |
+| config-attrs | 42.2 |
+| one-of-each-sweep | 41.9 |
+| belt-item-state | 36.4 |
+| inventory-item-state | 35.9 |
+| mining-progress-gate | 34.8 |
+| inactive-drill-transfer | 31.5 |
+| latch-rearm-adversarial | 28.9 |
+| loader-freeze | 27.4 |
+| segmented-unit-sleep | 26.5 |
+| engine-invariants | 23.3 |
+| canvas-motion | 21.4 |
+| lab-paste-conflict | 20.8 |
+| upload-import-verdict | 20.6 |
+| log-evidence | 19.2 |
+| hub-request-sections | 18.1 |
+| gateway-config-chunking | 16.4 |
+| ghost-tags | 15.0 |
+| ghost-item-requests | 11.8 |
+| gateway-park-proxies | 9.6 |
+| canvas-locking | 8.8 |
+| surface-delete-rebroadcast | 8.7 |
+| unarmed-fluid-registry | 8.1 |
+| canvas-drag | 5.6 |
+| canvas-navigation | 4.3 |
+| evacuation-coverage | 4.0 |
+| descending-pod-overflow | 2.8 |
+| pole-copper-prune | 2.2 |
+| fluid-segment-law | 2.1 |
+| selftests | 1.6 |
+| gateway-lock-state | 1.3 |
+
+</details>
+
+The existing integration runner prints per-suite seconds. For local whole-command measurements:
+
+```powershell
+node tools/tests/measure-command.mjs ci-artifacts/my-test-timing.json -- node tests/integration/latch-rearm-adversarial/run-tests.mjs
+```
+
+This wrapper uses a monotonic clock, records UTC correlation timestamps, includes setup and
+cleanup, and preserves nonzero exits. Its JSON omits command arguments to avoid recording tokens.
+Raw CI job/step metadata, logs and the extracted suite table are retained under
+`ci-artifacts/pipeline-ci-*` and `ci-artifacts/test-pipeline-baseline.json`. The experiment directory
+retains its own physical evidence; these wall-time records must not replace those oracles.
+
 `lua5.2 tests/lua/restore-behavior.lua` loads the production deserializer and connection-restoration
 module with small entity/connector doubles. It checks failed inventory and display writes, connection
 replay, positional target lookup, and pruning of real and ghost copper connections. It runs in CI
@@ -107,9 +271,6 @@ a filtered loader** onto the circuit. It saturates the circuit to a deterministi
 hand-seeding, and reproduces natural kinetic compression — the hardest restore case. The recipe is buildable
 from script: `tests/instruments/loader-freeze/run-rung.mjs` constructs it on a throwaway clone. Operational facts:
 loaders keep running on paused platforms, and belts keep moving, so census reads must be same-execution.
-The belt half is re-measured by [tests/instruments/belt-freeze](../tests/instruments/belt-freeze/run-rung.mjs),
-which also measures that `disabled_by_script = true` does nothing at all to a transport belt (readback
-`false`, lines keep moving) and that the one freeze it found needs a real circuit wire.
 **Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** [empirical, 2.1.11,
 tests/instruments/loader-freeze/run-rung.mjs 2026-08-12: on a turbo-loader the write reads back `true`,
 status becomes `disabled_by_script`, and 0 items feed over a 221-tick window versus 4 in the control and
@@ -290,74 +451,166 @@ See [`tests/README.md`](../tests/README.md) for the repository test layout and e
 
 ## How transfer fidelity is measured
 
-How the plugin verifies that a transferred platform arrives with 100% of its restorable items and
-fluids, which instruments that claim rests on, and — equally important — where the guarantee's
-boundary sits. Read this before trusting, extending, or auditing any fidelity claim.
+How the plugin compares captured and restored items and fluids, which instruments it uses,
+and where their coverage ends. Read this before trusting, extending, or auditing a fidelity claim.
 
-### The two meters
+### Cargo integrity: scope and boundaries
 
-Every fidelity check in this project compares readings from two **independent instruments with
-disjoint failure modes**:
+Cargo integrity checks conserved quantities during a transfer. It is not a post-run test
+or a complete entity-state comparison. The two runtime checks cover different boundaries:
 
-| Meter | What it does | Where it lives | Natural failure mode |
-|---|---|---|---|
-| **Serializer walk** | Structured extraction: dispatches every entity to a per-category handler that decides which state to capture (inventories, fluids, belt lines, held items, settings) | [entity-handlers.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua), [inventory-scanner.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/inventory-scanner.lua) | **Omission** — a handler forgets that a container of state exists |
-| **Physical census** | Flat engine count: `surface.find_entities_filtered({})` enumerates every entity that exists | [surface-counter.lua](../docker/seed-data/external_plugins/surface_export/module/validators/surface-counter.lua) | Engine-level miscount only — the loop contains no per-category logic, so it cannot forget a container |
+| Check | Comparison | Failure behavior |
+| --- | --- | --- |
+| **Source cargo integrity** | Each captured entity's live cargo vs its serialized cargo, read in the same Lua execution | Mismatch or unavailable required read aborts export before destination contact |
+| **Destination cargo integrity** | Original payload expectations vs physically restored cargo, before activation and source deletion | Mismatch or unavailable required read rejects the destination attempt |
+| **Historical post-activation cargo report** | A second physical count retained in older records | Removed from new transfers after the audit below; never authorized source deletion |
 
-The census's independence is structural: the per-category handler taxonomy (the code that can
-forget things) never appears in the census loop. A serializer omission therefore shows up as a
-numeric disagreement between the two meters — it cannot hide.
+[Source cargo integrity](../docker/seed-data/external_plugins/surface_export/module/export_scanners/source-cargo-integrity.lua)
+checks the source-to-payload boundary.
+[Transfer validation](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua)
+checks the payload-to-destination boundary. A destination matching an incomplete payload
+cannot detect the original source omission.
 
-Comparing the serializer against itself would prove nothing (extraction is deterministic; the same
-walk returns the same answer twice). All checks below are serializer-vs-census or
-census-vs-census comparisons across the transfer boundary, never ledger-vs-same-ledger.
+### How quantities are read
 
-### Verified engine facts the census relies on
+The [cargo counter](../docker/seed-data/external_plugins/surface_export/module/validators/cargo-counter.lua)
+reads inventory and transport-line `get_contents()` directly. It does not reuse the
+serializer's rich inventory/stack extraction. Both engine APIs return item name, quality and count
+([LuaInventory](https://lua-api.factorio.com/2.1.17/classes/LuaInventory.html#get_contents),
+[LuaTransportLine](https://lua-api.factorio.com/2.1.17/classes/LuaTransportLine.html#get_contents)).
+Held and ground stacks use name, quality and count. Aliased inventory slots are counted once.
+Fluid segment IDs prevent counting the same segment repeatedly.
 
-`get_item_count` completeness is asserted against a live cluster by
-[tests/instruments/engine-invariants](../tests/instruments/engine-invariants/run-tests.ps1) rather than
-recorded here. Two halves, and they do not carry the same weight: that a per-entity count includes the
-entity's belt lines, and that summing it over every entity does not double-count shared belt runs, are
-asserted on **every** run. Held-item inclusion is asserted **only when an inserter happens to be holding
-on the sampled snapshot** — otherwise that rung warns and says the run proves nothing about it, so a green
-run is not by itself evidence for the held half.
+Item quantities compare by name and quality. Fluid quantities compare by fluid name, with
+an absolute tolerance of 1e-6; temperature keys are retained as evidence but are not a
+temperature-fidelity verdict. Ground items have a dedicated destination pass; the source
+paired per-entity check does not independently validate the separate ground-item export pass.
+Shared enumeration and key conventions remain possible common failure points. This is not a
+claim that all item metadata, entity properties or supported inventory types have been independently tested.
 
-- Ground items are entities (`item-entity`) and are counted by the same enumeration
-  (`count_items` has a dedicated ground-item pass).
-- Quality is a dimension of every item-domain reference (entities, stacks, held items, filters,
-  requests, recipes, equipment, and circuit signals); fluids are the exception and have no quality.
-- Counting must happen in a **frozen world** (entities deactivated, no elapsed tick between
-  restoration and count), or machines craft in the gap and produce false deltas. The import
-  pipeline's phase ordering exists to guarantee this (see "Import Phase Ordering" in
-  [CLAUDE.md](../CLAUDE.md)).
-- Reconciled conventions, applied on **both** sides of every comparison: the ONLY lawful subtraction from
-  expected fluids is a restoration write the engine physically rejected (`write_rejected`, see
-  [fluid_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/fluid_restoration.lua)).
-  There is **no engine-owned exclusion** — that connection-category classification was deleted (owner ruling
-  2026-07-20/21) and plasma rides a transfer like any other fluid; the census signature is
-  `count_fluids(surface, segment_temps)`. A category-based prediction is never a lawful subtraction: only a
-  physical post-write measurement is.
+Required read exceptions propagate as `measurementAvailable=false`, with errors and no
+invented actual totals. Source read failures are sticky for the job. The instance also refuses
+to forward success when measurement availability is explicitly false.
 
-### Where each comparison runs today
+### What can authorize source deletion
 
-| Check | Compares | Runs | Anchor |
-|---|---|---|---|
-| **Exact transfer gate** | serialized-expected vs **destination** physical census (items exact per key; fluids exact aggregate-by-name, epsilon 1e-6) | production, every transfer, before source deletion | [transfer-validation.lua](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua) |
-| **Source census (paired reads)** | serialized vs **source** physical census, per-entity, in the same Lua execution each is read; fail-closed abort on mismatch | production, every transfer export, before send | [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua) + [census-accumulator.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/census-accumulator.lua); witnessed live by the `census-omission-abort` + `transfer-workhorse` (census_pass) pads via [pad-transfer-suite](../tests/integration/gallery-suite/run-tests.mjs) |
-| **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs) |
-| **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (absorbed per the class ledger in tests/integration/gallery-suite/run-tests.mjs), the belt pads plus the web-UI import probe in [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs), which replays the banked `fixture.json` payload that belt-loss-replay used to drive |
+Original cargo expectations are preserved. Failed-placement cargo, inventory overflow and
+rejected fluid writes remain loss evidence; they are not subtracted to make a shortage pass.
+An ordinary failed entity also rejects restoration when it contained no cargo. The
+test-only forced-failure flag does not supply a separate verdict policy.
 
-The frozen destination gate's expected counts derive from the serializer's own output (verification
-is generated from serialized data — see atomic belt scan, in [CLAUDE.md](../CLAUDE.md)),
-so a serializer that drops an item makes BOTH the payload and the gate's "expected" wrong and they
-agree while silently losing data. The **source census** closes that blind spot in PRODUCTION: it
-pairs a physical read of each entity with its serialized form in the same execution and aborts the
-transfer fail-closed on any mismatch (SC-6). It replaced the old CI-only meter-drift sentinel —
-stronger on frequency (every transfer, not CI-only), attribution (per-entity rows), and it fails
-closed. One caveat: the census physical read funnels through `InventoryScanner.extract_all_inventories`
-(the serializer's own primitive), NOT the sentinel's engine-native `get_item_count`, so a regression
-inside that shared enumerator is invisible to the census; the `engine-invariants` get_item_count-
-completeness test is the standing independent backstop for the enumerator itself.
+The instance requires explicit Lua success and both item/fluid match flags. The controller
+then requests source deletion and completes only after its successful acknowledgement.
+Belt structural checks remain separate vetoes. Historical post-activation diagnostics do not override
+this decision. A successful cargo comparison does not prove schedules, circuit state,
+crafting progress, health or other entity settings were restored.
+
+The destination count is synchronous in the completion callback. It is not currently
+batched across ticks. Belts can move between callbacks, so yielding during a comparison
+requires a consistent snapshot design; moving the check into CI is not equivalent protection.
+
+### Removed duplication and compatibility
+
+The earlier import phase census was diagnostic attribution only. Its baseline, hub,
+inventory and held-item recounts did not control any verdict and were removed, along with
+their logs and metrics. The separate post-activation recount and its per-type breakdown were also removed.
+No measured performance improvement is claimed.
+
+Current module names and displayed labels say cargo integrity or cargo count. Legacy
+`job.census`, `census_*` event/debug fields and timing stage IDs remain compatible with saved
+jobs, historical records and fixtures. An entity count is still separate from cargo integrity.
+
+### Verification of the cargo-integrity correction (2026-09-07)
+
+The pre-change controlled probe reproduced three false-success paths: a swallowed read error
+with empty expectations, an omitted inventory hidden by a shared serializer helper, and
+known losses subtracted from original expectations. It also showed that the forced-placement
+test override was stricter than ordinary empty-entity failure.
+
+The permanent [Lua regression](../tests/lua/cargo-integrity.lua) now requires rejection in
+those cases. It executes production counting, source comparison, destination validation and
+completion policy with controlled engine objects, stopping at verdict storage. It also covers
+quality keys, inventory aliasing, belt quantities, held/ground stacks and shared fluid segments.
+It does not exercise live event transport or source deletion. CI runs it with Lua 5.2.
+
+The save-preserving deployment passed version, surface/platform and player-position checks on
+both Factorio 2.1.17 hosts. Live `ghost-tags` passed a real transfer and source-deletion check.
+The [upload/import fixture](../tests/integration/upload-import-verdict/run-tests.mjs) passed
+successful import, malformed-belt refusal, a 5,000-item mismatch, and an ordinary missing
+request-proxy target. The last case kept matching cargo flags yet rejected for `entities`,
+removed the destination and used no test-only verdict override. The original fixture remained;
+this upload arm does not request source deletion and is not a two-phase rollback test.
+Both runners cleaned their state and passed lease checks.
+
+Local evidence: `ci-artifacts/cargo-integrity-deploy.log`,
+`ci-artifacts/cargo-integrity-live.log` (including the first fixture-setup failure),
+and `ci-artifacts/cargo-upload-live.log` (corrected fixture, all arms passed).
+The final deployment also passed preservation checks (
+`ci-artifacts/cargo-integrity-final-deploy.log`). The browser suite passed, including unavailable
+cargo readings in the UI and downloaded diagnostics (`ci-artifacts/cargo-browser-tests.log`).
+The plugin suite passed 622 tests with eight skipped; repository tests passed 429 with three
+skipped; 48 targeted guards and the 124-file Lua syntax check passed. Full GitHub CI has not been run.
+No benchmark or exhaustive coverage claim follows from these fixtures.
+
+### Optional full destination snapshots
+
+`surface_export.debug_destination_snapshot` defaults to false. With this and `debug_mode`
+enabled on the receiving instance, successful validated transfers rescan the destination and
+write `debug_destination_platform_<name>_<tick>.json`. It stays enabled until switched off;
+it is not a one-shot capture. Instance settings are sent to Lua on instance start, so restart
+the receiving instance after changing the saved setting. For a temporary live investigation,
+the existing remote `configure` API accepts `debug_destination_snapshot=true/false`; a later
+instance start reapplies the saved setting.
+
+General debug mode alone still supplies the compact `debug_import_result` used by tests.
+Transfer logs, cargo verdicts, timing, downloaded transaction reports and failure black boxes
+do not require full snapshots. Failed imports skip this optional scan and use their black box.
+This avoids a duplicate scan on failure. Snapshot scan/output errors leave the transfer verdict
+unchanged and mark diagnostic timing failed. A failed black-box physical scan is explicitly
+unavailable while retaining the verdict and replay payload.
+
+Verified with dedicated Lua behavior checks and 622 passing plugin tests (eight skipped).
+Live disposable transfers produced no full snapshot with the flag off and one with it on;
+both retained compact results and successful transaction verdicts. Failed upload fixtures
+retained physical black-box evidence and replay payloads without duplicate destination dumps,
+even with the snapshot flag on. The flag was restored off and cleanup checks passed. Evidence:
+`ci-artifacts/destination-snapshot-live.json`, `ci-artifacts/destination-snapshot-failure-live.log`.
+The first wrapper checked files after fixture cleanup; the permanent fixture now checks their
+contents before deleting them. Full GitHub CI has not been run.
+
+### Post-activation recount audit (2026-09-07)
+
+Removed the unconditional post-activation item/fluid recount, its mismatch-only rich per-type
+scan, logs, profiler and phase registration. The required source and destination cargo checks
+remain. Fluid-reconciliation arithmetic used by the destination validator remains; the old
+`postActivationReport` DTO and recorded previews remain readable as historical evidence.
+
+The recount ran after activation in the same callback, without a simulation tick. Activation
+restores activity flags, repeats a conditional held-stack repair, queues mining-progress work
+and reasserts segmented-unit state. Latch scheduling only queues later work. The held-stack
+restoration already runs before cargo validation for transfer and standalone import paths.
+The recount never affected the commit verdict, and cannot observe later latch or mining work.
+
+In 48 retained reports, item-key counts and fluid quantities aggregated by name were unchanged
+between the gate and recount. Historical `loss_analysis` execution readings on the large belt
+fixture ranged from about 86 to 195 ms. These span earlier implementations, including the rich
+counter; they are not a current benchmark or measured speedup from this removal. Raw evidence:
+`ci-artifacts/post-activation-records.json` and `ci-artifacts/post-activation-analysis.json`.
+
+The bounded [activation probe](../tests/instruments/post-activation/README.md) on Factorio 2.1.17
+preserved 12 items (including a rare held item) and 100 water through the production activation
+helper with zero elapsed ticks. A cleared held stack reduced the earlier counter to 11 items.
+Injected-error and normal fixture deletion were independently checked. This is evidence for
+the fixture, not a claim that every future activation API change is cargo-neutral.
+
+Verification after removal: 621 plugin tests passed, eight skipped; 36 targeted phase/verdict
+guards and the 124-file Lua syntax check passed. Save-preserving deployment passed on both
+hosts. The live activation probe, a real ghost-tag transfer with source deletion, and all four
+upload/import verdict arms passed with cleanup. The new successful record
+`836570928:151_ghosttags-mtrrkrsr` has a passing 10-item cargo verdict and neither a
+`postActivationReport` nor a `loss_analysis` timing span. Evidence:
+`ci-artifacts/post-activation-live.json`, `ci-artifacts/post-activation-transfers.log`,
+`ci-artifacts/post-activation-deploy.log`. Full GitHub CI has not been run.
 
 ### Freeze policy by entity family
 
@@ -394,14 +647,14 @@ Fidelity claims therefore live in two tiers with different protection mechanisms
 
 | Tier | State | Protection | Unknown-unknown exposure |
 |---|---|---|---|
-| **1 — countable** | items and fluids (conserved quantities the engine can total) | measurement: physical census on the destination (production gate) and on the source (test sentinel) | a serializer omission is *detectable by measurement* wherever a census runs |
+| **1 — countable** | items and fluids (conserved quantities the engine can total) | measurement: physical census on the destination (production gate) and on the source (paired runtime check) | a serializer omission is *detectable by measurement* wherever a census runs |
 | **2 — non-countable** | circuit configuration, crafting progress, schedules, spoilage timers, health, energy, heat, … | enumeration: per-category handlers, per-dimension roundtrip fixtures, and static ownership/classification tests | no aggregate meter exists; an unenumerated dimension is silently absent and **no census can detect it** |
 
 Consequences of the boundary:
 
 - For tier 1, a census comparison converts any omission bug from *silent loss* into a *loud
   numeric mismatch* — but only on the side where a census actually runs. On the destination it
-  runs in production; on the source it runs only in the CI sentinel.
+  runs in production; source entity cargo is also checked in production, with the ground-item limitation above.
 - For tier 2, coverage is exactly the list of dimensions someone has enumerated and tested.
   "100% parity" statements should be scoped to tier 1 plus the enumerated tier-2 dimensions, never
   stated unqualified.
@@ -431,8 +684,8 @@ exist to inspect, debug, or demo individual flows.
 A transfer is **correct** when, on the destination, all of the following hold and the source platform is gone:
 - **Entity count** equals the source (failed placements are tallied, not silently dropped).
 - **Items and fluids are exact**: the strict gate requires exact per-key item counts and exact
-  aggregate-by-name fluid volume (epsilon `1e-6`); failed-entity losses and engine-rejected writes are
-  subtracted from expected before the gate. There is no tolerance band.
+  aggregate-by-name fluid volume (epsilon `1e-6`), against original expectations. Failed-entity
+  losses and engine-rejected writes do not reduce those expectations.
 - **Schedule** (records + interrupts + wait conditions) is preserved.
 - The validation **gate passed** (`validation_success = true`) — this is the authoritative loss check.
 - On failure, the source is **unlocked/rolled back**, never deleted (two-phase commit).
@@ -476,16 +729,25 @@ the CI step, so a green run here ≈ a green PR.
 
 ```pwsh
 node tools/tests/run-integration-tests.mjs --list           # see all scenarios
-node tools/tests/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
-node tools/tests/run-integration-tests.mjs --only gallery-suite   # the consolidated suite (boards on both hosts, the
+node tools/tests/run-integration-tests.mjs                  # full suite; see the measured timing baseline above
+node tools/tests/run-integration-tests.mjs --only gallery-suite   # pad boards, transfer and rollback
 node tools/tests/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 
 Expect the summary to end `N/N passed`. The scenario set is auto-discovered from
 `tests/integration/*/run-tests.{ps1,mjs}` — `--list` prints the current roster. The roundtrip scenarios are
-absorbed as pad fixtures on the lab-gallery save: each fixture's `owningRunnerWaiver` in
-`tests/lab-gallery/manifest.json` names the runner it absorbed, and the gallery-suite runner header
-(`tests/integration/gallery-suite/run-tests.mjs`) accounts every deleted standing runner by problem class.
+absorbed as pad fixtures on the lab-gallery save; their ownership is recorded in
+`tests/lab-gallery/manifest.json`.
+
+`gallery-suite` holds the shared workflow lock. It refuses connected players, active transfers,
+holds, tombstones, paused ticks or pending circuit restoration before taking snapshots. Both
+`pretest-gallery-suite-<uuid>-<host>.zip` files must exist with stable nonzero sizes before either
+instance stops. A journal under `ci-artifacts/gallery-suite-save-session-<uuid>.json` records
+their names and the pre-test world census. The suite restores those exact saves on success
+or failure, then compares surfaces, platforms and player positions. Snapshot saves are retained;
+only the suite's temporary golden save copies and markers are removed. A failed restore retains
+the snapshots and reports failure. Offline tests cover partial loading, incomplete backups and
+restore retries; the local seven-step gallery run passed with original-world verification.
 
 The remaining sections reproduce individual flows **manually** for inspection/demo/debugging.
 

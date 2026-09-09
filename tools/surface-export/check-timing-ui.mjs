@@ -3,9 +3,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { chromium } from "playwright";
+import { launchChromiumOrSkip } from "../tests/integration-skip.mjs";
+import { selectOption, showGatewayPlatform } from "../tests/browser-interactions.mjs";
 
-const browser = await chromium.launch();
+const browser = await launchChromiumOrSkip("timing-ui");
 const errors = [];
 try {
 	const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
@@ -16,9 +17,10 @@ try {
 	await page.goto("http://localhost:8080/surface-export?tab=logs", { waitUntil: "domcontentloaded" });
 	await page.getByRole("button", { name: "Preview logs", exact: true }).click();
 	const preview = page.getByTestId("log-preview");
+	// Exercise a virtualized option at the end, then return to the first option.
+	await selectOption(page, "Preview scenario", "Loading details", preview);
 	async function scenario(name) {
-		await preview.getByRole("combobox", { name: "Preview scenario" }).press("ArrowDown");
-		await page.getByText(name, { exact: true }).last().click();
+		await selectOption(page, "Preview scenario", name, preview);
 		await preview.getByRole("tab", { name: "Timing", exact: true }).click();
 	}
 	await scenario("Recorded profiling sample");
@@ -40,6 +42,8 @@ try {
 	const text = await preview.innerText();
 	assert.ok(text.includes("legacy recording"));
 	assert.ok(!text.includes("<1 tick") && !text.includes("Not tick-attributed"));
+	await page.goto("http://localhost:8080/surface-export?tab=gateways", { waitUntil: "domcontentloaded" });
+	await showGatewayPlatform(page, "clusterio-host-1-instance-1", "lab-transfer-fixture-v1");
 	assert.deepEqual(errors, []);
 	console.log("PASS: separate local clocks, recorded profiler values, tick-only geometry exclusion, honest historical display; no browser errors");
 } finally { await browser.close(); }

@@ -1,4 +1,3 @@
-import React from "react";
 
 import type { EdgeStatusMarker as Marker } from "./transfer-motion";
 
@@ -10,7 +9,7 @@ export default function EdgeStatusMarker({ path, marker }: { path: string; marke
 	return (
 		<div
 			className={`surface-export-edge-status surface-export-ship-${marker.tone}`
-				+ (marker.tone === "holding" ? " surface-export-ship-holding" : " surface-export-edge-status-terminal")}
+				+ (["success", "failure"].includes(marker.tone) ? " surface-export-edge-status-terminal" : "")}
 			style={{
 				offsetPath: `path('${path}')`,
 				offsetDistance: `${marker.distance * 100}%`,

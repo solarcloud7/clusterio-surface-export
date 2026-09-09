@@ -26,7 +26,8 @@
     "lint:tick-portability": "node scripts/lint-tick-portability.mjs",
     "lint:derived-art": "node scripts/lint-derived-art.mjs",
     "lint:allow-manifest": "node scripts/lint-allow-manifest.mjs",
-    "test": "npm run build:node && node --test \"test/*.test.cjs\""
+    "test": "npm run build:node && node --test \"test/*.test.cjs\"",
+    "test:lifecycle": "npm run build:node && node --test test/timing-handler.test.cjs test/timing.test.cjs test/transaction-timing.test.cjs test/canonical-identity.test.cjs test/import-operation-verdict.test.cjs"
   },
   "keywords": [
     "clusterio",

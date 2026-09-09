@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import { shipPosition, shipTravelDuration } from "./ship-motion";
 import type { ShipPhase, ShipTransfer } from "./transfer-motion";

@@ -5,11 +5,16 @@ import { clockGroups, elapsed, type OperationTiming, type TimingRecord } from ".
 export const timingMs = (value: number | null | undefined) => value == null ? "Not measured" : `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`;
 const labels = { controller: "Clusterio orchestration", instance: "Clusterio instance handling",
 	"source-lua": "Source Lua", "destination-lua": "Destination Lua", "recovery-lua": "Recovery Lua" };
+// Keep historical timing IDs readable without changing their stored clock records.
+const cargoLabels: Record<string, string> = {
+	verification_census: "Source cargo integrity", item_census: "Item cargo count", fluid_census: "Fluid cargo count",
+	exact_verification: "Destination cargo integrity",
+};
 
 function ClockTable({ records, totalMs }: { records: TimingRecord[]; totalMs: number }) {
 	return <Table size="small" pagination={false} rowKey={row => `${row.clockId}:${row.id}`} dataSource={records}
 		scroll={{ x: 900 }} columns={[
-			{ title: "Stage / step", key: "stage", render: (_, row: TimingRecord) => <Tooltip title={row.error || row.kind}><span>{row.stage.replaceAll("_", " ")}{row.batch ? ` · batch ${row.batch}` : ""}</span></Tooltip> },
+			{ title: "Stage / step", key: "stage", render: (_, row: TimingRecord) => <Tooltip title={row.error || row.kind}><span>{cargoLabels[row.stage] || row.stage.replaceAll("_", " ")}{row.batch ? ` · batch ${row.batch}` : ""}</span></Tooltip> },
 			{ title: "Status", key: "status", render: (_, row: TimingRecord) => <Tag>{row.status}</Tag> },
 			{ title: "Start", key: "start", render: (_, row: TimingRecord) => timingMs(row.startMs) },
 			{ title: "End", key: "end", render: (_, row: TimingRecord) => timingMs(row.endMs) },

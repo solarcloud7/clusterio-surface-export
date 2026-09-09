@@ -639,10 +639,9 @@ const ATTRS = [
 		expect: `${CORPSE_INVENTORY_SIZE}:${CORPSE_LOOT_COUNT}`,
 		describe: "a corpse created without the create_entity inventory_size parameter gets a SIZE-ZERO loot "
 			+ "inventory (measured 2026-08-15 at 2.1.11). The two ways that loot can go missing land on "
-			+ "opposite sides of the gate. A corpse that fails to PLACE is charged to failed_entity_losses, "
-			+ "and those items are subtracted from the expected totals before the exact comparison "
-			+ "(import-completion.lua:413-423), so the gate stays green and the loss is silent — that path is "
-			+ "what this row exists to report. A corpse that places with a size-zero inventory instead takes "
+			+ "the restoration failure path. A corpse that fails to PLACE is charged to failed_entity_losses "
+			+ "and rejects the import, without reducing original cargo expectations. "
+			+ "A corpse that places with a size-zero inventory instead takes "
 			+ "the inventory.insert branch of restore_inventories, which credits nothing to "
 			+ "inventory_overflow_losses (only the set_stack slot branch does), so the destination census "
 			+ "comes up short and the exact gate FAILS and reverts before any read here runs",

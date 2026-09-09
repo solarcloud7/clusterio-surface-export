@@ -1,32 +1,7 @@
 param(
-    [string]$Grep = "error|transfer|import|export|validation",
-    [int]$Lines = 30
+    [string]$Grep = 'error|transfer|import|export|validation',
+    [ValidateRange(1, 200)][int]$Lines = 30,
+    [ValidateRange(200, 100000)][int]$ScanLines = 20000
 )
-
-function Read-FromContainer {
-    param([string]$Container, [string]$ShellCommand, [int]$Tail = 0)
-    $out = docker exec $Container sh -c $ShellCommand 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  (could not read from ${Container}: $(($out | Out-String).Trim()))" -ForegroundColor Red
-        return
-    }
-    if ($Tail -gt 0) { $out | Select-Object -Last $Tail } else { $out }
-}
-
-Write-Host "=== Plugin logs (cluster aggregated JSON — the BEST place to trace a transfer) ===" -ForegroundColor Magenta
-Write-Host "  /clusterio/logs/cluster/cluster-*.log  filtered by: $Grep" -ForegroundColor DarkGray
-Read-FromContainer -Container surface-export-controller -Tail 40 -ShellCommand "cat /clusterio/logs/cluster/cluster-*.log 2>/dev/null | grep -aoE '\""message\"":\""[^\""]*\""' | grep -iE '$Grep'"
-
-Write-Host "`n=== Controller docker stdout (controller-origin plugin logs only) ===" -ForegroundColor Cyan
-docker logs surface-export-controller --tail 50 2>&1 | Select-String -Pattern "surface_export" | Select-Object -Last 20
-
-foreach ($h in 1, 2) {
-    Write-Host "`n=== Host $h plugin logs (host JSON file — instance this.logger lands here) ===" -ForegroundColor Yellow
-    Read-FromContainer -Container "surface-export-host-$h" -Tail 15 -ShellCommand "cat /clusterio/logs/host/host-*.log 2>/dev/null | grep -aoE '\""message\"":\""[^\""]*\""' | grep -iE '$Grep'"
-
-    Write-Host "`n=== Host $h Factorio log (engine + Lua [Script]) ===" -ForegroundColor Green
-    Read-FromContainer -Container "surface-export-host-$h" -ShellCommand "tail -$Lines /clusterio/data/instances/clusterio-host-$h-instance-1/factorio-current.log 2>/dev/null"
-}
-
-Write-Host "`n=== Instance Status ===" -ForegroundColor Cyan
-Read-FromContainer -Container surface-export-controller -ShellCommand "npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance list"
+node "$PSScriptRoot/read-cluster-logs.mjs" $Grep $Lines $ScanLines
+if ($LASTEXITCODE -ne 0) { throw 'Some cluster log sources could not be read. See the bounded diagnostics above.' }

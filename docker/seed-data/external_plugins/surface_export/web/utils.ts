@@ -16,11 +16,6 @@ function getNumber(obj: JsonObject, key: string, fallback: number | null = null)
 	return typeof val === "number" ? val : fallback;
 }
 
-function getBool(obj: JsonObject, key: string, fallback = false): boolean {
-	const val = obj[key];
-	return typeof val === "boolean" ? val : fallback;
-}
-
 export function getProp<T>(obj: object | null | undefined, key: string, fallback: T): T {
 	if (!obj || typeof obj !== "object") {
 		return fallback;
@@ -57,6 +52,7 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 
 	return {
 		transferId: getString(transferInfo, "transferId", null) || getString(transferInfo, "id", null) || "",
+		queuedRequestId: getString(transferInfo, "queuedRequestId", null) || undefined,
 		operationType: getString(transferInfo, "operationType", "transfer") as TransferSummary["operationType"],
 		exportId: getString(transferInfo, "exportId", null),
 		artifactSizeBytes: getNumber(transferInfo, "artifactSizeBytes", null),
@@ -78,6 +74,9 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 export function mergeTransferSummary(existing: TransferSummary[], incoming: TransferSummary | null) {
 	const byId = new Map((existing || []).map(summary => [summary.transferId, summary]));
 	if (incoming && incoming.transferId) {
+		if (incoming.queuedRequestId) byId.delete(incoming.queuedRequestId);
+		// A delayed provisional response must not resurrect a queue marker after canonical handoff.
+		if ([...byId.values()].some(summary => summary.queuedRequestId === incoming.transferId)) return [...byId.values()];
 		byId.set(incoming.transferId, { ...byId.get(incoming.transferId), ...incoming });
 	}
 
@@ -419,7 +418,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 	});
 	const grouped = [];
 	const seen = new Set();
-	const allGroupKeys = rows.filter(r => r.isGroup).map(r => r.name);
 	for (const groupRow of rows.filter(r => r.isGroup).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name))) {
 		if (seen.has(groupRow.name)) continue;
 		seen.add(groupRow.name);
