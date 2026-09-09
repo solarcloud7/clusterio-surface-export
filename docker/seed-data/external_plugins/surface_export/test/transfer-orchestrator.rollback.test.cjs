@@ -71,6 +71,24 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+test("an unusable queue journal refuses direct gateway admission without unlocking or importing", async t => {
+	const fs = require("node:fs/promises"), os = require("node:os");
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-direct-admission-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const journal = path.join(dir, "queue.json");
+	await fs.writeFile(journal, "{invalid");
+	const h = makeHarness(() => ({success: true}));
+	t.after(() => h.orch.requestQueue.stop());
+	await h.orch.requestQueue.init(journal);
+	const result = await h.orch.transferPlatform("1:gateway", 2);
+	for (const transfer of h.activeTransfers.values()) clearTimeout(transfer.validationTimeout);
+	assert.equal(result.success, false);
+	assert.equal(result.safeToUnlockSource, false, "unknown prior delivery cannot authorize unlock");
+	assert.equal(h.calls.importSends, 0);
+	assert.equal(h.calls.unlockRouteTaken, 0);
+	assert.equal(await fs.readFile(journal, "utf8"), "{invalid");
+});
+
 test("acknowledged recovery releases the queue reservation; failed cleanup retains it", async () => {
 	let accepted = false;
 	const h = makeHarness(() => ({success: true}), msg =>

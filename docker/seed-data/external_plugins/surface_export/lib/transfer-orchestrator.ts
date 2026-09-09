@@ -153,6 +153,11 @@ export class TransferOrchestrator {
 
 
 	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null, targetPlanet: string | null = null): Promise<TransferStartResult> {
+		// Automatic gateway requests reach this path without browser queue admission.
+		// An unreadable journal cannot prove that an earlier delivery never happened.
+		if (this.requestQueue.admissionError) {
+			return {success: false, safeToUnlockSource: false, error: this.requestQueue.admissionError};
+		}
 		const transferId = this.plugin.platformStorage.get(exportId)?.exportId || exportId;
 		const starting = this.startingTransfers.get(transferId);
 		if (starting) {

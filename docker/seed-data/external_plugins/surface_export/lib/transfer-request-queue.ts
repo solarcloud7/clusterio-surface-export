@@ -25,6 +25,7 @@ export class TransferRequestQueue {
 	private pumping = false;
 	private path?: string;
 	private unavailable?: Error;
+	get admissionError(): string | undefined { return this.unavailable?.message; }
 
 	constructor(private hooks: {
 		run(entry: QueueEntry): Promise<void>;
