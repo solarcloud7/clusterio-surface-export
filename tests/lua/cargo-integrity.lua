@@ -111,7 +111,10 @@ local function run(label,items,fluids,fel,iol,rejected,expected_success,forced_h
  job.test_forced_entity_failure=forced_hook
  captured=nil
  local good,err
- for _=1,3 do
+ -- Drain bounded phase visits to the actual validation boundary. Inventory batching
+ -- may yield before the held-item and final validation phases; a fixed three calls
+ -- tests scheduler layout instead of the cargo rejection invariant below.
+ for _=1,10 do
   good,err=pcall(completion.run_phase2,job)
   if not good then break end
   env.game.tick=env.game.tick+1
@@ -128,5 +131,4 @@ run('rejected fluid write rejected',nil,{['water@15.0C']=10},nil,nil,{water=5},f
 run('forced hook follows ordinary failure policy',{['iron-plate']=10},nil,{entity_count=1,items={['iron-plate']=5},total_items=5},nil,nil,false,true)
 run('failed empty entity rejects',nil,nil,{entity_count=1,items={},total_items=0},nil,nil,false)
 print('All cargo-integrity regressions passed; no live state was changed.')
-
 

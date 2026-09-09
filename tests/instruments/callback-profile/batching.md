@@ -157,3 +157,22 @@ logs and stored details, and owned cleanup. Full output is retained in
 `ci-artifacts/batching-beacon-inventory-state.log`. This fixture's whole-cargo
 verdict comes from the runtime gate; its independent physical checks cover the
 blueprints/books, not every item. Universal inventory fidelity is not claimed.
+
+
+## Final corrected deployment repeat
+
+`transfer-cleanup-mttp6kch.json` passed the same large normal/fault/recovery/replay
+and exact physical cargo/tile contract after the beacon correction. It recorded
+264 source and 230 destination scheduler callbacks, with maxima 203.34 ms and
+40.62 ms. The earlier candidate's 164.37/33.99 ms must not be presented as fixed
+limits. Source belt capture still used one callback (186.06/176.30 ms). Inventory
+restoration now used 41 visits, including the bounded beacon shutdown scan.
+Browser reconciliation passed 178 rendered rows and 117 raw profiler readings
+across the two reports (`ci-artifacts/batching-final-browser.log`).
+
+CI's first corrected run exposed a stale cargo regression harness: it called
+completion exactly three times and stopped before the new phase visits reached
+validation. The failure was reproduced locally. The test now drains at most ten
+visits to its explicit validation sentinel; every shortage/overflow/read-failure
+rejection assertion remains unchanged. All 17 Lua invocations from the workflow
+passed locally (Lua 5.5); CI separately runs the same list under Lua 5.2.
