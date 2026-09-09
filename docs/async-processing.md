@@ -1,6 +1,6 @@
 # Tick-batched export and import jobs
 
-Current behavior reviewed on 2026-09-08 for the Factorio 2.1.17 configuration.
+Current behavior reviewed on 2026-09-09 for the Factorio 2.1.17 configuration.
 The filename, `AsyncProcessor` API, and `storage.async_jobs` identifiers remain unchanged.
 
 ## Execution model
@@ -88,8 +88,10 @@ contents, the final belt batch, inventories, and held items. Each next phase sta
 on a later eligible tick. Hub mapping runs once before beacons. Belt writes and their
 immediate physical checks remain together within each batch. State restoration still
 sets `pending_beacon_tick = game.tick + 1` before inventories, with beacon inventories
-preceding other inventories. Scratch inventories are released before yielding;
-activatable entities remain disabled until activation; belts can still move. Progress is stored on the job,
+preceding other inventories. Scratch inventories are released before yielding.
+Production entities remain disabled until activation; beacon effects stay available
+through inventory restoration, then a bounded scan disables the beacons before
+validation. Belts can still move. Progress is stored on the job,
 including the next completion phase, so module reload does not repeat finished work.
 
 Fluid injection, exact cargo verification, activation, and result handling remain
@@ -107,7 +109,12 @@ placement interrupts the job before entity creation. Beacon pre-placement inspec
 at most `batch_size` entities per visit. Inventory restoration visits beacon
 inventories first, then others, with a soft allowance of `batch_size * 10` scanned
 entities plus serialized item stacks. It finishes one entity's inventories before
-yielding and releases its scratch inventory each visit. The next cursor is saved
+yielding and releases its scratch inventory each visit. A final count-limited pass
+disables beacons after every dependent inventory has been written. Disabling a
+speed beacon earlier can reduce a machine's input capacity: the native crusher
+reproduction accepted nine chunks with its beacon enabled and only seven without
+it. Keeping the beacon through insertion preserved all nine after later shutdown.
+The next cursor is saved
 on the job; an exception interrupts the job instead of retrying partial writes.
 
 Payload encoding uses at most `max(1, floor(batch_size / 5))` entities or 100 times
