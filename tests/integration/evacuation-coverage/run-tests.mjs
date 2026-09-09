@@ -48,9 +48,12 @@ try {
 	check(setup.body_ok === true && setup.chars_aboard === 1, "probe platform carries one character body");
 
 	const driven = rconJson(
-		`(function() local ok, err = remote.call('surface_export', 'lock_platform_for_transfer', ${setup.index}, 'player') `
+		`(function() local locks=package.loaded['__level__/modules/surface_export/utils/surface-lock.lua'] `
+		+ `assert(locks, 'SurfaceLock not loaded') local force=game.forces.player `
+		+ `local ok, err=locks.lock_platform(force.platforms[${setup.index}], force, `
+		+ `{kind='transfer', job_id='${PROBE}', expires_tick=game.tick+locks.DEFAULT_TRANSFER_LOCK_TTL_TICKS}) `
 		+ `if not ok then return {locked=false, err=tostring(err)} end `
-		+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', nil) `
+		+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', '${PROBE}') `
 		+ `return {locked=true, result=result} end)()`,
 	);
 	check(driven.locked === true, "production transfer lock acquired", driven.err);
