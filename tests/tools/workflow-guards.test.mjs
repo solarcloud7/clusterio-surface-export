@@ -9,6 +9,18 @@ import { withWorkflowLock } from "../../tools/shared/workflow-lock.mjs";
 import { assertControllerBundle } from "../../tools/surface-export/canvas-bundle.mjs";
 import { waitForRuntime, compareWorlds, INSTANCE_ROLES } from "../../tools/tests/cluster-readiness.mjs";
 
+test("process exit releases an owned workflow lock without a browser disconnect", t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-exit-"));
+	t.after(() => rmSync(dir, {recursive: true, force: true}));
+	const file = join(dir, "lock");
+	const module = new URL("../../tools/shared/workflow-lock.mjs", import.meta.url).href;
+	const child = spawnSync(process.execPath, ["--input-type=module", "-e",
+		`import {acquireWorkflowLock} from ${JSON.stringify(module)}; acquireWorkflowLock(process.argv[1]); process.exit(1);`, file],
+		{encoding: "utf8", env: {...process.env, SE_WORKFLOW_TOKEN: ""}});
+	assert.equal(child.status, 1, child.stderr);
+	assert.equal(existsSync(file), false);
+});
+
 test("another process cannot replace artifacts while a workflow owns them; failed work releases ownership", async t => {
 	const dir = mkdtempSync(join(tmpdir(), "workflow-test-"));
 	t.after(() => rmSync(dir, { recursive: true, force: true }));

@@ -248,7 +248,7 @@ export interface ValidationResult {
 	fluidCountMatch: boolean;
 	success?: boolean;
 	message?: string;
-	failedStage?: 'items' | 'fluids' | 'belts' | 'entities' | 'cargo_integrity' | 'test_hook' | null;
+	failedStage?: 'items' | 'fluids' | 'belts' | 'entities' | 'cargo_integrity' | 'destination_hold' | 'test_hook' | null;
 	measurementAvailable?: boolean;
 	measurementErrors?: string[];
 	testForcedFailure?: boolean;

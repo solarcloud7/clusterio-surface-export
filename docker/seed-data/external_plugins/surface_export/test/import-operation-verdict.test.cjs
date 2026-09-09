@@ -105,6 +105,13 @@ function makeControllerHarness() {
 	return { plugin, operation, logged };
 }
 
+test("destination hold failures retain their emitted stage in standalone operation details", async () => {
+	const {plugin, operation} = makeControllerHarness();
+	await plugin.handleImportOperationCompleteEvent({operationId: operation.transferId,
+		instanceId: 2, success: false, failedStage: "destination_hold", error: "hold refused"});
+	assert.equal(operation.failedStage, "destination_hold");
+});
+
 test("an ABSENT success key is a successful upload, not a failure", async () => {
 	const { plugin, sent } = makeInstanceHarness();
 

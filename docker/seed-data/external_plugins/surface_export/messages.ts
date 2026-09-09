@@ -1478,7 +1478,7 @@ export interface ActiveTransfer {
 	exportMetrics?: ExportMetrics | null;
 	importMetrics?: ImportMetrics | null;
 	validationResult?: ValidationResult | null;
-	failedStage?: 'items' | 'fluids' | 'belts' | 'entities' | 'cargo_integrity' | 'test_hook' | null;
+	failedStage?: ValidationResult['failedStage'];
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
 	armedValidationTimeoutMs?: number | null;

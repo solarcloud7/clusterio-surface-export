@@ -576,7 +576,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.failedAt = Date.now();
 			if (event.failedStage === "items" || event.failedStage === "fluids"
 				|| event.failedStage === "belts" || event.failedStage === "test_hook"
-				|| event.failedStage === "entities" || event.failedStage === "cargo_integrity") {
+				|| event.failedStage === "entities" || event.failedStage === "cargo_integrity"
+				|| event.failedStage === "destination_hold") {
 				operation.failedStage = event.failedStage;
 			}
 			this.txLogger.logTransactionEvent(operation.transferId, "import_failed",

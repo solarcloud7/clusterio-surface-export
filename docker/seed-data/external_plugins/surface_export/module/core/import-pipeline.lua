@@ -199,7 +199,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		new_platform.apply_starter_pack()
 		-- Starter cargo belongs to platform construction, not the imported payload.
 		-- Empty source inventories may be omitted, so restoration cannot clear it later.
-		local hub = new_platform.surface.find_entity("space-platform-hub", {0, 0})
+		local hub = new_platform.hub
 		assert(hub and hub.valid, "starter pack did not create a valid hub")
 		local inventory = hub.get_inventory(defines.inventory.hub_main)
 		assert(inventory, "starter hub has no main inventory")

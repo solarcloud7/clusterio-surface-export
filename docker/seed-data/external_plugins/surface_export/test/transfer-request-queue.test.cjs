@@ -8,6 +8,26 @@ const { TransferOrchestrator } = require("../dist/node/lib/transfer-orchestrator
 const { shipPhaseFor, groupEdgeShips } = require("../dist/node/shared/transfer-status");
 const messages = require("../dist/node/messages");
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+test("unreadable or interrupted queue recovery disables admission without erasing evidence", async t => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-queue-invalid-"));
+	t.after(() => fs.rm(dir, { recursive: true, force: true }));
+	for (const content of ["{broken", JSON.stringify([entry("1")])]) {
+		const file = path.join(dir, "queue.json");
+		await fs.writeFile(file, content);
+		const errors = [];
+		const queue = new TransferRequestQueue({ run: async () => assert.fail("unsafe admission"),
+			interrupted: async () => { throw new Error("audit persistence unavailable"); },
+			busyInstances: () => [], error: error => errors.push(error) });
+		t.after(() => queue.stop());
+		await queue.init(file);
+		assert.equal(errors.length, 1);
+		await assert.rejects(queue.add(entry("2")), /repair its journal/);
+		await assert.rejects(queue.persist(), /repair its journal/);
+		await queue.pump();
+		assert.equal(await fs.readFile(file, "utf8"), content);
+	}
+});
 function entry(id, source = 1, target = 2) {
 	return { id, request: { sourceInstanceId: source, targetInstanceId: target, sourcePlatformIndex: Number(id) },
 		operation: { transferId: id, status: "queued", sourceInstanceId: source, targetInstanceId: target } };

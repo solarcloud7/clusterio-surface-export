@@ -274,11 +274,11 @@ local function run_stage(job_key, record)
     if not restore_parameters(record) then
       -- Retain the guard and retry original rules. Never abandon temporary parameters.
       record.restore_attempts = (record.restore_attempts or 0) + 1
-      if record.restore_attempts == 1 then
+      if record.restore_attempts == 1 or record.restore_attempts % 5 == 0 then
         log("[LatchRearm] original-rule restoration failed on " .. tostring(record.platform_name)
-          .. "; retaining export guard and retrying")
+          .. " (attempt " .. record.restore_attempts .. "); retaining export guard; inspect this platform if failures persist")
       end
-      record.at_tick = game.tick + RULE_RESTORE_RETRY_TICKS
+      record.at_tick = game.tick + RULE_RESTORE_RETRY_TICKS * math.min(record.restore_attempts, 300)
       return
     end
     record.stage = "verify"
