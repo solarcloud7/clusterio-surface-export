@@ -15,7 +15,7 @@ especially how Factorio is provisioned — that you need to debug or extend it.
 ## Pipeline overview
 
 `.github/workflows/ci.yml` runs on pull requests (including stacked PRs), pushes to `main`,
-`v*` tags, and manual dispatch. Three jobs:
+`v*` tags, and manual dispatch:
 
 - **Fast checks** (every run) — lint, plugin and root unit tests, and Lua regressions.
   TypeScript builds reject unused locals and parameters. This runs alongside integration tests.
@@ -23,17 +23,28 @@ especially how Factorio is provisioned — that you need to debug or extend it.
   cluster (controller + 2 hosts + 2 instances), and run the full integration suite
   against it via `tools/tests/run-integration-tests.mjs`, which auto-discovers every
   `tests/integration/*/run-tests.{ps1,mjs}`.
-- **Publish to npm** (tags only) — build and publish the plugin after both test jobs pass,
-  verifying the git tag matches `package.json`'s version (`--provenance`).
+- **Test release package** (tags and manual dispatch) — build once, pack once, install
+  the tarball normally and run native transfer/recovery acceptance. Retain the accepted
+  tarball and report together as the immutable `tested-package` workflow artifact.
+- **Verify package handoff** (after package acceptance) — download that artifact in a
+  separate job, verify its hashes, version, commit and acceptance evidence, then run
+  `npm publish <tarball> --ignore-scripts --dry-run`.
+- **Publish to npm** (tags only) — after all checks pass, download and verify the same
+  artifact again and publish it with provenance. No build, install, pack or lifecycle
+  scripts run here. The tag must match `package.json`'s version.
 
 ## Integration test flow
 
-The optional [package-install acceptance lab](../tests/manual/package-install/README.md)
+The [package-install acceptance lab](../tests/manual/package-install/README.md)
 packs an explicitly built candidate, installs it with normal npm peer resolution, then
 boots the installed package in disposable Factorio instances and tests lost-reply
-recovery with an independent cargo oracle. It is manually triggered and does not add
-to routine CI. Checkout-based CI and this candidate test do not certify the bytes of
-a later publish: the tag job below still builds its own artifact.
+recovery with an independent cargo oracle. Tags require this gate; ordinary PRs and
+branch pushes do not run it. A manual workflow dispatch on a branch rehearses the
+artifact handoff without publishing. Downloads use the current workflow run, with
+no cross-run artifact selection. Reports must show successful cleanup and native
+acceptance; both SHA256 and npm SHA512 integrity must match the accepted tarball.
+Artifacts expire after 14 days; rerun acceptance if a pending release has expired.
+The dry run does not prove npm credentials, OIDC provenance or registry publication.
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
 2. **Parallel fast checks** — `npm run lint` (correctness guards: TS/eslint, Lua invariants, webpack-cache,
