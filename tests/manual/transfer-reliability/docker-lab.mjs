@@ -26,9 +26,10 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false} = {}) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
+    this.packageDirectory = packageDirectory;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
       {...h, container: `${run}-host-${h.hostNumber}`} ]));
@@ -96,12 +97,19 @@ export class DockerLab {
     assert.ok(tag && !tag.includes("latest"));
     this.image = `ghcr.io/solarcloud7/clusterio-docker-controller:${tag}`;
     this.hostImage = `ghcr.io/solarcloud7/clusterio-docker-host:${tag}`;
-    for (const file of ["dist/node/index.js","dist/web/manifest.json"]) assert.ok(existsSync(join(PLUGIN,file)),"build plugin first");
+    const runtimeSource = this.packageDirectory || PLUGIN;
+    for (const file of ["dist/node/index.js","dist/web/manifest.json"]) assert.ok(existsSync(join(runtimeSource,file)),"build or install plugin first");
     const seed = join(this.directory,"seed"), bundle = join(this.directory,"bundle/surface_export");
     mkdirSync(join(seed,"mods"),{recursive:true}); mkdirSync(bundle,{recursive:true});
     // Runtime artifact only: no git checkout, live node_modules, tokens, or owner .env.
-    for (const part of ["dist","module","package.json","package-lock.json","scripts/prepare-build.mjs"])
-      cpSync(join(PLUGIN,part),join(bundle,part),{recursive:true});
+    if (this.packageDirectory) {
+      // Deliberately no checkout fallback: missing files must fail package acceptance.
+      hashTree(runtimeSource); // Reject links before Docker sees a staged runtime.
+      cpSync(runtimeSource,bundle,{recursive:true});
+    } else {
+      for (const part of ["dist","module","package.json","package-lock.json","scripts/prepare-build.mjs"])
+        cpSync(join(PLUGIN,part),join(bundle,part),{recursive:true});
+    }
     for (const h of Object.values(this.hosts)) {
       const source = join(ROOT,"docker/seed-data/hosts",h.host,h.instance), dest = join(seed,"hosts",h.host,h.instance);
       mkdirSync(dest,{recursive:true});

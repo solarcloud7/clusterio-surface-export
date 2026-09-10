@@ -28,6 +28,13 @@ especially how Factorio is provisioned — that you need to debug or extend it.
 
 ## Integration test flow
 
+The optional [package-install acceptance lab](../tests/manual/package-install/README.md)
+packs an explicitly built candidate, installs it with normal npm peer resolution, then
+boots the installed package in disposable Factorio instances and tests lost-reply
+recovery with an independent cargo oracle. It is manually triggered and does not add
+to routine CI. Checkout-based CI and this candidate test do not certify the bytes of
+a later publish: the tag job below still builds its own artifact.
+
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
 2. **Parallel fast checks** — `npm run lint` (correctness guards: TS/eslint, Lua invariants, webpack-cache,
    test-grounding, pcall-logging, catch-swallow, test-hooks, allow-manifest — see
