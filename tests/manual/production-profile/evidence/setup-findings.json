@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "reports": [
+    {
+      "run": "se-manual-mtvn43km-78f035ed",
+      "startedAt": "2026-09-10T14:46:11.735Z",
+      "images": {
+        "controller": "sha256:df7700a1e2c4f13d48bba7ff6719eb4cb811125aa5da54b9ee56ed64f4ff2438",
+        "host": "sha256:e44e59a7b9950ed64399baefc99497753f67bff37038b60271acf9d6912a6169"
+      },
+      "error": "Error: docker exec failed: [\u001b[91m\u001b[1merror\u001b[22m\u001b[39m] Error sending request: Field 'host.allow_remote_updates' is not accessible from control\n\n    at ProductionLab.docker (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/docker-lab.mjs:45:27)\n    at ProductionLab.command (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:11:17)\n    at provision.names (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:58:55)\n    at provision (file:///C:/Users/Solar/source/FactorioSurfaceExport/docker/production/provision.mjs:18:92)\n    at ProductionLab.createWorlds (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:58:21)\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:34:15\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:18:8",
+      "cleanup": true,
+      "hashes": {
+        "docker/production/compose.yml": "73f3ffe674f454dab526d85881262a05aa30b3167e4d189b22a40352d0bd46a3",
+        "docker/production/settings.json": "9770691400130b283259114e0e0ed6999e55b593d6ecf3af972c8f02613bee86",
+        "docker/production/provision.mjs": "ed9c287b28cd523cf3ef566455d7ca20b97c5f9a3515482c1c9b4190798b8fef",
+        "tests/manual/production-profile/lab.mjs": "6bf9515884f61568b6572de8ba58a3106643988ea80f2b47d1df8473f44bd9d1",
+        "tests/manual/production-profile/run.mjs": "200c0e8f7104cefbb5a9ce867daf9b119156473a64a8fced372b6a84dc64be3e",
+        "tests/manual/production-profile/oracle.mjs": "e7759ede69274daab8d4532226d50160ce3c2a534565908b56ac3c12210f0ee4",
+        "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+        "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+        "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+      }
+    },
+    {
+      "run": "se-manual-mtvnae15-a03a1c3b",
+      "startedAt": "2026-09-10T14:51:05.226Z",
+      "images": {
+        "controller": "sha256:82598dca8a5eeb68f2a4f21a397e4f7a25a16a276069e865264f1905544deb66",
+        "host": "sha256:717d3b72e4f6425aaf7e4bac7fa2ce707cae07a5c0aad405504cf015b07a554f"
+      },
+      "error": "Error: docker exec failed: host config\n\nManage Host config\n\nCommands:\n  host config set <field> [value]  Set config field\n  host config show <field>         Show value of the given config field\n  host config list                 List all configuration fields and their\n                                   values\n\nOptions:\n  --version        Show version number                                 [boolean]\n  --log-level      Log level to print to stdout\n   [string] [choices: \"none\", \"fatal\", \"error\", \"warn\", \"audit\", \"info\", \"http\",\n                                          \"server\", \"verbose\"] [default: \"info\"]\n  --log-directory  Directory to place logs in         [string] [default: \"logs\"]\n  --config         host config file to use[string] [default: \"config-host.json\"]\n  --plugin-list    File containing list of plugins available with their install\n                   path                   [string] [default: \"plugin-list.json\"]\n  --help           Show help                                           [boolean]\n\nUnknown arguments: get, host.allow_remote_updates\n\n    at ProductionLab.docker (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/docker-lab.mjs:45:27)\n    at ProductionLab.createWorlds (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:71:39)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:34:5\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:18:8",
+      "cleanup": true,
+      "hashes": {
+        "docker/production/compose.yml": "73f3ffe674f454dab526d85881262a05aa30b3167e4d189b22a40352d0bd46a3",
+        "docker/production/settings.json": "9770691400130b283259114e0e0ed6999e55b593d6ecf3af972c8f02613bee86",
+        "docker/production/provision.mjs": "45768ffb712fcdec38cf76c93d7b6288c20d57727ded0385f6b656f9bd39f908",
+        "tests/manual/production-profile/lab.mjs": "4842e73df1c7a6d5f146b0a77ae8d3d04e8ebfd7c8164206aff2a805a65eacbd",
+        "tests/manual/production-profile/run.mjs": "a96a4d3f0dd95493a7aa74e1705449d0797afcf6c8388f1518c2fffb388941be",
+        "tests/manual/production-profile/oracle.mjs": "52dbf18a38aa59ab97c913a31720938247abd3098fc3e474a0aecae41f3d06d7",
+        "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+        "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+        "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+      }
+    },
+    {
+      "run": "se-manual-mtvnktbq-cf5b7560",
+      "startedAt": "2026-09-10T14:59:11.608Z",
+      "images": {
+        "controller": "sha256:889b3e6c40e7fc107fa60fc7510477299ddcc5de5e4263430649cd0ea774de5c",
+        "host": "sha256:1994b6f405f938993b0d24a8b017c3a9a29c28266a8d5547738a5b94fae04c06"
+      },
+      "error": "SyntaxError: Unexpected token '\u001b', \"[\u001b[94m\u001b[1mi\"... is not valid JSON\n    at JSON.parse (<anonymous>)\n    at ProductionLab.createWorlds (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:71:28)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:34:5\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:18:8",
+      "cleanup": true,
+      "hashes": {
+        "docker/production/compose.yml": "35d4db9df2fabf12f1de16fda7129b6a78f30fc4884f7c0d7b1137e1ec42002b",
+        "docker/production/settings.json": "b64bdad5da6fa19a9a085c383c493a5132c50c344f2132fa70a38dc1a59f0faf",
+        "docker/production/provision.mjs": "45768ffb712fcdec38cf76c93d7b6288c20d57727ded0385f6b656f9bd39f908",
+        "tests/manual/production-profile/lab.mjs": "985a44c52a5b340067fa0cc2d18b71b2cb07d249c1018a99d52315ce8f4b762a",
+        "tests/manual/production-profile/run.mjs": "24d9eaeca4871d660536a31d8e82778564f605944d1a0d92abb8844694d89a16",
+        "tests/manual/production-profile/oracle.mjs": "63ada7bbfeaa5edd219e7fe156f52d3c6dd8ef4d4c45ebaaeb381e69fca29c27",
+        "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+        "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+        "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+      }
+    },
+    {
+      "run": "se-manual-mtvntveo-723004fd",
+      "startedAt": "2026-09-10T15:06:14.209Z",
+      "images": {
+        "controller": "sha256:18b3dedc789922666345c5a3106ee966d13ee202e858891ea062fedb4f8a7dc3",
+        "host": "sha256:a0001467e98f040b6528c1fd51c537dba6040aaf422b87e4a0106bab1b506743"
+      },
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    [\n      'surface_export',\n      '@solarcloud7/plugin-surface-export'\n    ],\n+   [\n+     'global_chat',\n+     '@clusterio/plugin-global_chat'\n+   ],\n+   [\n+     'inventory_sync',\n+     '@clusterio/plugin-inventory_sync'\n+   ],\n+   [\n+     'player_auth',\n+     '@clusterio/plugin-player_auth'\n+   ],\n+   [\n+     'research_sync',\n+     '@clusterio/plugin-research_sync'\n+   ],\n+   [\n+     'statistics_exporter',\n+     '@clusterio/plugin-statistics_exporter'\n+   ],\n+   [\n+     'subspace_storage',\n+     '@clusterio/plugin-subspace_storage'\n+   ]\n  ]\n\n    at ProductionLab.boot (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:55:14)\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:33:15\n    at withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:21)\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:19:14",
+      "cleanup": true,
+      "hashes": {
+        "docker/production/compose.yml": "35d4db9df2fabf12f1de16fda7129b6a78f30fc4884f7c0d7b1137e1ec42002b",
+        "docker/production/settings.json": "adef5483b1ba010447e043f982a73ac8c5dbc0eaa2ccdfcbd11494e0d12b7117",
+        "docker/production/provision.mjs": "c72daf3379b0cc2914ff20a3caaec5ab7a5f62d2fa8c81b830222f7cebda6e0b",
+        "tests/manual/production-profile/lab.mjs": "3d2ae584228af2af30da472940d08280bece2297277ead556610113d5dea2731",
+        "tests/manual/production-profile/run.mjs": "bdb1fe6d342daa58e00c11fda6d85a98129f8ec48e66544c0ec574df6ed9103c",
+        "tests/manual/production-profile/oracle.mjs": "6929a96e240134574c792c55ea13fe493c6941d13b14a77ddac16119df335a0a",
+        "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+        "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+        "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+      }
+    },
+    {
+      "run": "se-manual-mtvnziye-811e4ee2",
+      "startedAt": "2026-09-10T15:10:38.008Z",
+      "images": {
+        "controller": "sha256:fa832c8f9f344a30de9add8d8520deb6a10d8535040a2c9f9a7343e564f4534f",
+        "host": "sha256:c1915b2e173be1abe908099b90f37af9d8b1e225527cd5a9a0b3aa45825aa724"
+      },
+      "error": "Error: docker compose failed: st-2-logs Created \n Volume se-manual-mtvnziye-811e4ee2-host-2-logs Created \n Volume se-manual-mtvnziye-811e4ee2-controller-data Created \n Volume se-manual-mtvnziye-811e4ee2-controller-data Created \n Volume se-manual-mtvnziye-811e4ee2-tokens Created \n Volume se-manual-mtvnziye-811e4ee2-tokens Created \n Volume se-manual-mtvnziye-811e4ee2-controller-logs Created \n Volume se-manual-mtvnziye-811e4ee2-controller-logs Created \n Volume se-manual-mtvnziye-811e4ee2-host-2-mods Created \n Volume se-manual-mtvnziye-811e4ee2-host-2-mods Created \n Volume se-manual-mtvnziye-811e4ee2-host-1-logs Created \n Volume se-manual-mtvnziye-811e4ee2-host-1-logs Created \n Network se-manual-mtvnziye-811e4ee2 Created \n Network se-manual-mtvnziye-811e4ee2 Created \n Container se-manual-mtvnziye-811e4ee2-controller Creating \n Container se-manual-mtvnziye-811e4ee2-controller Created \n Container se-manual-mtvnziye-811e4ee2-host-2 Creating \n Container se-manual-mtvnziye-811e4ee2-host-1 Creating \n Container se-manual-mtvnziye-811e4ee2-host-1 Created \n Container se-manual-mtvnziye-811e4ee2-host-2 Created \n Container se-manual-mtvnziye-811e4ee2-controller Starting \n Container se-manual-mtvnziye-811e4ee2-controller Started \n Container se-manual-mtvnziye-811e4ee2-controller Waiting \n Container se-manual-mtvnziye-811e4ee2-controller Waiting \n Container se-manual-mtvnziye-811e4ee2-controller Error dependency controller failed to start\n Container se-manual-mtvnziye-811e4ee2-controller Error dependency controller failed to start\ndependency failed to start: container se-manual-mtvnziye-811e4ee2-controller is unhealthy\n\n    at ProductionLab.docker (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/docker-lab.mjs:45:27)\n    at ProductionLab.boot (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/lab.mjs:43:10)\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:33:15\n    at withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:21)\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:19:14",
+      "cleanup": true,
+      "hashes": {
+        "docker/production/compose.yml": "35d4db9df2fabf12f1de16fda7129b6a78f30fc4884f7c0d7b1137e1ec42002b",
+        "docker/production/settings.json": "adef5483b1ba010447e043f982a73ac8c5dbc0eaa2ccdfcbd11494e0d12b7117",
+        "docker/production/provision.mjs": "c72daf3379b0cc2914ff20a3caaec5ab7a5f62d2fa8c81b830222f7cebda6e0b",
+        "tests/manual/production-profile/lab.mjs": "3d2ae584228af2af30da472940d08280bece2297277ead556610113d5dea2731",
+        "tests/manual/production-profile/run.mjs": "bdb1fe6d342daa58e00c11fda6d85a98129f8ec48e66544c0ec574df6ed9103c",
+        "tests/manual/production-profile/oracle.mjs": "17f8917bf19fbb362a0cd991db22d62f4fd12328b2849e044f5c1418693fc87a",
+        "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+        "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+        "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+      },
+      "controllerLog": "First run detected, configuring controller...\nFirst run detected, configuring controller...\nFirst run detected, configuring controller...\n\n--- stderr (separate stream) ---\n[\u001b[31m\u001b[7mfatal\u001b[27m\u001b[39m] Uncaught exception:\nError: EACCES: permission denied, open 'logs/cluster/cluster-2026-09-10.log'\n[\u001b[31m\u001b[7mfatal\u001b[27m\u001b[39m] Uncaught exception:\nError: EACCES: permission denied, open 'logs/cluster/cluster-2026-09-10.log'\n"
+    }
+  ],
+  "priorRun": {
+    "run": "se-manual-mtvnokqu-d54ec8be",
+    "verdict": "PASS",
+    "scope": "Cargo, recovery and recreation passed, but the initial oracle did not reject unwanted bundled plugins.",
+    "cleanup": true,
+    "bundledPluginError": "[cluster-log] {\"instance_id\":585254858,\"instance_name\":\"clusterio-host-2-instance-1\",\"level\":\"error\",\"message\":\"Unexpected error:\\nError: Expected empty response but got \\\"unknown lua context specifier at the beginning of command: __subspace_storage__ UpdateInvData(\\\"[[\\\\\\\"signal-unixtime\\\\\\\",1789052606,\\\\\\\"normal\\\\\\\"]]\\\")\\n\\\"\\n    at FactorioServer.sendRcon (/clusterio/node_modules/@clusterio/host/dist/node/src/server.js:1167:19)\\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\\n    at async Instance.sendRcon (/clusterio/node_modules/@clusterio/host/dist/node/src/Instance.js:430:20)\\n    at async InstancePlugin.sendRcon (/clusterio/node_modules/@clusterio/host/dist/node/src/BaseInstancePlugin.js:190:16)\",\"plugin\":\"subspace_storage\",\"timestamp\":\"2026-09-10T15:03:26.016Z\"}"
+  }
+}

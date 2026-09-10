@@ -1,0 +1,32 @@
+{
+  "controller": {
+    "surface_export.max_inflight_transfers_per_instance": 1,
+    "surface_export.gateway_mode": "one_gate"
+  },
+  "host": {
+    "host.allow_remote_updates": false,
+    "host.allow_plugin_updates": false
+  },
+  "controllerLocal": {
+    "controller.allow_remote_updates": false,
+    "controller.allow_plugin_updates": false,
+    "controller.allow_plugin_install": false
+  },
+  "instance": {
+    "instance.auto_start": true,
+    "factorio.enable_save_patching": true,
+    "factorio.version": "2.1.17",
+    "factorio.settings": {
+      "visibility": { "public": false, "lan": false },
+      "require_user_verification": true,
+      "auto_pause": false,
+      "autosave_interval": 5
+    },
+    "surface_export.max_concurrent_jobs": 1,
+    "surface_export.sectioned_codec": false,
+    "surface_export.debug_mode": false,
+    "surface_export.belt_trace": false,
+    "surface_export.profile_batches": false,
+    "surface_export.debug_destination_snapshot": false
+  }
+}

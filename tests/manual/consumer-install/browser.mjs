@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium } from "playwright";
 
 export async function browserAcceptance(lab, report) {
-  const token = JSON.parse(lab.docker(["exec", lab.controller, "cat", "/consumer/config-control.json"]))["control.controller_token"];
+  const token = JSON.parse(lab.docker(["exec", lab.controller, "cat", lab.controlConfig || "/consumer/config-control.json"]))["control.controller_token"];
   assert.ok(token, "disposable admin token missing");
   const browser = await chromium.launch({ headless: true });
   const evidence = { assets: [], pageErrors: [], failedResponses: [], nodes: [] };

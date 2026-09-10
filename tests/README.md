@@ -45,6 +45,10 @@ browser loading and transfer recovery in disposable containers. Run `npm run tes
 for its explicit inputs. It needs a locally installed licensed Factorio client; it is manually
 triggered and does not run the game in ordinary CI.
 
+The [packaged production-profile lab](manual/production-profile/README.md) boots the
+actual Compose profile from baked image IDs, checks its settings, and repeats physical
+cargo/restart and browser acceptance. It is also manual and uses disposable resources.
+
 ## Manual performance instruments
 
 - [Simulation timing and full-transfer baseline](instruments/tick-watch/README.md):

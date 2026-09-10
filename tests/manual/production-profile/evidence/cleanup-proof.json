@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "run": "se-manual-mtvo2dl7-c940579e",
+  "startedAt": "2026-09-10T15:12:51.021Z",
+  "runtime": {
+    "schemaVersion": 1,
+    "accepted": {
+      "name": "@solarcloud7/plugin-surface-export",
+      "version": "0.10.281",
+      "commit": "ed80f9378f25d8e21699800c564ec756b7900b09",
+      "sha256": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db",
+      "integrity": "sha512-8Ykvy47/iTgIKwe63hTG6zvDORwzxJkGO/O7QpUDfK/ZRBsOfpTZbEG85y3wrr8bRZ2XEN56x9YEYVVAKWsdCw==",
+      "acceptanceRun": "se-manual-mtv8q08f-1386d4ec"
+    },
+    "gatewaySha256": "ca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c",
+    "bases": {
+      "controller": "ghcr.io/solarcloud7/clusterio-docker-controller@sha256:bbbc25ec679905992a31a8da60b5be2f43ec56b809ff508ea5f8786977dd8c53",
+      "host": "ghcr.io/solarcloud7/clusterio-docker-host@sha256:98a66d7b39359408ebbb255ff44814b2920ab0fa30596a8a71a872b40df2e232"
+    },
+    "images": {
+      "controller": "sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f",
+      "host": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f"
+    }
+  },
+  "cleanup": {
+    "success": true,
+    "errors": [],
+    "logs": [
+      {
+        "container": "se-manual-mtvo2dl7-c940579e-copy-client",
+        "bytes": 0,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo2dl7-c940579e-controller",
+        "bytes": 20268,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo2dl7-c940579e-host-1",
+        "bytes": 8759,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo2dl7-c940579e-host-2",
+        "bytes": 8759,
+        "truncated": false
+      }
+    ]
+  },
+  "hashes": {
+    "docker/production/compose.yml": "35d4db9df2fabf12f1de16fda7129b6a78f30fc4884f7c0d7b1137e1ec42002b",
+    "docker/production/settings.json": "adef5483b1ba010447e043f982a73ac8c5dbc0eaa2ccdfcbd11494e0d12b7117",
+    "docker/production/provision.mjs": "c72daf3379b0cc2914ff20a3caaec5ab7a5f62d2fa8c81b830222f7cebda6e0b",
+    "tests/manual/production-profile/lab.mjs": "3d2ae584228af2af30da472940d08280bece2297277ead556610113d5dea2731",
+    "tests/manual/production-profile/run.mjs": "bdb1fe6d342daa58e00c11fda6d85a98129f8ec48e66544c0ec574df6ed9103c",
+    "tests/manual/production-profile/oracle.mjs": "17f8917bf19fbb362a0cd991db22d62f4fd12328b2849e044f5c1418693fc87a",
+    "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+    "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+    "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+  },
+  "containers": [
+    {
+      "name": "controller",
+      "image": "sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/static",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    },
+    {
+      "name": "host-1",
+      "image": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/opt/factorio-client",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "destination": "/lab",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    },
+    {
+      "name": "host-2",
+      "image": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/opt/factorio-client",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "destination": "/lab",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    }
+  ],
+  "error": "Error: Intentional post-start failure; verify cleanup.success\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:34:43\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/production-profile/run.mjs:19:8",
+  "finishedAt": "2026-09-10T15:13:39.414Z",
+  "verdict": "HARNESS_ERROR"
+}

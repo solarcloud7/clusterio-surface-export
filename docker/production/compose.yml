@@ -1,0 +1,72 @@
+# Separate deployment, never an override of the development Compose file.
+name: ${SE_PROJECT:?set a distinct production project name}
+x-runtime: &runtime
+  restart: unless-stopped
+  stop_grace_period: 2m
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+services:
+  controller:
+    <<: *runtime
+    image: ${SE_CONTROLLER_IMAGE:?set the built controller image ID or registry digest}
+    hostname: clusterio-controller
+    ports: ["127.0.0.1:${SE_HTTP_PORT:-8180}:8080"]
+    environment:
+      INIT_CLUSTERIO_ADMIN: ${SE_ADMIN:?set the initial administrator name}
+      HOST_COUNT: "2"
+      EXPORT_HOST: "0"
+      DEFAULT_MOD_PACK: Space Age 2.1.17
+      DEFAULT_FACTORIO_VERSION: "2.1.17"
+      CONTROLLER_STATIC_CACHE_MODE: immutable
+    volumes:
+      - controller-data:/clusterio/data
+      - controller-static:/clusterio/static
+      - controller-logs:/clusterio/logs
+      - controller-mods:/clusterio/mods
+      - tokens:/clusterio/tokens
+  host-1:
+    <<: *runtime
+    image: ${SE_HOST_IMAGE:?set the built host image ID or registry digest}
+    hostname: clusterio-host-1
+    depends_on: { controller: { condition: service_healthy } }
+    environment:
+      HOST_NAME: clusterio-host-1
+      SKIP_CLIENT: "false"
+    ports: ["${SE_GAME_BIND:-127.0.0.1}:${SE_HOST1_PORT:-35100}:34100/udp"]
+    volumes:
+      - host-1-data:/clusterio/data
+      - host-1-logs:/clusterio/logs
+      - host-1-mods:/clusterio/mods
+      - tokens:/clusterio/tokens:ro
+      - client:/opt/factorio-client:ro
+  host-2:
+    <<: *runtime
+    image: ${SE_HOST_IMAGE:?set the built host image ID or registry digest}
+    hostname: clusterio-host-2
+    depends_on: { controller: { condition: service_healthy } }
+    environment:
+      HOST_NAME: clusterio-host-2
+      SKIP_CLIENT: "false"
+    ports: ["${SE_GAME_BIND:-127.0.0.1}:${SE_HOST2_PORT:-35200}:34200/udp"]
+    volumes:
+      - host-2-data:/clusterio/data
+      - host-2-logs:/clusterio/logs
+      - host-2-mods:/clusterio/mods
+      - tokens:/clusterio/tokens:ro
+      - client:/opt/factorio-client:ro
+volumes:
+  controller-data:
+  controller-static:
+  controller-logs:
+  controller-mods:
+  host-1-data:
+  host-1-logs:
+  host-1-mods:
+  host-2-data:
+  host-2-logs:
+  host-2-mods:
+  tokens:
+  client:
+    external: true
+    name: ${SE_CLIENT_VOLUME:?set an existing client volume dedicated to this deployment}

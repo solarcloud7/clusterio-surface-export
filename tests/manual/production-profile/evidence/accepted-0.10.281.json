@@ -1,0 +1,1067 @@
+{
+  "schemaVersion": 1,
+  "run": "se-manual-mtvo3v75-5a55e9d8",
+  "startedAt": "2026-09-10T15:14:00.498Z",
+  "runtime": {
+    "schemaVersion": 1,
+    "accepted": {
+      "name": "@solarcloud7/plugin-surface-export",
+      "version": "0.10.281",
+      "commit": "ed80f9378f25d8e21699800c564ec756b7900b09",
+      "sha256": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db",
+      "integrity": "sha512-8Ykvy47/iTgIKwe63hTG6zvDORwzxJkGO/O7QpUDfK/ZRBsOfpTZbEG85y3wrr8bRZ2XEN56x9YEYVVAKWsdCw==",
+      "acceptanceRun": "se-manual-mtv8q08f-1386d4ec"
+    },
+    "gatewaySha256": "ca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c",
+    "bases": {
+      "controller": "ghcr.io/solarcloud7/clusterio-docker-controller@sha256:bbbc25ec679905992a31a8da60b5be2f43ec56b809ff508ea5f8786977dd8c53",
+      "host": "ghcr.io/solarcloud7/clusterio-docker-host@sha256:98a66d7b39359408ebbb255ff44814b2920ab0fa30596a8a71a872b40df2e232"
+    },
+    "images": {
+      "controller": "sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f",
+      "host": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f"
+    }
+  },
+  "cleanup": {
+    "success": true,
+    "errors": [],
+    "logs": [
+      {
+        "container": "se-manual-mtvo3v75-5a55e9d8-copy-client",
+        "bytes": 0,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo3v75-5a55e9d8-host-2",
+        "bytes": 205205,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo3v75-5a55e9d8-host-1",
+        "bytes": 179709,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtvo3v75-5a55e9d8-controller",
+        "bytes": 59447,
+        "truncated": false
+      }
+    ]
+  },
+  "hashes": {
+    "docker/production/compose.yml": "35d4db9df2fabf12f1de16fda7129b6a78f30fc4884f7c0d7b1137e1ec42002b",
+    "docker/production/settings.json": "adef5483b1ba010447e043f982a73ac8c5dbc0eaa2ccdfcbd11494e0d12b7117",
+    "docker/production/provision.mjs": "c72daf3379b0cc2914ff20a3caaec5ab7a5f62d2fa8c81b830222f7cebda6e0b",
+    "tests/manual/production-profile/lab.mjs": "3d2ae584228af2af30da472940d08280bece2297277ead556610113d5dea2731",
+    "tests/manual/production-profile/run.mjs": "fb6510971ac5f987452e0f57275a9972f44967d6572a6713164c5aeb7d86ae59",
+    "tests/manual/production-profile/oracle.mjs": "17f8917bf19fbb362a0cd991db22d62f4fd12328b2849e044f5c1418693fc87a",
+    "tests/manual/transfer-reliability/cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+    "tests/manual/transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+    "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+  },
+  "containers": [
+    {
+      "name": "controller",
+      "image": "sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/static",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    },
+    {
+      "name": "host-1",
+      "image": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/opt/factorio-client",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "destination": "/lab",
+          "writable": false
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    },
+    {
+      "name": "host-2",
+      "image": "sha256:9da20f57dd2d52906b8f3712aa6ac5c8b4d5bafd6fed925ebe5ed60e95ecfd5f",
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "mounts": [
+        {
+          "type": "volume",
+          "destination": "/clusterio/data",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/logs",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/mods",
+          "writable": true
+        },
+        {
+          "type": "volume",
+          "destination": "/clusterio/tokens",
+          "writable": false
+        },
+        {
+          "type": "volume",
+          "destination": "/opt/factorio-client",
+          "writable": false
+        },
+        {
+          "type": "bind",
+          "destination": "/lab",
+          "writable": false
+        }
+      ],
+      "hashes": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db  /release/package.tgz\nca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c  /release/gateway.zip\n"
+    }
+  ],
+  "instances": [
+    {
+      "name": "clusterio-host-1-instance-1",
+      "id": 779400250,
+      "host": 1
+    },
+    {
+      "name": "clusterio-host-2-instance-1",
+      "id": 177649562,
+      "host": 2
+    }
+  ],
+  "settings": {
+    "clusterio-host-1-instance-1": {
+      "surface_export.max_concurrent_jobs": 1,
+      "surface_export.sectioned_codec": false,
+      "surface_export.debug_mode": false,
+      "surface_export.belt_trace": false,
+      "surface_export.profile_batches": false,
+      "surface_export.debug_destination_snapshot": false,
+      "factorio.settings": {
+        "visibility": {
+          "public": false,
+          "lan": false
+        },
+        "require_user_verification": true,
+        "auto_pause": false,
+        "autosave_interval": 5
+      }
+    },
+    "clusterio-host-2-instance-1": {
+      "surface_export.max_concurrent_jobs": 1,
+      "surface_export.sectioned_codec": false,
+      "surface_export.debug_mode": false,
+      "surface_export.belt_trace": false,
+      "surface_export.profile_batches": false,
+      "surface_export.debug_destination_snapshot": false,
+      "factorio.settings": {
+        "visibility": {
+          "public": false,
+          "lan": false
+        },
+        "require_user_verification": true,
+        "auto_pause": false,
+        "autosave_interval": 5
+      }
+    }
+  },
+  "gatewayMaps": [
+    {
+      "mod": "0.6.5",
+      "layout": "one_gate",
+      "locations": {
+        "surfexp_gateway_hub": {
+          "hidden": false,
+          "distance": 25.5,
+          "orientation": 0.24499999987892807,
+          "magnitude": 2.25
+        },
+        "surfexp_gateway_1": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.049999999813735485,
+          "magnitude": 1
+        },
+        "surfexp_gateway_2": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.2999999998137355,
+          "magnitude": 1
+        },
+        "surfexp_gateway_3": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.5499999998137355,
+          "magnitude": 1
+        },
+        "surfexp_gateway_4": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.7999999998137355,
+          "magnitude": 1
+        }
+      },
+      "routes": {
+        "surfexp_gateway_link_hub_aquilo": {
+          "from": "aquilo",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_fulgora": {
+          "from": "fulgora",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_gleba": {
+          "from": "gleba",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub": {
+          "from": "nauvis",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_vulcanus": {
+          "from": "vulcanus",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        }
+      },
+      "platforms": [],
+      "success": true,
+      "instance": "clusterio-host-1-instance-1",
+      "instanceId": 779400250
+    },
+    {
+      "mod": "0.6.5",
+      "layout": "one_gate",
+      "locations": {
+        "surfexp_gateway_hub": {
+          "hidden": false,
+          "distance": 25.5,
+          "orientation": 0.24499999987892807,
+          "magnitude": 2.25
+        },
+        "surfexp_gateway_1": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.049999999813735485,
+          "magnitude": 1
+        },
+        "surfexp_gateway_2": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.2999999998137355,
+          "magnitude": 1
+        },
+        "surfexp_gateway_3": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.5499999998137355,
+          "magnitude": 1
+        },
+        "surfexp_gateway_4": {
+          "hidden": true,
+          "distance": 45,
+          "orientation": 0.7999999998137355,
+          "magnitude": 1
+        }
+      },
+      "routes": {
+        "surfexp_gateway_link_hub_aquilo": {
+          "from": "aquilo",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_fulgora": {
+          "from": "fulgora",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_gleba": {
+          "from": "gleba",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub": {
+          "from": "nauvis",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        },
+        "surfexp_gateway_link_hub_vulcanus": {
+          "from": "vulcanus",
+          "to": "surfexp_gateway_hub",
+          "hidden": false
+        }
+      },
+      "platforms": [],
+      "success": true,
+      "instance": "clusterio-host-2-instance-1",
+      "instanceId": 177649562
+    }
+  ],
+  "hostSettings": {
+    "1": {
+      "host.allow_remote_updates": false,
+      "host.allow_plugin_updates": false
+    },
+    "2": {
+      "host.allow_remote_updates": false,
+      "host.allow_plugin_updates": false
+    }
+  },
+  "controllerSettings": {
+    "surface_export.max_inflight_transfers_per_instance": 1,
+    "surface_export.gateway_mode": "one_gate"
+  },
+  "controllerLocalSettings": {
+    "controller.allow_remote_updates": false,
+    "controller.allow_plugin_updates": false,
+    "controller.allow_plugin_install": false
+  },
+  "recovery": {
+    "schemaVersion": 1,
+    "case": "lost-source-reply",
+    "run": "se-manual-mtvo3v75-5a55e9d8",
+    "contract": {
+      "schemaVersion": 3,
+      "engine": "2.1.17",
+      "invariants": [
+        "At most one physically usable copy at each sampled boundary",
+        "At least one copy retains the original per-item/quality, belt-side and fluid cargo",
+        "Recovery does not send a second import for the canonical transfer ID",
+        "Lost-reply and source-crash cases eventually complete with source absent and destination usable"
+      ],
+      "notInvariant": [
+        "platform index after restore",
+        "local simulation tick",
+        "item position within a belt segment",
+        "travel pause"
+      ],
+      "forbiddenAssists": [
+        "manufactured successful reply",
+        "editing cargo or validation evidence",
+        "unlocking or deleting copies before observation",
+        "changing recovery timers or receipt capacity"
+      ],
+      "bounds": {
+        "setupSeconds": 600,
+        "caseSeconds": 600,
+        "commandSeconds": 30,
+        "replyBytes": 1048576,
+        "profileRecordsPerInstance": 2000
+      },
+      "cases": [
+        {
+          "id": "coordinated-restore",
+          "purpose": "Back up quiesced lab volumes with a completed transfer and an uncertain acknowledgement; erase, restore and require normal recovery plus exact cargo/history"
+        },
+        {
+          "id": "lost-source-reply",
+          "purpose": "Real source deletion succeeds; its host response is withheld, then controller disconnects and retries"
+        },
+        {
+          "id": "lost-destination-reply",
+          "purpose": "Real destination release succeeds; its host response is withheld, then controller disconnects and retries"
+        },
+        {
+          "id": "aged-recovery-intent",
+          "purpose": "Withhold a real source-deletion reply, stop the controller, age only the retained intent timestamp by one day, then restart and require completion"
+        },
+        {
+          "id": "crash-source-before-save",
+          "purpose": "SIGKILL source host after deletion but before a save containing its receipt; restart from the verified earlier checkpoint"
+        },
+        {
+          "id": "restore-old-source",
+          "purpose": "After acknowledged transfer completion, reload an earlier source save while retaining current controller/destination state"
+        },
+        {
+          "id": "performance",
+          "purpose": "Compare fixed small/large fixtures with operation timing disabled, normal timing, and batch timing; include scheduler and queue setup boundaries"
+        }
+      ]
+    },
+    "name": "transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+    "before": {
+      "present": true,
+      "tick": 629,
+      "index": 1,
+      "surface": 2,
+      "platformHidden": false,
+      "surfaceHidden": false,
+      "travelPaused": true,
+      "canary": {
+        "active": true,
+        "disabled": false
+      },
+      "locked": false,
+      "held": false,
+      "usable": true,
+      "cargo": {
+        "inventories": {
+          "space-platform-hub@0,0:1": {
+            "space-platform-foundation/normal": 10
+          },
+          "space-platform-hub@0,0:2": {},
+          "assembling-machine-1@8.5,0.5:2": {},
+          "assembling-machine-1@8.5,0.5:3": {},
+          "assembling-machine-1@8.5,0.5:4": {},
+          "assembling-machine-1@8.5,0.5:8": {},
+          "steel-chest@8.5,4.5:1": {
+            "iron-plate/rare": 17,
+            "copper-plate/normal": 23
+          }
+        },
+        "lanes": {
+          "transport-belt@-7.5,5.5:1": {
+            "iron-plate/normal": 1
+          },
+          "transport-belt@-7.5,5.5:2": {
+            "copper-plate/rare": 1
+          },
+          "transport-belt@-5.5,5.5:1": {
+            "iron-plate/rare": 1
+          },
+          "transport-belt@-5.5,5.5:2": {
+            "copper-plate/normal": 1
+          }
+        },
+        "fluids": {
+          "storage-tank@-7.5,0.5": {
+            "name": "water",
+            "amount": 123,
+            "temperature": 15
+          }
+        },
+        "entities": [
+          "assembling-machine-1@8.5,0.5",
+          "space-platform-hub@0,0",
+          "steel-chest@8.5,4.5",
+          "storage-tank@-7.5,0.5",
+          "transport-belt@-5.5,5.5",
+          "transport-belt@-7.5,5.5"
+        ]
+      }
+    },
+    "transferId": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+    "held": {
+      "run": "se-manual-mtvo3v75-5a55e9d8",
+      "pid": 359,
+      "utc": "2026-09-10T15:15:26.394Z",
+      "kind": "response-held",
+      "action": "source",
+      "id": "001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+      "name": "transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+      "success": true
+    },
+    "samples": [
+      {
+        "source": {
+          "present": false,
+          "tick": 803
+        },
+        "destination": {
+          "present": true,
+          "tick": 713,
+          "index": 1,
+          "surface": 2,
+          "platformHidden": true,
+          "surfaceHidden": true,
+          "travelPaused": true,
+          "canary": {
+            "active": false,
+            "disabled": true
+          },
+          "locked": false,
+          "held": true,
+          "usable": false,
+          "cargo": {
+            "inventories": {
+              "space-platform-hub@0,0:1": {
+                "space-platform-foundation/normal": 10
+              },
+              "space-platform-hub@0,0:2": {},
+              "assembling-machine-1@8.5,0.5:2": {},
+              "assembling-machine-1@8.5,0.5:3": {},
+              "assembling-machine-1@8.5,0.5:4": {},
+              "assembling-machine-1@8.5,0.5:8": {},
+              "steel-chest@8.5,4.5:1": {
+                "iron-plate/rare": 17,
+                "copper-plate/normal": 23
+              }
+            },
+            "lanes": {
+              "transport-belt@-7.5,5.5:1": {
+                "iron-plate/normal": 1
+              },
+              "transport-belt@-7.5,5.5:2": {
+                "copper-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:1": {
+                "iron-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:2": {
+                "copper-plate/normal": 1
+              }
+            },
+            "fluids": {
+              "storage-tank@-7.5,0.5": {
+                "name": "water",
+                "amount": 123,
+                "temperature": 15
+              }
+            },
+            "entities": [
+              "assembling-machine-1@8.5,0.5",
+              "space-platform-hub@0,0",
+              "steel-chest@8.5,4.5",
+              "storage-tank@-7.5,0.5",
+              "transport-belt@-5.5,5.5",
+              "transport-belt@-7.5,5.5"
+            ]
+          }
+        }
+      },
+      {
+        "source": {
+          "present": false,
+          "tick": 2964
+        },
+        "destination": {
+          "present": true,
+          "tick": 2879,
+          "index": 1,
+          "surface": 2,
+          "platformHidden": false,
+          "surfaceHidden": false,
+          "travelPaused": true,
+          "canary": {
+            "active": true,
+            "disabled": false
+          },
+          "locked": false,
+          "held": false,
+          "usable": true,
+          "cargo": {
+            "inventories": {
+              "space-platform-hub@0,0:1": {
+                "space-platform-foundation/normal": 10
+              },
+              "space-platform-hub@0,0:2": {},
+              "assembling-machine-1@8.5,0.5:2": {},
+              "assembling-machine-1@8.5,0.5:3": {},
+              "assembling-machine-1@8.5,0.5:4": {},
+              "assembling-machine-1@8.5,0.5:8": {},
+              "steel-chest@8.5,4.5:1": {
+                "iron-plate/rare": 17,
+                "copper-plate/normal": 23
+              }
+            },
+            "lanes": {
+              "transport-belt@-7.5,5.5:1": {
+                "iron-plate/normal": 1
+              },
+              "transport-belt@-7.5,5.5:2": {
+                "copper-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:1": {
+                "iron-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:2": {
+                "copper-plate/normal": 1
+              }
+            },
+            "fluids": {
+              "storage-tank@-7.5,0.5": {
+                "name": "water",
+                "amount": 123,
+                "temperature": 15
+              }
+            },
+            "entities": [
+              "assembling-machine-1@8.5,0.5",
+              "space-platform-hub@0,0",
+              "steel-chest@8.5,4.5",
+              "storage-tank@-7.5,0.5",
+              "transport-belt@-5.5,5.5",
+              "transport-belt@-7.5,5.5"
+            ]
+          }
+        }
+      },
+      {
+        "source": {
+          "present": false,
+          "tick": 3069
+        },
+        "destination": {
+          "present": true,
+          "tick": 2983,
+          "index": 1,
+          "surface": 2,
+          "platformHidden": false,
+          "surfaceHidden": false,
+          "travelPaused": true,
+          "canary": {
+            "active": true,
+            "disabled": false
+          },
+          "locked": false,
+          "held": false,
+          "usable": true,
+          "cargo": {
+            "inventories": {
+              "space-platform-hub@0,0:1": {
+                "space-platform-foundation/normal": 10
+              },
+              "space-platform-hub@0,0:2": {},
+              "assembling-machine-1@8.5,0.5:2": {},
+              "assembling-machine-1@8.5,0.5:3": {},
+              "assembling-machine-1@8.5,0.5:4": {},
+              "assembling-machine-1@8.5,0.5:8": {},
+              "steel-chest@8.5,4.5:1": {
+                "iron-plate/rare": 17,
+                "copper-plate/normal": 23
+              }
+            },
+            "lanes": {
+              "transport-belt@-7.5,5.5:1": {
+                "iron-plate/normal": 1
+              },
+              "transport-belt@-7.5,5.5:2": {
+                "copper-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:1": {
+                "iron-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:2": {
+                "copper-plate/normal": 1
+              }
+            },
+            "fluids": {
+              "storage-tank@-7.5,0.5": {
+                "name": "water",
+                "amount": 123,
+                "temperature": 15
+              }
+            },
+            "entities": [
+              "assembling-machine-1@8.5,0.5",
+              "space-platform-hub@0,0",
+              "steel-chest@8.5,4.5",
+              "storage-tank@-7.5,0.5",
+              "transport-belt@-5.5,5.5",
+              "transport-belt@-7.5,5.5"
+            ]
+          }
+        }
+      },
+      {
+        "source": {
+          "present": false,
+          "tick": 5290
+        },
+        "destination": {
+          "present": true,
+          "tick": 5196,
+          "index": 1,
+          "surface": 2,
+          "platformHidden": false,
+          "surfaceHidden": false,
+          "travelPaused": true,
+          "canary": {
+            "active": true,
+            "disabled": false
+          },
+          "locked": false,
+          "held": false,
+          "usable": true,
+          "cargo": {
+            "inventories": {
+              "space-platform-hub@0,0:1": {
+                "space-platform-foundation/normal": 10
+              },
+              "space-platform-hub@0,0:2": {},
+              "assembling-machine-1@8.5,0.5:2": {},
+              "assembling-machine-1@8.5,0.5:3": {},
+              "assembling-machine-1@8.5,0.5:4": {},
+              "assembling-machine-1@8.5,0.5:8": {},
+              "steel-chest@8.5,4.5:1": {
+                "iron-plate/rare": 17,
+                "copper-plate/normal": 23
+              }
+            },
+            "lanes": {
+              "transport-belt@-7.5,5.5:1": {
+                "iron-plate/normal": 1
+              },
+              "transport-belt@-7.5,5.5:2": {
+                "copper-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:1": {
+                "iron-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:2": {
+                "copper-plate/normal": 1
+              }
+            },
+            "fluids": {
+              "storage-tank@-7.5,0.5": {
+                "name": "water",
+                "amount": 123,
+                "temperature": 15
+              }
+            },
+            "entities": [
+              "assembling-machine-1@8.5,0.5",
+              "space-platform-hub@0,0",
+              "steel-chest@8.5,4.5",
+              "storage-tank@-7.5,0.5",
+              "transport-belt@-5.5,5.5",
+              "transport-belt@-7.5,5.5"
+            ]
+          }
+        }
+      }
+    ],
+    "interruption": {
+      "kind": "controller SIGKILL after held successful reply"
+    },
+    "outcome": {
+      "transferId": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+      "operationType": "transfer",
+      "exportId": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+      "artifactSizeBytes": 3072,
+      "downloadable": false,
+      "platformName": "transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+      "sourceInstanceId": 779400250,
+      "sourceInstanceName": "clusterio-host-1-instance-1",
+      "targetInstanceId": 177649562,
+      "targetInstanceName": "clusterio-host-2-instance-1",
+      "status": "completed",
+      "observedDurationMs": null,
+      "startedAt": 1789053326164,
+      "completedAt": 1789053366628,
+      "failedAt": null,
+      "error": null,
+      "lastEventAt": 1789053366628,
+      "registrySource": "active"
+    },
+    "events": {
+      "1": [
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 359,
+          "utc": "2026-09-10T15:15:26.372Z",
+          "kind": "call",
+          "action": "source",
+          "id": "001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 359,
+          "utc": "2026-09-10T15:15:26.394Z",
+          "kind": "response-held",
+          "action": "source",
+          "id": "001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "name": "transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "success": true
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 359,
+          "utc": "2026-09-10T15:16:06.594Z",
+          "kind": "call",
+          "action": "source",
+          "id": "001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 359,
+          "utc": "2026-09-10T15:16:06.617Z",
+          "kind": "return",
+          "action": "source",
+          "id": "001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "success": true
+        }
+      ],
+      "2": [
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:15:26.167Z",
+          "kind": "call",
+          "action": "import",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:15:26.222Z",
+          "kind": "return",
+          "action": "import",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "success": true
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:15:26.340Z",
+          "kind": "call",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "verify"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:15:26.355Z",
+          "kind": "return",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "verify",
+          "success": true
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:16:06.563Z",
+          "kind": "call",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "verify"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:16:06.577Z",
+          "kind": "return",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "verify",
+          "success": true
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:16:06.618Z",
+          "kind": "call",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "go_live"
+        },
+        {
+          "run": "se-manual-mtvo3v75-5a55e9d8",
+          "pid": 358,
+          "utc": "2026-09-10T15:16:06.627Z",
+          "kind": "return",
+          "action": "destination",
+          "id": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+          "gate": "go_live",
+          "success": true
+        }
+      ]
+    },
+    "cleanup": {
+      "success": true,
+      "errors": [],
+      "logs": [
+        {
+          "container": "se-manual-mtvo3v75-5a55e9d8-copy-client",
+          "bytes": 0,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvo3v75-5a55e9d8-host-2",
+          "bytes": 205205,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvo3v75-5a55e9d8-host-1",
+          "bytes": 179709,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvo3v75-5a55e9d8-controller",
+          "bytes": 59447,
+          "truncated": false
+        }
+      ]
+    }
+  },
+  "recreatedController": {
+    "before": "b9a2b68bfa347a682cef46b870f90347559d4cf096e07f2418732eecb43a9447 sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f",
+    "after": "de5503f6a58393af198050703eb499d44b87e2173ff1a3a0b5a0383caa197852 sha256:ccad90fcc7ccea8aa71f21201f52c748f4c027ff23f541d7ae57601f536ac95f"
+  },
+  "retainedOutcome": {
+    "transferId": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+    "operationType": "transfer",
+    "exportId": "779400250:001_transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+    "artifactSizeBytes": null,
+    "downloadable": false,
+    "platformName": "transfer-cleanup-se-manual-mtvo3v75-5a55e9d8-lost-source-reply",
+    "sourceInstanceId": 779400250,
+    "sourceInstanceName": "clusterio-host-1-instance-1",
+    "targetInstanceId": 177649562,
+    "targetInstanceName": "clusterio-host-2-instance-1",
+    "status": "completed",
+    "observedDurationMs": null,
+    "startedAt": 1789053326164,
+    "completedAt": 1789053366628,
+    "failedAt": null,
+    "error": null,
+    "lastEventAt": 1789053366628,
+    "registrySource": "persisted",
+    "revisions": 1
+  },
+  "browser": {
+    "assets": [
+      {
+        "name": "settings",
+        "file": "settings.7fdac8e1b01bc380ada05ee20fc03fc8d6441dec.json",
+        "status": 200,
+        "bytes": 230,
+        "sha256": "94f95f6b4ad585fc9bb560596ea105c61f06e3ec5bdc0850e5ba702f19a82342",
+        "entries": 1
+      },
+      {
+        "name": "prototypes",
+        "file": "prototypes.63a1c045153c38b526f869919e82226fdbd2a1a2.json",
+        "status": 200,
+        "bytes": 13685738,
+        "sha256": "017964a2309ab902c884dd0e76d08a1f48c91eef1ad3b5f5eb2cc616d5168d56",
+        "entries": 251
+      },
+      {
+        "name": "locale",
+        "file": "locale.02f0535631357c0eea8c4b51d85f7ede77c21449.json",
+        "status": 200,
+        "bytes": 564019,
+        "sha256": "c8bd8bc808236e46a04edbba1f5df3d203bc050814909e3b5275fec1edb48465",
+        "entries": 7585
+      },
+      {
+        "name": "defines",
+        "file": "defines.5b30c614f60a1125cf27fc6f27bba07b1010dcb5.json",
+        "status": 200,
+        "bytes": 36753,
+        "sha256": "7f888f36659b951c701c4af73ba107df3ae3abe61ad069e43f482366cc5ee0f5",
+        "entries": 62
+      },
+      {
+        "name": "spritesheet",
+        "file": "spritesheet.e2a2686c1c0dcf7e829fd8a9c1b00f152891414c.png",
+        "status": 200,
+        "bytes": 3033557,
+        "sha256": "fda63289ce88675b3d7e0f048e0b9a7b2345f5dc350b8063fd62c51e976b287b",
+        "png": true
+      },
+      {
+        "name": "metadata",
+        "file": "metadata.8740476572d1f843eb5b6895d953064d9c8b4fca.json",
+        "status": 200,
+        "bytes": 372986,
+        "sha256": "63e138554d05ce88f7baee8b6b6c32c3cf24d3e4b2cc198d6be6a34a4da169d4",
+        "entries": 8
+      }
+    ],
+    "pageErrors": [],
+    "failedResponses": [],
+    "nodes": [
+      {
+        "id": "instance:779400250",
+        "text": "clusterio-host-1-instance-1localhost:34100"
+      },
+      {
+        "id": "instance:177649562",
+        "text": "clusterio-host-2-instance-1localhost:34200"
+      }
+    ],
+    "visibleGateways": [
+      "surfexp_gateway_hub"
+    ],
+    "gatewayRoutes": [
+      "aquilo",
+      "fulgora",
+      "gleba",
+      "nauvis",
+      "vulcanus"
+    ],
+    "transferVisible": true,
+    "success": true
+  },
+  "finishedAt": "2026-09-10T15:17:02.914Z",
+  "verdict": "PASS",
+  "violations": [],
+  "reason": "Lost reply recovered with exact cargo and one usable destination"
+}
