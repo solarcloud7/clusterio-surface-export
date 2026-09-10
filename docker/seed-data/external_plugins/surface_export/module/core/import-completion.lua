@@ -341,7 +341,7 @@ function ImportCompletion.run_phase1(job)
 	log(string.format("[Import] Phase 1 complete (tick %d). Inventory restore scheduled for tick %d", game.tick, job.pending_beacon_tick))
 end
 
-local function restore_inventories(job)
+local function restore_inventories(job, budget)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
 
@@ -349,56 +349,66 @@ local function restore_inventories(job)
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
 	PhaseRecorder.start(job, "inventories")
-	local inv_restored = 0
-	local inv_skipped = 0
+	local cursor = job.inventory_cursor or {index = 1, beacons = true, restored = 0, skipped = 0}
+	job.inventory_cursor = cursor
 	local inv_item_state = Deserializer.new_item_state_session()
 	local inv_ok, inv_err = pcall(function()
-		for _, entity_data in ipairs(entities_to_create) do
-			if entity_data and entity_data.entity_id and entity_data.type == "beacon" then
+		local work = 0
+		while work < budget do
+			if cursor.index > #entities_to_create then
+				if cursor.disabling_beacons then break end
+				if cursor.beacons then cursor.beacons = false
+				else cursor.disabling_beacons = true end
+				cursor.index = 1
+			end
+			local entity_data = entities_to_create[cursor.index]
+			if not entity_data then break end
+			work = work + 1
+			if cursor.disabling_beacons then
+				local entity = entity_data.entity_id and entity_map[entity_data.entity_id]
+				if entity and entity.valid and entity.type == "beacon" then entity.disabled_by_script = true end
+			elseif entity_data.entity_id and ((entity_data.type == "beacon") == cursor.beacons) then
 				local entity = entity_map[entity_data.entity_id]
 				if entity and entity.valid then
 					Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses, inv_item_state)
-				end
+					-- Beacon speed effects determine ingredient slot capacity. Keep them through
+					-- all inventory writes; disable them in the final bounded pass. Production
+					-- entities remain dormant throughout restoration and between callbacks.
+					if entity.type ~= "beacon" and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
+						entity.disabled_by_script = true
+					end
+					for _, inventory in ipairs((entity_data.specific_data or {}).inventories or {}) do
+						work = work + #(inventory.items or {})
+					end
+					cursor.restored = cursor.restored + 1
+				else cursor.skipped = cursor.skipped + 1 end
 			end
-		end
-		for _, entity_data in ipairs(entities_to_create) do
-			if entity_data and entity_data.entity_id and entity_data.type ~= "beacon" then
-				local entity = entity_map[entity_data.entity_id]
-				if entity and entity.valid then
-					Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses, inv_item_state)
-					inv_restored = inv_restored + 1
-				else
-					inv_skipped = inv_skipped + 1
-				end
-			end
+			-- An entity inventory remains atomic; progress advances only after its writes finish.
+			cursor.index = cursor.index + 1
 		end
 	end)
 	Deserializer.release_item_state_session(inv_item_state)
 	record_item_state(job, inv_item_state)
 	if not inv_ok then error(inv_err, 0) end
-	log_item_state(job)
 	PhaseRecorder.stop(job, "inventories")
-	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
+	if not cursor.disabling_beacons or cursor.index <= #entities_to_create then
+		job.metrics.inventories_completed_tick = nil
+		return false
+	end
+	log_item_state(job)
+	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped", cursor.restored, cursor.skipped))
 	if job.inventory_overflow_losses.total > 0 then
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
 	end
-
-
-	for _, entity_data in ipairs(entities_to_create) do
-		if entity_data and entity_data.entity_id then
-			local entity = entity_map[entity_data.entity_id]
-			if entity and entity.valid and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
-				entity.disabled_by_script = true
-			end
-		end
-	end
+	job.inventory_cursor = nil
 	if job.transfer_id and job.target_platform and job.target_platform.valid then
 		job.target_platform.paused = true
 		log(string.format("[Import] Platform %s re-paused for validation (tick %d)", job.platform_name, game.tick))
 	end
+	return true
 end
 
-function ImportCompletion.run_phase2(job)
+function ImportCompletion.run_phase2(job, batch_size)
 	job.metrics = job.metrics or {}
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
@@ -406,7 +416,7 @@ function ImportCompletion.run_phase2(job)
 	-- Persist only the next phase; inventory scratch objects are released before yielding.
 	if not job.phase2_stage then
 		Timing.stop(job.job_id, "deferred_beacon_wait")
-		restore_inventories(job)
+		if not restore_inventories(job, (batch_size or 50) * 10) then return end
 		job.phase2_stage = "held_items"
 		return
 	end

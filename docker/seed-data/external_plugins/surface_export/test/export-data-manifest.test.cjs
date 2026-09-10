@@ -126,14 +126,22 @@ function luaTableKeys(table) {
 	return keys;
 }
 
-function envelopeKeys(source) {
+function envelopeKeys(source, discriminator = "compressed") {
 	const marker = "ExportCache.record(export_id, {";
-	const start = source.indexOf(marker);
-	assert.notEqual(start, -1,
-		"export-pipeline.lua no longer builds the envelope with an inline table at ExportCache.record — "
-		+ "the key list this test reads is gone, and an empty list would agree with an empty manifest");
-	return luaTableKeys(matchedBlock(source, start + marker.length - 1)).sort();
+	const variants = [];
+	for (let start = source.indexOf(marker); start !== -1; start = source.indexOf(marker, start + marker.length)) {
+		const keys = luaTableKeys(matchedBlock(source, start + marker.length - 1)).sort();
+		if (keys.includes(discriminator)) variants.push(keys);
+	}
+	assert.equal(variants.length, 1, "expected exactly one cache envelope for " + discriminator);
+	return variants[0];
 }
+
+test("internal section envelope is explicit and distinct from the downloadable envelope", () => {
+	assert.deepEqual(envelopeKeys(exportPipelineSource, "section_codec"), [
+		"platform_name", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
+	]);
+});
 
 const manifestNames = MANIFEST.map(row => row.name);
 

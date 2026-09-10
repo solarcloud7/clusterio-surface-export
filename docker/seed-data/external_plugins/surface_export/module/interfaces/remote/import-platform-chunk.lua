@@ -3,12 +3,21 @@ local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
 local function import_platform_chunk(platform_name, chunk_data, chunk_num, total_chunks, force_name, operation_id)
   force_name = force_name or "player"
+  if operation_id ~= nil and type(operation_id) ~= "string" then return "ERROR:Invalid operation identity" end
+  if type(chunk_data) ~= "string" or type(total_chunks) ~= "number" or total_chunks < 1
+    or total_chunks % 1 ~= 0 or total_chunks == math.huge or type(chunk_num) ~= "number"
+    or chunk_num % 1 ~= 0 or chunk_num < 1 or chunk_num > total_chunks then
+    return "ERROR:Invalid chunk range"
+  end
   
   if not storage.chunked_imports then
     storage.chunked_imports = {}
   end
   
-  local session_key = platform_name .. "_" .. force_name
+  -- Names are not operation identities: concurrent sources can use the same name.
+  -- Retain the legacy key only for callers without an operation ID.
+  local session_key = operation_id and operation_id ~= "" and ("operation:" .. operation_id)
+    or (platform_name .. "_" .. force_name)
   if not storage.chunked_imports[session_key] then
     storage.chunked_imports[session_key] = {
       platform_name = platform_name,
@@ -21,6 +30,12 @@ local function import_platform_chunk(platform_name, chunk_data, chunk_num, total
   end
   
   local session = storage.chunked_imports[session_key]
+  if session.total_chunks ~= total_chunks or session.platform_name ~= platform_name or session.force_name ~= force_name then
+    return "ERROR:Chunk metadata changed within the operation"
+  end
+  if session.chunks[chunk_num] and session.chunks[chunk_num] ~= chunk_data then
+    return "ERROR:Conflicting duplicate chunk"
+  end
   Timing.begin(session.timing_id, "destination-lua", operation_id ~= "" and operation_id or nil)
   Timing.start(session.timing_id, "chunk_delivery", "inclusive")
   session.chunks[chunk_num] = chunk_data

@@ -394,11 +394,18 @@ test("the shipped instruments tree is scanned at its measured size", async (t) =
 		return;
 	}
 	const records = findInstrumentFiles();
-	assert.equal(records.length, 32);
+	assert.equal(records.length, 42);
+	for (const name of ["tick-watch/codec-scaling.mjs", "tick-watch/full-transfer.mjs", "rcon-throughput/run.mjs"]) {
+		assert.ok(records.some(entry => entry.path === `tests/instruments/${name}`), `new instrument ${name} must be scanned`);
+	}
+	for (const name of ["tile-query.mjs", "payload-encoding.mjs", "crafter-dormancy.mjs"]) {
+		assert.ok(records.some((entry) => entry.path === `tests/instruments/callback-profile/${name}`),
+			`the callback instrument ${name} must be included in grounding checks`);
+	}
 	for (const name of ["run-capture.mjs", "run-remove.mjs", "verify-remove-parity.mjs"]) {
 		assert.ok(records.some((entry) => entry.path === `tests/instruments/belt-boundary/${name}`),
 			`the belt experiment ${name} must be included in grounding checks`);
 	}
 	assert.equal(records.filter((entry) => entry.path.endsWith(".test.mjs")).length, 0);
-	assert.equal(new Set(records.map((entry) => entry.unit)).size, 12);
+	assert.equal(new Set(records.map((entry) => entry.unit)).size, 15);
 });

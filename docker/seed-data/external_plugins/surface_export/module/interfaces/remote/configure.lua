@@ -28,6 +28,9 @@ local function configure(config)
   if config.max_export_cache_size then
     AsyncProcessor.set_max_export_cache_size(config.max_export_cache_size)
   end
+  if config.sectioned_codec ~= nil then
+    storage.surface_export_config.sectioned_codec = config.sectioned_codec == true
+  end
   if config.profile_batches ~= nil then
     storage.surface_export_config.profile_batches = config.profile_batches == true
   end

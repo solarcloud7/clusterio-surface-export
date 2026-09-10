@@ -1,4 +1,5 @@
 import { timed, timedSync } from "./timing";
+import { normalizeSectionExport, prepareSectionImport } from "./section-codec";
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
 import {
@@ -22,6 +23,7 @@ export interface LuaConfigure {
 	debugMode: boolean;
 	debugDestinationSnapshot?: boolean;
 	profileBatches?: boolean;
+	sectionedCodec?: boolean;
 	beltBatchSize?: number;
 	beltTrace?: boolean;
 	maxExportCacheSize: number;
@@ -29,11 +31,13 @@ export interface LuaConfigure {
 
 export class LuaInterface {
 	private readonly host: RconHost;
+	private sectionedCodec = false;
  constructor(host: RconHost, private readonly logger: ChunkLogger) {
   this.host = { sendRcon: (command, expectEmpty) => timed("RCON request round trip", "round-trip", () => host.sendRcon(command, expectEmpty)) };
  }
 
 	async configure(cfg: LuaConfigure): Promise<void> {
+		this.sectionedCodec = cfg.sectionedCodec === true;
 		const beltBudget = cfg.beltBatchSize ?? 500;
 		if (!Number.isInteger(beltBudget) || beltBudget < 1 || beltBudget > 1_000_000) {
 			throw new Error("belt_batch_size must be an integer from 1 to 1000000");
@@ -47,7 +51,7 @@ export class LuaInterface {
 			`show_progress=${cfg.showProgress}, ` +
 			`debug_mode=${cfg.debugMode}, ` +
 			`debug_destination_snapshot=${cfg.debugDestinationSnapshot === true}, ` +
-			`profile_batches=${cfg.profileBatches === true}, ` +
+			`profile_batches=${cfg.profileBatches === true}, sectioned_codec=${this.sectionedCodec}, ` +
 			`max_export_cache_size=${cfg.maxExportCacheSize}` +
 			`}) ` +
 			`end`;
@@ -150,7 +154,7 @@ export class LuaInterface {
 			return null;
 		}
 		const parsed = timedSync("Artifact JSON decoding", () => JSON.parse(jsonText));
-		return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+		return parsed && typeof parsed === "object" ? normalizeSectionExport(parsed as Record<string, unknown>) : null;
 	}
 
 	async listExportsJson(): Promise<string[]> {
@@ -173,10 +177,12 @@ export class LuaInterface {
 		forceName: string,
 		exportData: ExportData | Record<string, unknown>,
 	): Promise<void> {
+		const transportData = this.sectionedCodec
+			? await timed("Sectioned payload preparation", "inclusive", () => prepareSectionImport(exportData)) : exportData;
 		await sendChunkedJson(
 			this.host,
 			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}", "${escapeString(String(exportData._operationId || exportData._transferId || ""))}"))`,
-			exportData,
+			transportData,
 			this.logger,
 			RCON_CHUNK_SIZE,
 		);

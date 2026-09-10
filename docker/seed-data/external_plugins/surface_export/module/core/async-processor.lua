@@ -13,7 +13,7 @@ local AsyncProcessor = {}
 
 local config = {
 	batch_size = 50,
-	max_concurrent_jobs = 3,
+	max_concurrent_jobs = 1,
 	show_progress = true,
 	sync_mode = false,
 }
@@ -47,6 +47,8 @@ function AsyncProcessor.get_sync_mode()
 end
 
 function AsyncProcessor.set_max_concurrent_jobs(value)
+	assert(type(value) == "number" and value >= 1 and value % 1 == 0 and value < math.huge,
+		"max_concurrent_jobs must be a positive finite integer")
 	config.max_concurrent_jobs = value
 	ExportCache.set_concurrency(value)
 end
@@ -128,11 +130,18 @@ function AsyncProcessor.process_tick()
 
 	local job_list = {}
 	for job_id, job in pairs(storage.async_jobs) do
-		if not job.completion_interrupted then
-			table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0})
+		if not job.completion_interrupted and not (job.pending_beacon_tick and game.tick < job.pending_beacon_tick) then
+			table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0,
+				last_step = job.last_step_tick or -1})
 		end
 	end
-	table.sort(job_list, function(a, b) return a.started < b.started end)
+	-- Share the callback budget across both directions. Persist the last serviced
+	-- tick so a long export cannot starve a later import after a save/reload.
+	table.sort(job_list, function(a, b)
+		if a.last_step ~= b.last_step then return a.last_step < b.last_step end
+		if a.started ~= b.started then return a.started < b.started end
+		return a.id < b.id
+	end)
 
 	if #job_list > 0 and game.tick % 60 == 0 and should_show_progress() then
 		for _, entry in ipairs(job_list) do
@@ -153,11 +162,12 @@ function AsyncProcessor.process_tick()
 		end
 
 		local job = entry.job
+		job.last_step_tick = game.tick
 
 		if job.type == "export" then
 			local ok, err = pcall(function()
 				if job.entities_complete then
-					ExportPipeline.complete(job)
+					ExportPipeline.complete(job, get_batch_size())
 				else
 					local done = Timing.scope(job.job_id, "entities", ExportPipeline.process_batch, job, get_batch_size, should_show_progress)
 					if done then job.entities_complete = true end
@@ -169,14 +179,16 @@ function AsyncProcessor.process_tick()
 			end
 		elseif job.type == "import" then
 			local ok, err = pcall(function()
-				if job.pending_beacon_tick then
+				if job.setup_pending then
+					ImportPipeline.process_setup(job)
+				elseif job.pending_beacon_tick then
 					if game.tick >= job.pending_beacon_tick then
 						job.pending_beacon_tick = nil
 						job.phase2_started = true
-						ImportCompletion.run_phase2(job)
+						ImportCompletion.run_phase2(job, get_batch_size())
 					end
 				elseif job.phase2_started then
-					ImportCompletion.run_phase2(job)
+					ImportCompletion.run_phase2(job, get_batch_size())
 				elseif job.entities_complete or job.phase1_started then
 					ImportCompletion.run_phase1(job)
 				else

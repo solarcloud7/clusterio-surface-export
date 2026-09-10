@@ -17,7 +17,8 @@ if (args[0] === "--analyze") {
   console.log(JSON.stringify(result, null, 2));
   process.exitCode = result.verdict === "PASS" ? 0 : 1;
 } else {
-  assert.ok(args.every(arg => ["--fail-after-build", "--empty-hub-control", "--restart-controller", "--profile-callbacks"].includes(arg)), "unknown option");
+  assert.ok(args.every(arg => ["--fail-after-build", "--empty-hub-control", "--restart-controller", "--profile-callbacks", "--large"].includes(arg)), "unknown option");
+  assert.ok(!(args.includes("--large") && args.includes("--empty-hub-control")), "large and empty hub are separate fixtures");
   assert.ok(!(args.includes("--profile-callbacks") && args.includes("--restart-controller")), "profile and restart are separate fixtures");
   const { withWorkflowLock } = await import("../../../tools/shared/workflow-lock.mjs");
   const { docker, HOSTS, instanceIds, preflightState, assertLeaseClean, fetchTransferSummaries, sleep } =
@@ -30,19 +31,23 @@ if (args[0] === "--analyze") {
   const profileCode = profiling ? readFileSync(new URL("../../instruments/callback-profile/probe.lua", import.meta.url), "utf8") : "";
   if (profiling) {
     report.callbackProfile = { readings: [], cleanup: {}, limitations: [
-      "Temporary six-entity fixture; not a production workload benchmark.",
+      args.includes("--large") ? "Bounded synthetic platform: 400 full chests, 402 isolated belts, 16384 tiles." : "Temporary six-entity fixture; not a production workload benchmark.",
       "Whole scheduler callback elapsed time; includes nested stage instrumentation, not exclusive CPU time.",
       "Import/export setup in RCON handlers is outside the scheduler callback.",
-      "At most 64 callbacks per instance; truncation prevents a complete-run maximum claim.",
+      `At most ${args.includes("--large") ? 512 : 64} callbacks per instance; truncation prevents a complete-run maximum claim.`,
     ] };
     report.sourceHashes["callback-profile/probe.lua"] = createHash("sha256").update(profileCode).digest("hex");
   }
-  report.fixture = args.includes("--empty-hub-control") ? "empty-hub" : "starter-hub";
+  report.fixture = args.includes("--large") ? "large" : args.includes("--empty-hub-control") ? "empty-hub" : "starter-hub";
   for (const path of ["probe.lua", "oracle.mjs", "delete-failure.mjs", "README.md"]) {
     report.sourceHashes[path] = createHash("sha256").update(readFileSync(new URL(path, import.meta.url))).digest("hex");
   }
   report.implementationHashes = {};
   for (const path of ["controller.ts", "lib/transfer-orchestrator.ts", "lib/lua-interface.ts", "instance.ts", "messages.ts",
+    "module/core/export-pipeline.lua", "module/utils/operation-timing.lua",
+    "module/utils/payload-encoder.lua", "module/core/async-processor.lua",
+    "module/import_phases/tile_restoration.lua",
+    "module/export_scanners/tile_scanner.lua",
     "module/core/import-completion.lua", "module/core/import-pipeline.lua", "module/core/destination-hold.lua", "module/import_phases/latch_rearm.lua",
     "module/interfaces/remote/delete-platform-for-transfer.lua", "module/interfaces/remote/destination-hold.lua",
     "module/utils/game-utils.lua", "module/utils/version-compat.lua", "module/utils/transfer-receipts.lua"]) {
@@ -56,7 +61,7 @@ if (args[0] === "--analyze") {
     assert.ok(Buffer.byteLength(cmd) <= 32768, "RCON command exceeds contract");
     const raw = docker(["exec", "surface-export-controller", "npx", "clusterioctl", "--log-level", "error",
       "--config", "/clusterio/tokens/config-control.json", "instance", "send-rcon", HOSTS[host].instance, cmd],
-    { timeout: 20_000, maxBuffer: profiling ? 262144 : 65536 });
+    { timeout: 20_000, maxBuffer: args.includes("--large") ? 4194304 : profiling ? 262144 : 65536 });
     if (profiling) for (const line of raw.split(/\r?\n/)) {
       const marker = line.indexOf("[SE_CALLBACK_V1]");
       if (marker < 0) continue;
@@ -88,15 +93,16 @@ if (args[0] === "--analyze") {
         assert.equal(world.engine, "2.1.17", "re-certify for the new engine pin");
         report.versions[host] = world;
         worlds[host] = world.world;
-        if (profiling) lua(host, `local profile=(function() ${profileCode} end)();return profile('arm','${prefix}')`);
+        if (profiling) lua(host, `local profile=(function() ${profileCode} end)();return profile('arm','${prefix}',${args.includes("--large") ? 512 : 64} == 512 and 512 or nil)`);
       }
       const ids = instanceIds();
       for (const kind of ["baseline", "fault"]) {
         const name = `${prefix}-${kind}`;
         names.push(name); // Own cleanup even if construction fails halfway.
         const leg = report[kind] = { name };
-        leg.before = probe(1, args.includes("--empty-hub-control") ? "build-empty" : "build", name).state;
+        leg.before = probe(1, args.includes("--large") ? "build-large" : args.includes("--empty-hub-control") ? "build-empty" : "build", name).state;
         assert.equal(leg.before.usable, true, "fixture is not initially usable");
+        if (args.includes("--large")) leg.tilesBefore = probe(1, "tiles", name).tiles;
         if (args.includes("--fail-after-build")) throw new Error("Injected harness failure after construction");
         if (kind === "fault") { armed = name; probe(1, "arm", name); }
         const start = lua(1, `local p; for _,candidate in pairs(game.forces.player.platforms) do
@@ -158,6 +164,10 @@ if (args[0] === "--analyze") {
           }
         }
         save();
+        if (args.includes("--large")) {
+          leg.tilesAfter = probe(2, "tiles", name).tiles;
+          assert.deepEqual(leg.tilesAfter, leg.tilesBefore, "physical tile set changed");
+        }
         console.log(`${kind}: ${leg.transferId} -> ${leg.outcome.status}${leg.recoveryOutcome ? ` -> recovered ${leg.recoveryOutcome.status}` : ""}`);
       }
       Object.assign(report, analyze(report));

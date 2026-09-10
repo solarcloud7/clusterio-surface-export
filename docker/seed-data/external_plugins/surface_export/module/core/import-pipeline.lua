@@ -12,6 +12,7 @@ local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
 local ImportTarget = require("modules/surface_export/core/import-target")
 
+local SectionCodec = require("modules/surface_export/utils/section-codec")
 local ImportPipeline = {}
 
 function ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
@@ -25,9 +26,9 @@ function ImportPipeline.queue_from_file(filename, new_platform_name, force_name,
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
 end
 
-function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
-	storage.async_job_id_counter = storage.async_job_id_counter + 1
-	local job_id = "import_" .. storage.async_job_id_counter
+function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing, pending_job)
+	if not pending_job then storage.async_job_id_counter = storage.async_job_id_counter + 1 end
+	local job_id = pending_job and pending_job.job_id or ("import_" .. storage.async_job_id_counter)
 
 	log(string.format("[Import Queue] job_id=%s, platform='%s', force=%s, requester=%s, data_type=%s",
 		job_id, tostring(new_platform_name), tostring(force_name), tostring(requester_name), type(json_data)))
@@ -35,11 +36,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import Queue] JSON string size: %d bytes", #json_data))
 	end
 
+	if not pending_job then
 	Timing.begin(job_id, "destination-lua", receive_timing and receive_timing.operation_id)
 	Timing.start(job_id, "queue_setup", "inclusive")
 	Timing.start(job_id, "decode")
 	PhaseProfiler.init(job_id, PhaseRecorder.profiler_names())
 	PhaseProfiler.start(job_id, "queue_setup")
+	end
 
 	local parsed_data
 	if type(json_data) == "string" then
@@ -54,6 +57,32 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	Timing.stop(job_id, "decode")
 	Timing.bind(job_id, parsed_data._operationId or parsed_data._transferId)
+	if parsed_data.section_codec ~= nil then
+		local envelope_ok, decoder = pcall(function()
+			assert(not pending_job, "Nested sectional payload is invalid")
+			assert(parsed_data.section_codec == SectionCodec.VERSION and type(parsed_data.sections)=="table", "invalid sectional payload")
+			assert(parsed_data.section_count == #parsed_data.sections, "missing section")
+			local decoder = SectionCodec.new_decoder(parsed_data.section_count)
+			for index, section in pairs(parsed_data.sections) do
+				assert(type(index)=="number" and index%1==0 and index>=1 and index<=decoder.count
+					and type(section)=="string" and #section<=100000, "invalid compressed section")
+			end
+			return decoder
+		end)
+		if not envelope_ok then
+			Timing.finish(job_id, "failed")
+			PhaseProfiler.discard(job_id)
+			return nil, tostring(decoder)
+		end
+		storage.async_jobs[job_id] = {
+			type="import", job_id=job_id, platform_name=new_platform_name, force_name=force_name,
+			requester=requester_name, started_tick=game.tick, setup_pending=true,
+			section_decoder=decoder, section_envelope=parsed_data, receive_timing=receive_timing,
+			transfer_id=parsed_data._transferId, source_instance_id=parsed_data._sourceInstanceId,
+			operation_id=parsed_data._operationId,
+		}
+		return job_id
+	end
 	local platform_data
 	if parsed_data.compressed and parsed_data.payload then
 		log(string.format("[Decompression] Decompressing import data (%d bytes compressed)", #parsed_data.payload))
@@ -124,6 +153,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	Timing.stop(job_id, "compatibility_checks")
 	Timing.start(job_id, "platform_preparation")
+	Timing.start(job_id, "platform_naming", "execution", "platform_preparation")
 	local force = game.forces[force_name] or game.forces.player
 
 	local original_name = new_platform_name
@@ -161,9 +191,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		game.print(string.format("[Import Warning] Assigned name: '%s'", final_name), {1, 0.5, 0})
 	end
 
+	Timing.stop(job_id, "platform_naming")
+	Timing.start(job_id, "target_resolution", "execution", "platform_preparation")
 	local requested_target = platform_data._targetPlanet or parsed_data._targetPlanet
 	local target_planet, requested_park, target_err = ImportTarget.resolve(requested_target)
+	Timing.stop(job_id, "target_resolution")
 	if target_err then
+		Timing.fail(job_id, "target_resolution")
 		log(string.format("[Import Queue] REFUSED: %s", target_err))
 		Timing.finish(job_id, "failed")
 		return nil, string.format("Failed to create platform: %s", target_err)
@@ -172,6 +206,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import Queue] Target '%s' is a space location, not a planet — creating on '%s', parking at '%s'",
 			requested_park, target_planet, requested_park))
 	end
+	Timing.start(job_id, "platform_creation", "execution", "platform_preparation")
 	local ok_create, new_platform = pcall(function()
 		return force.create_space_platform({
 			name = final_name,
@@ -179,8 +214,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			starter_pack = "space-platform-starter-pack"
 		})
 	end)
+	Timing.stop(job_id, "platform_creation")
 
 	if not ok_create then
+		Timing.fail(job_id, "platform_creation")
 		log(string.format("[Import Queue] FAILED: create_space_platform errored for planet='%s': %s",
 			target_planet, tostring(new_platform)))
 		Timing.finish(job_id, "failed")
@@ -188,6 +225,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end
 
 	if not new_platform or not new_platform.valid then
+		Timing.fail(job_id, "platform_creation")
 		log(string.format("[Import Queue] FAILED: Could not create platform '%s'", final_name))
 		Timing.finish(job_id, "failed")
 		return nil, "Failed to create platform"
@@ -195,6 +233,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	log(string.format("[Import Queue] Platform created: '%s' (index=%s, planet=%s)", final_name, tostring(new_platform.index), target_planet))
 
+	Timing.start(job_id, "starter_pack", "execution", "platform_preparation")
 	local ok, err = pcall(function()
 		new_platform.apply_starter_pack()
 		-- Starter cargo belongs to platform construction, not the imported payload.
@@ -205,8 +244,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		assert(inventory, "starter hub has no main inventory")
 		inventory.clear()
 	end)
+	Timing.stop(job_id, "starter_pack")
 
 	if not ok then
+		Timing.fail(job_id, "starter_pack")
 		log(string.format("[Import Queue] FAILED: apply_starter_pack errored for platform '%s': %s",
 			final_name, tostring(err)))
 		GameUtils.delete_platform(new_platform)
@@ -215,12 +256,14 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end
 
 	if not new_platform.surface or not new_platform.surface.valid then
+		Timing.fail(job_id, "starter_pack")
 		GameUtils.delete_platform(new_platform)
 		log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
 		Timing.finish(job_id, "failed")
 		return nil, "Platform surface not valid after activation"
 	end
 
+	Timing.start(job_id, "starter_cleanup", "execution", "platform_preparation")
 	local starter_entities = new_platform.surface.find_entities_filtered({})
 	log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s') — destroying non-hub starters", #starter_entities, final_name))
 	for _, ent in ipairs(starter_entities) do
@@ -234,6 +277,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 	end
 
+	Timing.stop(job_id, "starter_cleanup")
+	Timing.start(job_id, "platform_parking", "execution", "platform_preparation")
 	if is_transfer then
 		new_platform.paused = true
 		log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
@@ -265,6 +310,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 				final_name, tostring(park_target), tostring(err_loc)))
 		end
 	end
+	Timing.stop(job_id, "platform_parking")
+	Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
 	if park_target and Gateway.is_gateway(park_target) and imported_schedule then
 		local stripped = Gateway.strip_gateway_records(imported_schedule)
 		if stripped then
@@ -291,6 +338,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
 		if not schedule_apply_ok then
+			Timing.fail(job_id, "schedule_restoration")
 			GameUtils.delete_platform(new_platform)
 			Timing.finish(job_id, "failed")
 		return nil, "Failed to restore platform schedule: " .. tostring(schedule_apply_err)
@@ -301,11 +349,14 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			imported_schedule_summary.interrupt_count,
 			tostring(imported_schedule_summary.group)))
 	elseif is_transfer then
+		Timing.fail(job_id, "schedule_restoration")
 		GameUtils.delete_platform(new_platform)
 		Timing.finish(job_id, "failed")
 		return nil, "Transfer payload missing required platform schedule"
 	end
 
+	Timing.stop(job_id, "schedule_restoration")
+	Timing.start(job_id, "import_cargo_totals", "execution", "platform_preparation")
 	local total_items = 0
 	local total_fluids = 0
 	if platform_data.verification then
@@ -313,6 +364,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		total_fluids = Util.sum_fluids(platform_data.verification.fluid_counts or {})
 	end
 
+	Timing.stop(job_id, "import_cargo_totals")
 	PhaseProfiler.stop(job_id, "queue_setup")
 	Timing.stop(job_id, "platform_preparation")
 	Timing.stop(job_id, "queue_setup")
@@ -324,7 +376,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		platform_name = new_platform.name,
 		force_name = force_name,
 		requester = requester_name,
-		started_tick = game.tick,
+		started_tick = pending_job and pending_job.started_tick or game.tick,
+		last_step_tick = pending_job and pending_job.last_step_tick or nil,
 
 		platform_data = platform_data,
 		source_bucket = source_bucket,
@@ -393,6 +446,27 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	return job_id
 end
 
+
+-- Decode a single independent frame per scheduler callback, then prepare the
+-- platform on a later callback. Only persisted tables/strings cross tick boundaries.
+function ImportPipeline.process_setup(job)
+	if not job.decoded_data then
+		local decoder = job.section_decoder
+		local raw = Timing.scope(job.job_id, "decompression", helpers.decode_string, job.section_envelope.sections[decoder.next])
+		assert(raw, "Failed to decompress section")
+		job.decoded_data = Timing.scope(job.job_id, "decode_payload", SectionCodec.decode_step, decoder, raw)
+		if job.decoded_data then
+			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet"}) do
+				if job.section_envelope[key] ~= nil then job.decoded_data[key] = job.section_envelope[key] end
+			end
+			job.section_decoder, job.section_envelope = nil, nil
+		end
+		return
+	end
+	local id, err = ImportPipeline.queue(job.decoded_data, job.platform_name, job.force_name, job.requester, job.receive_timing, job)
+	assert(id, err)
+end
+
 function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	Timing.stop(job.job_id, "scheduler_wait")
 	if not job.target_surface or not job.target_surface.valid then
@@ -442,7 +516,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 		end
 	end
 	if not job.tiles_placed then
-		Timing.scope(job.job_id, "tiles", TileRestoration.process, job)
+		Timing.scope(job.job_id, "tiles", TileRestoration.process, job, get_batch_size() * 20)
 		if job.tiles_placed and not job.metrics.tiles_completed_tick then
 			PhaseRecorder.stop(job, "tiles")
 			job.metrics.tiles_placed = #(job.tiles_to_place or {})
@@ -456,9 +530,11 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 
 	if not job.beacons_placed and job.tiles_placed then
 		PhaseRecorder.start(job, "beacons")
-		local beacons_created = 0
-		local beacons_skipped = 0
-		for _, entity_data in ipairs(job.entities_to_create) do
+		local beacons_created = job.beacons_created or 0
+		local beacons_skipped = job.beacons_skipped or 0
+		local last = math.min(#job.entities_to_create, (job.beacon_cursor or 1) + get_batch_size() - 1)
+		for index = job.beacon_cursor or 1, last do
+			local entity_data = job.entities_to_create[index]
 			if entity_data and entity_data.name and not entity_data._beacon_placed then
 				local proto = prototypes.entity[entity_data.name]
 				if proto and proto.type == "beacon" then
@@ -475,8 +551,14 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				end
 			end
 		end
-		job.beacons_placed = true
+		job.beacon_cursor = last + 1
+		job.beacons_created, job.beacons_skipped = beacons_created, beacons_skipped
 		PhaseRecorder.stop(job, "beacons")
+		if last < #job.entities_to_create then
+			job.metrics.beacons_completed_tick = nil
+			return false
+		end
+		job.beacons_placed = true
 		if beacons_created > 0 or beacons_skipped > 0 then
 			log(string.format("[Import] Beacon pre-placement: %d placed, %d failed (tick %d)", beacons_created, beacons_skipped, game.tick))
 		end

@@ -33,6 +33,36 @@ and the oracle do.
 Static guards enforce repository rules across these categories; they are not substitutes for physical or
 integration evidence.
 
+### Factorio dependency compatibility
+
+Before adopting a library, identify where it executes: Factorio mod Lua, the
+Clusterio Node process, or external test tooling. A dependency working in one does
+not establish compatibility in another. Prefer a documented native facility when
+it meets the requirement.
+
+For code shipped into Factorio, inspect the library and its transitive dependencies
+against the pinned engine's [libraries and functions](https://lua-api.factorio.com/latest/auxiliary/libraries.html)
+and the relevant runtime/prototype API. That page was verified as version 2.1.17 on
+2026-09-09; recheck its displayed version before using the moving `latest` URL.
+Factorio removes `io`, `os`, `coroutine`, `loadfile` and `dofile`, replaces `package`
+and restricts `debug`. Its loader expects Lua files within supported mod paths;
+ordinary native-extension loading is not a supported dependency path. Pure Lua
+alone is insufficient: check language features, loader timing, deterministic
+behavior and saved-state requirements. `require` is unavailable during events,
+remote calls and console execution, so dependencies must load at a supported stage.
+
+Standalone Lua 5.2 tests prove isolated logic with their declared stubs. They do not
+reproduce Factorio's modified standard library, lifecycle or native objects. The
+existing API-name lint checks selected receiver member names; it is not a complete
+sandbox or third-party dependency validator. Before relying on an engine-dependent
+library, run its actual proposed operation in the pinned Factorio process, including
+save/reload when it retains state, and retain the exact version and result.
+
+The current sectional codec adds no third-party Lua library. Its Lua framing uses
+repository modules and Factorio's `helpers.table_to_json`, `helpers.json_to_table`,
+`helpers.encode_string` and `helpers.decode_string`. The separate Node implementation
+uses built-in `node:zlib`; the standalone test interpreter is development tooling.
+
 ### Legacy gallery save isolation
 
 CI runs `gallery-suite` in its own fresh cluster; the remaining suites share a separate

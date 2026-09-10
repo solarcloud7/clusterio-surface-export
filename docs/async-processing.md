@@ -1,6 +1,6 @@
 # Tick-batched export and import jobs
 
-Current behavior reviewed on 2026-09-08 for the Factorio 2.1.17 configuration.
+Current behavior reviewed on 2026-09-09 for the Factorio 2.1.17 configuration.
 The filename, `AsyncProcessor` API, and `storage.async_jobs` identifiers remain unchanged.
 
 ## Execution model
@@ -23,11 +23,20 @@ callback delays the next update. Batching does not guarantee stable UPS or no hi
 
 The web transfer action and `surface-export start-transfer` command enter a controller
 queue before sending an export request. Acceptance means **queued**, not arrived.
-Requests sharing either their source or destination instance run in arrival order;
-independent instance pairs can run concurrently. Reservations last through terminal
+By default, requests sharing either endpoint run one at a time in arrival order;
+independent instance pairs can run concurrently. The experimental controller option
+`surface_export.max_inflight_transfers_per_instance` permits 1–4 admitted operations
+per endpoint (default 1). This overlaps controller/transport work while the separate
+Lua scheduler limits job steps. It does not remove operation reservations or make
+all Lua entry points incremental. Reservations last through terminal
 cleanup or rollback. An unresolved pending-transfer intent also blocks admission on
 its instances. Duplicate requests for the same source platform reuse the queue entry;
 a different destination is refused while that entry exists.
+
+Unknown operations and unresolved recovery intents block their endpoints even when
+the overlap limit is raised. Chunk uploads carrying operation IDs are isolated by
+that identity; platform names are not unique. Legacy callers without an ID retain
+the old name/force session key and must not interleave same-name uploads.
 
 Queued platforms remain untouched until dispatch. The gateway map shows a queued marker
 at the source endpoint, followed by preparation and then transfer motion. The controller's
@@ -50,43 +59,85 @@ Verification: a local three-platform concurrent submission completed in order th
 source cleanup, retained measured queue waits under the canonical IDs, and left no
 test platforms after cleanup. This verifies admission behavior, not a throughput gain.
 
+## Experimental sectional codec
+
+The instance option `surface_export.sectioned_codec` is **off by default**. When enabled,
+source-initiated transfers serialize independently valid versioned JSON frames across
+scheduler visits and compress one frame per visit. Frames have a 65,536-byte raw limit
+and a 4,096-frame limit. An oversized individual record or metadata field explicitly
+falls back to the existing codec; it is not silently split or truncated.
+
+The instance plugin reassembles those source frames and produces the existing deflate /
+base64 artifact for controller storage and downloads. That artifact compression uses
+Node's asynchronous zlib API. Source frame compression still uses Factorio's synchronous
+helper, once per frame; it has not been moved outside Factorio. File exports and clones
+retain their existing encoding path.
+
+For a destination with the option enabled, the instance plugin prepares independent
+compressed frames outside Factorio. Lua accepts the envelope into an import job, then
+inflates and decodes one frame per scheduler visit. Platform preparation follows on a
+later visit. Sequence, declared frame count, array offsets, duplicate fields and frame
+sizes are checked. Strings and tables retain decode progress; profiler objects do not
+become saved job state. Missing profiler measurements after reload stay unavailable.
+
+These are local execution boundaries, not aligned controller/Lua clock intervals. A
+job's decode envelope includes ticks between callbacks; accumulated execution excludes
+those waits. A decode exception interrupts the job rather than replaying its callback;
+normal controller timeout/recovery still applies. This path does not make platform
+creation, native string concatenation, oversized records or belt capture incremental.
+
+Bounded acceptance on Factorio 2.1.17: the three golden platforms retained all 1,830
+blueprint-visible entity configurations. The larger transfer fixture used legacy
+fallback; the omnibus and one-of-each fixtures used sectional source compression
+across 90 and 66 work ticks respectively. These results do not certify unblueprintable
+entities or every runtime property. See the manual acceptance notes and retained raw
+observations for precise coverage and the performance matrix.
+
 ## Scheduler and synchronous work
 
 [`AsyncProcessor.process_tick()`](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)
 services pending mining-progress restoration, latch rearming, gateway staging, and
-import-session cleanup, then sorts jobs by `started_tick`. It visits at most
+import-session cleanup, then selects the least recently advanced runnable jobs, with
+`started_tick` and job ID as deterministic tie-breakers. Future beacon waits do not
+consume a slot. The last serviced tick is retained across reloads. It visits at most
 `max_concurrent_jobs` entries sequentially. Export and import completion start on the
 next eligible tick after the final entity batch.
 
-The limit counts job visits per tick, not admitted jobs, threads, or milliseconds.
-An import waiting for its deferred phase still occupies a visit. Earlier jobs can
-delay later jobs; this is not round-robin scheduling. With three visited entity jobs
-and batch size 50, a tick can examine up to 150 entity entries plus other work.
+New configurations default to one combined job step per tick. Existing configured
+limits remain in effect. Runnable jobs take turns; a pending beacon wait consumes no
+slot before its target tick. The limit counts job visits, not admitted jobs, threads
+or milliseconds. With three configured visits and batch size 50, a tick can still
+examine up to 150 entity entries plus other work. An indivisible step can still be slow.
 
 | Path | Count-limited work | Work outside the entity batch limit |
 |---|---|---|
-| Export | Entity serialization | Queue preparation; final belt capture/cargo integrity; verification construction; encoding, compression, and completion |
-| Import | General entity creation; captured belt side groups | Payload preparation and platform creation; tiles; beacon pre-placement; hub, oversized side groups/unsupported belt networks, state, inventory, held-item and fluid restoration; validation, activation, and reporting |
+| Export | Entity capture; payload entity/tile array encoding | Queue preparation; final belt capture/cargo integrity; verification construction; individual large values, compression and completion |
+| Import | Tile inspection/placement; beacon pre-placement; general entities; captured belt side groups; inventory passes | Payload preparation and platform creation; hub, oversized side groups/unsupported belt networks, state, a single large entity inventory, held items and fluids; validation, activation and reporting |
 
 Export batches skip belt-item capture and retain belt references. Completion reads
 their contents in one synchronous pass without simulation updates between those
 reads. That consistency boundary can be expensive and is not limited by `batch_size`.
 
-Export capture and cargo checks remain in one callback. JSON serialization runs on
-the next visit; compression, cache output and publication follow on another visit.
+Export capture and cargo checks remain in one callback. JSON serialization starts on
+the next visit and splits large entity/tile arrays across visits; compression, cache
+output and publication follow after encoding finishes on another visit.
 Source diagnostic files reuse the serialized JSON bytes instead of encoding the same
-payload again. Encoding itself remains an indivisible synchronous operation. The Lua
+payload again. Each native encoding call remains synchronous; array batches and
+object fields are joined into the existing JSON format. The default path retains the existing wire format.
+One large entity or metadata field can still exceed the intended work allowance. The Lua
 regression `tests/lua/export-phase-yields.lua` checks these callback boundaries and
 the identical diagnostic bytes; live callback measurements are recorded in the manual
 Docker acceptance notes. This does not bound export setup or a large connected belt network.
 
-Import visits yield after tiles, beacon pre-placement, the final entity batch, hub
+Import visits yield between tile and beacon batches and after the final entity batch, hub
 contents, the final belt batch, inventories, and held items. Each next phase starts
 on a later eligible tick. Hub mapping runs once before beacons. Belt writes and their
 immediate physical checks remain together within each batch. State restoration still
 sets `pending_beacon_tick = game.tick + 1` before inventories, with beacon inventories
-preceding other inventories. Scratch inventories are released before yielding;
-activatable entities remain disabled until activation; belts can still move. Progress is stored on the job,
+preceding other inventories. Scratch inventories are released before yielding.
+Production entities remain disabled until activation; beacon effects stay available
+through inventory restoration, then a bounded scan disables the beacons before
+validation. Belts can still move. Progress is stored on the job,
 including the next completion phase, so module reload does not repeat finished work.
 
 Fluid injection, exact cargo verification, activation, and result handling remain
@@ -95,6 +146,28 @@ change fluid amounts or temperatures. The failure branch still discards the fail
 destination and reports its verdict for source rollback. No phase yield enables
 early activation or removes the cargo gate. A phase can still be individually
 expensive; these boundaries separate consecutive work, not arbitrary parts of a phase.
+
+### Count budgets added in September 2026
+
+Tile restoration inspects at most `batch_size * 20` payload entries per visit.
+It finishes the complete foundation pass before starting the overlay pass. A failed
+placement interrupts the job before entity creation. Beacon pre-placement inspects
+at most `batch_size` entities per visit. Inventory restoration visits beacon
+inventories first, then others, with a soft allowance of `batch_size * 10` scanned
+entities plus serialized item stacks. It finishes one entity's inventories before
+yielding and releases its scratch inventory each visit. A final count-limited pass
+disables beacons after every dependent inventory has been written. Disabling a
+speed beacon earlier can reduce a machine's input capacity: the native crusher
+reproduction accepted nine chunks with its beacon enabled and only seven without
+it. Keeping the beacon through insertion preserved all nine after later shutdown.
+The next cursor is saved
+on the job; an exception interrupts the job instead of retrying partial writes.
+
+Payload encoding uses at most `max(1, floor(batch_size / 5))` entities or 100 times
+that many tiles in each native array-encoding call. Small payloads retain their
+single-call path. These are deterministic work counts, not millisecond deadlines.
+See [the large-fixture acceptance](../tests/instruments/callback-profile/batching.md)
+for physical parity, callback measurements and remaining unbounded paths.
 
 The 2026-09-07 force-insertion change replaces belt placement, not scheduling. Captured
 positions are passed to `force_insert_at`; alternate-position scans and stack merging are
@@ -178,8 +251,9 @@ Two other preparation readings were 20,095.605 and 20,084.829 ms (operations
 Original log messages put the long gap after schedule capture and before the
 scanned-entities/tiles message. That narrows the unmeasured substeps to entity
 collection, placement sorting, and tile scanning; it does not identify which one
-caused the delay. `tile_scanner.lua` currently requests every tile and only then
-excludes empty space in Lua. Split those measurements before choosing a fix.
+caused the delay. At that revision, `tile_scanner.lua` requested every tile and only
+then excluded empty space in Lua. The later preparation breakdown and paired tile
+query experiment below identify and reduce that extra work.
 
 These are stage execution intervals, not exclusive CPU times or complete callback
 measurements. Do not add maxima from different operations, nested validation stages,
@@ -187,6 +261,30 @@ or parent stages and their debug batches. In the debug subset, the largest recor
 source entity batch was 51.791 ms and destination entity batch 14.448 ms. These are
 limited samples, not global maxima. The scheduler has no enclosing callback timer;
 stage totals alone cannot establish the maximum pause across several jobs.
+
+### Preparation measurement boundaries
+
+Source `preparation` now contains separate measured children for `schedule_capture`,
+`entity_collection`, `entity_sorting`, `tile_scan` and `export_job_setup`.
+Destination `platform_preparation` contains `platform_naming`, `target_resolution`,
+`platform_creation`, `starter_pack`, `starter_cleanup`, `platform_parking`,
+`schedule_restoration` and `import_cargo_totals`. Each child records its parent ID,
+local profiler offsets, execution interval and separate tick boundaries. Parent
+boundaries are unchanged; nested durations must not be added together.
+
+Creation includes `force.create_space_platform`; starter pack includes
+`apply_starter_pack` and clearing generated hub cargo. The source tile scan includes
+the engine query and payload projection. These measurements add no yields
+and do not change transfer gates. Handled failures mark the responsible child;
+unexecuted children remain skipped. The [bounded measurement contract](../tests/instruments/callback-profile/preparation.md)
+defines the fixture, limits and evidence needed before selecting a batching change.
+
+The [tile-query comparison](../tests/instruments/callback-profile/tile-query.md)
+verified exact tile names and positions on three existing pads, with two paired
+measurements each. Export now excludes `out-of-map` and `empty-space` using the
+engine's inverted name filter. It retains every other tile, including modded tiles,
+without an area or result limit. The query and projection remain synchronous;
+this optimization does not establish a callback deadline.
 
 ### Candidate limits and required consistency checks
 
@@ -251,7 +349,7 @@ and sent to Lua on instance start by [instance.ts](../docker/seed-data/external_
 | `surface_export.batch_size` | 50 | Entity-list entries per visited export or general entity-creation batch; not milliseconds or a limit on all phases |
 | `surface_export.belt_batch_size` | 500 | Soft stack/member-line work target per belt callback; each captured side group remains atomic |
 | `surface_export.belt_trace` | `false` | Expensive successful belt position diagnostics; failure traces and mandatory cargo integrity stay enabled |
-| `surface_export.max_concurrent_jobs` | 3 | Job entries serviced per scheduler invocation, sequentially |
+| `surface_export.max_concurrent_jobs` | 1 | Combined import/export job entries serviced per scheduler invocation, sequentially |
 | `surface_export.show_progress` | `true` | Conditional progress notifications and periodic job logging |
 | `surface_export.profile_batches` | `false` | Additional bounded batch-level profiler records; phase totals remain enabled |
 | `surface_export.debug_mode` | `true` | Debug behavior and diagnostic output, not a processing budget |
@@ -330,7 +428,7 @@ before a job exists are observed by Clusterio, without a fabricated Lua job.
 | Destination Lua | compatibility checks | Schema, required metadata, schedule and verification checks | Before platform creation |
 | Destination Lua | platform preparation | Target creation/starter pack and schedule setup → queued | Synchronous setup |
 | Destination Lua | scheduler wait | Enqueued → first import visit | Wait, no execution accumulator |
-| Destination Lua | tiles; beacons; entities; hub mapping | Actual restoration callbacks | Tiles/beacons synchronous; entity batches accumulate across ticks |
+| Destination Lua | tiles; beacons; entities; hub mapping | Actual restoration callbacks | Tiles/beacons/entities accumulate execution across batches; hub mapping runs once |
 | Destination Lua | hub; belts; state | Phase-1 restoration calls | Separate phase totals |
 | Destination Lua | deferred beacon wait | Phase 1 sets pending tick → phase-2 callback entry | Wait excluded from execution |
 | Destination Lua | inventories; held items; fluids | Phase-2 restoration calls | Separate phase totals |

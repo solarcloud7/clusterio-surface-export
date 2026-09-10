@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "file": "codec-2.1.17.json.gz",
+  "sha256": "c5a3e160191d400140a367fe09822da6dd8f3b34ed2c5eac097820dd9870add2",
+  "decodedSha256": "6c9f30d6c629739dd4deab77f1bf91588968698a51b224ef8110bdf7e07d0eb0",
+  "bytes": 475079,
+  "decodedBytes": 7110111,
+  "reportIds": [
+    "codecscale-mtuqysr6",
+    "codecscale-mtuqz887"
+  ],
+  "payloadSha256": "40c6a4e962c3bc16d9a114c3ee5ce5a7965ad90277f8a89669f95da452aa2611",
+  "scope": "Codec experiment only. Original reports, exact captured JSON, pinned API schema, and exact executed harness sources. No production transfer or client performance acceptance."
+}

@@ -32,6 +32,10 @@ modules["export_scanners/source-cargo-integrity"] = {record = noop, verdict = fu
 modules["validators/verification"] = {count_all_items = function() mark("verify"); return {} end,
     count_fluid_segments = function() return {} end}
 local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture"}
+modules["utils/json-compat"] = {encode_json_compat = function(data)
+    if data == payload then encodes = encodes + 1; return '{"captured":true}' end
+    return '{}'
+end}
 modules["utils/util"] = {
     encode_json_compat = function(data)
         if data == payload then

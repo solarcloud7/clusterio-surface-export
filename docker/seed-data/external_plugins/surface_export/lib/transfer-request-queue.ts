@@ -16,7 +16,8 @@ const terminal = (operation: ActiveTransfer) => ["completed", "failed", "error",
 	&& !operation.timingPendingRecovery;
 const instances = (entry: QueueEntry) => [entry.request.sourceInstanceId, entry.request.targetInstanceId];
 
-// Admission reserves both instances through cleanup/recovery. No Factorio work runs while queued.
+// Admission retains each operation through cleanup/recovery. Capacity permits bounded
+// overlap of external work; Factorio's shared scheduler still controls Lua job steps.
 export class TransferRequestQueue {
 	readonly entries = new Map<string, QueueEntry>();
 	private running = new Set<string>();
@@ -31,6 +32,7 @@ export class TransferRequestQueue {
 		run(entry: QueueEntry): Promise<void>;
 		interrupted(entry: QueueEntry): Promise<void>;
 		busyInstances(): number[];
+		capacity?(): number;
 		error(error: unknown): void;
 	}) {}
 
@@ -98,18 +100,27 @@ export class TransferRequestQueue {
 				if (!this.running.has(id) && terminal(entry.operation)) { this.entries.delete(id); removed = true; }
 			}
 			if (removed) await this.persist();
-			const occupied = new Set(this.hooks.busyInstances());
+			const configured = this.hooks.capacity?.() ?? 1;
+			const capacity = Number.isInteger(configured) && configured >= 1 && configured <= 4 ? configured : 1;
+			// Unknown/recovering ownership blocks an instance regardless of normal capacity.
+			const occupied = new Map(this.hooks.busyInstances().map(id => [id, Infinity]));
+			const reserve = (entry: QueueEntry) => {
+				for (const id of new Set(instances(entry))) occupied.set(id, (occupied.get(id) ?? 0) + 1);
+			};
 			for (const entry of this.entries.values()) {
 				if (entry.operation.status !== "queued" || this.running.has(entry.id)) {
-					for (const id of instances(entry)) occupied.add(id);
+					reserve(entry);
 				}
 			}
 			for (const entry of this.entries.values()) {
 				if (entry.operation.status !== "queued" || this.running.has(entry.id)) continue;
-				const blocked = instances(entry).some(id => occupied.has(id));
+				const blocked = instances(entry).some(id => (occupied.get(id) ?? 0) >= capacity);
 				// Preserve FIFO for overlapping routes; independent pairs can run concurrently.
-				for (const id of instances(entry)) occupied.add(id);
-				if (blocked) continue;
+				if (blocked) {
+					for (const id of instances(entry)) occupied.set(id, Infinity);
+					continue;
+				}
+				reserve(entry);
 				this.running.add(entry.id);
 				entry.operation.status = "preparing";
 				try { await this.persist(); }

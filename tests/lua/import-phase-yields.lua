@@ -38,7 +38,7 @@ local function scenario(options)
         "utils/phase-profiler", "utils/transaction-history", "core/job-results", "core/gateway",
         "export_scanners/inventory-scanner", "export_scanners/fluid-registry",
         "export_scanners/entity-scanner", "utils/debug-export"}) do cache[name] = stub end
-    cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true},
+    cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true, beacon = true},
         delete_platform = function(platform) mark("discard"); platform.valid = false; return true end}
     cache["core/destination-hold"] = {
         get = function() if options.foreignHold then return {platform_index = 999, surface_index = 999} end end,
@@ -56,6 +56,10 @@ local function scenario(options)
         release_item_state_session = function() scratch = scratch - 1 end,
         restore_inventories = function(entity)
             mark("inventory")
+            if options.largeInventory and entity.type ~= "beacon" then
+                assert(not env.storage.async_jobs.test.entity_map[2].disabled_by_script,
+                    "beacon disabled before dependent inventory capacity was restored")
+            end
             if options.inventoryError then error("injected inventory error") end
             -- Completion must re-disable an entity before handing control back to the game.
             entity.disabled_by_script = false
@@ -88,6 +92,10 @@ local function scenario(options)
         restore = function(_, map) mark("activate"); map[1].disabled_by_script = false end,
     }
     cache["import_phases/fluid_restoration"] = {restore = function()
+        if options.largeInventory then
+            assert(env.storage.async_jobs.test.entity_map[2].disabled_by_script,
+                "beacon still active after inventory restoration")
+        end
         mark("fluids"); return {count = 0, segment_temps = {witness = 15}}
     end}
     cache["validators/transfer-validation"] = {
@@ -114,6 +122,13 @@ local function scenario(options)
         platform_data = {platform = {paused = true}, belt_side_groups = {{}, {}},
             verification = {item_counts = {}, fluid_counts = {}}}}
     if not options.standalone then job.transfer_id = "transfer" end
+    if options.largeInventory then
+        for _, ed in ipairs(job.entities_to_create) do
+            local items = {}; for i = 1, 600 do items[i] = {name = "iron-plate", count = i} end
+            ed.specific_data = {inventories = {{items = items}}}
+        end
+        job.entity_map[2] = {valid = true, type = "beacon", disabled_by_script = true}
+    end
     if options.legacyWait then
         job.phase1_started, job.pending_beacon_tick = true, 103
     end
@@ -123,6 +138,7 @@ local function scenario(options)
         for _, name in ipairs({"core/async-processor", "core/import-pipeline", "core/import-completion"}) do cache[name] = nil end
         local processor = env.require("modules/surface_export/core/async-processor")
         processor.set_show_progress(false)
+        if options.smallBatches then processor.set_batch_size(1) end
         local ok, err = pcall(processor.process_tick)
         assert(scratch == 0, "scratch inventory survived the callback")
         if options.errorAt and (not ok or job.completion_interrupted) then
@@ -144,6 +160,7 @@ local function scenario(options)
             return
         end
         assert(ok, tostring(err))
+        assert(not job.completion_interrupted, job.completion_interrupted and job.completion_interrupted.error)
         for name, kind in pairs(open) do assert(kind == "wait", "execution spans ticks: " .. name) end
         if not env.storage.async_jobs.test then break end
         assert(job.entity_map[1].disabled_by_script, "entity active between phases")
@@ -174,6 +191,12 @@ local function scenario(options)
         assert(spans.inventories.startTick == 103 and #eventTicks("hub") == 0 and #eventTicks("belt_batch") == 0)
     end
     assert(#eventTicks("held_items") == 1 and #eventTicks("fluids") == 1)
+    if options.largeInventory then
+        local writes = eventTicks("inventory")
+        assert(#writes == 2 and writes[1] < writes[2], "large inventories shared a callback or replayed")
+        assert(spans.inventories.callbacks >= 2, "inventory profiler did not accumulate batches")
+    end
+    if options.smallBatches then assert(spans.beacons.callbacks == 2, "beacon scan did not yield") end
     assert(spans.held_items.endTick < spans.fluids.startTick)
     if options.reject or options.beltFailure or options.holdFailure then
         assert(result.validation.success == false)
@@ -193,6 +216,7 @@ local function scenario(options)
 end
 
 scenario({label = "transfer"})
+scenario({label = "bounded beacon and inventory passes", largeInventory = true, smallBatches = true})
 scenario({label = "standalone", standalone = true})
 scenario({label = "validation rejection", reject = true})
 scenario({label = "belt failure", beltFailure = true})

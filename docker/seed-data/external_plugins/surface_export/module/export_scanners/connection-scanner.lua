@@ -95,6 +95,8 @@ function ConnectionScanner.extract_control_behavior(entity)
       for _, section in ipairs(sections) do
         local section_data = {
           group = section.group,
+          active = section.active,
+          multiplier = section.multiplier,
           filters = {}
         }
         
@@ -106,6 +108,10 @@ function ConnectionScanner.extract_control_behavior(entity)
               value = filter.value,
               min = filter.min,
               max = filter.max,
+              import_from = type(filter.import_from) == "string" and filter.import_from
+                or (filter.import_from and filter.import_from.name),
+              minimum_delivery_count = filter.minimum_delivery_count,
+              request_from = filter.request_from,
               quality = filter.quality and filter.quality.name or nil
             })
           end

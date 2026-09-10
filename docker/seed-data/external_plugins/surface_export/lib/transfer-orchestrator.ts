@@ -48,11 +48,23 @@ export class TransferOrchestrator {
 				this.txLogger.logTransactionEvent(entry.operation.transferId, "queue_interrupted", entry.operation.error, {});
 				await this.txLogger.persistTransactionLog(entry.operation.transferId);
 			},
+			capacity: () => {
+				const raw = this.plugin.controller?.config?.get("surface_export.max_inflight_transfers_per_instance");
+				return typeof raw === "number" ? raw : 1;
+			},
 			busyInstances: () => {
-				const busy = [...this.plugin.activeTransfers.values()].filter(operation => operation.status !== "queued"
+				const owned = new Set([...this.requestQueue.entries.values()].map(entry => entry.operation));
+				const busy = [...this.plugin.activeTransfers.values()].filter(operation => operation.status !== "queued" && (!owned.has(operation) || operation.timingPendingRecovery)
 					&& (!["completed", "failed", "error", "cleanup_failed"].includes(operation.status) || operation.timingPendingRecovery))
 					.flatMap(operation => [operation.sourceInstanceId, operation.targetInstanceId]);
-				for (const pending of this.plugin.pendingTransfers?.values() || []) busy.push(pending.sourceInstanceId, pending.targetInstanceId);
+				for (const [id, pending] of this.plugin.pendingTransfers?.entries() || []) {
+					const operation = this.plugin.activeTransfers.get(id);
+					if (!operation || !owned.has(operation) || operation.timingPendingRecovery
+						|| pending.sourceInstanceId !== operation.sourceInstanceId || pending.targetInstanceId !== operation.targetInstanceId
+						|| ["completed", "failed", "error", "cleanup_failed"].includes(operation.status)) {
+						busy.push(pending.sourceInstanceId, pending.targetInstanceId);
+					}
+				}
 				return busy;
 			},
 			error: error => this.logger.error(`Transfer queue: ${getErrorMessage(error)}`),

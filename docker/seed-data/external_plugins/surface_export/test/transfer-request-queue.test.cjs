@@ -33,6 +33,40 @@ function entry(id, source = 1, target = 2) {
 		operation: { transferId: id, status: "queued", sourceInstanceId: source, targetInstanceId: target } };
 }
 
+test("bounded overlapping transfers retain ownership and stop admission during recovery", async t => {
+	const started = [];
+	const plugin = { controller: { config: { get: () => 2 } }, activeTransfers: new Map(), pendingTransfers: new Map() };
+	const orchestrator = new TransferOrchestrator(plugin, messages);
+	t.after(() => orchestrator.requestQueue.stop());
+	orchestrator.runQueuedRequest = async item => { started.push(item.id); item.operation.status = "awaiting_validation"; };
+	const first = entry("1"), second = entry("2", 2, 1), third = entry("3");
+	for (const item of [first, second, third]) {
+		plugin.activeTransfers.set(item.id, item.operation);
+		await orchestrator.requestQueue.add(item);
+	}
+	await orchestrator.requestQueue.pump(); await flush();
+	assert.deepEqual(started, ["1", "2"], "combined capacity must include both directions");
+	plugin.pendingTransfers.set(first.id, { sourceInstanceId: 1, targetInstanceId: 2 });
+	first.operation.status = "failed"; first.operation.timingPendingRecovery = true;
+	await orchestrator.requestQueue.pump(); assert.deepEqual(started, ["1", "2"]);
+	first.operation.timingPendingRecovery = false;
+	await orchestrator.requestQueue.pump(); assert.deepEqual(started, ["1", "2"], "unresolved retained intent must block admission");
+	plugin.pendingTransfers.delete(first.id);
+	await orchestrator.requestQueue.pump(); await flush(); assert.deepEqual(started, ["1", "2", "3"]);
+});
+
+test("pipeline capacity never bypasses an orphan recovery or an invalid limit", async t => {
+	for (const capacity of [2, 4, 0, 5, NaN, 1.5]) {
+		const started = [];
+		const queue = new TransferRequestQueue({ capacity: () => capacity, busyInstances: () => [1],
+			run: async item => started.push(item.id), interrupted: async () => {}, error: error => { throw error; } });
+		t.after(() => queue.stop());
+		await queue.add(entry("1")); await queue.add(entry("2", 3, 4)); await queue.add(entry("3", 4, 3));
+		await queue.pump(); await flush();
+		assert.deepEqual(started, capacity === 2 || capacity === 4 ? ["2", "3"] : ["2"]);
+	}
+});
+
 test("orphan recovery authority reserves both instances even without an active timing record", async t => {
 	const plugin = { activeTransfers: new Map(), pendingTransfers: new Map([["1:old", {
 		sourceInstanceId: 1, targetInstanceId: 2,
