@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
+import { VOLUME_SUFFIXES } from "./backup-storage.mjs";
 
 export function performanceCargo(extra) {
   assert.ok(extra===0 || extra===512,"fixed fixture size required");
@@ -39,8 +40,9 @@ export function evaluateCopies(before, samples, minimumSamples=2) {
 export function analyze(report) {
   assert.equal(report.schemaVersion,1);
   assert.ok(!report.error,"report contains a harness failure");
-  assert.ok(["performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source"].includes(report.case),"unknown acceptance case");
+  assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
+  if(report.case==="coordinated-restore") return analyzeBackup(report);
   if(report.case==="performance") {
     for(const m of report.measurements||[]) {
       assert.deepEqual(m.before?.cargo,performanceCargo(m.extraEntities),"invalid performance fixture");
@@ -113,4 +115,48 @@ export function analyze(report) {
     ? "Sampled safety invariant preserved; inspect outcome separately for recovery liveness"
     : report.case==="restore-old-source" ? "Sampled safety invariant survived older source restore"
       : "Lost reply recovered with exact cargo and one usable destination"};
+}
+
+export function analyzeBackup(report) {
+  const b=report.backup;
+  for(const phase of ["archives","erased","restored"]) {
+    assert.deepEqual(b?.[phase]?.map(r=>r.suffix).sort(),[...VOLUME_SUFFIXES].sort(),"complete unique volume set required");
+  }
+  for(const archive of b.archives) {
+    assert.match(archive.sha256,/^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(archive.bytes)&&archive.bytes>0&&archive.bytes<=2*1024**3);
+    assert.equal(archive.compared,true,"backup must match stopped data");
+    const erased=b.erased.find(r=>r.suffix===archive.suffix),restored=b.restored.find(r=>r.suffix===archive.suffix);
+    assert.equal(erased.empty,true,"data loss not exercised");
+    assert.ok(Number.isInteger(erased.erasedEntries)&&erased.erasedEntries>=0);
+    if(["controller-data","host-1-data","host-2-data","tokens"].includes(archive.suffix))
+      assert.ok(erased.erasedEntries>0,"critical volume was empty before loss");
+    assert.equal(restored.sha256,archive.sha256,"restore used another backup generation");
+    assert.equal(restored.compared,true,"restored bytes not compared");
+  }
+  for(const key of ["elapsedMs","restoreElapsedMs"]) assert.ok(Number.isFinite(b[key])&&b[key]>0,"missing measured duration");
+  for(const host of [1,2]) assert.match(report.checkpoint?.[host]||"",/^[a-f0-9]{64}$/,"checkpoint hash missing");
+  for(const evidence of [report.authority,report.restoredAuthority]) {
+    assert.equal(evidence?.["surface_export_pending_transfers.json"]?.pending,1,"pending intent not retained");
+    assert.ok(evidence?.["surface_export_transaction_audit.jsonl"]?.completedRows>0,"historical audit missing");
+  }
+  assert.deepEqual(report.before?.cargo,expectedCargo,"invalid pending fixture");
+  assert.deepEqual(report.history?.before?.cargo,expectedCargo,"invalid history fixture");
+  assert.equal(report.held?.success,true);assert.ok(report.held.id.includes(report.name),"wrong withheld reply");
+  assert.equal(report.samples?.[0]?.source.present,false,"deletion not observed before backup");
+  assert.equal(report.samples?.[0]?.destination.held,true,"uncertain destination not held");
+  const pending=evaluateCopies(report.before,report.samples);
+  const history=evaluateCopies(report.history.before,report.history.samples);
+  const violations=[...pending.violations,...history.violations];
+  for(const operation of [{transferId:report.transferId,samples:report.samples,outcome:report.outcome},
+    {transferId:report.history.transferId,samples:report.history.samples,outcome:report.history.restoredOutcome}]) {
+    const last=operation.samples.at(-1);
+    if(operation.outcome?.status!=="completed"||operation.outcome.transferId!==operation.transferId||last.source.present||!last.destination.usable)
+      violations.push("restored operation did not retain one usable destination and completed history");
+    if(report.events?.[2]?.filter(e=>e.kind==="call"&&e.action==="import"&&e.id===operation.transferId).length!==1)
+      violations.push("restored operation did not retain exactly one import request");
+  }
+  assert.ok(report.events?.[1]?.filter(e=>e.kind==="call"&&e.action==="source"&&e.id.includes(report.name)).length>=2,"normal recovery retry missing");
+  return {verdict:violations.length?"STOP":"PASS",violations:[...new Set(violations)],
+    reason:"Quiesced volume restore: exact sampled cargo, normal recovery, one import and retained history"};
 }

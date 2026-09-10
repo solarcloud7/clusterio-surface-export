@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 import { DockerLab, ROOT, PLUGIN, hash, validRun } from "./docker-lab.mjs";
 import { recoveryCase, performanceCase } from "./cases.mjs";
+import { backupRestoreCase } from "./backup-restore.mjs";
 import { analyze } from "./oracle.mjs";
 
 const contract=JSON.parse(readFileSync(new URL("./contract.json",import.meta.url)));
@@ -38,14 +39,15 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
   catch(error){console.error(`HARNESS_ERROR: ${error.message}`);process.exitCode=1;}
 } else {
   const failAfterSetup=args.length===3&&args[2]==="--fail-after-setup";
-  const chosen=contract.cases.find(c=>args[0]==="--case"&&args[1]===c.id&&(args.length===2||failAfterSetup));
+  const failAfterBackup=args.length===3&&args[2]==="--fail-after-backup"&&args[1]==="coordinated-restore";
+  const chosen=contract.cases.find(c=>args[0]==="--case"&&args[1]===c.id&&(args.length===2||failAfterSetup||failAfterBackup));
   if(!chosen) throw new Error("Use --list or --case with an exact listed case");
   await withWorkflowLock(async()=>{
     const run=`se-manual-${Date.now().toString(36)}-${randomUUID().slice(0,8)}`;
     const directory=join(ROOT,"ci-artifacts",run);mkdirSync(directory,{recursive:true});
     const report={schemaVersion:1,case:chosen.id,run,contract,sectionedCodec,startedAt:new Date().toISOString(),
       head:execFileSync("git",["rev-parse","HEAD"],{cwd:ROOT,encoding:"utf8"}).trim(),hashes:{},cleanup:{success:false}};
-    for(const file of ["docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json"])
+    for(const file of ["docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
     for(const file of ["dist/node/controller.js","dist/node/instance.js","module/core/import-completion.lua","module/utils/transfer-receipts.lua"])
       report.hashes[`plugin/${file}`]=hash(join(PLUGIN,file));
@@ -60,6 +62,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
       if(failAfterSetup) throw new Error("Intentional harness failure after setup; verify cleanup.success");
       lab.deadline=Date.now()+contract.bounds.caseSeconds*1000;
       if(chosen.id==="performance") await performanceCase(lab,report,save);
+      else if(chosen.id==="coordinated-restore") await backupRestoreCase(lab,report,save,{failAfterBackup});
       else await recoveryCase(lab,report,save);
     } catch(error) {report.error=error.stack;report.verdict="HARNESS_ERROR";}
     finally {
