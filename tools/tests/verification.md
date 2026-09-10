@@ -1,6 +1,9 @@
 # Serial verification
 
-Run from the canonical checkout. The default command runs the offline tooling tests:
+Run from the canonical checkout with root dependencies, PowerShell 7 and Docker available.
+Lint uses the existing build-plugin runner and its Linux dependency cache; it does not
+replace dependencies in the checkout with a Windows npm installation.
+The default command runs the offline tooling tests and the repository's lint suite:
 
 ```powershell
 npm run verify

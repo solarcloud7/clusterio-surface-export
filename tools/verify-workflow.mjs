@@ -46,6 +46,13 @@ async function main(options) {
 		};
 		let runtimePath = options["--runtime"] && resolve(options["--runtime"]);
 		const stages = [["offline tests", () => command("offline tests", ["--test", ...globSync("tests/**/*.test.mjs", { cwd: root })])]];
+		stages.push(["repository lint", () => {
+			console.log("Verifying repository lint");
+			// Reuse the repository's Linux dependency volume and cross-language lint runner.
+			return runCommand("pwsh", ["-NoProfile", "-File", join(root, "tools/clusterio/build-plugin.ps1"), "lint"],
+				{ label: "repository lint", cwd: root, timeout: 600000,
+					evidenceFile: join(directory, "commands.jsonl") }).record;
+		}]);
 		if (options["--build-config"]) stages.push(["runtime build", () => {
 			const config = JSON.parse(readFileSync(resolve(options["--build-config"])));
 			const keys = ["artifact", "commit", "version", "gateway", "gatewaySha256", "output"];

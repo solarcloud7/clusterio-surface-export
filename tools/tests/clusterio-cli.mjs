@@ -13,7 +13,7 @@ export function readConfigList(raw, fields) {
 		const lines = raw.split(/\r?\n/).filter(line => line.startsWith(`${field} `));
 		assert.equal(lines.length, 1, `Expected one value for ${field}`);
 		try { values[field] = JSON.parse(lines[0].slice(field.length + 1)); }
-		catch { throw new Error(`Invalid JSON value for ${field}; see retained command output`); }
+		catch (error) { throw new Error(`Invalid JSON value for ${field}; see retained command output`, { cause: error }); }
 	}
 	return values;
 }
