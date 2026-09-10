@@ -35,7 +35,7 @@ export function verifyGatewayMap(state, { version, baseline } = {}) {
 	}
 }
 
-const observer = `
+export const gatewayMapObserver = `
 local locations,routes,platforms={},{},{}
 for name,p in pairs(prototypes.space_location) do
   if name:find('surfexp_gateway_',1,true)==1 then
@@ -66,7 +66,7 @@ function main() {
 	const candidates = seededInstances().filter(i => String(i.hostNumber) === values.host);
 	assert.equal(candidates.length, 1, "--host must select exactly one seeded instance");
 	const instance = candidates[0].instance;
-	const command = `/sc local ok,result=pcall(function() ${observer} end); rcon.print(helpers.table_to_json(ok and result or {error=tostring(result)}))`;
+	const command = `/sc local ok,result=pcall(function() ${gatewayMapObserver} end); rcon.print(helpers.table_to_json(ok and result or {error=tostring(result)}))`;
 	const raw = execFileSync("docker", ["exec", "surface-export-controller", "npx", "clusterioctl",
 		"--config", "/clusterio/tokens/config-control.json", "--log-level", "error",
 		"instance", "send-rcon", instance, command], { encoding: "utf8", timeout: 60_000 });

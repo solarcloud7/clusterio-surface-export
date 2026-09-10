@@ -10,7 +10,10 @@ const readRule = () => fs.existsSync(path) ? JSON.parse(fs.readFileSync(path,"ut
 const record = event => fs.appendFileSync(events,JSON.stringify({run,pid:process.pid,utc:new Date().toISOString(),...event})+"\n");
 Module._load = function(request, parent, isMain) {
   const result = originalLoad.apply(this,arguments);
-  if (!result?.InstancePlugin || !String(Module._resolveFilename(request,parent,isMain)).replaceAll("\\","/").endsWith("/surface_export/dist/node/instance.js")) return result;
+  if (!result?.InstancePlugin) return result;
+  const filename=String(Module._resolveFilename(request,parent,isMain)).replaceAll("\\","/");
+  if (!["/surface_export/dist/node/instance.js", "/@solarcloud7/plugin-surface-export/dist/node/instance.js"]
+    .some(suffix=>filename.endsWith(suffix))) return result;
   const proto=result.InstancePlugin.prototype;
   if(proto[patched]) return result;
   proto[patched]=true;

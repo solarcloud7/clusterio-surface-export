@@ -1,0 +1,139 @@
+[
+  {
+    "kind": "fresh-save-missing-recycler",
+    "run": "se-manual-mtvgh3z0-a1678394",
+    "startedAt": "2026-09-10T11:40:21.474Z",
+    "hashes": {
+      "package": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db",
+      "gateway": "b406a48fd55fc5de6b25928c2cc50626ae15706ae20b5114a2e025ecd32aa42d",
+      "runner": "1c55964d7345dbf48304dfd1fcac0201c71987eee4b659fbd26563ec7a3bc3e8",
+      "lab": "8217771334a011ad713450e3dffa30b07467bb48ebc9407465852e6b5694a067",
+      "bootstrap": "37a4b294d170f4d0175c978b438d69ea7cc487d0fce04a74d14ab2d15a3ca429"
+    },
+    "installation": {
+      "success": true,
+      "installer": "2.0.0-alpha.27",
+      "unprivileged": true,
+      "packageVersion": "0.10.281",
+      "peers": {
+        "controller": "2.0.0-alpha.27",
+        "host": "2.0.0-alpha.27",
+        "ctl": "2.0.0-alpha.27",
+        "lib": "2.0.0-alpha.27"
+      },
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "automaticRegistration": true,
+      "npmVersion": "11.19.0",
+      "runScripts": true,
+      "engine": "Version: 2.1.17 (build 87315, linux64, full)\nVersion: 64\nMap input version: 1.0.0-0\nMap output version: 2.1.17-0",
+      "image": "ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27.r7"
+    },
+    "verdict": "HARNESS_ERROR",
+    "cleanup": {
+      "success": true,
+      "errors": [],
+      "logs": [
+        {
+          "container": "se-manual-mtvgh3z0-a1678394-install",
+          "bytes": 0,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgh3z0-a1678394-controller",
+          "bytes": 913,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgh3z0-a1678394-host-1",
+          "bytes": 620,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgh3z0-a1678394-host-2",
+          "bytes": 531,
+          "truncated": false
+        }
+      ]
+    },
+    "error": "Error: docker exec failed: Command failed: docker exec --user clusterio -w /consumer se-manual-mtvgh3z0-a1678394-controller sh -c \"$@\" > /consumer/last-control-output.txt 2>&1; status=$?; cat /consumer/last-control-output.txt; exit \"$status\" consumer-ctl /consumer/node_modules/.bin/clusterioctl --log-level verbose --config /consumer/config-control.json instance save create clusterio-host-1-instance-1 consumer.zip --seed 69420\n\n+==========================================================+\nI WARNING:  This is the development branch for the 2.0     I\nI           version of clusterio.  Expect things to break. I\n+==========================================================+\n\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading available plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loaded 1 plugins from plugin-list.json\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading Plugins\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading config from /consumer/config-control.json\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | connecting to ws://consumer-controller:8080/api/socket\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | Open\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | received hello from controller version 2.0.0-alpha.27\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | registering control\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | received ready from controller\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Surface Export plugin initializing...\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Instance ID: 1589409999, Name: clusterio-host-1-instance-1\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Surface Export plugin initialized\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Loaded plugin surface_export in 11ms\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Writing server-settings.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Syncing mods\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Creating save\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 2026-09-10 11:41:14; Factorio 2.1.17 (build 87315, linux64, full, space-age)\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Operating system: Linux\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Program arguments: \"/opt/test-client/bin/x64/factorio\" \"--config\" \"config.ini\" \"--create\" \"saves/consumer.zip\" \"--map-gen-seed\" \"69420\" \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Config path: config.ini\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Read data path: /opt/test-client/data\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Write data path: /clusterio/data/instances/clusterio-host-1-instance-1 [153893/256946MB]\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Binaries path: /opt/test-client/bin\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.008 System info: [CPU: 12th Gen Intel(R) Core(TM) i9-12900K, 24 cores, RAM: 31964 MB]\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.008 Environment: DISPLAY=<unset> WAYLAND_DISPLAY=<unset> DESKTOP_SESSION=<unset> XDG_SESSION_DESKTOP=<unset> XDG_CURRENT_DESKTOP=<unset> SDL_VIDEO_DRIVER=<unset> SDL_ENABLE_STEAM_SCREEN_KEYBOARD=<unset> SteamDeck=<unset> __GL_FSAA_MODE=<unset> __GL_LOG_MAX_ANISO=<unset> __GL_SYNC_TO_VBLANK=<unset> __GL_SORT_FBCONFIGS=<unset> __GL_YIELD=<unset>\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.009 Error Util.cpp:81: Failed to load mod \"quality\": \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • quality\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • space-age\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 ------------- Error -------------\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 Failed to load mod \"quality\": \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • quality\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • space-age\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 ---------------------------------\n[\u001b[91m\u001b[1merror\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Error creating save consumer.zip: Factorio exited with status 1\n[\u001b[91m\u001b[1merror\u001b[22m\u001b[39m] Error sending request:\nError: Factorio exited with status 1\n    at FactorioServer.create (/consumer/node_modules/@clusterio/host/dist/node/src/server.js:1040:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Instance.handleInstanceCreateSaveRequest (/consumer/node_modules/@clusterio/host/dist/node/src/Instance.js:1135:13)\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | Close (code: 1000, reason: Disconnect)\n\n    at ConsumerLab.command (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/lab.mjs:16:13)\n    at ConsumerLab.start (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/lab.mjs:88:12)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:37:5\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:20:8",
+    "rawLog": "\n+==========================================================+\nI WARNING:  This is the development branch for the 2.0     I\nI           version of clusterio.  Expect things to break. I\n+==========================================================+\n\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading available plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loaded 1 plugins from plugin-list.json\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading Plugins\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Loading config from /consumer/config-control.json\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | connecting to ws://consumer-controller:8080/api/socket\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | Open\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | received hello from controller version 2.0.0-alpha.27\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | registering control\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | received ready from controller\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Surface Export plugin initializing...\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Instance ID: 1589409999, Name: clusterio-host-1-instance-1\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 surface_export: Surface Export plugin initialized\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Loaded plugin surface_export in 11ms\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Writing server-settings.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Syncing mods\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Creating save\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 2026-09-10 11:41:14; Factorio 2.1.17 (build 87315, linux64, full, space-age)\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Operating system: Linux\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Program arguments: \"/opt/test-client/bin/x64/factorio\" \"--config\" \"config.ini\" \"--create\" \"saves/consumer.zip\" \"--map-gen-seed\" \"69420\" \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Config path: config.ini\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Read data path: /opt/test-client/data\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Write data path: /clusterio/data/instances/clusterio-host-1-instance-1 [153893/256946MB]\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.000 Binaries path: /opt/test-client/bin\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.008 System info: [CPU: 12th Gen Intel(R) Core(TM) i9-12900K, 24 cores, RAM: 31964 MB]\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.008 Environment: DISPLAY=<unset> WAYLAND_DISPLAY=<unset> DESKTOP_SESSION=<unset> XDG_SESSION_DESKTOP=<unset> XDG_CURRENT_DESKTOP=<unset> SDL_VIDEO_DRIVER=<unset> SDL_ENABLE_STEAM_SCREEN_KEYBOARD=<unset> SteamDeck=<unset> __GL_FSAA_MODE=<unset> __GL_LOG_MAX_ANISO=<unset> __GL_SYNC_TO_VBLANK=<unset> __GL_SORT_FBCONFIGS=<unset> __GL_YIELD=<unset>\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1    0.009 Error Util.cpp:81: Failed to load mod \"quality\": \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • quality\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • space-age\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 ------------- Error -------------\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 Failed to load mod \"quality\": \n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • quality\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 • space-age\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1     • Missing required dependency recycler >= 2.1.0\n[\u001b[1mserver\u001b[22m] i:clusterio-host-1-instance-1 ---------------------------------\n[\u001b[91m\u001b[1merror\u001b[22m\u001b[39m] i:clusterio-host-1-instance-1 Error creating save consumer.zip: Factorio exited with status 1\n[\u001b[91m\u001b[1merror\u001b[22m\u001b[39m] Error sending request:\nError: Factorio exited with status 1\n    at FactorioServer.create (/consumer/node_modules/@clusterio/host/dist/node/src/server.js:1040:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async Instance.handleInstanceCreateSaveRequest (/consumer/node_modules/@clusterio/host/dist/node/src/Instance.js:1135:13)\n[\u001b[90m\u001b[1mverbose\u001b[22m\u001b[39m] Connector | Close (code: 1000, reason: Disconnect)\n"
+  },
+  {
+    "kind": "pid-one-restart-lock",
+    "run": "se-manual-mtvgk2mb-f5a99669",
+    "startedAt": "2026-09-10T11:42:39.690Z",
+    "hashes": {
+      "package": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db",
+      "gateway": "b406a48fd55fc5de6b25928c2cc50626ae15706ae20b5114a2e025ecd32aa42d",
+      "runner": "0568458dfc2aa174f88d8839595bbe48d4b791b03df4b1fc560d6ef416a6a918",
+      "lab": "5a9a600d5617c903975a160fab273bec71a2b6e0c9f254fc43a572dd0c914288",
+      "bootstrap": "37a4b294d170f4d0175c978b438d69ea7cc487d0fce04a74d14ab2d15a3ca429",
+      "browser.mjs": "7a2396973d268bb5a903f3ddae172c9555681ac41dec72a1474bf730d5fddaca",
+      "oracle.mjs": "f13308dd08ad05b80988d0e4bed96caa60e3ee9d536b7977638c5807c0453e6f",
+      "../transfer-reliability/docker-lab.mjs": "fc344ac621edda21de34f73b37ebf0eb98248e600523cc4fdec55b1ec0159ee2",
+      "../transfer-reliability/cases.mjs": "b70554aec4952daf6a7f7fb4b53e49f0f5be3cbe8153905f89ada685ba45e616",
+      "../transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+      "../transfer-reliability/oracle.mjs": "3e580f984cde382d95304db745caa18e56bf0eab048f793afe759c2c2eccfd1c",
+      "../../integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+    },
+    "installation": {
+      "success": true,
+      "installer": "2.0.0-alpha.27",
+      "unprivileged": true,
+      "packageVersion": "0.10.281",
+      "peers": {
+        "controller": "2.0.0-alpha.27",
+        "host": "2.0.0-alpha.27",
+        "ctl": "2.0.0-alpha.27",
+        "lib": "2.0.0-alpha.27"
+      },
+      "registration": [
+        [
+          "surface_export",
+          "@solarcloud7/plugin-surface-export"
+        ]
+      ],
+      "automaticRegistration": true,
+      "npmVersion": "11.19.0",
+      "runScripts": true,
+      "engine": "Version: 2.1.17 (build 87315, linux64, full)\nVersion: 64\nMap input version: 1.0.0-0\nMap output version: 2.1.17-0",
+      "image": "ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27.r7"
+    },
+    "verdict": "HARNESS_ERROR",
+    "cleanup": {
+      "success": true,
+      "errors": [],
+      "logs": [
+        {
+          "container": "se-manual-mtvgk2mb-f5a99669-install",
+          "bytes": 0,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgk2mb-f5a99669-controller",
+          "bytes": 2597,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgk2mb-f5a99669-host-1",
+          "bytes": 704,
+          "truncated": false
+        },
+        {
+          "container": "se-manual-mtvgk2mb-f5a99669-host-2",
+          "bytes": 620,
+          "truncated": false
+        }
+      ]
+    },
+    "error": "Error: both disposable instances ready timed out: docker exec failed: Error response from daemon: container 91de6480d7078d6877c1774f3aa8e7bce99c99a87f9a935f750695b92bc6d271 is not running\n\n    at ConsumerLab.until (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/docker-lab.mjs:55:11)\n    at async recoveryCase (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/cases.mjs:65:7)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:48:5\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:21:8",
+    "rawLog": "[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Starting Clusterio controller 2.0.0-alpha.27\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading available plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loaded 1 plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading Plugin info\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading config from config-controller.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: Surface Export controller plugin initializing...\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: Audit ledger: 0 transfer(s) from 0 row(s)\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: Surface Export controller plugin initialized\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loaded plugin surface_export\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Listening for HTTP on port 8080\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Started controller\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] WsServer | registered host 1 using version 2.0.0-alpha.27\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] WsServer | registered host 2 using version 2.0.0-alpha.27\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: Received platform export: 1022279138:001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply (source 001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply) from instance 1022279138 (transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply)\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: Stored platform export: 1022279138:001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: [resolveTargetInstance] Looking up target=1521906246 (type=number)\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: [resolveTargetInstance] Direct ID match: 1521906246\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: [Transaction 1022279138:001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply] +3.2896749999999884ms transfer_created: transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply: clusterio-host-1-instance-1 → clusterio-host-2-instance-1\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: [Transaction 1022279138:001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply] +77.78156799999852ms import_started: Awaiting validation (timeout: 30s)\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] surface_export: [Transaction 1022279138:001_transfer-cleanup-se-manual-mtvgk2mb-f5a99669-lost-source-reply] +184.9839740000025ms validation_received: Validation: SUCCESS\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Starting Clusterio controller 2.0.0-alpha.27\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading available plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loaded 1 plugins from plugin-list.json\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading Plugin info\n[\u001b[94m\u001b[1minfo\u001b[22m\u001b[39m] Loading config from config-controller.json\n",
+    "stderrSource": "docker logs --tail 28 se-manual-mtvgk2mb-f5a99669-controller, captured interactively before cleanup; the original cleanup helper retained stdout only",
+    "interactiveStderrExcerpt": "LockFileExistsError: Cannot acquire lock, a valid lock file exists at config-controller.json.lock\n    at LockFile.acquire (/consumer/node_modules/@clusterio/lib/dist/node/src/LockFile.js:64:23)\n    at async initialize (/consumer/node_modules/@clusterio/controller/dist/node/controller.js:345:9)\n    at async startup (/consumer/node_modules/@clusterio/controller/dist/node/controller.js:359:78)"
+  }
+]

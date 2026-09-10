@@ -62,6 +62,10 @@ For manually triggered, automated reply-loss, crash, save-rollback and callback-
 run `npm run test:manual:transfers -- --list`. The [manual Docker lab](tests/manual/transfer-reliability/README.md)
 creates a disposable cluster and preserves the live development cluster. These cases do not run in ordinary CI.
 
+For a clean consumer install through `npm init @clusterio`, see the
+[consumer installation lab](tests/manual/consumer-install/README.md). It accepts a plugin tarball,
+gateway ZIP, and an existing licensed client volume; no development seed saves are used.
+
 ## Before production
 
 Readiness review: main after PR #306. Its fast, gallery and integration checks passed. Local runtime-version and advertised web-bundle checks also passed after syncing the canonical checkout. These checks do not prove a packaged release or a coordinated disaster restore.
