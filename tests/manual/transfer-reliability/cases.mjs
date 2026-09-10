@@ -7,19 +7,19 @@ import { ROOT, PLUGIN, sleep } from "./docker-lab.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 import { performanceCargo } from "./oracle.mjs";
 
-function summary(lab,id) {
+export function summary(lab,id) {
   const raw=lab.ctl("surface-export","list-transfers","200");
   const rows=JSON.parse(raw.trim().split(/\r?\n/).at(-1));
   return rows.find(r=>r.transferId===id);
 }
-function start(lab,name) {
+export function start(lab,name) {
   const {result}=lab.lua(1,`local p;for _,v in pairs(game.forces.player.platforms) do if v.name=='${name}' then assert(not p);p=v end end
     local trigger=assert(package.loaded['__level__/modules/surface_export/core/transfer-trigger.lua'])
     local job,err=trigger.start(game.forces.player,assert(p).index,${lab.ids[2]});assert(job,err);return {success=true,job=job}`);
   return `${lab.ids[1]}:${result.job}`;
 }
-const sample=(lab,name)=>({source:lab.probe(1,"read",name).state,destination:lab.probe(2,"read",name).state});
-async function terminal(lab,id,status="completed") {
+export const sample=(lab,name)=>({source:lab.probe(1,"read",name).state,destination:lab.probe(2,"read",name).state});
+export async function terminal(lab,id,status="completed") {
   let last;
   try {return await lab.until(()=>{last=summary(lab,id);return last?.status===status&&last;},`transfer ${status}`,120);}
   catch(error) {

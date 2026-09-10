@@ -1,0 +1,617 @@
+{
+  "schemaVersion": 1,
+  "case": "coordinated-restore",
+  "run": "se-manual-mtv0cgdd-a7c451ae",
+  "contract": {
+    "schemaVersion": 3,
+    "engine": "2.1.17",
+    "invariants": [
+      "At most one physically usable copy at each sampled boundary",
+      "At least one copy retains the original per-item/quality, belt-side and fluid cargo",
+      "Recovery does not send a second import for the canonical transfer ID",
+      "Lost-reply and source-crash cases eventually complete with source absent and destination usable"
+    ],
+    "notInvariant": [
+      "platform index after restore",
+      "local simulation tick",
+      "item position within a belt segment",
+      "travel pause"
+    ],
+    "forbiddenAssists": [
+      "manufactured successful reply",
+      "editing cargo or validation evidence",
+      "unlocking or deleting copies before observation",
+      "changing recovery timers or receipt capacity"
+    ],
+    "bounds": {
+      "setupSeconds": 600,
+      "caseSeconds": 600,
+      "commandSeconds": 30,
+      "replyBytes": 1048576,
+      "profileRecordsPerInstance": 2000
+    },
+    "cases": [
+      {
+        "id": "coordinated-restore",
+        "purpose": "Back up quiesced lab volumes with a completed transfer and an uncertain acknowledgement; erase, restore and require normal recovery plus exact cargo/history"
+      },
+      {
+        "id": "lost-source-reply",
+        "purpose": "Real source deletion succeeds; its host response is withheld, then controller disconnects and retries"
+      },
+      {
+        "id": "lost-destination-reply",
+        "purpose": "Real destination release succeeds; its host response is withheld, then controller disconnects and retries"
+      },
+      {
+        "id": "aged-recovery-intent",
+        "purpose": "Withhold a real source-deletion reply, stop the controller, age only the retained intent timestamp by one day, then restart and require completion"
+      },
+      {
+        "id": "crash-source-before-save",
+        "purpose": "SIGKILL source host after deletion but before a save containing its receipt; restart from the verified earlier checkpoint"
+      },
+      {
+        "id": "restore-old-source",
+        "purpose": "After acknowledged transfer completion, reload an earlier source save while retaining current controller/destination state"
+      },
+      {
+        "id": "performance",
+        "purpose": "Compare fixed small/large fixtures with operation timing disabled, normal timing, and batch timing; include scheduler and queue setup boundaries"
+      }
+    ]
+  },
+  "sectionedCodec": false,
+  "startedAt": "2026-09-10T04:08:50.401Z",
+  "head": "4871228d36a8a4085c50a5c978f2615fd13ad109",
+  "hashes": {
+    "docker-lab.mjs": "b723dbd424055e3a5451f59fdd7a5d8c3dbf1bbb86cf92604e3da20a832523ba",
+    "cases.mjs": "f8b85fbcc44ca6abd67c1921eea11ce3764c745863acee0dd4182b995ad4689a",
+    "fault-hook.cjs": "57012590017c1cd6c793d1ac8b8a52cc685502707aa4208d62e17394898f34d9",
+    "age-intent.mjs": "638d6bfbe8c166f574eb54dd5e375cf8ae93f3c8573def9fa15f623994857be4",
+    "performance.lua": "c62fef7ea28dda150c40afdecf654cdec08c2411843dc6483cf900a6bc063785",
+    "oracle.mjs": "d8dca5b2c142f6ff74b8ef827280b0207709863427a64b68b3f33087e57a996f",
+    "contract.json": "c06d7322e38624939b361571f6a5b3f1c2a849aca811870b50696b753c91964e",
+    "backup-restore.mjs": "93d92f22123917785c2e9f609cdcfd8db8b0b33a8b622b66ba5d6ccba4d0eaaa",
+    "backup-storage.mjs": "9decc85cb015b00725a84bdfae8e5b83e54f85a390e8c2c2d6169c9d36f0438a",
+    "plugin/dist/node/controller.js": "becb4dcbff42d9c4ef0134b08c96f9830d4960b96135bf082c6ef6e7fb44bf7b",
+    "plugin/dist/node/instance.js": "e3920e3d824f4be47941383bd54296542179de157f5fd6863305366113c809df",
+    "plugin/module/core/import-completion.lua": "ca00e3002baadd58947ccb61269e4f5aa86cb7058428dba18cd12672752b9387",
+    "plugin/module/utils/transfer-receipts.lua": "4e685cbeba779288a17795a5227112d9662c3ceb2df26c12fc4df02af67faeb2",
+    "physical-probe": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+  },
+  "cleanup": {
+    "success": true,
+    "errors": [],
+    "logs": [
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-pack",
+        "bytes": 0,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-controller",
+        "bytes": 741461,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-host-1",
+        "bytes": 283548,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-host-2",
+        "bytes": 383474,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-seed",
+        "bytes": 126,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-plugins",
+        "bytes": 129,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-tokens",
+        "bytes": 126,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-controller-data",
+        "bytes": 136,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-static",
+        "bytes": 126,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-host-1-data",
+        "bytes": 133,
+        "truncated": false
+      },
+      {
+        "container": "se-manual-mtv0cgdd-a7c451ae-backup-host-2-data",
+        "bytes": 133,
+        "truncated": false
+      }
+    ]
+  },
+  "environment": {
+    "controllerImage": "ghcr.io/solarcloud7/clusterio-docker-controller:2.0.0-alpha.27.r7",
+    "hostImage": "ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27.r7",
+    "ids": {
+      "1": 1973431361,
+      "2": 587116424
+    },
+    "preflight": {
+      "1": {
+        "success": true,
+        "world": [
+          {
+            "index": 5,
+            "surface": 4,
+            "name": "lab-transfer-fixture-v1"
+          },
+          {
+            "index": 21,
+            "surface": 3,
+            "name": "lab-omnibus-state-v1"
+          },
+          {
+            "index": 72,
+            "surface": 2,
+            "name": "oneofeach-fixture-v1"
+          }
+        ],
+        "engine": "2.1.17",
+        "mods": {
+          "base": "2.1.17",
+          "elevated-rails": "2.1.17",
+          "FluidMustFlow": "1.5.0",
+          "recycler": "2.1.17",
+          "SpidertronEnhancements": "1.11.0",
+          "quality": "2.1.17",
+          "space-age": "2.1.17",
+          "PlanetsLib": "1.22.0",
+          "SpidertronPatrols": "2.7.0",
+          "surfexp_gateways": "0.6.5",
+          "maraxsis": "1.34.52"
+        },
+        "module": "0.10.281",
+        "config": {
+          "debug_mode": true,
+          "pause_on_validation": false,
+          "gateways": {},
+          "max_export_cache_size": 10,
+          "active_gateways": [
+            "surfexp_gateway_hub"
+          ],
+          "belt_batch_size": 500,
+          "belt_trace": false,
+          "sectioned_codec": false,
+          "profile_batches": false,
+          "debug_destination_snapshot": false
+        }
+      },
+      "2": {
+        "success": true,
+        "world": {},
+        "engine": "2.1.17",
+        "mods": {
+          "base": "2.1.17",
+          "elevated-rails": "2.1.17",
+          "FluidMustFlow": "1.5.0",
+          "recycler": "2.1.17",
+          "SpidertronEnhancements": "1.11.0",
+          "quality": "2.1.17",
+          "space-age": "2.1.17",
+          "PlanetsLib": "1.22.0",
+          "SpidertronPatrols": "2.7.0",
+          "surfexp_gateways": "0.6.5",
+          "maraxsis": "1.34.52"
+        },
+        "module": "0.10.281",
+        "config": {
+          "debug_mode": true,
+          "pause_on_validation": false,
+          "gateways": {},
+          "belt_batch_size": 500,
+          "belt_trace": false,
+          "max_export_cache_size": 10,
+          "sectioned_codec": false,
+          "profile_batches": false,
+          "debug_destination_snapshot": false,
+          "active_gateways": [
+            "surfexp_gateway_hub"
+          ]
+        }
+      }
+    },
+    "stagedHashes": {
+      "seed": "78bd7b9a8ca6fbe5f03814a586b64cfd94befda9e80045cca5bb557b412294d1",
+      "plugin": "c4c15a943d6673e1f3d48c01d4af171e4eaf7e3198ffb1ba594181212fed6aee"
+    },
+    "images": [
+      {
+        "id": "sha256:758e42c6f812bc3f2a11778839f0e92a393e5f81f4f846a196eb7c324d8ca2b5",
+        "digests": [
+          "ghcr.io/solarcloud7/clusterio-docker-controller@sha256:bbbc25ec679905992a31a8da60b5be2f43ec56b809ff508ea5f8786977dd8c53"
+        ]
+      },
+      {
+        "id": "sha256:7f18f98e294435a353c4e6c516380c55a0d5b44e4d9e9a2abd3fa53e57b795e6",
+        "digests": [
+          "ghcr.io/solarcloud7/clusterio-docker-host@sha256:98a66d7b39359408ebbb255ff44814b2920ab0fa30596a8a71a872b40df2e232"
+        ]
+      }
+    ]
+  },
+  "history": {
+    "name": "transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-history",
+    "before": {
+      "present": true,
+      "tick": 31867180,
+      "index": 74,
+      "surface": 5,
+      "platformHidden": false,
+      "surfaceHidden": false,
+      "travelPaused": true,
+      "canary": {
+        "active": true,
+        "disabled": false
+      },
+      "locked": false,
+      "held": false,
+      "usable": true,
+      "cargo": {
+        "inventories": {
+          "space-platform-hub@0,0:1": {
+            "space-platform-foundation/normal": 10
+          },
+          "space-platform-hub@0,0:2": {},
+          "assembling-machine-1@8.5,0.5:2": {},
+          "assembling-machine-1@8.5,0.5:3": {},
+          "assembling-machine-1@8.5,0.5:4": {},
+          "assembling-machine-1@8.5,0.5:8": {},
+          "steel-chest@8.5,4.5:1": {
+            "iron-plate/rare": 17,
+            "copper-plate/normal": 23
+          }
+        },
+        "lanes": {
+          "transport-belt@-7.5,5.5:1": {
+            "iron-plate/normal": 1
+          },
+          "transport-belt@-7.5,5.5:2": {
+            "copper-plate/rare": 1
+          },
+          "transport-belt@-5.5,5.5:1": {
+            "iron-plate/rare": 1
+          },
+          "transport-belt@-5.5,5.5:2": {
+            "copper-plate/normal": 1
+          }
+        },
+        "fluids": {
+          "storage-tank@-7.5,0.5": {
+            "name": "water",
+            "amount": 123,
+            "temperature": 15
+          }
+        },
+        "entities": [
+          "assembling-machine-1@8.5,0.5",
+          "space-platform-hub@0,0",
+          "steel-chest@8.5,4.5",
+          "storage-tank@-7.5,0.5",
+          "transport-belt@-5.5,5.5",
+          "transport-belt@-7.5,5.5"
+        ]
+      }
+    },
+    "transferId": "1973431361:050_transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-history",
+    "outcome": {
+      "transferId": "1973431361:050_transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-history",
+      "operationType": "transfer",
+      "exportId": "1973431361:050_transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-history",
+      "artifactSizeBytes": 3470,
+      "downloadable": false,
+      "platformName": "transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-history",
+      "sourceInstanceId": 1973431361,
+      "sourceInstanceName": "clusterio-host-1-instance-1",
+      "targetInstanceId": 587116424,
+      "targetInstanceName": "clusterio-host-2-instance-1",
+      "status": "completed",
+      "observedDurationMs": 256.00672000000486,
+      "startedAt": 1789013453334,
+      "completedAt": 1789013453589,
+      "failedAt": null,
+      "error": null,
+      "lastEventAt": 1789013453589,
+      "registrySource": "active"
+    },
+    "samples": [
+      {
+        "source": {
+          "present": false,
+          "tick": 31867295
+        },
+        "destination": {
+          "present": true,
+          "tick": 9266770,
+          "index": 25,
+          "surface": 2,
+          "platformHidden": false,
+          "surfaceHidden": false,
+          "travelPaused": true,
+          "canary": {
+            "active": true,
+            "disabled": false
+          },
+          "locked": false,
+          "held": false,
+          "usable": true,
+          "cargo": {
+            "inventories": {
+              "space-platform-hub@0,0:1": {
+                "space-platform-foundation/normal": 10
+              },
+              "space-platform-hub@0,0:2": {},
+              "assembling-machine-1@8.5,0.5:2": {},
+              "assembling-machine-1@8.5,0.5:3": {},
+              "assembling-machine-1@8.5,0.5:4": {},
+              "assembling-machine-1@8.5,0.5:8": {},
+              "steel-chest@8.5,4.5:1": {
+                "iron-plate/rare": 17,
+                "copper-plate/normal": 23
+              }
+            },
+            "lanes": {
+              "transport-belt@-7.5,5.5:1": {
+                "iron-plate/normal": 1
+              },
+              "transport-belt@-7.5,5.5:2": {
+                "copper-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:1": {
+                "iron-plate/rare": 1
+              },
+              "transport-belt@-5.5,5.5:2": {
+                "copper-plate/normal": 1
+              }
+            },
+            "fluids": {
+              "storage-tank@-7.5,0.5": {
+                "name": "water",
+                "amount": 123,
+                "temperature": 15
+              }
+            },
+            "entities": [
+              "assembling-machine-1@8.5,0.5",
+              "space-platform-hub@0,0",
+              "steel-chest@8.5,4.5",
+              "storage-tank@-7.5,0.5",
+              "transport-belt@-5.5,5.5",
+              "transport-belt@-7.5,5.5"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "name": "transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-pending",
+  "before": {
+    "present": true,
+    "tick": 31867375,
+    "index": 75,
+    "surface": 5,
+    "platformHidden": false,
+    "surfaceHidden": false,
+    "travelPaused": true,
+    "canary": {
+      "active": true,
+      "disabled": false
+    },
+    "locked": false,
+    "held": false,
+    "usable": true,
+    "cargo": {
+      "inventories": {
+        "space-platform-hub@0,0:1": {
+          "space-platform-foundation/normal": 10
+        },
+        "space-platform-hub@0,0:2": {},
+        "assembling-machine-1@8.5,0.5:2": {},
+        "assembling-machine-1@8.5,0.5:3": {},
+        "assembling-machine-1@8.5,0.5:4": {},
+        "assembling-machine-1@8.5,0.5:8": {},
+        "steel-chest@8.5,4.5:1": {
+          "iron-plate/rare": 17,
+          "copper-plate/normal": 23
+        }
+      },
+      "lanes": {
+        "transport-belt@-7.5,5.5:1": {
+          "iron-plate/normal": 1
+        },
+        "transport-belt@-7.5,5.5:2": {
+          "copper-plate/rare": 1
+        },
+        "transport-belt@-5.5,5.5:1": {
+          "iron-plate/rare": 1
+        },
+        "transport-belt@-5.5,5.5:2": {
+          "copper-plate/normal": 1
+        }
+      },
+      "fluids": {
+        "storage-tank@-7.5,0.5": {
+          "name": "water",
+          "amount": 123,
+          "temperature": 15
+        }
+      },
+      "entities": [
+        "assembling-machine-1@8.5,0.5",
+        "space-platform-hub@0,0",
+        "steel-chest@8.5,4.5",
+        "storage-tank@-7.5,0.5",
+        "transport-belt@-5.5,5.5",
+        "transport-belt@-7.5,5.5"
+      ]
+    }
+  },
+  "transferId": "1973431361:051_transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-pending",
+  "held": {
+    "run": "se-manual-mtv0cgdd-a7c451ae",
+    "pid": 331,
+    "utc": "2026-09-10T04:10:57.394Z",
+    "kind": "response-held",
+    "action": "source",
+    "id": "051_transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-pending",
+    "name": "transfer-cleanup-se-manual-mtv0cgdd-a7c451ae-pending",
+    "success": true
+  },
+  "samples": [
+    {
+      "source": {
+        "present": false,
+        "tick": 31867578
+      },
+      "destination": {
+        "present": true,
+        "tick": 9267052,
+        "index": 26,
+        "surface": 3,
+        "platformHidden": true,
+        "surfaceHidden": true,
+        "travelPaused": true,
+        "canary": {
+          "active": false,
+          "disabled": true
+        },
+        "locked": false,
+        "held": true,
+        "usable": false,
+        "cargo": {
+          "inventories": {
+            "space-platform-hub@0,0:1": {
+              "space-platform-foundation/normal": 10
+            },
+            "space-platform-hub@0,0:2": {},
+            "assembling-machine-1@8.5,0.5:2": {},
+            "assembling-machine-1@8.5,0.5:3": {},
+            "assembling-machine-1@8.5,0.5:4": {},
+            "assembling-machine-1@8.5,0.5:8": {},
+            "steel-chest@8.5,4.5:1": {
+              "iron-plate/rare": 17,
+              "copper-plate/normal": 23
+            }
+          },
+          "lanes": {
+            "transport-belt@-7.5,5.5:1": {
+              "iron-plate/normal": 1
+            },
+            "transport-belt@-7.5,5.5:2": {
+              "copper-plate/rare": 1
+            },
+            "transport-belt@-5.5,5.5:1": {
+              "iron-plate/rare": 1
+            },
+            "transport-belt@-5.5,5.5:2": {
+              "copper-plate/normal": 1
+            }
+          },
+          "fluids": {
+            "storage-tank@-7.5,0.5": {
+              "name": "water",
+              "amount": 123,
+              "temperature": 15
+            }
+          },
+          "entities": [
+            "assembling-machine-1@8.5,0.5",
+            "space-platform-hub@0,0",
+            "steel-chest@8.5,4.5",
+            "storage-tank@-7.5,0.5",
+            "transport-belt@-5.5,5.5",
+            "transport-belt@-7.5,5.5"
+          ]
+        }
+      }
+    }
+  ],
+  "backup": {
+    "startedAt": "2026-09-10T04:11:00.424Z",
+    "archives": [
+      {
+        "suffix": "seed",
+        "sha256": "e264c241dc60e76ca32a0004aedeb722d630380c4e06dbcbe4e5c05cac1763d8",
+        "bytes": 4249600,
+        "compared": true
+      },
+      {
+        "suffix": "plugins",
+        "sha256": "eb15e50071c56a8cce65f54a20c5375a7d90a505dba4e89adb77a846bafc424d",
+        "bytes": 6819840,
+        "compared": true
+      },
+      {
+        "suffix": "tokens",
+        "sha256": "f654f80458b13095c7a2a5f6c86a5ce96a9fc1a7f7f3ef987f2e3bdf894174d4",
+        "bytes": 10240,
+        "compared": true
+      },
+      {
+        "suffix": "controller-data",
+        "sha256": "8a41159e346d33163261ba05baede285101732772fe8b25912e733b1e511c96f",
+        "bytes": 307200,
+        "compared": true
+      },
+      {
+        "suffix": "static",
+        "sha256": "423957807da7888edaa619644347353b80a403498ac96b8850d3d3291635157d",
+        "bytes": 10240,
+        "compared": true
+      },
+      {
+        "suffix": "host-1-data",
+        "sha256": "5de59c8ae5b06b4fe54cb163a8132a74bac4dbb42b064ea559e992aa7958623b",
+        "bytes": 4362240,
+        "compared": true
+      },
+      {
+        "suffix": "host-2-data",
+        "sha256": "215decb43fcd01e829ae8bb1b96aafa076abd3dd04ea82455d306ff2325002fc",
+        "bytes": 1792000,
+        "compared": true
+      }
+    ],
+    "erased": [],
+    "restored": [],
+    "elapsedMs": 21039.517199999987
+  },
+  "checkpoint": {
+    "1": "912d0d0b0c0818f0b550cff09a4a8190156ca38256c9d19599881336d44ab01d",
+    "2": "a83dfc6183c7dc0202249b786cc6c738f386b098ae7052ec5273281ac5161ca6"
+  },
+  "authority": {
+    "surface_export_pending_transfers.json": {
+      "sha256": "cd682a44e27614a766ee8dd7516da0c53a054146a6250f7f0cc5fb98e9903458",
+      "pending": 1
+    },
+    "surface_export_transaction_audit.jsonl": {
+      "sha256": "519ae7df2ca698006be5a5b28a29adb5cb2a50a1b2c6d7eed9c4a45d5a59a114",
+      "completedRows": 2
+    }
+  },
+  "error": "Error: Intentional failure after archive creation; verify backup resource cleanup\n    at backupRestoreCase (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/backup-restore.mjs:89:30)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/run.mjs:65:50\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/transfer-reliability/run.mjs:45:3",
+  "verdict": "HARNESS_ERROR",
+  "finishedAt": "2026-09-10T04:11:33.368Z"
+}

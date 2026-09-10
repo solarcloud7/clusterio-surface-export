@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "engine": "2.1.17",
   "invariants": [
     "At most one physically usable copy at each sampled boundary",
@@ -11,6 +11,7 @@
   "forbiddenAssists": ["manufactured successful reply", "editing cargo or validation evidence", "unlocking or deleting copies before observation", "changing recovery timers or receipt capacity"],
   "bounds": {"setupSeconds": 600, "caseSeconds": 600, "commandSeconds": 30, "replyBytes": 1048576, "profileRecordsPerInstance": 2000},
   "cases": [
+    {"id": "coordinated-restore", "purpose": "Back up quiesced lab volumes with a completed transfer and an uncertain acknowledgement; erase, restore and require normal recovery plus exact cargo/history"},
     {"id": "lost-source-reply", "purpose": "Real source deletion succeeds; its host response is withheld, then controller disconnects and retries"},
     {"id": "lost-destination-reply", "purpose": "Real destination release succeeds; its host response is withheld, then controller disconnects and retries"},
     {"id": "aged-recovery-intent", "purpose": "Withhold a real source-deletion reply, stop the controller, age only the retained intent timestamp by one day, then restart and require completion"},

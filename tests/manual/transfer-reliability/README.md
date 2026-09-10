@@ -37,6 +37,28 @@ interception exists only in the disposable containers through `NODE_OPTIONS`.
 
 ## What each case proves
 
+### Coordinated volume restore
+
+The [restore contract](backup-restore.md) defines a quiesced backup of every disposable
+lab volume, including a completed transfer and a pending source-deletion acknowledgement.
+The runner erases the original volume contents, verifies emptiness, restores the archives,
+and requires normal recovery, independent physical cargo parity and retained history.
+This tests data restoration with the same container definitions and runtime. It does not
+rebuild a lost Docker host or establish mixed-generation backup safety.
+
+```powershell
+node --test tests/manual/transfer-reliability/backup-restore.test.mjs
+node tests/manual/transfer-reliability/run.mjs --case coordinated-restore --fail-after-backup
+node tests/manual/transfer-reliability/run.mjs --case coordinated-restore
+node tests/manual/transfer-reliability/run.mjs --analyze ci-artifacts/<run>/result.json
+```
+
+The injected cleanup run must end `HARNESS_ERROR` with the intentional failure and
+`cleanup.success: true`; it is not a transfer pass. Archive hashes, comparisons,
+checkpoint hashes, physical observations, history and recovery calls remain in the JSON
+report. Archives contain generated credentials and stay inside an owned Docker volume
+that is removed with the lab. Do not publish backup contents as test evidence.
+
 ### Golden-save settings comparison
 
 ```powershell
