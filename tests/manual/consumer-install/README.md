@@ -51,15 +51,26 @@ This is a candidate fresh-install test, not historical upgrade or registry-publi
 - A fresh Space Age mod pack for client 2.1.17 must enable the bundled `recycler:2.1.17` alongside
   base, quality, elevated-rails, and space-age. The engine rejected fresh-save creation without it:
   `Missing required dependency recycler >= 2.1.0`. The client metadata confirms this dependency.
+  This omission was in the consumer harness: the deployed Docker entrypoint already includes
+  Recycler when enabling DLC mods for a newly created Space Age pack. Read-only runtime checks
+  on 2026-09-10 confirmed Recycler 2.1.17 active on both development instances.
 - A raw container restart with the controller as PID 1 failed in alpha.27: its PID-only config lock
   contains `1`, and the next container process is also PID 1. This lab now exercises the installer's
   process supervisor, which gives the restarted child a different PID. It never deletes that lock.
   A successful process-restart case does **not** prove raw container-restart support.
+  Our separate Docker-image path already handles stale locks at entrypoint startup, assuming one
+  controller per data volume. The [package-install recovery evidence](../package-install/evidence/installed-0.10.281.json)
+  passed a controller-container SIGKILL/restart using that r7 image and exact physical cargo checks.
+  The remaining lock limitation applies to bypassing that entrypoint and running the controller
+  directly as PID 1; it is not a newly observed failure of the deployed Docker path.
 - Long CLI operations retain verbose output on failure. Error-level logging alone omitted the
   Factorio mod-loading error; it only reported exit status 1.
 - The shared Docker log collector now retains stderr on successful `docker logs` calls too.
   Previously, fatal controller startup messages were absent from saved logs even though they
   appeared during interactive inspection. The retained lock-error excerpt identifies that source.
+  A saturation regression also exposed stdout crowding out stderr at the 1 MiB limit. The collector
+  now reserves space for both stream tails, keeps the total bound, and flags truncation. This
+  preserves captured error output; output already lost to the subprocess buffer limit cannot be recovered.
 
 `--analyze <result.json>` reruns the acceptance oracle without Docker. A failed command or missing
 evidence reports HARNESS_ERROR; observed cargo/recovery violations report STOP. Only the full

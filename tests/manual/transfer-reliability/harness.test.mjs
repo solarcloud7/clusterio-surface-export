@@ -60,6 +60,20 @@ test("successful Docker log capture retains fatal errors on stderr and rejects c
   assert.match(text,/Started controller/);assert.match(text,/LockFileExistsError/);assert.match(text,/separate stream/);
   assert.throws(()=>lab.captureLogs(name,()=>({status:1,stderr:Buffer.from("No such container")})),/No such container/);
 });
+test("busy stdout cannot crowd fatal stderr out of bounded Docker diagnostics",t=>{
+  const dir=mkdtempSync(join(tmpdir(),"se-log-saturation-")),name=`${run}-controller`;
+  t.after(()=>{unlinkSync(join(dir,`${name}.log`));rmdirSync(dir);});
+  const lab=new DockerLab(run,dir),limit=1048576;
+  for(const [stdoutBytes,stderrBytes] of [[limit,0],[0,limit],[limit,limit]]) {
+    const result=lab.captureLogs(name,()=>({status:0,
+      stdout:Buffer.concat([Buffer.alloc(stdoutBytes,120),Buffer.from("STDOUT_END")]),
+      stderr:Buffer.concat([Buffer.alloc(stderrBytes,121),Buffer.from("FATAL_STDERR_END")])}));
+    const saved=readFileSync(join(dir,`${name}.log`),"utf8");
+    assert.match(saved,/STDOUT_END/);assert.match(saved,/FATAL_STDERR_END/);
+    assert.equal(result.truncated,true);assert.ok(result.bytes<=limit);
+    assert.equal(statSync(join(dir,`${name}.log`)).size,result.bytes);
+  }
+});
 test("recovery oracle requires a real fault, exactly one import, and a retry",()=>{
   const id=`1:transfer-cleanup-${run}-a`, sample={source:absent(),destination:copy()};
   const report={schemaVersion:1,case:"lost-source-reply",cleanup:{success:true},name:`transfer-cleanup-${run}-a`,

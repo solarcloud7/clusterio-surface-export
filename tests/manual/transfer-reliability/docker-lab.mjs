@@ -224,11 +224,18 @@ export class DockerLab {
     if(!result.error && result.status!==0) throw new Error(`docker logs failed: ${String(result.stderr).slice(-1600)}`);
     // Docker forwards container stderr on its own stderr even when `logs` succeeds.
     // Keep both streams, without implying they retain their original interleaving.
-    const output=Buffer.concat([result.stdout||Buffer.alloc(0),
-      ...(result.stderr?.length?[Buffer.from("\n--- stderr (separate stream) ---\n"),result.stderr]:[])]);
-    const truncated=result.error?.code==="ENOBUFS";
-    writeFileSync(join(this.directory,`${name}.log`),output.subarray(0,limit));
-    return {container:name,bytes:Math.min(output.length,limit),truncated:truncated||output.length>limit};
+    const stdout=result.stdout||Buffer.alloc(0),stderr=result.stderr||Buffer.alloc(0);
+    const marker=stderr.length?Buffer.from("\n--- stderr (separate stream) ---\n"):Buffer.alloc(0);
+    const budget=limit-marker.length;
+    // Reserve room for both tails; let a short stream donate its unused budget.
+    // A full stdout buffer must not displace the fatal message on stderr.
+    const stderrBytes=Math.min(stderr.length,Math.max(Math.floor(budget/2),budget-stdout.length));
+    const stdoutBytes=Math.min(stdout.length,budget-stderrBytes);
+    const tail=(bytes,count)=>count?bytes.subarray(-count):Buffer.alloc(0);
+    const output=Buffer.concat([tail(stdout,stdoutBytes),marker,tail(stderr,stderrBytes)]);
+    const truncated=result.error?.code==="ENOBUFS"||stdoutBytes<stdout.length||stderrBytes<stderr.length;
+    writeFileSync(join(this.directory,`${name}.log`),output);
+    return {container:name,bytes:output.length,truncated};
   }
   async cleanup() {
     this.cleaning=true; const errors=[],logs=[];
