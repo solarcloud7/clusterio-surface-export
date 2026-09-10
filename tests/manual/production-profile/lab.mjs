@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { DockerLab, ROOT } from "../transfer-reliability/docker-lab.mjs";
 import { provision, settings, pins } from "../../../docker/production/provision.mjs";
 import { gatewayMapObserver, verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
+import { readConfigList } from "../../../tools/tests/clusterio-cli.mjs";
 
 import configuration from "../../../docker/production/configure.cjs";
 import { preservesInstalledCode } from "./mounts.mjs";
@@ -76,17 +77,16 @@ export class ProductionLab extends DockerLab {
     this.hostSettings = Object.fromEntries([1, 2].map(n => [n, this.localSettings("host", this.hosts[n].container)]));
     this.controllerSettings = {};
     this.controllerLocalSettings = this.localSettings("controller", this.controller);
-    const controllerLines = this.ctl("controller", "config", "list").split(/\r?\n/);
+    const controllerValues = readConfigList(this.ctl("controller", "config", "list"), Object.keys(settings.controller));
     for (const [key, value] of Object.entries(settings.controller)) {
-      const raw = controllerLines.find(line => line.startsWith(`${key} `));
-      assert.ok(raw, `missing controller field ${key}`);
-      const observed = JSON.parse(raw.slice(key.length + 1));
+      const observed = controllerValues[key];
       assert.equal(observed, value); this.controllerSettings[key] = observed;
     }
     for (const instance of created.instances) {
       const observed = {};
-      const lines = this.ctl("instance", "config", "list", instance.name).split(/\r?\n/);
-      const get = key => { const line = lines.find(v => v.startsWith(`${key} `)); assert.ok(line, `missing instance field ${key}`); return JSON.parse(line.slice(key.length + 1)); };
+      const values = readConfigList(this.ctl("instance", "config", "list", instance.name),
+        [...Object.keys(settings.instance).filter(k => k.startsWith("surface_export.")), "factorio.settings"]);
+      const get = key => values[key];
       for (const key of Object.keys(settings.instance).filter(k => k.startsWith("surface_export."))) {
         observed[key] = get(key);
         assert.equal(observed[key], settings.instance[key]);
