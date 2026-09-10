@@ -514,6 +514,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      artifact-id: ${{ steps.accepted-package.outputs.artifact-id }}
     permissions:
       contents: read
     steps:
@@ -542,9 +544,10 @@ jobs:
       - name: Pack and test installed runtime
         run: node tests/manual/package-install/run.mjs --run --artifact-dir ci-artifacts/release-package
       - name: Retain accepted package and evidence
+        id: accepted-package
         uses: actions/upload-artifact@v7
         with:
-          name: tested-package
+          name: tested-package-${{ github.run_attempt }}
           path: |
             ci-artifacts/release-package/package.tgz
             ci-artifacts/release-package/acceptance.json
@@ -554,7 +557,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: package-acceptance-failure
+          name: package-acceptance-failure-${{ github.run_attempt }}
           path: ci-artifacts/se-manual-*/result.json
           if-no-files-found: warn
           retention-days: 5
@@ -577,25 +580,18 @@ jobs:
       - name: Download accepted package from this run
         uses: actions/download-artifact@v8
         with:
-          name: tested-package
+          artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
           path: release-package
       - name: Verify bytes, version, commit and native evidence
         run: node tools/release/verify-package.mjs release-package
       - name: Rehearse publishing the tarball without lifecycle scripts
         run: |
           npm publish ./release-package/package.tgz --ignore-scripts --dry-run --json --access public > publish-preview.json
-          node --input-type=module -e '
-            import assert from "node:assert/strict";
-            import { readFileSync } from "node:fs";
-            const preview = JSON.parse(readFileSync("publish-preview.json"));
-            const { package: accepted } = JSON.parse(readFileSync("release-package/acceptance.json"));
-            for (const key of ["name", "version", "integrity"]) assert.equal(preview[key], accepted[key], key);
-            console.log(JSON.stringify({ name: preview.name, version: preview.version, integrity: preview.integrity }));
-          '
+          node tools/release/verify-package.mjs release-package publish-preview.json
 
   publish:
     name: Publish to npm
-    needs: [integration-tests, fast-checks, release-check]
+    needs: [integration-tests, fast-checks, package-acceptance, release-check]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -618,7 +614,7 @@ jobs:
       - name: Download accepted package from this run
         uses: actions/download-artifact@v8
         with:
-          name: tested-package
+          artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
           path: release-package
 
       - name: Verify bytes, version, commit and native evidence

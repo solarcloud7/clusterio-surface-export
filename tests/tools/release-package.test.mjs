@@ -6,11 +6,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { verifyPackage } from "../../tools/release/verify-package.mjs";
+import { verifyPackage, verifyPublishPreview } from "../../tools/release/verify-package.mjs";
 
 const observed = JSON.parse(readFileSync(new URL("../manual/package-install/evidence/installed-0.10.281.json", import.meta.url)));
 const commit = "a".repeat(40);
 const expected = { commit, version: observed.package.version };
+
+test("npm preview accepts the observed 11.6 and 11.19 shapes without relaxing identity checks", () => {
+  const accepted = { name: observed.package.name, version: observed.package.version, integrity: observed.package.integrity };
+  verifyPublishPreview(accepted, accepted);
+  verifyPublishPreview({ [accepted.name]: accepted }, accepted);
+  for (const key of ["name", "version", "integrity"]) {
+    const wrong = { ...accepted, [key]: "wrong" };
+    assert.throws(() => verifyPublishPreview(wrong, accepted), /differs/);
+    assert.throws(() => verifyPublishPreview({ [accepted.name]: wrong }, accepted), /differs/);
+  }
+  for (const invalid of [null, [], {}, { error: "publish failed" }, { [accepted.name]: accepted, other: accepted }])
+    assert.throws(() => verifyPublishPreview(invalid, accepted));
+});
 
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), "se-release-"));

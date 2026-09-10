@@ -25,7 +25,7 @@ especially how Factorio is provisioned — that you need to debug or extend it.
   `tests/integration/*/run-tests.{ps1,mjs}`.
 - **Test release package** (tags and manual dispatch) — build once, pack once, install
   the tarball normally and run native transfer/recovery acceptance. Retain the accepted
-  tarball and report together as the immutable `tested-package` workflow artifact.
+  tarball and report together as the immutable `tested-package-<attempt>` workflow artifact.
 - **Verify package handoff** (after package acceptance) — download that artifact in a
   separate job, verify its hashes, version, commit and acceptance evidence, then run
   `npm publish <tarball> --ignore-scripts --dry-run`.
@@ -40,8 +40,9 @@ packs an explicitly built candidate, installs it with normal npm peer resolution
 boots the installed package in disposable Factorio instances and tests lost-reply
 recovery with an independent cargo oracle. Tags require this gate; ordinary PRs and
 branch pushes do not run it. A manual workflow dispatch on a branch rehearses the
-artifact handoff without publishing. Downloads use the current workflow run, with
-no cross-run artifact selection. Reports must show successful cleanup and native
+artifact handoff without publishing. Downloads use the exact artifact ID produced by
+the acceptance job in the current workflow run. Attempt-specific names avoid overwriting
+earlier packages on retries. Reports must show successful cleanup and native
 acceptance; both SHA256 and npm SHA512 integrity must match the accepted tarball.
 Artifacts expire after 14 days; rerun acceptance if a pending release has expired.
 The dry run does not prove npm credentials, OIDC provenance or registry publication.

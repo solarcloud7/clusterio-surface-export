@@ -26,6 +26,18 @@ export function verifyPackage(directory, { commit, version }) {
   return { name: report.package.name, version, commit, sha256, integrity, acceptanceRun: report.run };
 }
 
+export function verifyPublishPreview(preview, accepted) {
+  assert.ok(preview && typeof preview === "object" && !Array.isArray(preview), "invalid npm preview");
+  // npm 11.6 emits a flat package; npm 11.19 keys output by package name.
+  let published = preview;
+  if (typeof preview.name !== "string") {
+    assert.deepEqual(Object.keys(preview), [accepted.name], "expected one package in npm preview");
+    published = preview[accepted.name];
+  }
+  for (const key of ["name", "version", "integrity"])
+    assert.equal(published?.[key], accepted[key], `npm preview ${key} differs from accepted package`);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const root = new URL("../../", import.meta.url);
   const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
@@ -33,6 +45,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const ref = process.env.GITHUB_REF ?? "";
   // Manual branch runs rehearse the package version; release tags must match it exactly.
   if (ref.startsWith("refs/tags/")) assert.equal(ref, `refs/tags/v${manifest.version}`, "tag/package version mismatch");
-  assert.ok(process.argv[2], "usage: node tools/release/verify-package.mjs <artifact-directory>");
-  console.log(JSON.stringify(verifyPackage(process.argv[2], { commit, version: manifest.version }), null, 2));
+  assert.ok(process.argv[2], "usage: node tools/release/verify-package.mjs <artifact-directory> [npm-preview.json]");
+  const accepted = verifyPackage(process.argv[2], { commit, version: manifest.version });
+  if (process.argv[3]) verifyPublishPreview(JSON.parse(readFileSync(process.argv[3], "utf8")), accepted);
+  console.log(JSON.stringify(accepted, null, 2));
 }

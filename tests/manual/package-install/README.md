@@ -79,10 +79,12 @@ The supported historical migration path remains undecided.
 On version tags and manual dispatch, CI builds and packs once, then runs this lab.
 Only a passing run with verified cleanup exports `package.tgz` and `acceptance.json`.
 The report records the checkout commit, packed version, SHA256 and npm integrity.
-A separate job downloads the immutable artifact, replays the independent acceptance
+A separate job downloads the immutable artifact by its acceptance-job output ID, replays the independent acceptance
 oracle, checks both hashes and commit/version, and rehearses npm publication with
 `--ignore-scripts --dry-run`. The tag-only publish job repeats verification and submits
 that tarball with provenance, without rebuilding or running lifecycle scripts.
+Artifact names include the workflow attempt; retries do not overwrite earlier packages
+or select packages by a shared name. The publisher uses the same acceptance-job ID.
 
 To rehearse without releasing, dispatch CI on a branch:
 `gh workflow run ci.yml --ref <branch>`. Do not create a version tag for a rehearsal.
@@ -98,3 +100,9 @@ name, version and SHA512 integrity matched the accepted package. Tarball SHA256:
 [Raw handoff report](evidence/handoff-0.10.281.json) records the base HEAD plus the
 experimental runner hashes; this was a local dirty-checkout rehearsal. GitHub artifact
 transport is a separate check, and no npm publication was performed.
+
+The first hosted rehearsal passed native acceptance and artifact verification, then
+exposed a preview-reader error: npm 11.19 returns JSON keyed by package name, whereas
+local npm 11.6 returned a flat object. Reproduced with `node:24.20.0-bookworm-slim`;
+the reader now accepts both observed shapes while requiring identical name, version
+and integrity. Regression cases reject mismatches and extra package entries.
