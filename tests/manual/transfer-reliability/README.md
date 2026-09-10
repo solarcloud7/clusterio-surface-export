@@ -37,6 +37,202 @@ interception exists only in the disposable containers through `NODE_OPTIONS`.
 
 ## What each case proves
 
+### Golden-save settings comparison
+
+```powershell
+node --test tests/manual/transfer-reliability/settings-oracle.test.mjs
+node tests/manual/transfer-reliability/settings-transfer.mjs --cleanup-proof
+node tests/manual/transfer-reliability/settings-transfer.mjs --run
+node tests/manual/transfer-reliability/settings-transfer.mjs --analyze ci-artifacts/<run>/result.json
+```
+
+This separate manual instrument stages the manifest's hash-pinned source golden save
+on both disposable instances. It captures immutable settings observations before
+transferring platforms; destination reference copies are renamed to avoid comparing
+the wrong platform. The native Factorio blueprint reader does not call the plugin's
+serializer, restorer or validator. Temporary blueprint inventories are destroyed on
+success and on injected capture failure.
+
+The comparator resolves blueprint entity numbers and wire endpoints to physical
+identities. It compares every returned blueprint property, including filters, recipes,
+control behavior and connections. Entities omitted by Factorio's blueprint capture
+are explicitly listed as uncovered. Native blueprint configuration is only one layer:
+this test does not certify inventory contents, fluids, belt-side quantities, circuit
+memory or other dynamic runtime state. Existing independent physical cargo and pad
+tests remain necessary. Two worlds disagreeing before transfer invalidate the reference;
+their difference must not be blamed on transfer or normalized away without evidence.
+
+Limits: 12 platforms, 12,000 entities per platform, bounded 32 KiB commands and 1 MiB
+responses, and a 20-minute case deadline after setup. Stop at the first failed transfer
+or settings mismatch and retain the observations before destroying the disposable
+cluster. This is not a new production runtime scan or default CI workload.
+
+The initial cleanup exercise `se-manual-mtus68sv-46c78022` passed: an intentional
+observer exception destroyed its temporary inventory, then an intentional runner
+exception removed the owned Docker resources. The artifact remains `HARNESS_ERROR`
+with `cleanupProofPassed: true`; it is not a transfer pass. Six offline comparator
+tests detect wrong filters, missing wires, altered control behavior, missing entities
+and missing evidence while accepting renumbered equivalent entities.
+
+First transfer observation `se-manual-mtus981c-74149521` stopped on a real settings
+difference after a completed transfer of `lab-transfer-fixture-v1`. Both initial
+worlds matched. All 1,358 blueprint-visible entities remained present; seven constant
+combinators lost 15 `import_from` values in their signal filters. No other compared
+blueprint properties differed. The following two platforms were not transferred.
+Owned Docker resources were removed. Raw observations are retained in
+[`evidence/settings-before-2.1.17.json.gz`](evidence/settings-before-2.1.17.json.gz)
+and can be passed directly to `settings-transfer.mjs --analyze` (expected exit 2).
+
+The scanner and restorer each omitted the `LogisticFilter` location metadata. The
+candidate fix carries `import_from`, `minimum_delivery_count` and `request_from`
+through both paths. The focused `tests/lua/restore-behavior.lua` regression covers
+location IDs represented as strings or prototype objects. A live repeat is required
+before declaring this fixed. This mismatch concerns settings, not evidence of item loss.
+
+The first observer also keyed its uncovered-entity lookup by Lua object wrapper,
+which overreported uncovered entities. This did not affect the blueprint property
+comparison. The lookup now uses physical identity; the original evidence is retained
+unchanged, and its uncovered lists must not be interpreted as real coverage gaps.
+
+Revised capture cleanup passed in `se-manual-mtushydz-a70c7a09`, including an injected
+failure after native blueprint creation. Repeat `se-manual-mtusl9iw-b663cb3c` then
+completed the transfer fixture with zero settings differences across 1,358 entities,
+proving the filter metadata fix at that boundary. The omnibus transfer completed but
+lost 31 disabled section states across 28 constant combinators: the expected section
+`active: false` was absent afterward. Its 408 blueprint-visible entities were present.
+The one-of-each platform remained BLOCKED by this failure. The scanner omitted section
+`active` and `multiplier`; the restorer consequently retained newly created defaults.
+The next fix preserves both, with an explicit nil check so false survives. Original
+second-rung evidence is
+[`evidence/settings-sections-before-2.1.17.json.gz`](evidence/settings-sections-before-2.1.17.json.gz).
+
+Repeat `se-manual-mtusqo9a-76373edc` verified zero settings differences for both the
+transfer fixture (1,358 entities) and omnibus (408 entities). The third transfer
+completed, but the harness then treated Factorio's empty source-platform table `{}`
+as a JavaScript array. It failed before destination readback; that third comparison
+is unverified and the run is `HARNESS_ERROR`, with Docker cleanup successful. Sequence
+normalization now accepts empty/numeric-key Lua tables and rejects missing or sparse
+evidence. The new regression reproduces the empty-table case offline.
+
+Final physical run `se-manual-mtuswi2t-610d45c7` completed all three transfers,
+confirmed source absence and removed its Docker resources. The first two platforms
+matched exactly. The one-of-each comparison had one raw difference: an arithmetic
+combinator's omitted first constant became explicit zero. The pinned
+`ArithmeticCombinatorBlueprintControlBehavior` uses `ArithmeticCombinatorParameters`,
+whose missing first/second constants default to zero. The comparator now fills those
+defaults only when the operand has no signal. A nonzero change still fails. This
+analysis change does not alter production or discard the raw observation.
+
+Re-analysis with that documented normalization passes all 1,830 blueprint-visible
+entities: 1,358 transfer-fixture, 408 omnibus, 64 one-of-each. The original run's STOP
+verdict remains in the raw artifact; the final analyzer result is recorded separately.
+The one-of-each reader leaves 59 source and 18 destination entities uncovered, including
+dynamic segmented-unit body segments, robots and entities the blueprint API omits.
+Those are coverage gaps, not certified matches. This is configuration acceptance,
+not universal entity-state or cargo parity proof.
+
+### Sectional codec and bounded overlap acceptance
+
+These are opt-in experiments. Production defaults remain the legacy codec and one
+admitted transfer per instance. Repeat the settings comparison with
+`node tests/manual/transfer-reliability/settings-transfer.mjs --run --sectioned`.
+Run the callback matrix with `run.mjs --case performance --sectioned` (omit the
+flag for legacy). Each runner creates and cleans its own disposable cluster.
+
+Sectional settings run `se-manual-mtutuyyy-ead15356` passed all 1,830 blueprint-visible
+entity configurations and source-deletion checks. The large transfer fixture used
+the explicit legacy fallback; omnibus and one-of-each used sectional compression.
+Raw observations and profiler readings are banked in `evidence/settings-sectional-*`.
+Blueprint-omitted entities remain outside this settings oracle.
+
+Two separate performance runs each completed 18 transfers with exact independent
+physical cargo checks: legacy `se-manual-mtuuelmt-0cb7cf27` and sectional
+`se-manual-mtuu10lf-e53a08a5`. Normal-mode maxima across three repeats were:
+
+| 518-entity fixture boundary | Legacy ms | Sectional ms |
+| --- | ---: | ---: |
+| Source setup | 16.03 | 21.13 |
+| Source scheduler | 17.99 | 21.61 |
+| Destination setup | 50.83 | 38.38 |
+| Destination scheduler | 25.16 | 38.41 |
+
+Sectional destination setup runs inside its scheduler callback: these rows overlap
+and must not be added. Controller-observed durations increased from 755–772 ms to
+1,184–1,219 ms; that boundary excludes earlier source-initiated export. These runs
+were not randomized between codecs, measured no client FPS, and establish no general
+lag reduction. Native platform preparation remains a long callback. Keep the codec
+off by default. Raw matrices and their hashes are in `evidence/performance-*.json.gz`
+and `evidence/codec-performance-comparison-2.1.17.json`.
+
+```powershell
+node tests/manual/transfer-reliability/pipeline-transfer.mjs --cleanup-proof
+node tests/manual/transfer-reliability/pipeline-transfer.mjs --run
+node tests/manual/transfer-reliability/pipeline-transfer.mjs --analyze tests/manual/transfer-reliability/evidence/pipeline-overlap-2.1.17.json.gz
+```
+
+Overlap run `se-manual-mtuus1cw-3014b57a` passed three opposing 518-entity transfers
+with controller capacity two and one combined Lua step per tick. Samples observed
+two active transfers, never more than two; a duplicate submission reused its ID and
+each operation imported once. Sources were absent and destination cargo matched
+the independent expected inventory. Cleanup succeeded. This is bounded overlap
+acceptance, not a crash test or evidence for capacity four.
+
+Review subsequently reproduced mixed chunks from two same-name uploads in the
+production Lua receiver. `tests/lua/chunk-operation-isolation.lua` fails against
+the name/force key and passes with operation-specific keys. It also checks identical
+retries and rejects conflicting chunks and changed metadata. This exact handler
+regression uses Lua 5.2 stubs; the live overlap fixture uses distinct platform names.
+
+Recovery acceptance adds `--lost-reply=source` or `--lost-reply=destination` to
+`pipeline-transfer.mjs --run`. Each case submits two opposing 518-entity transfers
+at capacity two, with sectional encoding enabled and one combined Lua step per tick.
+The host executes the real deletion/release, withholds its successful reply, and
+the runner kills and restarts only the disposable controller. No recovery timer,
+cargo, gate, or receipt is edited. The oracle requires an actual retry, one import
+per operation, exact cargo at the lost-reply boundary and after recovery, source
+absence, usable destinations, and owned Docker cleanup.
+
+Both cases passed on Factorio 2.1.17: source `se-manual-mtux4ym5-3cd4fdc7` and
+destination `se-manual-mtux99lb-b8388224`. The raw reports are banked as
+`evidence/pipeline-lost-source-2.1.17.json.gz` and
+`evidence/pipeline-lost-destination-2.1.17.json.gz`; replay them with `--analyze`.
+This proves these two sampled crash/reply-loss paths, not arbitrary crash timing.
+
+The initial source run `se-manual-mtux05hj-d6186b62` ended observation roughly ten
+seconds after restart, before the normal 30-second recovery loop. Its STOP output
+is a harness termination error, not evidence that product recovery failed. The
+corrected runner waits for completion within the original bounded loop. It neither
+changes the recovery timer nor treats an interrupted admission record as completion.
+The original report remains under `ci-artifacts`; it was not rewritten as a pass.
+
+The intended deployment configuration also passed in `se-manual-mtuxf8ec-c3ce35b4`:
+three opposing transfers with `--legacy`, capacity two, one Lua step per tick,
+duplicate admission reuse, exact physical cargo, and successful cleanup. Its raw
+report is `evidence/pipeline-legacy-2.1.17.json.gz`. The analyzer checks the observed
+instance codec settings against the requested configuration.
+
+The local cluster was then deployed through `deploy.ps1 -Scope plugin -KeepSaves`.
+Both `predeploy-20260909-225110-939.zip` backups were confirmed before stopping the
+instances; platform lists and player positions matched after reload and configuration.
+Readback verified the new sectional module was loaded, the shared Lua limit was one,
+controller overlap was two, and sectional encoding remained off. The controller
+served the newly built web bundle. Local evidence is in
+`ci-artifacts/lessons-preserving-deploy.log` and `lessons-postdeploy-world.json`.
+This is a local deployment result, not a claim that PR CI ran on these changes.
+
+Publication review checked the changes against main `936b5a18bd3113188578add5a2079ef428c46717`,
+including queue ownership through recovery, duplicate admission/import guards,
+operation-specific chunk isolation, scheduler fairness, codec frame validation and
+legacy fallback, and beacon/configuration restoration order. No additional
+production blocker was identified in that local review; it is not independent
+reviewer approval. Offline replay of the retained legacy overlap, both lost-reply
+cases, and the final settings comparison passed again before publication.
+The shared scheduler is a job-step count, not a wall-clock deadline; unscheduled
+setup and atomic native calls remain outside that guarantee. Capacity four and
+arbitrary crash timing remain unproven. Sectional encoding remains off by default.
+
+### Recovery and performance cases
+
 The versioned [contract](contract.json) states the invariant before a run. The physical probe
 reads actual entity inventories, item qualities, belt sides, fluids, visibility, locks, holds,
 and an activation canary. Its expected cargo is constructed independently of export and

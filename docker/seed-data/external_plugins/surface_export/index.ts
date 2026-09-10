@@ -62,9 +62,9 @@ export const plugin = {
 			optional: true,
 		},
 		[`${PLUGIN_NAME}.max_concurrent_jobs`]: {
-			description: "Maximum import and export jobs advanced in one tick, combined. These jobs run sequentially on the game thread.",
+			description: "Maximum import and export jobs advanced in one tick, combined. Runnable jobs take turns. Keep this at 1 to avoid stacking job steps in the same tick.",
 			type: "number",
-			initialValue: 3,
+			initialValue: 1,
 			optional: true,
 		},
 		[`${PLUGIN_NAME}.belt_batch_size`]: {
@@ -81,6 +81,7 @@ export const plugin = {
 			initialValue: true,
 			optional: true,
 		},
+		[`${PLUGIN_NAME}.sectioned_codec`]: { description: "Experimental: encode and decode transfer payload sections across ticks. Leave off outside acceptance tests until rollout is verified.", type: "boolean", initialValue: false },
 		[`${PLUGIN_NAME}.profile_batches`]: { description: "Save timings for up to 2,000 batches per job. Stage totals are always recorded.", type: "boolean", initialValue: false },
 		[`${PLUGIN_NAME}.debug_mode`]: {
 			description: "Enable debug mode - exports JSON comparison files for transfer validation",
@@ -95,6 +96,7 @@ export const plugin = {
 		},
 	},
 	controllerConfigFields: {
+		[`${PLUGIN_NAME}.max_inflight_transfers_per_instance`]: { description: "Experimental: admitted transfers per instance (1–4). Default 1 retains serial transfers. Lua jobs share the instance tick budget; recovery blocks new admissions.", type: "number", initialValue: 1 },
 		[`${PLUGIN_NAME}.gateway_mode`]: {
 			title: "Gateway mode",
 			description: "Which gateway layout the cluster uses. \"one_gate\" (the default, \"1 Gate "

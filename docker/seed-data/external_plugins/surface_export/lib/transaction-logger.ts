@@ -430,10 +430,19 @@ export class TransactionLogger {
 		}
 
 		for (const persistedLog of this.plugin.persistedTransactionLogs) {
-			if (byId.has(persistedLog.transferId)) {
+			const transferInfo = persistedLog.transferInfo || {};
+			const existing = byId.get(persistedLog.transferId);
+			const ledgerRow = this.plugin.auditIndex.get(persistedLog.transferId);
+			// A start row is not a verdict. Retained terminal detail can survive a
+			// missing terminal append; do not resurrect that attempt as in transit.
+			const retainedVerdict = existing?.registrySource === "persisted"
+				&& ledgerRow?.rowKind === "start"
+				&& transferInfo.startedAt != null
+				&& transferInfo.startedAt === ledgerRow.startedAt
+				&& ["completed", "failed", "error", "cleanup_failed"].includes(transferInfo.status || "");
+			if (existing && !retainedVerdict) {
 				continue;
 			}
-			const transferInfo = persistedLog.transferInfo || {};
 			const events = Array.isArray(persistedLog.events) ? persistedLog.events : [];
 			const lastEvent = events.length ? events[events.length - 1] : null;
 			byId.set(persistedLog.transferId, {

@@ -12,6 +12,7 @@ local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
 local ImportTarget = require("modules/surface_export/core/import-target")
 
+local SectionCodec = require("modules/surface_export/utils/section-codec")
 local ImportPipeline = {}
 
 function ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
@@ -25,9 +26,9 @@ function ImportPipeline.queue_from_file(filename, new_platform_name, force_name,
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
 end
 
-function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
-	storage.async_job_id_counter = storage.async_job_id_counter + 1
-	local job_id = "import_" .. storage.async_job_id_counter
+function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing, pending_job)
+	if not pending_job then storage.async_job_id_counter = storage.async_job_id_counter + 1 end
+	local job_id = pending_job and pending_job.job_id or ("import_" .. storage.async_job_id_counter)
 
 	log(string.format("[Import Queue] job_id=%s, platform='%s', force=%s, requester=%s, data_type=%s",
 		job_id, tostring(new_platform_name), tostring(force_name), tostring(requester_name), type(json_data)))
@@ -35,11 +36,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import Queue] JSON string size: %d bytes", #json_data))
 	end
 
+	if not pending_job then
 	Timing.begin(job_id, "destination-lua", receive_timing and receive_timing.operation_id)
 	Timing.start(job_id, "queue_setup", "inclusive")
 	Timing.start(job_id, "decode")
 	PhaseProfiler.init(job_id, PhaseRecorder.profiler_names())
 	PhaseProfiler.start(job_id, "queue_setup")
+	end
 
 	local parsed_data
 	if type(json_data) == "string" then
@@ -54,6 +57,32 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	Timing.stop(job_id, "decode")
 	Timing.bind(job_id, parsed_data._operationId or parsed_data._transferId)
+	if parsed_data.section_codec ~= nil then
+		local envelope_ok, decoder = pcall(function()
+			assert(not pending_job, "Nested sectional payload is invalid")
+			assert(parsed_data.section_codec == SectionCodec.VERSION and type(parsed_data.sections)=="table", "invalid sectional payload")
+			assert(parsed_data.section_count == #parsed_data.sections, "missing section")
+			local decoder = SectionCodec.new_decoder(parsed_data.section_count)
+			for index, section in pairs(parsed_data.sections) do
+				assert(type(index)=="number" and index%1==0 and index>=1 and index<=decoder.count
+					and type(section)=="string" and #section<=100000, "invalid compressed section")
+			end
+			return decoder
+		end)
+		if not envelope_ok then
+			Timing.finish(job_id, "failed")
+			PhaseProfiler.discard(job_id)
+			return nil, tostring(decoder)
+		end
+		storage.async_jobs[job_id] = {
+			type="import", job_id=job_id, platform_name=new_platform_name, force_name=force_name,
+			requester=requester_name, started_tick=game.tick, setup_pending=true,
+			section_decoder=decoder, section_envelope=parsed_data, receive_timing=receive_timing,
+			transfer_id=parsed_data._transferId, source_instance_id=parsed_data._sourceInstanceId,
+			operation_id=parsed_data._operationId,
+		}
+		return job_id
+	end
 	local platform_data
 	if parsed_data.compressed and parsed_data.payload then
 		log(string.format("[Decompression] Decompressing import data (%d bytes compressed)", #parsed_data.payload))
@@ -347,7 +376,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		platform_name = new_platform.name,
 		force_name = force_name,
 		requester = requester_name,
-		started_tick = game.tick,
+		started_tick = pending_job and pending_job.started_tick or game.tick,
+		last_step_tick = pending_job and pending_job.last_step_tick or nil,
 
 		platform_data = platform_data,
 		source_bucket = source_bucket,
@@ -414,6 +444,27 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		tostring(storage.async_jobs[job_id].operation_id)))
 
 	return job_id
+end
+
+
+-- Decode a single independent frame per scheduler callback, then prepare the
+-- platform on a later callback. Only persisted tables/strings cross tick boundaries.
+function ImportPipeline.process_setup(job)
+	if not job.decoded_data then
+		local decoder = job.section_decoder
+		local raw = Timing.scope(job.job_id, "decompression", helpers.decode_string, job.section_envelope.sections[decoder.next])
+		assert(raw, "Failed to decompress section")
+		job.decoded_data = Timing.scope(job.job_id, "decode_payload", SectionCodec.decode_step, decoder, raw)
+		if job.decoded_data then
+			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet"}) do
+				if job.section_envelope[key] ~= nil then job.decoded_data[key] = job.section_envelope[key] end
+			end
+			job.section_decoder, job.section_envelope = nil, nil
+		end
+		return
+	end
+	local id, err = ImportPipeline.queue(job.decoded_data, job.platform_name, job.force_name, job.requester, job.receive_timing, job)
+	assert(id, err)
 end
 
 function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)

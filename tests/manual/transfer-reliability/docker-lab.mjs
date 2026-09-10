@@ -26,9 +26,9 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
-    this.run = run; this.directory = directory;
+    this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
       {...h, container: `${run}-host-${h.hostNumber}`} ]));
@@ -107,11 +107,18 @@ export class DockerLab {
       mkdirSync(dest,{recursive:true});
       const config = JSON.parse(readFileSync(join(source,"instance.json"),"utf8"));
       config["instance.auto_start"] = true;
+      config["surface_export.sectioned_codec"] = this.sectionedCodec;
       config["factorio.settings"] = {...config["factorio.settings"], visibility:{public:false,lan:false},
         autosave_interval:0, auto_pause:false};
       writeFileSync(join(dest,"instance.json"),JSON.stringify(config,null,2));
       assert.equal(h.seededSaves.length,1,"one explicit seed save required");
-      cpSync(join(source,h.seededSaves[0]),join(dest,h.seededSaves[0]));
+      const reference = this.sameSourceSave
+        ? JSON.parse(readFileSync(join(ROOT,"tests/lab-gallery/manifest.json"),"utf8")).saves.source : null;
+      const saveSource = this.sameSourceSave
+        ? join(ROOT,reference.artifact)
+        : join(source,h.seededSaves[0]);
+      if(reference) assert.equal(hash(saveSource).toUpperCase(),reference.sha256,"golden source hash mismatch");
+      cpSync(saveSource,join(dest,h.seededSaves[0]));
     }
     this.stagedHashes={seed:hashTree(seed),plugin:hashTree(bundle)};
     this.docker(["network","create","--label",`${LABEL}=${this.run}`,this.network]); this.networkCreated=true;

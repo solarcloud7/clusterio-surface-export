@@ -1,0 +1,987 @@
+{
+  "run": "se-manual-mtuswi2t-610d45c7",
+  "rawSha256": "d9495ad0d156973e7c8dddccf2491164307676dad39e90e40bb671b7463530ad",
+  "analyzerSha256": "3cb314f0a6efd205b4e9752cb800a5083069c0eabfb8e5a740bb31547162bb52",
+  "originalVerdict": "STOP",
+  "normalizedVerdict": "PASS",
+  "cleanup": true,
+  "normalization": "Arithmetic constants without an input signal default to zero in the pinned Factorio API; original raw difference retained.",
+  "results": [
+    {
+      "name": "lab-transfer-fixture-v1",
+      "sourceAbsent": true,
+      "outcome": "completed",
+      "verdict": "PASS",
+      "checkedEntities": 1358,
+      "differences": [],
+      "uncovered": {
+        "before": [],
+        "after": []
+      }
+    },
+    {
+      "name": "lab-omnibus-state-v1",
+      "sourceAbsent": true,
+      "outcome": "completed",
+      "verdict": "PASS",
+      "checkedEntities": 408,
+      "differences": [],
+      "uncovered": {
+        "before": [
+          {
+            "name": "spidertron-leg-5",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 39.75
+            }
+          },
+          {
+            "name": "spidertron-leg-6",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 39
+            }
+          },
+          {
+            "name": "spidertron-leg-1",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 44.25
+            }
+          },
+          {
+            "name": "spidertron-leg-2",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 45
+            }
+          },
+          {
+            "name": "spidertron-leg-5",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 53.75
+            }
+          },
+          {
+            "name": "spidertron-leg-6",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 53
+            }
+          },
+          {
+            "name": "spidertron-leg-1",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 58.25
+            }
+          },
+          {
+            "name": "spidertron-leg-2",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 59
+            }
+          },
+          {
+            "name": "spidertron-leg-7",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 39
+            }
+          },
+          {
+            "name": "spidertron-leg-8",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 39.75
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 16.5,
+              "x": 42.5
+            }
+          },
+          {
+            "name": "spidertron-leg-3",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 45
+            }
+          },
+          {
+            "name": "spidertron-leg-4",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 44.25
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": 14.5,
+              "x": 44.5
+            }
+          },
+          {
+            "name": "spidertron-leg-7",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 53
+            }
+          },
+          {
+            "name": "spidertron-leg-8",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 53.75
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 16.5,
+              "x": 56.5
+            }
+          },
+          {
+            "name": "spidertron-leg-3",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 59
+            }
+          },
+          {
+            "name": "spidertron-leg-4",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 58.25
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": 14.5,
+              "x": 58.5
+            }
+          }
+        ],
+        "after": [
+          {
+            "name": "spidertron-leg-5",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 39.75
+            }
+          },
+          {
+            "name": "spidertron-leg-6",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 39
+            }
+          },
+          {
+            "name": "spidertron-leg-1",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 44.25
+            }
+          },
+          {
+            "name": "spidertron-leg-2",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 45
+            }
+          },
+          {
+            "name": "spidertron-leg-5",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 53.75
+            }
+          },
+          {
+            "name": "spidertron-leg-6",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 53
+            }
+          },
+          {
+            "name": "spidertron-leg-1",
+            "type": "spider-leg",
+            "position": {
+              "y": -2.5,
+              "x": 58.25
+            }
+          },
+          {
+            "name": "spidertron-leg-2",
+            "type": "spider-leg",
+            "position": {
+              "y": -1,
+              "x": 59
+            }
+          },
+          {
+            "name": "spidertron-leg-7",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 39
+            }
+          },
+          {
+            "name": "spidertron-leg-8",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 39.75
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 16.5,
+              "x": 42.5
+            }
+          },
+          {
+            "name": "spidertron-leg-3",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 45
+            }
+          },
+          {
+            "name": "spidertron-leg-4",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 44.25
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": 14.5,
+              "x": 44.5
+            }
+          },
+          {
+            "name": "spidertron-leg-7",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 53
+            }
+          },
+          {
+            "name": "spidertron-leg-8",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 53.75
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 16.5,
+              "x": 56.5
+            }
+          },
+          {
+            "name": "spidertron-leg-3",
+            "type": "spider-leg",
+            "position": {
+              "y": 1,
+              "x": 59
+            }
+          },
+          {
+            "name": "spidertron-leg-4",
+            "type": "spider-leg",
+            "position": {
+              "y": 2.5,
+              "x": 58.25
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": 14.5,
+              "x": 58.5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "oneofeach-fixture-v1",
+      "sourceAbsent": true,
+      "outcome": "completed",
+      "verdict": "PASS",
+      "checkedEntities": 64,
+      "differences": [],
+      "uncovered": {
+        "before": [
+          {
+            "name": "market",
+            "type": "market",
+            "position": {
+              "y": 82.5,
+              "x": 6.5
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 124.5,
+              "x": 6.5
+            }
+          },
+          {
+            "name": "deconstructible-tile-proxy",
+            "type": "deconstructible-tile-proxy",
+            "position": {
+              "y": 26.5,
+              "x": 90.5
+            }
+          },
+          {
+            "name": "behemoth-worm-turret",
+            "type": "turret",
+            "position": {
+              "y": 124.5,
+              "x": 90.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 113.9609375,
+              "x": 107.8515625
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 101.44140625,
+              "x": 111.91796875
+            }
+          },
+          {
+            "name": "big-stomper-pentapod",
+            "type": "spider-unit",
+            "position": {
+              "y": 110.5,
+              "x": 118.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 121.69921875,
+              "x": 118.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 101.44140625,
+              "x": 125.08203125
+            }
+          },
+          {
+            "name": "defender",
+            "type": "combat-robot",
+            "position": {
+              "y": 12.5,
+              "x": 146.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 113.9609375,
+              "x": 129.1484375
+            }
+          },
+          {
+            "name": "behemoth-biter",
+            "type": "unit",
+            "position": {
+              "y": 124.5,
+              "x": 146.5
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": -1.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "big-demolisher",
+            "type": "segmented-unit",
+            "position": {
+              "y": 97,
+              "x": 175
+            }
+          },
+          {
+            "name": "loader-1x1",
+            "type": "loader-1x1",
+            "position": {
+              "y": 68.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_09",
+            "type": "segment",
+            "position": {
+              "y": 99.29296875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_27",
+            "type": "segment",
+            "position": {
+              "y": 101.8359375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_36",
+            "type": "segment",
+            "position": {
+              "y": 104.734375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_36",
+            "type": "segment",
+            "position": {
+              "y": 107.796875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_36",
+            "type": "segment",
+            "position": {
+              "y": 110.85546875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_36",
+            "type": "segment",
+            "position": {
+              "y": 113.9140625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_33",
+            "type": "segment",
+            "position": {
+              "y": 116.953125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_3",
+            "type": "segment",
+            "position": {
+              "y": 119.92578125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_37",
+            "type": "segment",
+            "position": {
+              "y": 122.8828125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_52",
+            "type": "segment",
+            "position": {
+              "y": 126.03515625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_52",
+            "type": "segment",
+            "position": {
+              "y": 129.453125,
+              "x": 175
+            }
+          },
+          {
+            "name": "biter-spawner",
+            "type": "unit-spawner",
+            "position": {
+              "y": 124.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_4",
+            "type": "segment",
+            "position": {
+              "y": 132.8125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_41",
+            "type": "segment",
+            "position": {
+              "y": 135.9609375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_28",
+            "type": "segment",
+            "position": {
+              "y": 139.0625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_28",
+            "type": "segment",
+            "position": {
+              "y": 141.9375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_17",
+            "type": "segment",
+            "position": {
+              "y": 144.7578125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_1",
+            "type": "segment",
+            "position": {
+              "y": 147.3515625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_08",
+            "type": "segment",
+            "position": {
+              "y": 149.8125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_08",
+            "type": "segment",
+            "position": {
+              "y": 152.23828125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_09",
+            "type": "segment",
+            "position": {
+              "y": 154.671875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_2",
+            "type": "segment",
+            "position": {
+              "y": 157.1796875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_2",
+            "type": "segment",
+            "position": {
+              "y": 159.875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_1",
+            "type": "segment",
+            "position": {
+              "y": 162.5234375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x1_1",
+            "type": "segment",
+            "position": {
+              "y": 164.9921875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_99",
+            "type": "segment",
+            "position": {
+              "y": 167.41015625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_99",
+            "type": "segment",
+            "position": {
+              "y": 169.6328125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_99",
+            "type": "segment",
+            "position": {
+              "y": 171.859375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 174.01953125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 175.97265625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_97",
+            "type": "segment",
+            "position": {
+              "y": 177.9765625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 180.10546875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_97",
+            "type": "segment",
+            "position": {
+              "y": 182.109375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_99",
+            "type": "segment",
+            "position": {
+              "y": 184.296875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 186.4609375,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 188.4140625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 190.36328125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_87",
+            "type": "segment",
+            "position": {
+              "y": 192.31640625,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_77",
+            "type": "segment",
+            "position": {
+              "y": 194.21875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_77",
+            "type": "segment",
+            "position": {
+              "y": 195.953125,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-tail-x0_64",
+            "type": "segment",
+            "position": {
+              "y": 198.91796875,
+              "x": 175
+            }
+          },
+          {
+            "name": "big-demolisher-segment-x0_65",
+            "type": "segment",
+            "position": {
+              "y": 197.62109375,
+              "x": 175
+            }
+          },
+          {
+            "name": "construction-robot",
+            "type": "construction-robot",
+            "position": {
+              "y": 12.5,
+              "x": 202.5
+            }
+          },
+          {
+            "name": "logistic-robot",
+            "type": "logistic-robot",
+            "position": {
+              "y": 68.5,
+              "x": 202.5
+            }
+          }
+        ],
+        "after": [
+          {
+            "name": "market",
+            "type": "market",
+            "position": {
+              "y": 82.5,
+              "x": 6.5
+            }
+          },
+          {
+            "name": "tile-ghost",
+            "type": "tile-ghost",
+            "position": {
+              "y": 124.5,
+              "x": 6.5
+            }
+          },
+          {
+            "name": "deconstructible-tile-proxy",
+            "type": "deconstructible-tile-proxy",
+            "position": {
+              "y": 26.5,
+              "x": 90.5
+            }
+          },
+          {
+            "name": "behemoth-worm-turret",
+            "type": "turret",
+            "position": {
+              "y": 124.5,
+              "x": 90.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 113.9609375,
+              "x": 107.8515625
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 101.44140625,
+              "x": 111.91796875
+            }
+          },
+          {
+            "name": "big-stomper-pentapod",
+            "type": "spider-unit",
+            "position": {
+              "y": 110.5,
+              "x": 118.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 121.69921875,
+              "x": 118.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 101.44140625,
+              "x": 125.08203125
+            }
+          },
+          {
+            "name": "defender",
+            "type": "combat-robot",
+            "position": {
+              "y": 12.5,
+              "x": 146.5
+            }
+          },
+          {
+            "name": "big-stomper-pentapod-leg",
+            "type": "spider-leg",
+            "position": {
+              "y": 113.9609375,
+              "x": 129.1484375
+            }
+          },
+          {
+            "name": "behemoth-biter",
+            "type": "unit",
+            "position": {
+              "y": 124.5,
+              "x": 146.5
+            }
+          },
+          {
+            "name": "item-request-proxy",
+            "type": "item-request-proxy",
+            "position": {
+              "y": -1.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "big-demolisher",
+            "type": "segmented-unit",
+            "position": {
+              "y": 97,
+              "x": 175
+            }
+          },
+          {
+            "name": "loader-1x1",
+            "type": "loader-1x1",
+            "position": {
+              "y": 68.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "biter-spawner",
+            "type": "unit-spawner",
+            "position": {
+              "y": 124.5,
+              "x": 174.5
+            }
+          },
+          {
+            "name": "construction-robot",
+            "type": "construction-robot",
+            "position": {
+              "y": 12.5,
+              "x": 202.5
+            }
+          },
+          {
+            "name": "logistic-robot",
+            "type": "logistic-robot",
+            "position": {
+              "y": 68.5,
+              "x": 202.5
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

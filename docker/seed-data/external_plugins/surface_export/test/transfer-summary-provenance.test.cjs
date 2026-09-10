@@ -131,6 +131,51 @@ test("registrySource does NOT ride on buildTransferSummary", () => {
 
 const LEDGER_ONLY_ID = "2:005_epsilon";
 
+function startOnlyRow(transferId) {
+	return buildAuditRow({ transferId, rowKind: "start", savedAt: 2_000, eventCount: 1,
+		lastEventAt: 2_000, info: { status: "transporting", startedAt: 2_000,
+			platformName: "cleanup-fault", sourceInstanceId: 2, targetInstanceId: 1 } });
+}
+
+for (const status of ["cleanup_failed", "completed", "failed", "error"]) {
+	test(`retained ${status} detail supersedes a start-only ledger entry`, () => {
+		const summary = byId(makeLogger({
+			persisted: [{ transferId: PERSISTED_ID, status }],
+			extraRows: [startOnlyRow(PERSISTED_ID)], dropLedgerRows: true,
+		}).getTransferSummaries()).get(PERSISTED_ID);
+		assert.equal(summary.status, status, "a recorded result must not reappear as in transit after restart");
+		assert.equal(summary.registrySource, "persisted");
+		assert.equal(summary.revisions, 0, "do not invent a terminal ledger row");
+	});
+}
+
+test("a live transfer still wins over retained detail and a start-only ledger", () => {
+	const summary = byId(makeLogger({
+		active: [{ transferId: BOTH_ID, status: "awaiting_validation" }],
+		persisted: [{ transferId: BOTH_ID, status: "cleanup_failed" }],
+		extraRows: [startOnlyRow(BOTH_ID)], dropLedgerRows: true,
+	}).getTransferSummaries()).get(BOTH_ID);
+	assert.equal(summary.status, "awaiting_validation");
+	assert.equal(summary.registrySource, "active");
+});
+
+test("nonterminal detail does not turn a start-only ledger into a recorded result", () => {
+	const summary = byId(makeLogger({
+		persisted: [{ transferId: PERSISTED_ID, status: "awaiting_validation" }],
+		extraRows: [startOnlyRow(PERSISTED_ID)], dropLedgerRows: true,
+	}).getTransferSummaries()).get(PERSISTED_ID);
+	assert.equal(summary.status, "transporting");
+});
+
+test("a different attempt's retained verdict cannot replace a newer start", () => {
+	const summary = byId(makeLogger({
+		persisted: [{ transferId: PERSISTED_ID, status: "completed", startedAt: 1_000 }],
+		extraRows: [startOnlyRow(PERSISTED_ID)], dropLedgerRows: true,
+	}).getTransferSummaries()).get(PERSISTED_ID);
+	assert.equal(summary.status, "transporting");
+	assert.equal(summary.startedAt, 2_000);
+});
+
 test("a transfer present ONLY in the audit ledger still appears in the list", () => {
 	const row = buildAuditRow({
 		transferId: LEDGER_ONLY_ID,

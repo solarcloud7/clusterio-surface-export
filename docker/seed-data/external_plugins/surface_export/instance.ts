@@ -181,6 +181,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				beltBatchSize: this.cfg<number>("surface_export.belt_batch_size"),
 				beltTrace: this.cfg<boolean>("surface_export.belt_trace"),
 				debugDestinationSnapshot: this.cfg<boolean>("surface_export.debug_destination_snapshot"),
+				sectionedCodec: this.cfg<boolean>("surface_export.sectioned_codec"),
 				profileBatches: this.cfg<boolean>("surface_export.profile_batches") });
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, max_export_cache_size=${maxExportCacheSize}`);
 		} catch (err: unknown) {

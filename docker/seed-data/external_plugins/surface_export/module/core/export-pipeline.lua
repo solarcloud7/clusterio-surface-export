@@ -11,6 +11,7 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
 local PayloadEncoder = require("modules/surface_export/utils/payload-encoder")
+local SectionCodec = require("modules/surface_export/utils/section-codec")
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local clusterio_api = require("modules/clusterio/api")
@@ -429,10 +430,17 @@ local function publish_completion(job)
 	local json_string = job.completion_json
 	local belt_scan_count = job.completion_belt_scan_count
 	local belt_item_total = job.completion_belt_item_total
-	local compressed = Timing.scope(job.job_id, "compression", helpers.encode_string, json_string)
+	local compressed = not job.compressed_sections and Timing.scope(job.job_id, "compression", helpers.encode_string, json_string)
 	Timing.start(job.job_id, "cache_output")
 
-	if compressed then
+	if job.compressed_sections then
+		ExportCache.record(export_id, {
+			section_codec = SectionCodec.VERSION, section_count = #job.compressed_sections, sections = job.compressed_sections,
+			platform_name = job.export_data.platform_name, tick = job.export_data.tick,
+			timestamp = job.export_data.timestamp, stats = job.export_data.stats,
+			verification = job.export_data.verification,
+		})
+	elseif compressed then
 		ExportCache.record(export_id, {
 			compressed = true,
 			compression = "deflate",
@@ -459,7 +467,7 @@ local function publish_completion(job)
 
 	local duration_ticks = game.tick - job.started_tick
 	local uncompressed_bytes = #json_string
-	local compressed_bytes = compressed and #compressed or nil
+	local compressed_bytes = job.section_bytes or (compressed and #compressed or nil)
 	local compression_reduction_pct = nil
 	if compressed_bytes and uncompressed_bytes > 0 then
 		compression_reduction_pct = math.floor(((1 - (compressed_bytes / uncompressed_bytes)) * 1000) + 0.5) / 10
@@ -607,8 +615,31 @@ function ExportPipeline.complete(job, batch_size)
 	if job.completion_stage == nil then
 		prepare_completion(job)
 	elseif job.completion_stage == "serialize" then
-		job.completion_json = Timing.scope(job.job_id, "serialization", PayloadEncoder.process, job, batch_size)
-		if job.completion_json then job.completion_stage = "publish" end
+		-- Opt-in transfer transport; file exports and clones retain the stored format.
+		if job.section_cursor or (job.section_transport == nil and job.destination_instance_id
+			and storage.surface_export_config and storage.surface_export_config.sectioned_codec) then
+			job.section_transport = true
+			local result = Timing.scope(job.job_id, "serialization", SectionCodec.encode_step, job, batch_size)
+			if result then
+				job.completion_json, job.sections = result.json, result.frames
+				job.completion_stage = result.frames and "compress_sections" or "publish"
+				if result.fallback then log("[Section codec] Legacy fallback: " .. result.fallback) end
+			end
+		else
+			job.completion_json = Timing.scope(job.job_id, "serialization", PayloadEncoder.process, job, batch_size)
+			if job.completion_json then job.completion_stage = "publish" end
+		end
+	elseif job.completion_stage == "compress_sections" then
+		job.compressed_sections = job.compressed_sections or {}
+		local index = #job.compressed_sections + 1
+		local compressed = Timing.scope(job.job_id, "compression", helpers.encode_string, job.sections[index])
+		assert(compressed, "Section compression failed")
+		job.compressed_sections[index] = compressed
+		job.section_bytes = (job.section_bytes or 0) + #compressed
+		if index == #job.sections then
+			job.sections = nil
+			job.completion_stage = "publish"
+		end
 	elseif job.completion_stage == "publish" then
 		publish_completion(job)
 	else

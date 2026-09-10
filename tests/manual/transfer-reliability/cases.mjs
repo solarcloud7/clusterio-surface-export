@@ -107,6 +107,8 @@ export async function performanceCase(lab,report,save) {
       for(const host of [1,2]) {profile(host,"arm",name,mode);armed.push(host);}
       m.transferId=start(lab,name); m.outcome=await terminal(lab,m.transferId);
       m.after=sample(lab,name);
+      const sourceJob=m.transferId.slice(m.transferId.indexOf(":")+1);
+      m.codec=lab.lua(1,`local e=assert(storage.platform_exports[${JSON.stringify(sourceJob)}]);return {success=true,version=e.section_codec or 0,sections=e.section_count or 0}`).result;
       m.parity=m.after.source.present===false&&m.after.destination.usable===true
         &&isDeepStrictEqual(m.after.destination.cargo,expected)&&m.outcome.status==="completed";
     } finally {

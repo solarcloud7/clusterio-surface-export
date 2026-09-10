@@ -1,0 +1,244 @@
+{
+  "run": "se-manual-mtutuyyy-ead15356",
+  "resultSha256": "0a2ab6bba11e0d836856e6532c78e73803a66d7435071195a8554fd2c19e0c26",
+  "logs": {
+    "se-manual-mtutuyyy-ead15356-host-1.log": "8352049121fbcb12765c70aa1c4a250b3d62958f78f88fcfe37e020c0afc684b",
+    "se-manual-mtutuyyy-ead15356-host-2.log": "e515c67daa89ea799acb07d8ec76448475abd597f6152d4fcbeede7f483c2fe5"
+  },
+  "records": [
+    {
+      "host": 1,
+      "instanceId": 1079161910,
+      "meta": {
+        "v": 1,
+        "id": "compression",
+        "jobId": "050_lab-transfer-fixture-v1",
+        "owner": "source-lua",
+        "exportId": "050_lab-transfer-fixture-v1",
+        "stage": "compression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31867359,
+        "endTick": 31867359,
+        "ticksElapsed": 0,
+        "batchCount": 1,
+        "workTicks": 1
+      },
+      "readings": [
+        "Duration: 3846.007422ms",
+        "Duration: 3871.600815ms",
+        "Duration: 25.428019ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"compression\",\"jobId\":\"050_lab-transfer-fixture-v1\",\"owner\":\"source-lua\",\"exportId\":\"050_lab-transfer-fixture-v1\",\"stage\":\"compression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31867359,\"endTick\":31867359,\"ticksElapsed\":0,\"batchCount\":1,\"workTicks\":1}\tDuration: 3846.007422ms\tDuration: 3871.600815ms\tDuration: 25.428019ms"
+    },
+    {
+      "host": 1,
+      "instanceId": 1079161910,
+      "meta": {
+        "v": 1,
+        "id": "compression",
+        "jobId": "051_lab-omnibus-state-v1",
+        "owner": "source-lua",
+        "exportId": "051_lab-omnibus-state-v1",
+        "stage": "compression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31867758,
+        "endTick": 31867847,
+        "ticksElapsed": 89,
+        "batchCount": 90,
+        "workTicks": 90
+      },
+      "readings": [
+        "Duration: 1713.278599ms",
+        "Duration: 3196.803303ms",
+        "Duration: 32.029198ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"compression\",\"jobId\":\"051_lab-omnibus-state-v1\",\"owner\":\"source-lua\",\"exportId\":\"051_lab-omnibus-state-v1\",\"stage\":\"compression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31867758,\"endTick\":31867847,\"ticksElapsed\":89,\"batchCount\":90,\"workTicks\":90}\tDuration: 1713.278599ms\tDuration: 3196.803303ms\tDuration: 32.029198ms"
+    },
+    {
+      "host": 1,
+      "instanceId": 1079161910,
+      "meta": {
+        "v": 1,
+        "id": "compression",
+        "jobId": "052_oneofeach-fixture-v1",
+        "owner": "source-lua",
+        "exportId": "052_oneofeach-fixture-v1",
+        "stage": "compression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31868165,
+        "endTick": 31868230,
+        "ticksElapsed": 65,
+        "batchCount": 66,
+        "workTicks": 66
+      },
+      "readings": [
+        "Duration: 1182.173310ms",
+        "Duration: 2265.586938ms",
+        "Duration: 49.256389ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"compression\",\"jobId\":\"052_oneofeach-fixture-v1\",\"owner\":\"source-lua\",\"exportId\":\"052_oneofeach-fixture-v1\",\"stage\":\"compression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31868165,\"endTick\":31868230,\"ticksElapsed\":65,\"batchCount\":66,\"workTicks\":66}\tDuration: 1182.173310ms\tDuration: 2265.586938ms\tDuration: 49.256389ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decompression",
+        "jobId": "import_50",
+        "owner": "destination-lua",
+        "operationId": "1079161910:050_lab-transfer-fixture-v1",
+        "stage": "decompression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31864876,
+        "endTick": 31864876,
+        "ticksElapsed": 0,
+        "batchCount": 1,
+        "workTicks": 1
+      },
+      "readings": [
+        "Duration: 0.644797ms",
+        "Duration: 2.372278ms",
+        "Duration: 1.694221ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decompression\",\"jobId\":\"import_50\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:050_lab-transfer-fixture-v1\",\"stage\":\"decompression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31864876,\"endTick\":31864876,\"ticksElapsed\":0,\"batchCount\":1,\"workTicks\":1}\tDuration: 0.644797ms\tDuration: 2.372278ms\tDuration: 1.694221ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decode_payload",
+        "jobId": "import_50",
+        "owner": "destination-lua",
+        "operationId": "1079161910:050_lab-transfer-fixture-v1",
+        "stage": "decode_payload",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31864876,
+        "endTick": 31864876,
+        "ticksElapsed": 0,
+        "batchCount": 1,
+        "workTicks": 1
+      },
+      "readings": [
+        "Duration: 2.409529ms",
+        "Duration: 41.627140ms",
+        "Duration: 39.135161ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decode_payload\",\"jobId\":\"import_50\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:050_lab-transfer-fixture-v1\",\"stage\":\"decode_payload\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31864876,\"endTick\":31864876,\"ticksElapsed\":0,\"batchCount\":1,\"workTicks\":1}\tDuration: 2.409529ms\tDuration: 41.627140ms\tDuration: 39.135161ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decompression",
+        "jobId": "import_51",
+        "owner": "destination-lua",
+        "operationId": "1079161910:051_lab-omnibus-state-v1",
+        "stage": "decompression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31865366,
+        "endTick": 31865397,
+        "ticksElapsed": 31,
+        "batchCount": 32,
+        "workTicks": 32
+      },
+      "readings": [
+        "Duration: 0.626982ms",
+        "Duration: 514.891743ms",
+        "Duration: 18.758658ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decompression\",\"jobId\":\"import_51\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:051_lab-omnibus-state-v1\",\"stage\":\"decompression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31865366,\"endTick\":31865397,\"ticksElapsed\":31,\"batchCount\":32,\"workTicks\":32}\tDuration: 0.626982ms\tDuration: 514.891743ms\tDuration: 18.758658ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decode_payload",
+        "jobId": "import_51",
+        "owner": "destination-lua",
+        "operationId": "1079161910:051_lab-omnibus-state-v1",
+        "stage": "decode_payload",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31865366,
+        "endTick": 31865397,
+        "ticksElapsed": 31,
+        "batchCount": 32,
+        "workTicks": 32
+      },
+      "readings": [
+        "Duration: 0.748707ms",
+        "Duration: 514.950740ms",
+        "Duration: 61.839786ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decode_payload\",\"jobId\":\"import_51\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:051_lab-omnibus-state-v1\",\"stage\":\"decode_payload\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31865366,\"endTick\":31865397,\"ticksElapsed\":31,\"batchCount\":32,\"workTicks\":32}\tDuration: 0.748707ms\tDuration: 514.950740ms\tDuration: 61.839786ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decompression",
+        "jobId": "import_52",
+        "owner": "destination-lua",
+        "operationId": "1079161910:052_oneofeach-fixture-v1",
+        "stage": "decompression",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31865754,
+        "endTick": 31865809,
+        "ticksElapsed": 55,
+        "batchCount": 56,
+        "workTicks": 56
+      },
+      "readings": [
+        "Duration: 0.784932ms",
+        "Duration: 915.956099ms",
+        "Duration: 12.908524ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decompression\",\"jobId\":\"import_52\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:052_oneofeach-fixture-v1\",\"stage\":\"decompression\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31865754,\"endTick\":31865809,\"ticksElapsed\":55,\"batchCount\":56,\"workTicks\":56}\tDuration: 0.784932ms\tDuration: 915.956099ms\tDuration: 12.908524ms"
+    },
+    {
+      "host": 2,
+      "instanceId": 413516505,
+      "meta": {
+        "v": 1,
+        "id": "decode_payload",
+        "jobId": "import_52",
+        "owner": "destination-lua",
+        "operationId": "1079161910:052_oneofeach-fixture-v1",
+        "stage": "decode_payload",
+        "kind": "execution",
+        "status": "completed",
+        "revision": 2,
+        "startTick": 31865754,
+        "endTick": 31865809,
+        "ticksElapsed": 55,
+        "batchCount": 56,
+        "workTicks": 56
+      },
+      "readings": [
+        "Duration: 0.861533ms",
+        "Duration: 915.979927ms",
+        "Duration: 68.130117ms"
+      ],
+      "raw": "[SE_TIMING_V1]{\"v\":1,\"id\":\"decode_payload\",\"jobId\":\"import_52\",\"owner\":\"destination-lua\",\"operationId\":\"1079161910:052_oneofeach-fixture-v1\",\"stage\":\"decode_payload\",\"kind\":\"execution\",\"status\":\"completed\",\"revision\":2,\"startTick\":31865754,\"endTick\":31865809,\"ticksElapsed\":55,\"batchCount\":56,\"workTicks\":56}\tDuration: 0.861533ms\tDuration: 915.979927ms\tDuration: 68.130117ms"
+    }
+  ]
+}

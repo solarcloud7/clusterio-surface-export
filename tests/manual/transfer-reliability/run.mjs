@@ -9,7 +9,8 @@ import { recoveryCase, performanceCase } from "./cases.mjs";
 import { analyze } from "./oracle.mjs";
 
 const contract=JSON.parse(readFileSync(new URL("./contract.json",import.meta.url)));
-const args=process.argv.slice(2);
+const sectionedCodec=process.argv.includes("--sectioned");
+const args=process.argv.slice(2).filter(arg=>arg!=="--sectioned");
 if(args.length===0||args[0]==="--list"||args[0]==="--help") {
   console.log("Manual Docker acceptance: node tests/manual/transfer-reliability/run.mjs --case <id>\n");
   for(const c of contract.cases) console.log(`${c.id}: ${c.purpose}`);
@@ -17,7 +18,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
 } else if(args[0]==="--all"&&args.length===1) {
   for(const c of contract.cases) {
     const code=await new Promise((resolve,reject)=>{
-      const child=spawn(process.execPath,[fileURLToPath(import.meta.url),"--case",c.id],{stdio:"inherit"});
+      const child=spawn(process.execPath,[fileURLToPath(import.meta.url),"--case",c.id,...(sectionedCodec?["--sectioned"]:[])],{stdio:"inherit"});
       child.on("error",reject);child.on("exit",resolve);
     });
     if(code!==0&&code!==2) {process.exitCode=1;break;}
@@ -42,7 +43,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
   await withWorkflowLock(async()=>{
     const run=`se-manual-${Date.now().toString(36)}-${randomUUID().slice(0,8)}`;
     const directory=join(ROOT,"ci-artifacts",run);mkdirSync(directory,{recursive:true});
-    const report={schemaVersion:1,case:chosen.id,run,contract,startedAt:new Date().toISOString(),
+    const report={schemaVersion:1,case:chosen.id,run,contract,sectionedCodec,startedAt:new Date().toISOString(),
       head:execFileSync("git",["rev-parse","HEAD"],{cwd:ROOT,encoding:"utf8"}).trim(),hashes:{},cleanup:{success:false}};
     for(const file of ["docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
@@ -50,7 +51,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
       report.hashes[`plugin/${file}`]=hash(join(PLUGIN,file));
     report.hashes["physical-probe"]=hash(join(ROOT,"tests/integration/transfer-cleanup/probe.lua"));
     const file=join(directory,"result.json"),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+"\n");save();
-    const lab=new DockerLab(run,directory);
+    const lab=new DockerLab(run,directory,{sectionedCodec});
     const interrupt=()=>{lab.cancelled=true;};
     process.on("SIGINT",interrupt);process.on("SIGTERM",interrupt);
     try {

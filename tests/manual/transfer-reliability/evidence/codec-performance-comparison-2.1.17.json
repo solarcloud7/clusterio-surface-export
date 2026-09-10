@@ -1,0 +1,163 @@
+{
+  "engine": "2.1.17",
+  "runs": {
+    "legacy": {
+      "run": "se-manual-mtuuelmt-0cb7cf27",
+      "rawSha256": "f79cfff26703d7ba546755608da5bcacafae5cd4a61486c6bbecfb23a618a9f9",
+      "transfers": 18,
+      "records": 1287,
+      "rows": [
+        {
+          "entities": 6,
+          "controllerObservedMs": [
+            223.29427100000612,
+            222.54627999998047,
+            221.8462040000013
+          ],
+          "boundaries": [
+            {
+              "host": 1,
+              "boundary": "export_setup",
+              "samples": 3,
+              "maxMs": 1.837325
+            },
+            {
+              "host": 1,
+              "boundary": "scheduler",
+              "samples": 12,
+              "maxMs": 4.505144
+            },
+            {
+              "host": 2,
+              "boundary": "import_setup",
+              "samples": 3,
+              "maxMs": 38.637306
+            },
+            {
+              "host": 2,
+              "boundary": "scheduler",
+              "samples": 30,
+              "maxMs": 8.511648
+            }
+          ]
+        },
+        {
+          "entities": 518,
+          "controllerObservedMs": [
+            757.8652859999856,
+            772.1667029999953,
+            754.6211960000219
+          ],
+          "boundaries": [
+            {
+              "host": 1,
+              "boundary": "export_setup",
+              "samples": 3,
+              "maxMs": 16.027929
+            },
+            {
+              "host": 1,
+              "boundary": "scheduler",
+              "samples": 249,
+              "maxMs": 17.994406
+            },
+            {
+              "host": 2,
+              "boundary": "import_setup",
+              "samples": 3,
+              "maxMs": 50.830744
+            },
+            {
+              "host": 2,
+              "boundary": "scheduler",
+              "samples": 126,
+              "maxMs": 25.162885
+            }
+          ]
+        }
+      ]
+    },
+    "sectional": {
+      "run": "se-manual-mtuu10lf-e53a08a5",
+      "rawSha256": "d2dadf59ab9ef637ffbd95840dfd316c79057812d4d49560692b8a47c2bcb10f",
+      "transfers": 18,
+      "records": 2583,
+      "rows": [
+        {
+          "entities": 6,
+          "controllerObservedMs": [
+            540.9199530000042,
+            508.7496429999883,
+            512.4775960000115
+          ],
+          "boundaries": [
+            {
+              "host": 1,
+              "boundary": "export_setup",
+              "samples": 3,
+              "maxMs": 1.464765
+            },
+            {
+              "host": 1,
+              "boundary": "scheduler",
+              "samples": 108,
+              "maxMs": 3.78231
+            },
+            {
+              "host": 2,
+              "boundary": "import_setup",
+              "samples": 6,
+              "maxMs": 36.389906
+            },
+            {
+              "host": 2,
+              "boundary": "scheduler",
+              "samples": 81,
+              "maxMs": 36.420125
+            }
+          ]
+        },
+        {
+          "entities": 518,
+          "controllerObservedMs": [
+            1218.469603000005,
+            1194.3527189999877,
+            1184.3868870000006
+          ],
+          "boundaries": [
+            {
+              "host": 1,
+              "boundary": "export_setup",
+              "samples": 3,
+              "maxMs": 21.133995
+            },
+            {
+              "host": 1,
+              "boundary": "scheduler",
+              "samples": 456,
+              "maxMs": 21.611218
+            },
+            {
+              "host": 2,
+              "boundary": "import_setup",
+              "samples": 6,
+              "maxMs": 38.382777
+            },
+            {
+              "host": 2,
+              "boundary": "scheduler",
+              "samples": 198,
+              "maxMs": 38.406887
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Independent disposable runs, sectional before legacy, not randomized codec order.",
+    "Controller observed duration starts at controller observation for these source-initiated operations; it excludes earlier export work.",
+    "Import setup is nested in the scheduler for sectional jobs; never add these intervals.",
+    "Three repeats per size/mode; no client FPS or supported-size guarantee."
+  ]
+}

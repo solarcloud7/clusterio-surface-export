@@ -65,8 +65,10 @@ empty-hub case that restarts only the controller while the handoff is unresolved
 The source replay supplies the UID captured from the locked source in the same Lua
 callback that starts the transfer. It does not infer identity from a deleted platform
 or manufacture a UID from the destination. The artifact retains `sourcePlatformUid`.
-Abrupt crashes, lost acknowledgements, TTL expiry and restoration of older saves remain separate live
-acceptance cases. The controller unit suite covers lost replies and concurrent duplicate verdicts.
+Abrupt crashes, lost acknowledgements and restoration of older saves are covered by the separate
+[manual Docker lab](../../manual/transfer-reliability/README.md), with bounded passing and original
+failing evidence recorded there. Its aged-intent test exercises retention/reload, not real-time TTL
+expiry. The controller unit suite also covers lost replies and concurrent duplicate verdicts.
 Callback profiling raises only the fixture response cap to 256 KiB; see the
 [probe contract](../../instruments/callback-profile/README.md) for its measurement limits.
 

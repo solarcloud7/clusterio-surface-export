@@ -140,4 +140,31 @@ for _, ghost in ipairs({ false, true }) do
   end)
 end
 
+test("constant combinator logistic filter metadata survives capture and restoration", function()
+  package.preload["modules/surface_export/utils/game-utils"] = function()return {} end
+  local Scanner = dofile(root .. "export_scanners/connection-scanner.lua")
+  for _, location in ipairs({"vulcanus", {name="vulcanus"}}) do
+    local input = {value={name="turbo-transport-belt",quality="normal",comparator="="},
+      min=250,max=500,import_from=location,minimum_delivery_count=20,request_from="planet"}
+    local source = entity("constant-combinator", 1)
+    source.get_control_behavior = function() return {sections={{group="",active=false,multiplier=3,filters_count=1,get_slot=function()return input end}}} end
+    local captured = Scanner.extract_control_behavior(source)
+    local filter = captured.constant_sections[1].filters[1]
+    assert(filter.import_from=="vulcanus" and filter.minimum_delivery_count==20 and filter.request_from=="planet")
+    local written, written_section
+    local destination = entity("constant-combinator",2)
+    destination.get_or_create_control_behavior = function()
+      return {sections={},add_section=function()
+        written_section={set_slot=function(index,value)assert(index==1);written=value end}
+        return written_section
+      end}
+    end
+    Deserializer.restore_control_behavior(destination,{control_behavior=captured})
+    assert(written.import_from=="vulcanus" and written.minimum_delivery_count==20 and written.request_from=="planet")
+    assert(written.min==250 and written.max==500 and written.value.name=="turbo-transport-belt")
+    assert(written_section.active==false and written_section.multiplier==3)
+    assert(#logs==0)
+  end
+end)
+
 print(string.format("Lua restore behavior: %d/%d passed", passed, passed))

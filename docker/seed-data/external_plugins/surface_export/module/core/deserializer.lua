@@ -1100,12 +1100,22 @@ function Deserializer.restore_control_behavior(entity, entity_data)
       if not success then
         log(string.format("[Deserializer Error] add_section %d for %s: %s", sec_idx, entity.name, tostring(section)))
       elseif section then
+        local state_ok, state_err = pcall(function()
+          if section_data.active ~= nil then section.active = section_data.active end
+          if section_data.multiplier ~= nil then section.multiplier = section_data.multiplier end
+        end)
+        if not state_ok then
+          log(string.format("[Deserializer Error] section state %d for %s: %s", sec_idx, entity.name, tostring(state_err)))
+        end
         for _, filter in ipairs(section_data.filters) do
           local slot_ok, slot_err = pcall(function()
             section.set_slot(filter.index, {
               value = filter.value,
               min = filter.min,
               max = filter.max,
+              import_from = filter.import_from,
+              minimum_delivery_count = filter.minimum_delivery_count,
+              request_from = filter.request_from,
               quality = filter.quality
             })
           end)

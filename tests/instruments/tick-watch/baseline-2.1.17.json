@@ -1,0 +1,208 @@
+{
+  "version": 1,
+  "kind": "single-run observation; no pass/fail timing threshold",
+  "date": "2026-09-09T22:42:42.594Z",
+  "engine": "2.1.17",
+  "module": "0.10.281",
+  "mods": {
+    "base": "2.1.17",
+    "elevated-rails": "2.1.17",
+    "FluidMustFlow": "1.5.0",
+    "recycler": "2.1.17",
+    "SpidertronEnhancements": "1.11.0",
+    "quality": "2.1.17",
+    "space-age": "2.1.17",
+    "PlanetsLib": "1.22.0",
+    "SpidertronPatrols": "2.7.0",
+    "surfexp_gateways": "0.6.5",
+    "maraxsis": "1.34.52"
+  },
+  "revision": "262baa8e29c05f646d3949120eca76f040d6279b",
+  "instrumentHashes": {
+    "tests/integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad",
+    "tests/instruments/tick-watch/probe.lua": "014ba0fcbdde478569ced9249b344d9ea9ba0e6f8e4f0444fdc3fd26f5fb694d",
+    "tests/instruments/tick-watch/capture.mjs": "a48a378bfd05233ad1ab6d6221d7cbcc9e7a552d7c527d4712f1b9064b54ace3",
+    "tests/instruments/tick-watch/analyze.mjs": "ace8a8472e79d0c69475eccaaabc227d631ee741b48ffbefd4b89f83b8c82845",
+    "tests/instruments/tick-watch/full-transfer.mjs": "e5ebe69374bf46b020804abcaa6042b8740e973108f4e149c412ab24b0577e0c"
+  },
+  "fixture": "806 entities, 400 full chests, 402 belts, 16384 tiles",
+  "player": {
+    "success": true,
+    "physical": "platform-3",
+    "view": "platform-3"
+  },
+  "transferId": "902099405:178_transfer-cleanup-tickwatch-mtuop1r6",
+  "controllerObservedMs": 6542.842275000177,
+  "verification": {
+    "cargo": "PASS",
+    "tiles": "PASS",
+    "sourceAbsent": true
+  },
+  "cleanup": {
+    "host1": {
+      "absent": true,
+      "worldPreserved": true,
+      "state": {
+        "success": true,
+        "tick": 52922864,
+        "players": 1,
+        "paused": false,
+        "plugin": true,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 0,
+        "tombstoneEvidence": {}
+      }
+    },
+    "host2": {
+      "absent": true,
+      "worldPreserved": true,
+      "state": {
+        "success": true,
+        "tick": 30288361,
+        "players": 0,
+        "paused": false,
+        "plugin": true,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 1,
+        "tombstoneEvidence": [
+          {
+            "validIdentity": true,
+            "deletedTick": 30287413,
+            "surfacePresent": false,
+            "platformPresent": false
+          }
+        ]
+      }
+    }
+  },
+  "idle": {
+    "id": "tickwatch-mtuop4xw",
+    "server": {
+      "rows": 330,
+      "elapsedMs": 5482.806349,
+      "averageUps": 60.005766948162545,
+      "minRolling60TickUps": 59.98523937216245,
+      "maxUpdateGapMs": 16.833087000000205,
+      "p99UpdateGapMs": 16.828196999999818,
+      "gapsOver50ms": 0,
+      "maxSchedulerCallbackMs": 0.028417,
+      "measuredRecorderOverheadTotalMs": 5.9586260000000015,
+      "maxMeasuredRecorderOverheadMs": 0.717477
+    },
+    "client": {
+      "rows": 330,
+      "elapsedMs": 5948.4979,
+      "averageUps": 55.30808038109923,
+      "minRolling60TickUps": 54.44877332358582,
+      "maxUpdateGapMs": 35.1290999999992,
+      "p99UpdateGapMs": 34.01650000000063,
+      "gapsOver50ms": 0,
+      "maxSchedulerCallbackMs": 0.0426,
+      "measuredRecorderOverheadTotalMs": 4.091902,
+      "maxMeasuredRecorderOverheadMs": 0.0401
+    }
+  },
+  "transfer": {
+    "id": "tickwatch-mtuopevy",
+    "server": {
+      "rows": 655,
+      "elapsedMs": 11282.714757,
+      "averageUps": 57.96477302541453,
+      "minRolling60TickUps": 41.08654702061027,
+      "maxUpdateGapMs": 190.84536000000026,
+      "p99UpdateGapMs": 37.56209800000124,
+      "gapsOver50ms": 1,
+      "maxSchedulerCallbackMs": 34.364512,
+      "measuredRecorderOverheadTotalMs": 10.756426999999999,
+      "maxMeasuredRecorderOverheadMs": 0.220246
+    },
+    "client": {
+      "rows": 655,
+      "elapsedMs": 12515.179,
+      "averageUps": 52.25654383369187,
+      "minRolling60TickUps": 31.018923559601387,
+      "maxUpdateGapMs": 339.40120000000024,
+      "p99UpdateGapMs": 51.48979999999938,
+      "gapsOver50ms": 9,
+      "maxSchedulerCallbackMs": 51.634,
+      "measuredRecorderOverheadTotalMs": 8.408101000000006,
+      "maxMeasuredRecorderOverheadMs": 0.0535
+    }
+  },
+  "stages": [
+    {
+      "stage": "belt_capture",
+      "owner": "source-lua",
+      "instanceId": 902099405,
+      "startTick": 30286899,
+      "endTick": 30286899,
+      "startMs": 579.75281,
+      "endMs": 823.378384,
+      "executionMs": 243.528139,
+      "batchCount": 1
+    },
+    {
+      "stage": "queue_setup",
+      "owner": "destination-lua",
+      "instanceId": 836570928,
+      "startTick": 52922076,
+      "endTick": 52922076,
+      "startMs": 0.045609,
+      "endMs": 170.776755,
+      "executionMs": null,
+      "batchCount": 0
+    },
+    {
+      "stage": "decode_payload",
+      "owner": "destination-lua",
+      "instanceId": 836570928,
+      "startTick": 52922076,
+      "endTick": 52922076,
+      "startMs": 17.757954,
+      "endMs": 123.451454,
+      "executionMs": 104.526813,
+      "batchCount": 1
+    },
+    {
+      "stage": "platform_preparation",
+      "owner": "destination-lua",
+      "instanceId": 836570928,
+      "startTick": 52922076,
+      "endTick": 52922076,
+      "startMs": 123.60434,
+      "endMs": 170.772587,
+      "executionMs": 47.135793,
+      "batchCount": 1
+    },
+    {
+      "stage": "starter_pack",
+      "owner": "destination-lua",
+      "instanceId": 836570928,
+      "startTick": 52922076,
+      "endTick": 52922076,
+      "startMs": 123.941583,
+      "endMs": 169.904987,
+      "executionMs": 45.927614,
+      "batchCount": 1
+    }
+  ],
+  "evidence": {
+    "ci-artifacts/transfer-cleanup-tickwatch-mtuop1r6.json": "31a0e11bbdf71dd9d54188d0cd87369aa8de211337a7ae554439bfcfb6544aca",
+    "ci-artifacts/tickwatch-mtuop4xw-server.tsv": "904a8b40d756f4c7a1055c0081307d29c845c30f106bee1e32962b442b99fd32",
+    "ci-artifacts/tickwatch-mtuop4xw-client.tsv": "c242a5c1350a62ea5d139d4ea9b6b0590dbbbf34e864d10106ca84f1c22ba58f",
+    "ci-artifacts/tickwatch-mtuopevy-server.tsv": "4e3ff4fe11f3555b49317964815c31942adc6d711883654b85814fd6702c2e18",
+    "ci-artifacts/tickwatch-mtuopevy-client.tsv": "c0d67e1f08aa507244df63237ba0ce3bacfab95d3ac921c76e52db56fabd7e8b"
+  },
+  "limitations": [
+    "Rendered FPS unmeasured.",
+    "Server and client use independent clocks; elapsed intervals are never subtracted across machines.",
+    "Capture includes control/polling overhead and is wider than controller operation timing.",
+    "Largest gap ends at tick 52922076 on both peers, the tick containing destination setup; this correlation is not exclusive client-stage attribution.",
+    "Source tick cadence not recorded. Stage measurements come from retained server telemetry.",
+    "One local observation; instrumentation and environment costs included."
+  ]
+}

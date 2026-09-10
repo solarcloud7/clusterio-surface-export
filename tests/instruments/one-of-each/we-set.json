@@ -1026,13 +1026,13 @@
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 1319,
+				"line": 1329,
 				"property": "infinity_container_filters",
 				"gates": 1
 			},
 			{
 				"file": "core/deserializer.lua",
-				"line": 1335,
+				"line": 1345,
 				"property": "remove_unfiltered_items",
 				"gates": 1
 			}

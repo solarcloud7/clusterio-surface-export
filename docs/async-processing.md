@@ -23,11 +23,20 @@ callback delays the next update. Batching does not guarantee stable UPS or no hi
 
 The web transfer action and `surface-export start-transfer` command enter a controller
 queue before sending an export request. Acceptance means **queued**, not arrived.
-Requests sharing either their source or destination instance run in arrival order;
-independent instance pairs can run concurrently. Reservations last through terminal
+By default, requests sharing either endpoint run one at a time in arrival order;
+independent instance pairs can run concurrently. The experimental controller option
+`surface_export.max_inflight_transfers_per_instance` permits 1–4 admitted operations
+per endpoint (default 1). This overlaps controller/transport work while the separate
+Lua scheduler limits job steps. It does not remove operation reservations or make
+all Lua entry points incremental. Reservations last through terminal
 cleanup or rollback. An unresolved pending-transfer intent also blocks admission on
 its instances. Duplicate requests for the same source platform reuse the queue entry;
 a different destination is refused while that entry exists.
+
+Unknown operations and unresolved recovery intents block their endpoints even when
+the overlap limit is raised. Chunk uploads carrying operation IDs are isolated by
+that identity; platform names are not unique. Legacy callers without an ID retain
+the old name/force session key and must not interleave same-name uploads.
 
 Queued platforms remain untouched until dispatch. The gateway map shows a queued marker
 at the source endpoint, followed by preparation and then transfer motion. The controller's
@@ -50,18 +59,55 @@ Verification: a local three-platform concurrent submission completed in order th
 source cleanup, retained measured queue waits under the canonical IDs, and left no
 test platforms after cleanup. This verifies admission behavior, not a throughput gain.
 
+## Experimental sectional codec
+
+The instance option `surface_export.sectioned_codec` is **off by default**. When enabled,
+source-initiated transfers serialize independently valid versioned JSON frames across
+scheduler visits and compress one frame per visit. Frames have a 65,536-byte raw limit
+and a 4,096-frame limit. An oversized individual record or metadata field explicitly
+falls back to the existing codec; it is not silently split or truncated.
+
+The instance plugin reassembles those source frames and produces the existing deflate /
+base64 artifact for controller storage and downloads. That artifact compression uses
+Node's asynchronous zlib API. Source frame compression still uses Factorio's synchronous
+helper, once per frame; it has not been moved outside Factorio. File exports and clones
+retain their existing encoding path.
+
+For a destination with the option enabled, the instance plugin prepares independent
+compressed frames outside Factorio. Lua accepts the envelope into an import job, then
+inflates and decodes one frame per scheduler visit. Platform preparation follows on a
+later visit. Sequence, declared frame count, array offsets, duplicate fields and frame
+sizes are checked. Strings and tables retain decode progress; profiler objects do not
+become saved job state. Missing profiler measurements after reload stay unavailable.
+
+These are local execution boundaries, not aligned controller/Lua clock intervals. A
+job's decode envelope includes ticks between callbacks; accumulated execution excludes
+those waits. A decode exception interrupts the job rather than replaying its callback;
+normal controller timeout/recovery still applies. This path does not make platform
+creation, native string concatenation, oversized records or belt capture incremental.
+
+Bounded acceptance on Factorio 2.1.17: the three golden platforms retained all 1,830
+blueprint-visible entity configurations. The larger transfer fixture used legacy
+fallback; the omnibus and one-of-each fixtures used sectional source compression
+across 90 and 66 work ticks respectively. These results do not certify unblueprintable
+entities or every runtime property. See the manual acceptance notes and retained raw
+observations for precise coverage and the performance matrix.
+
 ## Scheduler and synchronous work
 
 [`AsyncProcessor.process_tick()`](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)
 services pending mining-progress restoration, latch rearming, gateway staging, and
-import-session cleanup, then sorts jobs by `started_tick`. It visits at most
+import-session cleanup, then selects the least recently advanced runnable jobs, with
+`started_tick` and job ID as deterministic tie-breakers. Future beacon waits do not
+consume a slot. The last serviced tick is retained across reloads. It visits at most
 `max_concurrent_jobs` entries sequentially. Export and import completion start on the
 next eligible tick after the final entity batch.
 
-The limit counts job visits per tick, not admitted jobs, threads, or milliseconds.
-An import waiting for its deferred phase still occupies a visit. Earlier jobs can
-delay later jobs; this is not round-robin scheduling. With three visited entity jobs
-and batch size 50, a tick can examine up to 150 entity entries plus other work.
+New configurations default to one combined job step per tick. Existing configured
+limits remain in effect. Runnable jobs take turns; a pending beacon wait consumes no
+slot before its target tick. The limit counts job visits, not admitted jobs, threads
+or milliseconds. With three configured visits and batch size 50, a tick can still
+examine up to 150 entity entries plus other work. An indivisible step can still be slow.
 
 | Path | Count-limited work | Work outside the entity batch limit |
 |---|---|---|
@@ -77,7 +123,7 @@ the next visit and splits large entity/tile arrays across visits; compression, c
 output and publication follow after encoding finishes on another visit.
 Source diagnostic files reuse the serialized JSON bytes instead of encoding the same
 payload again. Each native encoding call remains synchronous; array batches and
-object fields are joined into the existing JSON format. No new wire format is introduced.
+object fields are joined into the existing JSON format. The default path retains the existing wire format.
 One large entity or metadata field can still exceed the intended work allowance. The Lua
 regression `tests/lua/export-phase-yields.lua` checks these callback boundaries and
 the identical diagnostic bytes; live callback measurements are recorded in the manual
@@ -303,7 +349,7 @@ and sent to Lua on instance start by [instance.ts](../docker/seed-data/external_
 | `surface_export.batch_size` | 50 | Entity-list entries per visited export or general entity-creation batch; not milliseconds or a limit on all phases |
 | `surface_export.belt_batch_size` | 500 | Soft stack/member-line work target per belt callback; each captured side group remains atomic |
 | `surface_export.belt_trace` | `false` | Expensive successful belt position diagnostics; failure traces and mandatory cargo integrity stay enabled |
-| `surface_export.max_concurrent_jobs` | 3 | Job entries serviced per scheduler invocation, sequentially |
+| `surface_export.max_concurrent_jobs` | 1 | Combined import/export job entries serviced per scheduler invocation, sequentially |
 | `surface_export.show_progress` | `true` | Conditional progress notifications and periodic job logging |
 | `surface_export.profile_batches` | `false` | Additional bounded batch-level profiler records; phase totals remain enabled |
 | `surface_export.debug_mode` | `true` | Debug behavior and diagnostic output, not a processing budget |

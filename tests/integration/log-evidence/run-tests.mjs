@@ -22,6 +22,13 @@ const history = Array.from({ length: 16 }, (_, index) => {
 	const fixture = structuredClone(index < 14 ? recorded.success : recorded.failure);
 	fixture.row.transferId = `browser-record-${String(index).padStart(2, "0")}`;
 	fixture.row.downloadable = false;
+	if (index === 2) {
+		fixture.row.status = "cleanup_failed";
+		fixture.row.platformName = "Cleanup trial";
+		fixture.row.error = "Source deletion rejected before mutation";
+		fixture.row.completedAt = null;
+		Object.assign(fixture.detail.summary, { status: "cleanup_failed", error: fixture.row.error, completedAt: null });
+	}
 	if (index === 14) { fixture.row.downloadable = true; fixture.row.exportId = "browser-artifact"; }
 	if (index === 15) fixture.row.operationType = "import";
 	if (index === 13) {
@@ -144,6 +151,21 @@ try {
 	assert.equal(report.schemaVersion, 1);
 	assert.equal(report.preview, false);
 	assert.ok(report.events.length > 0);
+	const visibleIds = target => target.locator(".se-history-row").evaluateAll(rows => rows.map(row => row.getAttribute("data-transfer-id")));
+	const originalIds = await visibleIds(page);
+	await page.locator('.se-history-row[data-transfer-id="browser-record-02"]').click();
+	await detail.getByTestId("operation-outcome").getByText("Cleanup needs attention", { exact: true }).waitFor();
+	assert.deepEqual(await visibleIds(page), originalIds, "selecting cleanup failure must preserve every visible sibling");
+	assert.match(await logs.innerText(), /Searching 16 loaded operations · 16 matching/);
+	assert.equal(await page.getByRole("textbox", { name: "Search loaded operations" }).inputValue(), "");
+	await page.locator('.se-history [title="2"]').click();
+	assert.equal(await page.locator(".se-history-row").count(), 6, "the remaining transactions are still reachable");
+	assert.equal((await readReport(detail)).operation.status, "cleanup_failed", "pagination preserves cleanup selection");
+	await page.locator('.se-history [title="1"]').click();
+	await page.locator('.se-history-row[data-transfer-id="browser-record-00"]').click();
+	await detail.getByText("Arrived and verified", { exact: true }).waitFor();
+	assert.deepEqual(await visibleIds(page), originalIds, "leaving cleanup detail must preserve the list");
+	console.log("PASS cleanup selection preserves all 16 transactions across both pages");
 	await page.getByRole("textbox", { name: "Search loaded operations" }).fill(selected);
 	assert.equal(await page.locator(".se-history-row").count(), 1);
 	await page.getByRole("textbox", { name: "Search loaded operations" }).fill("no-such-operation-in-history");
@@ -344,6 +366,7 @@ try {
 	await racePage.getByText("Injected read failure", { exact: true }).waitFor();
 	await racePage.getByRole("textbox", { name: "Search loaded operations" }).fill("1");
 	await racePage.locator('.se-history [title="2"]').click();
+	const idsBeforeCleanupPush = await visibleIds(racePage);
 	pushNext = true;
 	await racePage.getByRole("button", { name: "Retry", exact: true }).click();
 	const raceDetail = racePage.getByTestId("transfer-detail");
@@ -355,6 +378,7 @@ try {
 	assert.equal(await racePage.getByRole("textbox", { name: "Search loaded operations" }).inputValue(), "1");
 	assert.equal(await racePage.locator(".se-history .ant-pagination-item-active").getAttribute("title"), "2");
 	assert.equal(raceReport.transferId, "browser-record-00", "live updates preserve the selection even on another page");
+	assert.deepEqual(await visibleIds(racePage), idsBeforeCleanupPush, "cleanup log push must not replace sibling rows");
 	assert.ok(latestResponse && routeHandle);
 	console.log("PASS real request retry and log-push/snapshot race");
 	const summaryPage = await browser.newPage();
@@ -378,6 +402,8 @@ try {
 	await signIn(summaryPage);
 	await summaryPage.getByTestId("transfer-detail").getByText("Cleanup needs attention", { exact: true }).waitFor();
 	assert.equal((await readReport(summaryPage.getByTestId("transfer-detail"))).operation.status, "cleanup_failed");
+	assert.equal(await summaryPage.locator(".se-history-row").count(), 10, "cleanup summary push retains the full first page");
+	assert.match(await summaryPage.getByTestId("transfer-logs").innerText(), /Searching 16 loaded operations · 16 matching/);
 	console.log("PASS summary-only live update is not overwritten by older details");
 	const reconnectPage = await browser.newPage();
 	let reconnectSocket;

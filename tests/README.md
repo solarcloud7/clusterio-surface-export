@@ -21,6 +21,34 @@ The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and 
 A test is not a lab merely because it lives under the top-level `tests/` directory. Choose its category from the
 question it answers and the oracle it requires.
 
+## Local Lua checks
+
+`./tools/tests/run-lua-tests.ps1` runs the Lua test list from CI with Lua 5.2 in a
+locally built Docker image. Use `-List` to inspect the list, or
+`-Test tests/lua/chunk-operation-isolation.lua` for a focused regression. Each test
+runs without network access with only its source dependencies mounted read-only.
+The runner stops at the first failure, returns a nonzero exit code, and retains
+output and command elapsed time under `ci-artifacts/lua-tests-*/`. This elapsed time
+includes Docker startup; it is not Factorio callback profiling. Tests not reached
+after a failure are listed as requested but have no result.
+
+This is standalone Lua, not Factorio's sandbox. Tests may use host-only loaders such
+as `loadfile` and stub engine APIs; their success does not prove those facilities are
+available to shipped mod code. Follow the [dependency compatibility check](../docs/testing.md#factorio-dependency-compatibility)
+before adding a library, and prove engine-dependent behavior in the pinned game.
+
+## Manual performance instruments
+
+- [Simulation timing and full-transfer baseline](instruments/tick-watch/README.md):
+  server/client tick cadence, with separate callback profiling and physical cargo checks.
+- [Codec experiments and recorded results](instruments/tick-watch/import-setup.md):
+  full versus sectional JSON decoding, external compression, and 1x/2x/4x workloads.
+  Run `node tests/instruments/tick-watch/codec-scaling.mjs --recorded` to verify and
+  re-analyze the retained evidence without Docker or a running game.
+- [RCON throughput](instruments/rcon-throughput/README.md): transport-only comparison.
+
+These are manually invoked instruments, not additional default CI suites.
+
 ## Baked physical batches
 
 A baked batch consumes each certified fixture once, invokes the real production path, and reloads the paired
