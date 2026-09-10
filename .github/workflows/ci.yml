@@ -507,11 +507,91 @@ jobs:
           docker compose down -v
 
   # ===========================================================================
-  # Publish to npm — only on version tags after tests pass
+  # Pack once and test the installed bytes. Manual dispatch rehearses the handoff.
   # ===========================================================================
+  package-acceptance:
+    name: Test release package
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      artifact-id: ${{ steps.accepted-package.outputs.artifact-id }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
+      - name: Install build dependencies
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm ci --ignore-scripts
+      - name: Build plugin once
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm run build
+      - name: Pull pinned lab images
+        timeout-minutes: 5
+        run: |
+          TAG=$(sed -n 's/^CLUSTERIO_IMAGE_TAG=//p' .env.example | tr -d '\r')
+          test -n "$TAG"
+          docker pull "ghcr.io/solarcloud7/clusterio-docker-controller:$TAG"
+          docker pull "ghcr.io/solarcloud7/clusterio-docker-host:$TAG"
+          docker pull node:24-bookworm-slim
+      - name: Pack and test installed runtime
+        run: node tests/manual/package-install/run.mjs --run --artifact-dir ci-artifacts/release-package
+      - name: Retain accepted package and evidence
+        id: accepted-package
+        uses: actions/upload-artifact@v7
+        with:
+          name: tested-package-${{ github.run_attempt }}
+          path: |
+            ci-artifacts/release-package/package.tgz
+            ci-artifacts/release-package/acceptance.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain failed acceptance report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-acceptance-failure-${{ github.run_attempt }}
+          path: ci-artifacts/se-manual-*/result.json
+          if-no-files-found: warn
+          retention-days: 5
+
+  release-check:
+    name: Verify package handoff (dry run)
+    needs: [package-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Download accepted package from this run
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
+          path: release-package
+      - name: Verify bytes, version, commit and native evidence
+        run: node tools/release/verify-package.mjs release-package
+      - name: Rehearse publishing the tarball without lifecycle scripts
+        run: |
+          npm publish ./release-package/package.tgz --ignore-scripts --dry-run --json --access public > publish-preview.json
+          node tools/release/verify-package.mjs release-package publish-preview.json
+
   publish:
     name: Publish to npm
-    needs: [integration-tests, fast-checks]
+    needs: [integration-tests, fast-checks, package-acceptance, release-check]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -531,29 +611,14 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
-          cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
+      - name: Download accepted package from this run
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
+          path: release-package
 
-      - name: Install dependencies
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: npm ci
-
-      - name: Build plugin
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: npm run build
-
-      - name: Verify version matches tag
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "Package version: $PACKAGE_VERSION"
-          echo "Tag version:     $TAG_VERSION"
-          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Version mismatch! package.json=$PACKAGE_VERSION, tag=$TAG_VERSION"
-            exit 1
-          fi
+      - name: Verify bytes, version, commit and native evidence
+        run: node tools/release/verify-package.mjs release-package
 
       - name: Publish to npm
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: npm publish --provenance --access public
+        run: npm publish ./release-package/package.tgz --ignore-scripts --provenance --access public

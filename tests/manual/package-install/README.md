@@ -13,6 +13,10 @@ exact physical cargo, one import and complete recovery after controller restart.
 node tests/manual/package-install/run.mjs --cleanup-proof
 node tests/manual/package-install/run.mjs --run
 node tests/manual/package-install/run.mjs --analyze ci-artifacts/<run>/result.json
+# Retain exactly the tested bytes for a release handoff (new directory required):
+node tests/manual/package-install/run.mjs --run --artifact-dir ci-artifacts/release-package
+node tools/release/verify-package.mjs ci-artifacts/release-package
+npm publish ./ci-artifacts/release-package/package.tgz --ignore-scripts --dry-run --access public
 ```
 
 The pack step uses `--ignore-scripts` because artifacts have already been explicitly
@@ -66,7 +70,39 @@ cleanup. It replays the retained native result as PASS; these analyzer-only chan
 did not require a second game run. The reports retain the hashes of the runner used
 for the actual observation, rather than rewriting them to the later analyzer revision.
 
-This is a tested candidate package, not a new npm release. The publish workflow still
-builds its own artifact; this manual result does not certify a future publish's bytes.
-Before shipping, test the final versioned artifact and define the compatible upgrade
-baseline. The supported historical migration path remains undecided.
+These historical reports certify a candidate, not a new npm release. They predate
+the release handoff metadata and cannot authorize publication through the new gate.
+The supported historical migration path remains undecided.
+
+## Release artifact handoff
+
+On version tags and manual dispatch, CI builds and packs once, then runs this lab.
+Only a passing run with verified cleanup exports `package.tgz` and `acceptance.json`.
+The report records the checkout commit, packed version, SHA256 and npm integrity.
+A separate job downloads the immutable artifact by its acceptance-job output ID, replays the independent acceptance
+oracle, checks both hashes and commit/version, and rehearses npm publication with
+`--ignore-scripts --dry-run`. The tag-only publish job repeats verification and submits
+that tarball with provenance, without rebuilding or running lifecycle scripts.
+Artifact names include the workflow attempt; retries do not overwrite earlier packages
+or select packages by a shared name. The publisher uses the same acceptance-job ID.
+
+To rehearse without releasing, dispatch CI on a branch:
+`gh workflow run ci.yml --ref <branch>`. Do not create a version tag for a rehearsal.
+Manual dispatch on a version tag follows the release path. A dry run cannot establish
+registry authentication, provenance or publication success. Local commit metadata
+identifies HEAD; local dirty builds are experiments, not release authorization. CI
+acceptance builds from a fresh checkout. No historical report is reused for a release.
+
+Local handoff rehearsal on 2026-09-10: `se-manual-mtv86zp7-1eba438f` passed native
+acceptance and cleanup, then passed the release verifier and npm dry run. The dry run's
+name, version and SHA512 integrity matched the accepted package. Tarball SHA256:
+`d6c6bbf37933d3deba4564db086719f1e75ea403919165e9ffe52c9f87e3e1d2`.
+[Raw handoff report](evidence/handoff-0.10.281.json) records the base HEAD plus the
+experimental runner hashes; this was a local dirty-checkout rehearsal. GitHub artifact
+transport is a separate check, and no npm publication was performed.
+
+The first hosted rehearsal passed native acceptance and artifact verification, then
+exposed a preview-reader error: npm 11.19 returns JSON keyed by package name, whereas
+local npm 11.6 returned a flat object. Reproduced with `node:24.20.0-bookworm-slim`;
+the reader now accepts both observed shapes while requiring identical name, version
+and integrity. Regression cases reject mismatches and extra package entries.
