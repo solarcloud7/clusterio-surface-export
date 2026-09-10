@@ -42,13 +42,23 @@ test("cleanup checks both exact owner label and resource name before a mutation"
   assert.throws(()=>lab.mutateContainer("kill",`${run}-host-1`),/foreign Docker resource/);
   assert.equal(calls.length,1);assert.equal(calls[0][1],"inspect");
 });
-test("verbose log overflow retains a bounded marked tail instead of falsifying cleanup failure",t=>{
+test("verbose log overflow retains bounded marked output instead of falsifying cleanup failure",t=>{
   const dir=mkdtempSync(join(tmpdir(),"se-log-bound-")),name=`${run}-host-1`;
   t.after(()=>{unlinkSync(join(dir,`${name}.log`));rmdirSync(dir);});
   const lab=new DockerLab(run,dir);
-  const result=lab.captureLogs(name,()=>{throw Object.assign(new Error("overflow"),{code:"ENOBUFS",stdout:Buffer.alloc(1048580)});});
+  const result=lab.captureLogs(name,()=>({error:{code:"ENOBUFS"},stdout:Buffer.alloc(1048580)}));
   assert.equal(result.truncated,true);assert.equal(result.bytes,1048576);
   assert.equal(statSync(join(dir,`${name}.log`)).size,1048576);
+});
+test("successful Docker log capture retains fatal errors on stderr and rejects command failure",t=>{
+  const dir=mkdtempSync(join(tmpdir(),"se-log-streams-")),name=`${run}-controller`;
+  t.after(()=>{unlinkSync(join(dir,`${name}.log`));rmdirSync(dir);});
+  const lab=new DockerLab(run,dir);
+  const result=lab.captureLogs(name,()=>({status:0,stdout:Buffer.from("Started controller\n"),stderr:Buffer.from("LockFileExistsError\n")}));
+  assert.equal(result.truncated,false);
+  const text=readFileSync(join(dir,`${name}.log`),"utf8");
+  assert.match(text,/Started controller/);assert.match(text,/LockFileExistsError/);assert.match(text,/separate stream/);
+  assert.throws(()=>lab.captureLogs(name,()=>({status:1,stderr:Buffer.from("No such container")})),/No such container/);
 });
 test("recovery oracle requires a real fault, exactly one import, and a retry",()=>{
   const id=`1:transfer-cleanup-${run}-a`, sample={source:absent(),destination:copy()};
@@ -76,14 +86,15 @@ test("source crash contract distinguishes historical safety from recovery comple
   report.events[1].push(report.events[1][0]);
   assert.equal(analyze(report).verdict,"PASS");
 });
-test("fault hook calls the real implementation and holds only an accepted scoped reply once",async()=>{
+for (const runtimePath of ["/surface_export/dist/node/instance.js", "/consumer/node_modules/@solarcloud7/plugin-surface-export/dist/node/instance.js"])
+test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,async()=>{
   let calls=0, rule={run,enabled:true,name:`transfer-cleanup-${run}-a`,action:"source"}; const events=[];
   class InstancePlugin {
     async handleDeleteSourcePlatformMeasured(req){calls++;return {success:req.accepted};}
     async handleDestinationTransferGate(){return {success:true};}
     async handleImportPlatformRequestMeasured(){return {success:true};}
   }
-  const module={_load:()=>({InstancePlugin}),_resolveFilename:()=>"/surface_export/dist/node/instance.js"};
+  const module={_load:()=>({InstancePlugin}),_resolveFilename:()=>runtimePath};
   const fs={existsSync:()=>true,readFileSync:()=>JSON.stringify(rule),appendFileSync:(_,s)=>events.push(JSON.parse(s))};
   vm.runInNewContext(readFileSync(new URL("fault-hook.cjs",import.meta.url),"utf8"),{
     require:name=>name==="node:fs"?fs:module,process:{env:{SE_MANUAL_RUN:run},pid:1},Symbol,Date,Set,Promise,

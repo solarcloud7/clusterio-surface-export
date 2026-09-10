@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -217,13 +217,16 @@ export class DockerLab {
       "node:24-bookworm-slim","node","/age-intent.mjs",transferId,this.run]);
     return JSON.parse(raw);
   }
-  captureLogs(name,execute=execFileSync) {
-    const limit=1048576;let output,truncated=false;
-    try {output=execute("docker",["logs","--tail","1500",name],{timeout:30_000,maxBuffer:limit,stdio:["pipe","pipe","pipe"]});}
-    catch(error) {
-      if(error.code!=="ENOBUFS") throw error;
-      output=Buffer.concat([error.stdout||Buffer.alloc(0),error.stderr||Buffer.alloc(0)]);truncated=true;
-    }
+  captureLogs(name,execute=spawnSync) {
+    const limit=1048576;
+    const result=execute("docker",["logs","--tail","1500",name],{timeout:30_000,maxBuffer:limit,stdio:["pipe","pipe","pipe"]});
+    if(result.error && result.error.code!=="ENOBUFS") throw result.error;
+    if(!result.error && result.status!==0) throw new Error(`docker logs failed: ${String(result.stderr).slice(-1600)}`);
+    // Docker forwards container stderr on its own stderr even when `logs` succeeds.
+    // Keep both streams, without implying they retain their original interleaving.
+    const output=Buffer.concat([result.stdout||Buffer.alloc(0),
+      ...(result.stderr?.length?[Buffer.from("\n--- stderr (separate stream) ---\n"),result.stderr]:[])]);
+    const truncated=result.error?.code==="ENOBUFS";
     writeFileSync(join(this.directory,`${name}.log`),output.subarray(0,limit));
     return {container:name,bytes:Math.min(output.length,limit),truncated:truncated||output.length>limit};
   }

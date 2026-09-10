@@ -37,6 +37,14 @@ as `loadfile` and stub engine APIs; their success does not prove those facilitie
 available to shipped mod code. Follow the [dependency compatibility check](../docs/testing.md#factorio-dependency-compatibility)
 before adding a library, and prove engine-dependent behavior in the pinned game.
 
+## Manual installation acceptance
+
+The [consumer installation lab](manual/consumer-install/README.md) runs the published Clusterio
+installer, installs a plugin tarball, creates fresh saves, exports real game assets, and checks
+browser loading and transfer recovery in disposable containers. Run `npm run test:manual:consumer`
+for its explicit inputs. It needs a locally installed licensed Factorio client; it is manually
+triggered and does not run the game in ordinary CI.
+
 ## Manual performance instruments
 
 - [Simulation timing and full-transfer baseline](instruments/tick-watch/README.md):

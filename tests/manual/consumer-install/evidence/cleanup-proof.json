@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "run": "se-manual-mtvh0g4i-ab6ef482",
+  "startedAt": "2026-09-10T11:55:23.688Z",
+  "verdict": "HARNESS_ERROR",
+  "cleanup": {
+    "success": true,
+    "errors": [],
+    "logs": [
+      {
+        "container": "se-manual-mtvh0g4i-ab6ef482-install",
+        "bytes": 0,
+        "truncated": false
+      }
+    ]
+  },
+  "hashes": {
+    "package": "5420aad93cc1bac39353b1efe0c420c3e1628a38fc42151fada54dd5bb3430db",
+    "gateway": "ca4ab6d6749000cc7598fc28bc953ae84887728aa941f85d0a747713dd31f72c",
+    "runner": "34b9584eca210a473c3968673b8cf5a3126ff6f12306eab7d0fcb289093f26e9",
+    "lab": "38b3a3945a21f78842d676d8664a4dd0f9ca642a1c10f2470bbc3014d1131adf",
+    "bootstrap": "37a4b294d170f4d0175c978b438d69ea7cc487d0fce04a74d14ab2d15a3ca429",
+    "browser.mjs": "74eee1b9e18fb18447263293795f48c139531bc80807c1610add9d681c2a5de7",
+    "oracle.mjs": "fed073a3c7ee72cf7dbb52d376f7a930fcffe064c404928f17ab03fd4119c7e0",
+    "../transfer-reliability/docker-lab.mjs": "bf803779bd742ee6ad8376b077be06b564ed6cd51852090961a170cea39e1eac",
+    "../transfer-reliability/cases.mjs": "b70554aec4952daf6a7f7fb4b53e49f0f5be3cbe8153905f89ada685ba45e616",
+    "../transfer-reliability/fault-hook.cjs": "26a3c8a8cf1fdc6d498a49b434e1ae75c93bffc40c9f23cee8d361a735819b0b",
+    "../transfer-reliability/oracle.mjs": "3e580f984cde382d95304db745caa18e56bf0eab048f793afe759c2c2eccfd1c",
+    "../../integration/transfer-cleanup/probe.lua": "672d15a9cadbe4806cbfdb67c32e47f70ad8462985ebda3e3bc7dbfc03a0faad"
+  },
+  "installation": {
+    "success": true,
+    "installer": "2.0.0-alpha.27",
+    "unprivileged": true,
+    "packageVersion": "0.10.281",
+    "peers": {
+      "controller": "2.0.0-alpha.27",
+      "host": "2.0.0-alpha.27",
+      "ctl": "2.0.0-alpha.27",
+      "lib": "2.0.0-alpha.27"
+    },
+    "registration": [
+      [
+        "surface_export",
+        "@solarcloud7/plugin-surface-export"
+      ]
+    ],
+    "automaticRegistration": true,
+    "npmVersion": "11.19.0",
+    "runScripts": true,
+    "engine": "Version: 2.1.17 (build 87315, linux64, full)\nVersion: 64\nMap input version: 1.0.0-0\nMap output version: 2.1.17-0",
+    "image": "ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27.r7"
+  },
+  "error": "Error: Intentional post-installer failure; verify cleanup\n    at file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:41:49\n    at async withWorkflowLock (file:///C:/Users/Solar/source/FactorioSurfaceExport/tools/shared/workflow-lock.mjs:40:15)\n    at async file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/manual/consumer-install/run.mjs:21:8",
+  "freshSaves": [],
+  "finishedAt": "2026-09-10T11:56:12.421Z"
+}
