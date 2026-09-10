@@ -1,0 +1,22 @@
+{
+  "version": "0.9.82",
+  "peerDependencies": {
+    "@clusterio/controller": "^2.0.0",
+    "@clusterio/host": "^2.0.0",
+    "@clusterio/ctl": "^2.0.0",
+    "@clusterio/lib": "^2.0.0"
+  },
+  "dist": {
+    "integrity": "sha512-+zuOGZBnnxIKkEyGpFAQRy9UvDRRZSjvTDO+7VnnN7DWTIshg+rZwYS8vpT2J92ugL7jGH8O/UunTtY50v1ehg==",
+    "shasum": "b112f046d198a488d4f4e25a9633355910ad4f99",
+    "tarball": "https://registry.npmjs.org/@solarcloud7/plugin-surface-export/-/plugin-surface-export-0.9.82.tgz",
+    "fileCount": 66,
+    "unpackedSize": 476648,
+    "signatures": [
+      {
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+        "sig": "MEQCIHhMrjxIZuYyoBFvSsPU5VpTdjFeTWil1F6uoGK9o/HkAiAo0qk893I8VXmPkQ6GTd1ZwmlBEpFeFslN80MDN+DJLw=="
+      }
+    ]
+  }
+}
