@@ -2,7 +2,7 @@
 
 Transfer Factorio Space Age platforms between Clusterio instances. The project contains a TypeScript plugin, a save-patched Lua module, and the gateway mod.
 
-**Status: development / pre-production.** Local transfer and rollback fixtures pass, but crash-safe commit ordering and a production operating profile remain unfinished. The included Docker cluster is a development environment.
+**Status: development / pre-production.** Bounded transfer, rollback, lost-reply and source-restart fixtures pass. Coordinated backup restoration and a production operating profile remain release gates. The included Docker cluster is a development environment.
 
 ## What it does
 
@@ -12,7 +12,7 @@ Transfer Factorio Space Age platforms between Clusterio instances. The project c
 - Shows transfer progress on the gateway map and retains transaction summaries, detailed audit evidence, and measured timings according to configured limits.
 - Exposes controller retention and timeout settings in the Settings tab; batching and diagnostics are configured per instance.
 
-Lua work runs synchronously within each callback. Source belt capture, serialization, tiles, and other individual phases can still stall the simulation. Tick counts and measured milliseconds are separate signals. See [batching and timing](docs/async-processing.md) for boundaries and measured fixture results; there is no general no-lag or transfer-time guarantee.
+Lua work runs synchronously within each callback. Import and export jobs share a tick budget, and tiles and several restoration phases yield between batches. Native JSON/compression calls, large belt groups and other indivisible work can still stall the simulation. Tick counts and measured milliseconds are separate signals. See [batching and timing](docs/async-processing.md) for boundaries and measured fixture results; there is no general no-lag or transfer-time guarantee.
 
 ## Local development
 
@@ -31,7 +31,7 @@ Follow [Docker setup](docker/README.md) for first startup and client-mod synchro
 ./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves
 
 # Read cluster logs
-node tools/clusterio/read-cluster-logs.mjs --help
+node tools/clusterio/read-cluster-logs.mjs 'error|transfer|validation' 20 2000
 
 # List the integration suites before choosing a live test
 node tools/tests/run-integration-tests.mjs --list
@@ -64,15 +64,17 @@ creates a disposable cluster and preserves the live development cluster. These c
 
 ## Before production
 
-Readiness review: 2026-09-08. These are remaining acceptance gates, not guarantees supplied by the existing green tests.
+Readiness review: main after PR #306. Its fast, gallery and integration checks passed. Local runtime-version and advertised web-bundle checks also passed after syncing the canonical checkout. These checks do not prove a packaged release or a coordinated disaster restore.
+
+For a supervised alpha, use the [operating profile and incident procedure](docker/README.md#supervised-alpha). Broader rollout still needs the following acceptance evidence.
 
 | Priority | Work | Why it matters / acceptance evidence | Effort |
 |---|---|---|---|
-| Blocking | Establish crash durability and backup reconciliation | Destination activation now follows acknowledged source deletion; refusal, replay and controller restart fixtures pass. Prove recovery through abrupt process loss and older-save restoration, including expired intents and receipts. [Current protocol and pending work](docs/TRANSFER_2PC.md). | Large |
+| Blocking | Complete crash durability and backup reconciliation | Lost replies, controller restart, abrupt source-host loss and earlier source-save restoration have bounded passing fixtures. Restoring older controller/journal state together with worlds, destination rollback after release, missing journals and receipt eviction still need acceptance evidence. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
 | Blocking | Define a production deployment profile | Compose currently mounts writable source, patches static caching for development, exposes HTTP, and seeds debug-enabled public instances. Define immutable artifacts, intended exposure/authentication, and diagnostic defaults. | Medium |
 | Blocking | Exercise backup and restore | Restore controller state, artifacts, tokens, and paired instance saves after a simulated loss; document the recovery point and reconcile in-flight transfers. Local pre-deploy saves alone do not establish this. | Medium |
 | Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
-| Release gate | Test the exact release artifact and upgrade path | Run full CI plus fresh-install, preserved-save upgrade, and rollback checks against the version being shipped. Publishing already waits for both CI jobs; a published version alone is not production acceptance. | Medium |
+| Release gate | Test the exact release artifact and upgrade path | CI boots a fresh development cluster from checkout artifacts; local save-preserving deployment is also exercised. Repeat installation, upgrade and compatible rollback using the exact packaged release. Publishing waits for fast checks and both integration matrix legs; a published version alone is not production acceptance. | Medium |
 
 ## Repository map
 

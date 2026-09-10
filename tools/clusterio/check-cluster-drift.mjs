@@ -66,7 +66,7 @@ for (const host of HOSTS) {
 			`Lua  ${instance}`,
 			instanceStartedMs(host, instance),
 			newestMs(host, `${PLUGIN}/module`, "-name '*.lua'"),
-			"./tools/clusterio/deploy.ps1 -Scope lua",
+			"./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves",
 			"save-patched at instance start",
 		);
 	}

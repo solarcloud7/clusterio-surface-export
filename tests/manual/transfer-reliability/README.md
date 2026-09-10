@@ -18,7 +18,7 @@ node tests/manual/transfer-reliability/run.mjs --case performance
 ```
 
 The shorter entry point is `npm run test:manual:transfers -- --case <id>`.
-Use `npm run test:manual:transfers -- --all` to run all five cases sequentially. It continues
+Use `npm run test:manual:transfers -- --all` to run all listed cases sequentially. It continues
 after a recorded STOP so the other experiments still run, but stops on harness/cleanup errors.
 Offline instrumentation checks are `node --test tests/manual/transfer-reliability/harness.test.mjs`
 and `lua tests/manual/transfer-reliability/performance.test.lua`.
