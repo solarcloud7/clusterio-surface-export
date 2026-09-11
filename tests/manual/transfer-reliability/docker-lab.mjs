@@ -176,16 +176,22 @@ export class DockerLab {
     return {controllerImage:this.image,hostImage:this.hostImage,ids:this.ids,preflight:this.preflight,stagedHashes:this.stagedHashes,
       images:JSON.parse(this.docker(["image","inspect",this.image,this.hostImage])).map(i=>({id:i.Id,digests:i.RepoDigests}))};
   }
-  async checkpoint(name) {
+  async checkpoint(name, hosts = [1,2]) {
     assert.match(name,/^manual-[a-z0-9-]+$/);
-    for (const host of [1,2]) this.lua(host,`game.server_save('${name}');return {success=true}`);
+    assert.ok(hosts.length>0 && new Set(hosts).size===hosts.length && hosts.every(host=>host===1||host===2),"invalid checkpoint hosts");
+    for (const host of hosts) this.lua(host,`game.server_save('${name}');return {success=true}`);
     const evidence={};
-    for (const host of [1,2]) {
-      const file=`/clusterio/data/instances/${this.hosts[host].instance}/saves/${name}.zip`;
-      evidence[host]=await this.until(() => this.docker(["exec",this.hosts[host].container,"node","-e",
-        'const fs=require("fs"),zip=require("jszip"),crypto=require("crypto");const b=fs.readFileSync(process.argv[1]);zip.loadAsync(b,{checkCRC32:true}).then(()=>console.log(crypto.createHash("sha256").update(b).digest("hex"))).catch(e=>{console.error(e.message);process.exitCode=1;})',file]).trim(),"verified checkpoint",60);
-    }
+    for (const host of hosts) evidence[host]=await this.until(()=>this.checkpointHash(host,name),"verified checkpoint",60);
     return evidence;
+  }
+  checkpointHash(host,name) {
+    assert.ok(host===1||host===2,"invalid checkpoint host");
+    assert.match(name,/^manual-[a-z0-9-]+$/);
+    const file=`/clusterio/data/instances/${this.hosts[host].instance}/saves/${name}.zip`;
+    const digest=this.docker(["exec",this.hosts[host].container,"node","-e",
+      'const fs=require("fs"),zip=require("jszip"),crypto=require("crypto");if(fs.statSync(process.argv[1]).size>268435456)throw Error("checkpoint exceeds 256 MiB");const b=fs.readFileSync(process.argv[1]);zip.loadAsync(b,{checkCRC32:true}).then(()=>console.log(crypto.createHash("sha256").update(b).digest("hex"))).catch(e=>{console.error(e.message);process.exitCode=1;})',file]).trim();
+    assert.match(digest,/^[a-f0-9]{64}$/,"invalid checkpoint digest");
+    return digest;
   }
   async load(host,name,{crash=false}={}) {
     if (crash) { this.mutateContainer("kill",this.hosts[host].container,["--signal","KILL"]);

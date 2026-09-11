@@ -40,9 +40,10 @@ export function evaluateCopies(before, samples, minimumSamples=2) {
 export function analyze(report) {
   assert.equal(report.schemaVersion,1);
   assert.ok(!report.error,"report contains a harness failure");
-  assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source"].includes(report.case),"unknown acceptance case");
+  assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source","restore-old-destination"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="coordinated-restore") return analyzeBackup(report);
+  if(report.case==="restore-old-destination") return analyzeDestinationRollback(report);
   if(report.case==="performance") {
     for(const m of report.measurements||[]) {
       assert.deepEqual(m.before?.cargo,performanceCargo(m.extraEntities),"invalid performance fixture");
@@ -115,6 +116,56 @@ export function analyze(report) {
     ? "Sampled safety invariant preserved; inspect outcome separately for recovery liveness"
     : report.case==="restore-old-source" ? "Sampled safety invariant survived older source restore"
       : "Lost reply recovered with exact cargo and one usable destination"};
+}
+
+export function analyzeDestinationRollback(report) {
+  assert.equal(report.contract?.schemaVersion,4,"destination rollback contract missing");
+  assert.deepEqual(report.before?.cargo,expectedCargo,"invalid destination rollback fixture");
+  assert.equal(evaluateCopies(report.before,[report.initial],1).verdict,"PASS","initial physical observation changed");
+  assert.equal(report.initial.source.usable,true,"initial source not usable");
+  assert.equal(report.initial.destination?.present,false,"old checkpoint must precede destination creation");
+  for(const [generation,key] of [["before","before"],["after","after"]]) {
+    const checkpoint=report.checkpoints?.[key];
+    assert.equal(checkpoint?.host,2,"destination checkpoint required");
+    assert.equal(checkpoint.name,`manual-destination-${generation}`,"wrong checkpoint name");
+    assert.match(checkpoint.sha256,/^[a-f0-9]{64}$/,"checkpoint digest missing");
+    assert.deepEqual(checkpoint.marker,{run:report.run,generation},"checkpoint generation identity mismatch");
+  }
+  assert.notEqual(report.checkpoints.before.sha256,report.checkpoints.after.sha256,"distinct save generations required");
+  assert.deepEqual(report.control?.load,report.checkpoints.after,"control did not load the completed checkpoint");
+  assert.equal(report.control.reconciliationReady,true,"control startup reconciliation unavailable");
+  assert.deepEqual(report.rollback?.load,report.checkpoints.before,"rollback did not load the earlier checkpoint");
+  for(const [snapshot,outcome] of [[report.transferred,report.outcome],[report.control.sample,report.control.outcome]]) {
+    assert.equal(evaluateCopies(report.before,[snapshot],1).verdict,"PASS","physical control failed");
+    assert.equal(snapshot.source.present,false,"control source not deleted");
+    assert.equal(snapshot.destination.usable,true,"control destination not usable");
+    assert.equal(outcome?.transferId,report.transferId,"control operation identity mismatch");
+    assert.equal(outcome.status,"completed","control transfer incomplete");
+  }
+  const samples=report.rollback.samples;
+  assert.ok(Array.isArray(samples)&&samples.length>=2&&samples.length<=16,"bounded rollback observations required");
+  let previous=-1;
+  for(const s of samples) {
+    assert.ok(Number.isFinite(s.offsetMs)&&s.offsetMs>=0&&s.offsetMs>previous,"invalid observation clock");
+    previous=s.offsetMs;
+    assert.equal(s.outcome?.transferId,report.transferId,"observed history missing or for another operation");
+    assert.equal(typeof s.outcome.status,"string","history outcome unavailable");
+  }
+  assert.ok(previous>=65000,"full recovery observation window required");
+  assert.ok(Number.isFinite(report.rollback.observedMs)&&report.rollback.observedMs>=previous,"observation duration missing");
+  assert.ok(Array.isArray(report.events?.[1])&&Array.isArray(report.events?.[2]),"request observations unavailable");
+  const imports=report.events[2].filter(e=>e.kind==="call"&&e.action==="import"&&e.id===report.transferId);
+  assert.ok(imports.length>0,"production import was not observed");
+  const physical=evaluateCopies(report.before,samples);
+  const violations=physical.violations.map(v=>v==="no recoverable copy"?"no physical platform copy in either running world":v);
+  if(imports.length!==1) violations.push("more than one import request for the canonical transfer");
+  const last=samples.at(-1);
+  if(last.source.present||!last.destination.usable) violations.push("normal recovery did not leave one usable destination within the observation window");
+  return {verdict:violations.length?"STOP":"PASS",violations,
+    observation:{missingPhysicalCopy:samples.some(s=>!s.source.present&&!s.destination.present),
+      finalSourcePresent:last.source.present,finalDestinationPresent:last.destination.present,
+      finalHistoryStatus:last.outcome.status,importRequests:imports.length,observationMs:report.rollback.observedMs},
+    reason:"Physical world observations and historical operation status are separate; backup and cached-payload recovery was not attempted"};
 }
 
 export function analyzeBackup(report) {

@@ -37,6 +37,39 @@ interception exists only in the disposable containers through `NODE_OPTIONS`.
 
 ## What each case proves
 
+### Destination save rollback
+
+```powershell
+node --test tests/manual/transfer-reliability/destination-rollback.test.mjs
+node tests/manual/transfer-reliability/run.mjs --case restore-old-destination --fail-after-control
+node tests/manual/transfer-reliability/run.mjs --case restore-old-destination
+node tests/manual/transfer-reliability/run.mjs --analyze ci-artifacts/<run>/result.json
+```
+
+The case saves the destination before a transfer, completes the transfer, and saves
+the destination again. It first reloads the newer checkpoint as a control: the source
+must remain absent, destination cargo must exactly match the independent physical
+fixture, and history must retain the completed operation. Only then does it load the
+older destination checkpoint. The controller and source are never restored or restarted.
+Save hashes and a run-scoped storage marker verify the selected generation.
+
+After rollback, at most 16 samples over at least 65 seconds observe both running worlds
+and the retained transaction status. The runner makes no recovery requests or changes
+to timers, receipts, journals or cargo. Read-only observation continues after a violation
+to record whether normal recovery acts. Every sampled loss or duplicate remains a STOP,
+even if a later sample recovers. Missing evidence, an invalid control, interrupted
+observation or failed Docker cleanup is a HARNESS_ERROR.
+
+Missing platforms mean no physical copy was observed in either running world. They do
+not establish loss of every backup or cached payload. The newer checkpoint remains in
+the lab until cleanup; restoring it is outside this experiment. Historical completion
+is reported separately from current physical cargo. This case reuses the existing Lua
+fixture and observer; its only additional save state is the harness generation marker.
+
+The injected cleanup run fails after reloading the newer checkpoint, before the stale
+save is loaded. Require its intentional error and `cleanup.success: true` before the
+acceptance run. Both commands act only on the owned disposable cluster.
+
 ### Coordinated volume restore
 
 The [restore contract](backup-restore.md) defines a quiesced backup of every disposable
