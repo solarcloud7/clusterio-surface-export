@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { restoreConfiguration } from "./restore.mjs";
-import { PRODUCTION_VOLUME_SUFFIXES, validateStorageRequest } from "../transfer-reliability/backup-storage.mjs";
+import { PRODUCTION_VOLUME_SUFFIXES, validateStorageRequest, archiveLimit } from "../transfer-reliability/backup-storage.mjs";
 
 const run="se-manual-production-offline";
 const configuration=()=>({name:run,services:{controller:{container_name:`${run}-controller`},"host-1":{},"host-2":{}},
@@ -23,4 +23,9 @@ test("new or missing persistent stores fail before restore, as do foreign resour
     const config=configuration();mutate(config);assert.throws(()=>restoreConfiguration(config,run));
   }
   assert.throws(()=>restoreConfiguration(configuration(),"surface-export"));
+});
+
+test("only the production licensed client archive has an eight GiB limit",()=>{
+  for(const key of PRODUCTION_VOLUME_SUFFIXES) assert.equal(archiveLimit("production",key),(key==="client"?8:2)*1024**3);
+  assert.equal(archiveLimit("lab","client"),2*1024**3);
 });

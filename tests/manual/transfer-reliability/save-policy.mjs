@@ -78,6 +78,7 @@ export async function savePolicyCase(lab,report,save) {
 }
 
 export async function snapshotRecoveryCase(lab,report,save) {
+  report.snapshotRecoveryVersion=2;
   await recoveryReady(lab,1);await recoveryReady(lab,2);
   const name=report.name=`transfer-cleanup-${lab.run}-snapshot`;
   report.before=lab.probe(1,"build",name).state;assert.deepEqual(report.before.cargo,expectedCargo);
@@ -100,6 +101,11 @@ export async function snapshotRecoveryCase(lab,report,save) {
   await lab.checkpoint("manual-snapshot-recovered",[2]);await lab.load(2,"manual-snapshot-recovered");await recoveryReady(lab,2);
   report.final=sample(lab,name);assert.deepEqual(report.final.destination.cargo,expectedCargo);
   report.finalHistory=summary(lab,report.transferId);assert.equal(report.finalHistory.status,"completed");save();
+  lab.ctl("instance","stop",lab.hosts[2].instance);
+  report.offlineBrowser=await recoveryBrowser(lab,report,{offlineInstance:lab.hosts[2].instance});save();
+  lab.ctl("instance","start",lab.hosts[2].instance,"--save","manual-snapshot-recovered.zip");
+  await recoveryReady(lab,2);report.onlineAgain=sample(lab,name);save();
+  assert.deepEqual(report.onlineAgain.destination.cargo,expectedCargo);
 }
 
 export async function pendingSavePolicyCase(lab,report,save) {

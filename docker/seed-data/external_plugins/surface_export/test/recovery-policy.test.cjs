@@ -60,6 +60,13 @@ test("a delayed policy from an earlier startup cannot reconcile a newer running 
 	reply({mode: "save_game", allowAdoption: true});
 	await assert.rejects(pending,/stopped or replaced/);assert.deepEqual(calls,[]);
 });
+
+test("a policy refused by the loaded save is not reported as applied", async () => {
+	const {plugin} = harness();
+	plugin.sourceRecoveryCall = async () => {throw Error("Recovery journal differs from this save");};
+	await assert.rejects(plugin.reconcileSourceRetirements("boot"),/journal differs/);
+	assert.equal(plugin.recoveryStatus.mode,undefined);
+});
 test("snapshot retrieval and import keep their existing control permission boundaries", () => {
 	assert.equal(messages.GetStoredExportRequest.permission,messages.PERMISSIONS.LIST_EXPORTS);
 	assert.equal(messages.ImportUploadedExportRequest.permission,messages.PERMISSIONS.TRANSFER_EXPORTS);

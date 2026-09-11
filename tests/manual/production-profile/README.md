@@ -26,6 +26,13 @@ bounded CLI commands, and cleanup in `finally` apply. Stop on invalid evidence o
 violation. Reports preserve image IDs, profile hashes, settings and physical observations.
 Analyzer changes do not require another game run.
 
+Archives are bounded at 2 GiB each, except the licensed production client archive at
+8 GiB. The pinned local client measured 5,113,760,154 bytes; an initial full-restore run
+stopped at the old 2 GiB limit after eleven volumes and cleaned up successfully
+([retained failure](evidence/client-archive-bound-failure.json.gz)). The
+larger cap applies only to the client store; exact hashes and archive comparisons remain
+required for every volume.
+
 ```
 node tests/manual/production-profile/run.mjs --cleanup-proof <runtime.json> <existing-client-volume>
 node tests/manual/production-profile/run.mjs --run <runtime.json> <existing-client-volume>

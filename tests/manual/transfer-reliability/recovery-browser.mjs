@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 
-export async function recoveryBrowser(lab,report,{restartRequired=false}={}) {
+export async function recoveryBrowser(lab,report,{restartRequired=false,offlineInstance=null}={}) {
   const {chromium}=await import("playwright");
   assert.match(lab.url,/^http:\/\/127\.0\.0\.1:\d+$/,"only owned loopback lab allowed");
   const token=JSON.parse(lab.docker(["exec",lab.controller,"cat","/clusterio/tokens/config-control.json"]))["control.controller_token"];
@@ -13,6 +13,12 @@ export async function recoveryBrowser(lab,report,{restartRequired=false}={}) {
     page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(30000);
     page.on("pageerror",error=>evidence.errors.push(error.message));
     await page.goto(lab.url);await page.evaluate(value=>localStorage.setItem("controller_token",value),token);
+    if(offlineInstance) {
+      await page.goto(`${lab.url}/surface-export?tab=gateways`);
+      const warning=page.getByTestId("recovery-unverified").filter({hasText:offlineInstance});
+      await warning.waitFor();assert.ok((await warning.innerText()).includes("does not establish that a copy is missing"));
+      evidence.offlineUnverified=true;
+    }
     if(report.mode) {
       await page.goto(`${lab.url}/surface-export?tab=gateways`);
       const warning=page.getByTestId("save-recovery-warning").filter({hasText:report.name});
@@ -28,6 +34,12 @@ export async function recoveryBrowser(lab,report,{restartRequired=false}={}) {
     const modal=page.getByRole("dialog");await modal.getByText("Restore from snapshot",{exact:true}).waitFor();
     assert.ok((await modal.innerText()).includes("Another copy may already exist"));
     assert.equal(await modal.getByRole("button",{name:"Restore platform",exact:true}).isDisabled(),true,"destination must be chosen");
+    if(offlineInstance) {
+      await modal.getByRole("combobox",{name:"Destination instance",exact:true}).click();
+      const option=page.locator(".ant-select-item-option").filter({hasText:offlineInstance});
+      await option.waitFor();assert.ok((await option.getAttribute("class")).includes("ant-select-item-option-disabled"));
+      await modal.getByText("Restore from snapshot",{exact:true}).click();evidence.offlineDestinationDisabled=true;
+    }
     await page.screenshot({path:join(lab.directory,"restore-snapshot-dialog.png")});
     await modal.getByRole("button",{name:"Cancel",exact:true}).click();evidence.dialog=true;
     await page.goto(`${lab.url}/surface-export?tab=settings`);

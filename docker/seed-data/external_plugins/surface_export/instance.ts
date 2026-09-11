@@ -158,7 +158,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (this.retirementLoadError) throw new Error(this.retirementLoadError);
 		const policy = await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "begin" }));
 		this.assertRecoveryRuntime(epoch);
-		this.recoveryStatus = { mode: recoveryMode(policy.mode), epoch, state: "reconciling", notices: [] };
+		const mode = recoveryMode(policy.mode);
 		const journal = this.retirementJournal.snapshot();
 		const call = async (action: "begin" | "reconcile" | "finish", ...args: Array<string | number | boolean | null>) => {
 			this.assertRecoveryRuntime(epoch);
@@ -166,7 +166,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.assertRecoveryRuntime(epoch);
 			return response;
 		};
-		const begin = await call("begin", epoch, journal.id, journal.retirements.length > 0, recoveryMode(policy.mode), policy.allowAdoption === true);
+		const begin = await call("begin", epoch, journal.id, journal.retirements.length > 0, mode, policy.allowAdoption === true);
+		this.recoveryStatus.mode = mode;
 		const roster = Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {});
 		let quarantined = 0;
 		const protectedIndexes = policy.protectedSourceIndexes ?? (policy.allowAdoption ? [] : [-1]);

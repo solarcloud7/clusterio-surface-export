@@ -63,3 +63,13 @@ test("snapshot recovery requires original failure and separately validated recov
     const report=snapshot();mutate(report);assert.throws(()=>analyze(report));
   }
 });
+
+test("offline recovery evidence cannot claim an absent copy or an available destination",()=>{
+  const report=snapshot();report.snapshotRecoveryVersion=2;
+  report.offlineBrowser={offlineUnverified:true,offlineDestinationDisabled:true,errors:[]};report.onlineAgain=pair();
+  assert.equal(analyze(report).verdict,"PASS");
+  for(const mutate of [r=>r.offlineBrowser.offlineUnverified=false,r=>r.offlineBrowser.offlineDestinationDisabled=false,
+    r=>r.onlineAgain.destination.cargo.entities.pop()]) {
+    const changed=structuredClone(report);mutate(changed);assert.throws(()=>analyze(changed));
+  }
+});

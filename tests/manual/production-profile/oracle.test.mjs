@@ -1,12 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { analyzeProfile, profileVerdict } from "./oracle.mjs";
 import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
 
 const fixture = () => JSON.parse(readFileSync(new URL("./evidence/accepted-0.10.281.json", import.meta.url)));
 test("retained production profile passes the independent recovery and deployment oracle", () => {
   assert.equal(analyzeProfile(fixture()).verdict, "PASS");
+});
+
+test("the client archive limit failure remains a failed, cleaned-up partial restore",()=>{
+  const report=JSON.parse(gunzipSync(readFileSync(new URL("./evidence/client-archive-bound-failure.json.gz",import.meta.url))));
+  assert.equal(report.restoration.archives.length,11);assert.equal(report.restoration.restored.length,11);
+  assert.equal(report.cleanup.success,true);assert.match(report.error,/archive exceeds 2 GiB bound/);
+  assert.equal(profileVerdict(report).verdict,"FAIL");
 });
 test("missing settings, wrong images, extra plugins and missing persistent stores cannot pass", () => {
   for (const mutate of [
@@ -77,7 +85,7 @@ function completeRestoreEvidence() {
     outcome:report.recovery.outcome,transferId:report.recovery.transferId};
   for(const c of report.containers) {c.instrumented=false;c.mounts=c.mounts.filter(m=>m.destination!=="/lab");}
   report.restoration={
-    archives:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,sha256:"a".repeat(64)})),
+    archives:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,bytes:10240,sha256:"a".repeat(64)})),
     restored:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,sha256:"a".repeat(64)})),
     sourceVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`source-${key}`])),
     targetVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`target-${key}`])),
@@ -94,7 +102,7 @@ test("complete deployment oracle rejects omitted stores, wrong generations, alte
     r=>r.restoration.targetVolumes.tokens=r.restoration.sourceVolumes.tokens,
     r=>r.restoration.authenticationAfter="d".repeat(64),r=>r.restoration.history={status:"completed",transferId:"wrong"},
     r=>r.restoration.browser.assets.pop(),r=>r.restoration.browser.pageErrors.push("missing module"),
-    r=>r.restoration.localSettings.host1={}]) {
+    r=>r.restoration.localSettings.host1={},r=>r.restoration.archives[0].bytes=9*1024**3]) {
     const report=completeRestoreEvidence();mutate(report);assert.notEqual(profileVerdict(report).verdict,"PASS");
   }
   for(const mutate of [r=>r.restoration.physical.destination.cargo.entities.pop(),

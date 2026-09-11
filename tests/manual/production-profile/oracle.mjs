@@ -4,7 +4,7 @@ import { settings } from "../../../docker/production/provision.mjs";
 
 import { preservesInstalledCode } from "./mounts.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
-import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
+import { PRODUCTION_VOLUME_SUFFIXES, archiveLimit } from "../transfer-reliability/backup-storage.mjs";
 
 export function analyzeProfile(report) {
   assert.ok([1, 2, 3].includes(report.schemaVersion));
@@ -63,6 +63,8 @@ export function analyzeProfile(report) {
       for(const entry of entries) {assert.equal(entry.compared,true);assert.match(entry.sha256,/^[a-f0-9]{64}$/);}
     }
     for(const key of PRODUCTION_VOLUME_SUFFIXES) {
+      const archive=restore.archives.find(e=>e.suffix===key);
+      assert.ok(Number.isSafeInteger(archive.bytes) && archive.bytes>0 && archive.bytes<=archiveLimit("production",key));
       assert.notEqual(restore.sourceVolumes[key],restore.targetVolumes[key]);
       assert.equal(restore.archives.find(e=>e.suffix===key).sha256,restore.restored.find(e=>e.suffix===key).sha256);
     }

@@ -148,6 +148,13 @@ export function analyzeSavePolicy(report) {
     assert.deepEqual(report.recovered.destination.cargo,expectedCargo);
     assert.deepEqual(report.final?.destination.cargo,expectedCargo);assert.equal(report.final?.destination.usable,true);
     assert.equal(report.finalHistory?.status,"completed");
+    if(report.snapshotRecoveryVersion>=2) {
+      assert.equal(report.offlineBrowser?.offlineUnverified,true);
+      assert.equal(report.offlineBrowser.offlineDestinationDisabled,true);
+      assert.deepEqual(report.offlineBrowser.errors,[]);
+      assert.deepEqual(report.onlineAgain?.destination.cargo,expectedCargo);
+      assert.equal(report.onlineAgain.destination.usable,true);
+    }
     return {verdict:"PASS",reason:"Manual snapshot import restored physical cargo; original rollback remains a separately observed failure"};
   }
   assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
