@@ -19,16 +19,18 @@ export class ProductionLab extends DockerLab {
   }
   ctl(...args) { return this.command(args); }
   async boot(runtime, sourceClient) {
-    assert.match(sourceClient, /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/);
-    this.docker(["volume", "inspect", sourceClient]);
+    if (sourceClient) {
+      assert.match(sourceClient, /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/);
+      this.docker(["volume", "inspect", sourceClient]);
+    }
     for (const image of Object.values(runtime.images)) assert.match(image, /^sha256:[a-f0-9]{64}$/);
     const label = { "surface-export.manual-run": this.run };
     const client = `${this.run}-client`;
     this.docker(["volume", "create", "--label", `surface-export.manual-run=${this.run}`, client]);
     const helper = `${this.run}-copy-client`;
-    this.docker(["run", "--name", helper, "--label", `surface-export.manual-run=${this.run}`,
-      "--mount", `type=volume,src=${sourceClient},dst=/source,readonly`, "-v", `${client}:/destination`,
-      "--entrypoint", "sh", runtime.images.host, "-c", "cp -a /source/. /destination/"], { timeout: 120_000 });
+    if (sourceClient) this.docker(["run", "--name", helper, "--label", `surface-export.manual-run=${this.run}`,
+        "--mount", `type=volume,src=${sourceClient},dst=/source,readonly`, "-v", `${client}:/destination`,
+        "--entrypoint", "sh", runtime.images.host, "-c", "cp -a /source/. /destination/"], { timeout: 120_000 });
     const env = { ...process.env, SE_PROJECT: this.run, SE_CONTROLLER_IMAGE: runtime.images.controller,
       SE_HOST_IMAGE: runtime.images.host, SE_ADMIN: "profile-test", SE_CLIENT_VOLUME: client,
       SE_HTTP_PORT: "0", SE_HOST1_PORT: "0", SE_HOST2_PORT: "0", SE_GAME_BIND: "127.0.0.1" };
@@ -37,6 +39,7 @@ export class ProductionLab extends DockerLab {
       service.container_name = `${this.run}-${name}`;
       service.labels = { ...service.labels, ...label };
       assert.ok(!service.environment.NODE_OPTIONS && !service.environment.SE_MANUAL_RUN);
+      if (!sourceClient && name.startsWith("host-")) service.environment.SKIP_CLIENT = "true";
     }
     for (const [name, volume] of Object.entries(config.volumes)) if (!volume.external) { volume.name = `${this.run}-${name}`; volume.labels = label; }
     config.networks.default.name = this.run; config.networks.default.labels = label;
@@ -114,6 +117,14 @@ export class ProductionLab extends DockerLab {
     assert.deepEqual(observed, expected);
     return observed;
   }
+  async stopHosts() {
+    for (const n of [1, 2]) this.assertOwned("container", this.hosts[n].container);
+    this.docker(["compose", "-f", this.composeFile, "stop", "host-1", "host-2"], { timeout: 150_000 });
+    await this.until(() => {
+      const hosts = readTable(this.ctl("host", "list"));
+      return [1, 2].every(n => hosts.some(h => h.name === this.hosts[n].host && h.connected === "false"));
+    }, "controller observed both hosts disconnected", 120);
+  }
   async enableFaults() {
     const checkpoint = "manual-before-faults";
     await this.checkpoint(checkpoint);
@@ -127,11 +138,7 @@ export class ProductionLab extends DockerLab {
       this.assertOwned("container", this.hosts[n].container);
     }
     writeFileSync(this.composeFile, JSON.stringify(this.config, null, 2));
-    this.docker(["compose", "-f", this.composeFile, "stop", "host-1", "host-2"], { timeout: 150_000 });
-    await this.until(() => {
-      const hosts = readTable(this.ctl("host", "list"));
-      return [1, 2].every(n => hosts.some(h => h.name === this.hosts[n].host && h.connected === "false"));
-    }, "controller observed both hosts disconnected", 120);
+    await this.stopHosts();
     this.docker(["compose", "-f", this.composeFile, "up", "-d", "--no-deps", "--force-recreate", "--wait",
       "--wait-timeout", "120", "host-1", "host-2"], { timeout: 150_000 });
     for (const n of [1, 2]) {

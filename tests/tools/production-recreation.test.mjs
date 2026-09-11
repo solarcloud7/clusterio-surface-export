@@ -31,6 +31,7 @@ test("fault instrumentation cannot reconnect hosts before the controller observe
       } else assert.equal(read(), true);
     },
   };
+  lab.stopHosts = () => ProductionLab.prototype.stopHosts.call(lab);
   await ProductionLab.prototype.enableFaults.call(lab);
   assert.equal(recreated, true); assert.equal(reads, 2);
 });

@@ -56,6 +56,8 @@ test("current acceptance requires a normal transfer without startup instrumentat
     outcome: report.recovery.outcome, transferId: report.recovery.transferId };
   for (const c of report.containers) { c.instrumented = false; c.mounts = c.mounts.filter(m => m.destination !== "/lab"); }
   assert.equal(profileVerdict(report).verdict, "PASS");
+  report.stages = [{ name: "normal transfer", status: "passed", startMs: 7, endMs: 23, elapsedMs: 16 }];
+  assert.equal(profileVerdict(report).verdict, "PASS");
   report.containers[1].instrumented = true;
   assert.equal(profileVerdict(report).verdict, "FAIL");
 });
