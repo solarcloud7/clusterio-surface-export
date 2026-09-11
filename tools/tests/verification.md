@@ -32,13 +32,15 @@ Add `--acceptance --client-volume EXISTING_LICENSED_CLIENT_VOLUME` for the exist
 disposable production-profile test: fresh worlds, physical cargo, recovery, recreation
 and labelled cleanup. It does not touch the development cluster. The preflight itself
 has networking disabled and creates only temporary state in disposable containers as
-the runtime user. It checks local config set/show, raw string and boolean output,
+the runtime user. It checks all five hardening fields in a final batch read, raw string output,
 the pinned Clusterio version and exact Surface Export plugin discovery. Remote config
 lists use a separate JSON parser; missing, duplicate or malformed fields fail.
 
 Results are under `ci-artifacts/verify-*/result.json`. Command evidence is JSONL with
 separate stdout/stderr tails, elapsed time, exit status and explicit truncation flags.
-Arguments and environment values are not recorded. Known secret fields and JWTs are
+Arguments, stdin and environment options are omitted. Docker inspection retains only
+IDs, running/exit state and mount counts. Each evidence file is capped at 4 MiB; a
+retention record counts discarded older commands. Known secret fields and JWTs are
 redacted before retaining tails. This filtering cannot recognize every possible secret:
 keep evidence private and inspect it before sharing. Failed or buffer-limited commands
 cannot be reported as successful measurements.
@@ -48,11 +50,3 @@ stderr. Its existing bounded container-log collection remains available. Offline
 still consume recorded reports; changing an analyzer alone does not require another game
 run. This command runs requested stages afresh and never treats an old report as proof
 for changed code.
-
-## Verified locally, 2026-09-10
-
-`verify-1789071019847-24b7b762` passed all 508 offline tests, native image preflight,
-and production acceptance `se-manual-mtvypd9u-c336381d`. The latter passed physical
-cargo, lost-reply recovery, controller recreation and authenticated browser checks;
-its cleanup succeeded. It used the existing accepted 0.10.281 images, with no deployment
-to the development cluster. This verifies the tooling path, not a new product release.

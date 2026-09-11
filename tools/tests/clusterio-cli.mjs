@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import configuration from "../../docker/production/configure.cjs";
 
-// Native local reads return raw strings. Remote list values are JSON.
+export const contract = { requires: ["pinned native Clusterio CLI output"], produces: ["validated configuration values"],
+	"does not": ["mutate configuration"] };
 export function localConfigArgs(role, path, field) {
 	assert.ok(["host", "controller"].includes(role));
 	assert.ok(field.startsWith(`${role}.`));
@@ -8,12 +10,5 @@ export function localConfigArgs(role, path, field) {
 		"config", "show", field];
 }
 export function readConfigList(raw, fields) {
-	const values = {};
-	for (const field of fields) {
-		const lines = raw.split(/\r?\n/).filter(line => line.startsWith(`${field} `));
-		assert.equal(lines.length, 1, `Expected one value for ${field}`);
-		try { values[field] = JSON.parse(lines[0].slice(field.length + 1)); }
-		catch (error) { throw new Error(`Invalid JSON value for ${field}; see retained command output`, { cause: error }); }
-	}
-	return values;
+	return configuration.readSettings(raw, fields);
 }

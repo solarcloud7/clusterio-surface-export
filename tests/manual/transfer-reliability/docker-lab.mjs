@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { seededInstances } from "../../../tools/shared/seeded-instances.mjs";
@@ -30,6 +30,7 @@ export class DockerLab {
   constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
+    this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
@@ -42,7 +43,7 @@ export class DockerLab {
     if (!this.cleaning && this.cancelled) throw new Error("Manual lab interrupted");
     if (!this.cleaning && Date.now() > this.deadline) throw new Error("Disposable lab deadline exceeded");
     return runCommand("docker", args, { label: `docker ${args[0]}`,
-      evidenceFile: existsSync(this.directory) ? join(this.directory, "commands.jsonl") : undefined,
+      evidenceFile: existsSync(this.directory) ? this.evidenceFile : undefined,
       ...options }).stdout;
   }
   async until(read, label, seconds = 120) {

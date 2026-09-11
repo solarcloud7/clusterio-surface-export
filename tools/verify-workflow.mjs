@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync, globSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { withWorkflowLock } from "./shared/workflow-lock.mjs";
-import { runCommand } from "./shared/command-evidence.mjs";
+import { runCommand, STAGE_BUFFER_BYTES } from "./shared/command-evidence.mjs";
 import { preflightRuntime } from "./tests/preflight-runtime.mjs";
 
+export const contract = { requires: ["canonical checkout", "root dependencies", "Docker"],
+  produces: ["serial verification report"], "does not": ["publish artifacts", "deploy to the live cluster"] };
 const root = fileURLToPath(new URL("../", import.meta.url));
 export function parseOptions(args) {
 	const options = {};
@@ -41,16 +43,15 @@ async function main(options) {
 		const save = () => writeFileSync(join(directory, "result.json"), JSON.stringify(report, null, 2) + "\n");
 		const command = (label, args, timeout = 120000) => {
 			console.log(`Verifying ${label}`);
-			return runCommand(process.execPath, args, { label, cwd: root, timeout,
+			return runCommand(process.execPath, args, { label, cwd: root, timeout, maxBuffer: STAGE_BUFFER_BYTES,
 				evidenceFile: join(directory, "commands.jsonl") }).record;
 		};
 		let runtimePath = options["--runtime"] && resolve(options["--runtime"]);
-		const stages = [["offline tests", () => command("offline tests", ["--test", ...globSync("tests/**/*.test.mjs", { cwd: root })])]];
+		const stages = [["offline tests", () => command("offline tests", ["--test", "tests/**/*.test.mjs"])]];
 		stages.push(["repository lint", () => {
 			console.log("Verifying repository lint");
-			// Reuse the repository's Linux dependency volume and cross-language lint runner.
 			return runCommand("pwsh", ["-NoProfile", "-File", join(root, "tools/clusterio/build-plugin.ps1"), "lint"],
-				{ label: "repository lint", cwd: root, timeout: 600000,
+				{ label: "repository lint", cwd: root, timeout: 600000, maxBuffer: STAGE_BUFFER_BYTES,
 					evidenceFile: join(directory, "commands.jsonl") }).record;
 		}]);
 		if (options["--build-config"]) stages.push(["runtime build", () => {

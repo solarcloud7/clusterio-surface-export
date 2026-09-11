@@ -1,9 +1,25 @@
-// Sanitize before truncating: cutting a secret first can leave a recognizable prefix.
-export function redactDiagnostic(value) {
+function redactText(value) {
 	return String(value)
-		.replace(/\\+"/g, '"')
 		.replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [REDACTED]")
-		.replace(/((?:x-access-token|authorization|controller_token|password|token)\s*["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;}]+)/gi, "$1[REDACTED]");
+		.replace(/((?:x-access-token|authorization|controller_token|password|token)\\*["']?\s*[:=]\s*)(\\+")(.*?)\2/gi,
+			"$1$2[REDACTED]$2")
+		.replace(/((?:x-access-token|authorization|controller_token|password|token)\s*["']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|'[^']*'|[^\s,;}]+)/gi,
+			(_match, prefix, secret) => prefix + (secret.startsWith('"') ? '"[REDACTED]"' : secret.startsWith("'") ? "'[REDACTED]'" : "[REDACTED]"));
+}
+
+export function redactDiagnostic(value) {
+	const text = String(value);
+	let parsed;
+	try { parsed = JSON.parse(text); }
+	catch (error) { if (error instanceof SyntaxError) return redactText(text); throw error; }
+	const visit = item => {
+		if (typeof item === "string") return redactText(item);
+		if (Array.isArray(item)) return item.map(visit);
+		if (item && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, entry]) =>
+			[key, /(?:token|password|authorization)$/i.test(key) ? "[REDACTED]" : visit(entry)]));
+		return item;
+	};
+	return JSON.stringify(visit(parsed));
 }
 
 export function diagnosticLine(raw, maxChars = 800) {
