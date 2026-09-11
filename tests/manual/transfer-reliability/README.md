@@ -70,6 +70,21 @@ The injected cleanup run fails after reloading the newer checkpoint, before the 
 save is loaded. Require its intentional error and `cleanup.success: true` before the
 acceptance run. Both commands act only on the owned disposable cluster.
 
+Retained Factorio 2.1.17 / plugin 0.10.281 evidence:
+
+- [Cleanup exercise](evidence/destination-rollback-cleanup-2.1.17.json.gz): the completed
+  checkpoint reloaded with exact cargo and completed history; the intentional failure
+  ran before stale-save injection, and all owned Docker resources were removed.
+- [Destination rollback](evidence/destination-rollback-2.1.17.json.gz): the same control
+  passed, then the verified older checkpoint loaded. Ten samples during a measured
+  67.236-second window found neither physical platform. History remained `completed`,
+  one import request was recorded, and cleanup succeeded. Acceptance is **STOP**.
+
+Both runs used identical harness hashes and staged plugin bytes. The gzip files contain
+the raw JSON reports; decompress before passing them to `--analyze`. The offline regression
+requires the retained failure to remain STOP. It is not a passing recovery certificate.
+The observation did not attempt restoration of the retained newer save or cached payloads.
+
 ### Coordinated volume restore
 
 The [restore contract](backup-restore.md) defines a quiesced backup of every disposable

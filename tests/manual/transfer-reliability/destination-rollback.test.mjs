@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { analyze, performanceCargo } from "./oracle.mjs";
 import { DockerLab } from "./docker-lab.mjs";
 import { loadDestinationCheckpoint } from "./destination-rollback.mjs";
@@ -39,13 +41,22 @@ test("completed history cannot hide missing physical copies after destination ro
 
 test("late recovery cannot erase an earlier absence and one import cannot hide changed cargo",()=>{
   for(const mutate of [r=>r.rollback.samples[0].destination=absent(),
-    r=>r.rollback.samples[1].source=copy(),
+    r=>r.rollback.samples[0].source=copy(),
     r=>r.rollback.samples[1].destination.cargo.inventories["steel-chest@8.5,4.5:1"]["iron-plate/rare"]--,
     r=>r.rollback.samples[1].destination.cargo.lanes["transport-belt@-7.5,5.5:1"]["iron-plate/normal"]--,
     r=>r.rollback.samples[1].destination.cargo.fluids["storage-tank@-7.5,0.5"].amount--,
     r=>r.events[2].push(r.events[2][0])]) {
     const r=report();mutate(r);assert.equal(analyze(r).verdict,"STOP");
   }
+});
+
+test("retained live destination rollback remains a negative acceptance result",()=>{
+  const r=JSON.parse(gunzipSync(readFileSync(new URL("evidence/destination-rollback-2.1.17.json.gz",import.meta.url))));
+  const result=analyze(r);
+  assert.equal(result.verdict,"STOP");
+  assert.ok(result.violations.includes("no physical platform copy in either running world"));
+  assert.equal(result.observation.finalHistoryStatus,"completed");
+  assert.equal(result.observation.importRequests,1);
 });
 
 test("destination rollback requires valid control, generation, history, observation window and cleanup",()=>{
