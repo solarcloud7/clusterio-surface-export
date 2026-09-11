@@ -2,7 +2,7 @@
 
 Transfer Factorio Space Age platforms between Clusterio instances. The project contains a TypeScript plugin, a save-patched Lua module, and the gateway mod.
 
-**Status: development / pre-production.** Bounded transfer, rollback, lost-reply and source-restart fixtures pass. Coordinated backup restoration and a production operating profile remain release gates. The included Docker cluster is a development environment.
+**Status: development / pre-production.** Bounded transfer/recovery, coordinated volume restoration and packaged fresh-install fixtures pass. Upgrade compatibility, broader disaster recovery and supported operating limits remain open. The root Docker cluster is a development environment.
 
 ## What it does
 
@@ -68,17 +68,25 @@ gateway ZIP, and an existing licensed client volume; no development seed saves a
 
 ## Before production
 
-Readiness review: main after PR #306. Its fast, gallery and integration checks passed. Local runtime-version and advertised web-bundle checks also passed after syncing the canonical checkout. These checks do not prove a packaged release or a coordinated disaster restore.
+Readiness review updated after PRs #310 and #311. The exact candidate package passed
+native install/recovery acceptance and a hosted publication rehearsal. A separate
+consumer install through Clusterio's initializer passed fresh saves, real locale/icons,
+authenticated browser checks and lost-reply recovery. Publication itself and historical
+upgrades were not exercised. See the [retained package evidence](tests/manual/package-install/README.md)
+and [consumer evidence](tests/manual/consumer-install/evidence/accepted-0.10.281.json).
 
-For a supervised alpha, use the [operating profile and incident procedure](docker/README.md#supervised-alpha). Broader rollout still needs the following acceptance evidence.
+The [packaged deployment profile](docker/production/README.md) separates runtime images
+and persistent data from development source. Its [retained acceptance](tests/manual/production-profile/evidence/accepted-0.10.281.json)
+passed fresh worlds, explicit settings, exact cargo recovery, controller recreation,
+and browser/assets checks. The [incident procedure](docker/README.md#incident-and-backup-procedure)
+still applies. Broader rollout needs the following acceptance evidence.
 
 | Priority | Work | Why it matters / acceptance evidence | Effort |
 |---|---|---|---|
-| Blocking | Complete crash durability and backup reconciliation | Lost replies, controller restart, abrupt source-host loss and earlier source-save restoration have bounded passing fixtures. Restoring older controller/journal state together with worlds, destination rollback after release, missing journals and receipt eviction still need acceptance evidence. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
-| Blocking | Define a production deployment profile | Compose currently mounts writable source, patches static caching for development, exposes HTTP, and seeds debug-enabled public instances. Define immutable artifacts, intended exposure/authentication, and diagnostic defaults. | Medium |
+| Blocking | Recovery with inconsistent or missing authority | Lost replies, controller restart, abrupt source-host loss and earlier source-save restoration have bounded passing fixtures. Destination rollback after release, mixed backup generations, missing journals and receipt eviction still need acceptance evidence. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
 | Blocking | Extend backup and restore acceptance | The [quiesced volume restore drill](tests/manual/transfer-reliability/backup-restore.md) passes with completed history and an uncertain transfer. It erases/restores all seven lab volumes and checks exact cargo and recovery. Full host rebuild, mixed backup generations and off-host backup handling remain untested. Local pre-deploy saves alone do not establish these. | Medium |
 | Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
-| Release gate | Test the exact release artifact and upgrade path | CI boots a fresh development cluster from checkout artifacts; local save-preserving deployment is also exercised. Repeat installation, upgrade and compatible rollback using the exact packaged release. Publishing waits for fast checks and both integration matrix legs; a published version alone is not production acceptance. | Medium |
+| Release gate | Define and test upgrades and compatible rollback | Exact-package fresh installation and the publishing handoff are exercised. A compatible historical baseline, saves/journal migration and code rollback still need acceptance. The old published package's peer range does not accept the pinned Clusterio prerelease; forced installation is not compatibility evidence. | Medium |
 
 ## Repository map
 

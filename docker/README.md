@@ -119,14 +119,16 @@ Measure each representative world before expanding the alpha.
 
 ### Installation and upgrade evidence
 
-The [CI workflow](../.github/workflows/ci.yml) builds checkout artifacts, boots fresh
-containers and verifies seed completion and the selected saves. This covers fresh
-development setup. It does not install a released npm package into a clean consumer
-deployment. The first-start instructions above also require the graphical client
-credentials for locale/icon export; headless transfer tests do not establish that flow.
+The [CI workflow](../.github/workflows/ci.yml) tests development setup and, on release
+tags or manual dispatch, installation/recovery of the exact tarball that publishing
+will consume. The [consumer acceptance report](../tests/manual/consumer-install/evidence/accepted-0.10.281.json)
+also records a fresh upstream installation, new saves, real locale/icons, browser UI
+and physical cargo recovery. Neither test published the package or migrated an older
+release. The [packaged profile](production/README.md) supplies the separate deployment
+path; this page's root Compose instructions remain for development.
 
 Before an external release, retain the package version/hash, image digests, mod-pack
-versions and configuration, then prove these three paths in a disposable environment:
+versions and configuration, then retain evidence for these paths in a disposable environment:
 
 1. Install the exact release artifact and verify login, locale/icons, plugin UI and a
    transfer with independent cargo comparison.
@@ -151,11 +153,10 @@ token material and the controller static volume. Preserve secrets privately and
 record the code/image/mod versions. The running volumes are listed in Compose;
 pre-deploy saves alone omit external transfer authority.
 
-Coordinated full restore is **not yet accepted**. The next drill must stop new work,
-quiesce the disposable cluster, capture the full set, simulate its loss and restore
-into isolated resources. Compare independent cargo and usable-copy counts, pending
-handoffs and historical diagnostics before admitting transfers. Include an operation
-with an uncertain acknowledgement. Record the recovery point and recovery time.
-An older source save with current journals is already tested; rolling back the whole
-backup set is a separate scenario. Do not treat the passing source-only test as a
-tested backup procedure for the live cluster.
+The [coordinated restore report](../tests/manual/transfer-reliability/evidence/backup-restore-2.1.17.json)
+passed a stopped, same-runtime seven-volume restore with completed history and an
+uncertain transfer. Original volume contents were erased, restored archives compared,
+and independent cargo/recovery observations retained. This covers that lab's volume
+set. Full host rebuild, off-host transport, mixed generations, and the packaged
+profile's volume set still require acceptance. Do not restore a partial backup set
+and assume the passing coordinated drill applies.
