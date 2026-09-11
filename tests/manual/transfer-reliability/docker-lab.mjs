@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { seededInstances } from "../../../tools/shared/seeded-instances.mjs";
+import { runCommand } from "../../../tools/shared/command-evidence.mjs";
 
 export const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const PLUGIN = join(ROOT, "docker/seed-data/external_plugins/surface_export");
@@ -29,6 +30,7 @@ export class DockerLab {
   constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
+    this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
@@ -40,9 +42,9 @@ export class DockerLab {
   docker(args, options = {}) {
     if (!this.cleaning && this.cancelled) throw new Error("Manual lab interrupted");
     if (!this.cleaning && Date.now() > this.deadline) throw new Error("Disposable lab deadline exceeded");
-    try { return execFileSync("docker", args, {encoding:"utf8", timeout:30_000, maxBuffer:1048576,
-      stdio:["pipe","pipe","pipe"], ...options}); }
-    catch (error) { throw new Error(`docker ${args[0]} failed: ${String(error.stderr || error.message).slice(-1600)}`); }
+    return runCommand("docker", args, { label: `docker ${args[0]}`,
+      evidenceFile: existsSync(this.directory) ? this.evidenceFile : undefined,
+      ...options }).stdout;
   }
   async until(read, label, seconds = 120) {
     const end = Date.now() + seconds * 1000;

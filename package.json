@@ -1,6 +1,7 @@
 {
   "scripts": {
     "test": "node --test \"tests/**/*.test.mjs\"",
+    "verify": "node tools/verify-workflow.mjs",
     "test:manual:transfers": "node tests/manual/transfer-reliability/run.mjs",
     "test:manual:consumer": "node tests/manual/consumer-install/run.mjs",
     "test:manual:production": "node tests/manual/production-profile/run.mjs"

@@ -5,6 +5,9 @@ The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and 
 
 ## Repository layout
 
+For a serial agent/developer verification run, see [the verification command](../tools/tests/verification.md).
+It uses the existing workflow lock and checks the native CLI before optional live acceptance.
+
 - `tests/integration/` contains live regressions for established production contracts. Discover and run them with
   `node tools/tests/run-integration-tests.mjs --list` and `node tools/tests/run-integration-tests.mjs` from the repository root.
 - The standing lab suite was removed 2026-07-19 (owner ruling); its runners and notebooks are archived at git tag
