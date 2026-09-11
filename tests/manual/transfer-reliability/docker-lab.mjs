@@ -85,7 +85,7 @@ export class DockerLab {
       for (const host of [1,2]) {
         const {result} = this.lua(host, `return {success=true,engine=script.active_mods.base,
           ready=remote.interfaces.surface_export~=nil,players=#game.connected_players,paused=game.tick_paused}`);
-        assert.equal(result.engine,"2.1.17"); assert.equal(result.players,0); assert.equal(result.paused,false);
+        assert.equal(result.engine,this.factorioVersion || "2.1.17"); assert.equal(result.players,0); assert.equal(result.paused,false);
         if (!result.ready) return false;
       }
       return true;

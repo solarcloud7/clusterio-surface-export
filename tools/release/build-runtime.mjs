@@ -7,23 +7,29 @@ import { pathToFileURL } from "node:url";
 import { verifyPackage } from "./verify-package.mjs";
 import { withWorkflowLock } from "../shared/workflow-lock.mjs";
 
-const bases = {
-  controller: "ghcr.io/solarcloud7/clusterio-docker-controller@sha256:bbbc25ec679905992a31a8da60b5be2f43ec56b809ff508ea5f8786977dd8c53",
-  host: "ghcr.io/solarcloud7/clusterio-docker-host@sha256:98a66d7b39359408ebbb255ff44814b2920ab0fa30596a8a71a872b40df2e232",
-};
+const pins = JSON.parse(readFileSync(new URL("../../docker/production/pins.json", import.meta.url)));
+const { bases } = pins;
+export const buildFiles = ["Dockerfile", "pins.json", "verify-gateway.cjs", "verify-install.cjs", "start.sh",
+  "configure.cjs", "configure-host.cjs", "configure-controller.cjs", "wire-startup.cjs", "settings.json"];
+export function buildIdentity(directory, role, base) {
+  const hash = createHash("sha256").update(JSON.stringify({ role, base }));
+  for (const file of [...buildFiles, "package.tgz", "gateway.zip"]) hash.update(file + "\0").update(readFileSync(join(directory, file)));
+  return hash.digest("hex");
+}
 export function buildRuntime({ artifact, commit, version, gateway, gatewaySha256, output }) {
   const accepted = verifyPackage(resolve(artifact), { commit, version });
   assert.match(gatewaySha256, /^[a-f0-9]{64}$/);
   assert.equal(createHash("sha256").update(readFileSync(gateway)).digest("hex"), gatewaySha256, "gateway hash mismatch");
   assert.ok(!existsSync(output), "output must be a new directory");
   mkdirSync(output, { recursive: true });
-  for (const file of ["Dockerfile", "verify-install.cjs", "start.sh", "configure-host.cjs", "configure-controller.cjs", "wire-startup.cjs", "settings.json"])
+  for (const file of buildFiles)
     copyFileSync(new URL(`../../docker/production/${file}`, import.meta.url), join(output, file));
   copyFileSync(join(artifact, "package.tgz"), join(output, "package.tgz"));
   copyFileSync(gateway, join(output, "gateway.zip"));
-  const result = { schemaVersion: 1, accepted, gatewaySha256, bases, images: {} };
+  const result = { schemaVersion: 1, accepted, gatewaySha256, pins, bases, images: {}, buildIdentities: {} };
   for (const role of ["controller", "host"]) {
-    const tag = `surface-export-${role}:${accepted.sha256.slice(0, 16)}-${gatewaySha256.slice(0, 8)}`;
+    const identity = result.buildIdentities[role] = buildIdentity(output, role, bases[role]);
+    const tag = `surface-export-${role}:${identity}`;
     execFileSync("docker", ["build", "--build-arg", `BASE_IMAGE=${bases[role]}`, "--build-arg", `ROLE=${role}`,
       "--build-arg", `PACKAGE_SHA256=${accepted.sha256}`, "--build-arg", `GATEWAY_SHA256=${gatewaySha256}`,
       "--tag", tag, output], { stdio: "inherit", timeout: 600_000 });

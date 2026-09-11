@@ -73,7 +73,7 @@ advancing game ticks; auto-pause is an operator choice, not a transfer timeout f
 Remote core/package updates are disabled on controller and hosts; runtime updates
 replace built images. These fields are local-only in Clusterio. A checked build-time
 hook adds local configuration after the pinned controller entrypoint's bootstrap and
-before its server starts. Host fields are applied before the host entrypoint runs.
+before its server starts. Host fields are applied after host configuration bootstrap.
 The hook refuses a changed startup marker instead of silently skipping configuration.
 
 The web port binds to loopback only. Use an operator-managed HTTPS reverse proxy

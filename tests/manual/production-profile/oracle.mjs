@@ -1,20 +1,38 @@
 import assert from "node:assert/strict";
-import { analyze } from "../transfer-reliability/oracle.mjs";
+import { analyze, evaluateCopies } from "../transfer-reliability/oracle.mjs";
 import { settings } from "../../../docker/production/provision.mjs";
 
+import { preservesInstalledCode } from "./mounts.mjs";
+import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
+
 export function analyzeProfile(report) {
-  assert.equal(report.schemaVersion, 1);
+  assert.ok([1, 2].includes(report.schemaVersion));
+  for (const r of [report.normal, report.recovery]) if (r?.before && r.samples?.length) {
+    const copies = evaluateCopies(r.before, r.samples, 1);
+    if (copies.verdict === "STOP") return copies;
+  }
   assert.ok(!report.error, report.error);
   assert.equal(report.cleanup?.success, true);
   const result = analyze(report.recovery);
   if (result.verdict === "STOP") return result;
+  if (report.schemaVersion === 2) {
+    assert.deepEqual(report.normal?.before?.cargo, expectedCargo);
+    assert.equal(report.normal.outcome?.status, "completed");
+    assert.equal(report.normal.outcome.transferId, report.normal.transferId);
+    assert.ok(report.normal.samples.length >= 2);
+    for (const sample of report.normal.samples) {
+      assert.equal(sample.source.present, false);
+      assert.equal(sample.destination.usable, true);
+    }
+    assert.ok(report.containers.every(c => c.instrumented === false && !c.mounts.some(m => m.destination === "/lab")));
+  }
   assert.equal(report.containers?.length, 3);
   for (const c of report.containers) {
     assert.equal(c.image, report.runtime.images[c.name === "controller" ? "controller" : "host"]);
     assert.deepEqual(c.registration, [["surface_export", "@solarcloud7/plugin-surface-export"]]);
     assert.ok(c.hashes.includes(report.runtime.accepted.sha256));
     assert.ok(c.hashes.includes(report.runtime.gatewaySha256));
-    assert.ok(c.mounts.every(m => !["/clusterio", "/clusterio/node_modules", "/clusterio/external_plugins"].includes(m.destination)));
+    assert.ok(c.mounts.every(preservesInstalledCode));
     for (const path of ["/clusterio/data", "/clusterio/mods", "/clusterio/logs", "/clusterio/tokens"])
       assert.ok(c.mounts.some(m => m.type === "volume" && m.destination === path), `missing persistent ${path}`);
     if (c.name === "controller") assert.ok(c.mounts.some(m => m.type === "volume" && m.destination === "/clusterio/static"));
@@ -53,4 +71,10 @@ export function analyzeProfile(report) {
   assert.ok(report.browser.assets.some(a => /metadata/.test(a.name) && a.entries > 0 && a.status === 200));
   assert.ok(report.browser.assets.some(a => a.name === "prototypes" && a.entries > 0 && a.status === 200));
   return result;
+}
+
+export function profileVerdict(report) {
+  try { return analyzeProfile(report); }
+  catch (error) { return { verdict: error instanceof assert.AssertionError || report.error ? "FAIL" : "HARNESS_ERROR",
+    reason: error.message }; }
 }

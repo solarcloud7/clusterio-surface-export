@@ -3,14 +3,15 @@
 Contract fixed before running: use the actual resolved production Compose file and
 baked images, create two fresh saves with the public CLI, verify disabled diagnostic
 and experimental settings, real exported assets and authenticated browser views.
-Withhold a successful source-deletion reply, kill/restart the controller container,
+First transfer with the shipped startup and no fault hook. Then recreate the hosts
+with the fault hook, withhold a successful source-deletion reply, kill/restart the controller container,
 then require exact physical cargo, one import, held destination before acknowledgement,
 completed recovery and retained history. Reuse the existing physical oracle unchanged.
 After completion, recreate the controller from the same image and verify retained
 history, physical cargo and exported assets through the authenticated browser.
 
 Test-only changes: unique resource names/labels, random loopback ports, read-only fault
-hook on hosts and a private copy of the supplied licensed client volume. No seed worlds, product-source mounts,
+hook on hosts during the recovery arm and a private copy of the supplied licensed client volume. No seed worlds, product-source mounts,
 receipt edits, timer changes or live-cluster operations. Diagnostic defaults stay off.
 The shipped profile keeps auto-pause off so unattended destinations can process imports.
 
@@ -29,7 +30,7 @@ node tests/manual/production-profile/run.mjs --analyze <result.json>
 This is fresh installation and same-image controller restart, not an upgrade, off-host
 restore, mixed-generation reconciliation, public TLS endpoint or universal cargo proof.
 
-## Recorded acceptance: 2026-09-10
+## Historical acceptance: 2026-09-10
 
 - [Intentional abort](evidence/cleanup-proof.json), `se-manual-mtvo2dl7-c940579e`:
   reached healthy startup with only Surface Export registered; injected abort and cleanup passed.

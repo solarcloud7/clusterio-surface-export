@@ -1,4 +1,3 @@
-# Separate deployment, never an override of the development Compose file.
 name: ${SE_PROJECT:?set a distinct production project name}
 x-runtime: &runtime
   restart: unless-stopped

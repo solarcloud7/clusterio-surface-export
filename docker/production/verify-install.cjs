@@ -2,10 +2,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { createRequire } = require("node:module");
 const { execFileSync } = require("node:child_process");
+const { clusterio } = require("./pins.json");
 const root = createRequire("/clusterio/package.json");
 const plugin = root("@solarcloud7/plugin-surface-export/package.json");
 for (const name of ["controller", "host", "ctl", "lib"]) {
-  assert.equal(root(`@clusterio/${name}/package.json`).version, "2.0.0-alpha.27");
+  assert.equal(root(`@clusterio/${name}/package.json`).version, clusterio);
 }
 const local = createRequire(root.resolve("@solarcloud7/plugin-surface-export"));
 assert.equal(local.resolve("@clusterio/lib"), root.resolve("@clusterio/lib"));
