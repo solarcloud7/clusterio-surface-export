@@ -150,7 +150,7 @@ export function formatStatus(result) {
     ...Object.entries(result.candidate.images).map(([role, image]) => `  ${role}: ${image}`));
   if (result.local) {
     lines.push(`Local: ${result.local.verdict}; ${result.local.match || "input match unavailable"}`, `  Evidence: ${result.local.path || "none"}`);
-    for (const stage of result.local.stages || []) lines.push(`  ${stage.name}: ${stage.status}, ${seconds(stage.elapsedMs)}`);
+    for (const stage of result.local.stages || []) lines.push(`  ${stage.name} | ${stage.status} | ${seconds(stage.elapsedMs)}`);
     if (result.local.error) lines.push(`  Error: ${result.local.error}`);
   }
   for (const key of ["startup", "acceptance"]) if (result[key]) {
@@ -159,7 +159,7 @@ export function formatStatus(result) {
     if (lab.error || (lab.verdict !== "PASS" && lab.reason)) lines.push(`  Reason: ${lab.error || lab.reason}`);
     for (const name of lab.expectedStages || lab.stages?.map(s => s.name) || []) {
       const stage = lab.stages?.find(s => s.name === name);
-      lines.push(`  ${name}: ${stage?.status || "not reached"}, ${seconds(stage?.elapsedMs)}${stage?.error ? `; ${stage.error}` : ""}`);
+      lines.push(`  ${name} | ${stage?.status || "not reached"} | ${seconds(stage?.elapsedMs)}${stage?.error ? `; ${stage.error}` : ""}`);
     }
     if (!lab.stages) lines.push("  Substage timings unavailable (historical report)");
   }

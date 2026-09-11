@@ -88,8 +88,8 @@ test("status surfaces the newest incomplete report and failed substage without r
   assert.equal(latestReport(artifacts), path);
   const status = collectStatus({ prs: [], "--offline": true }, { directory: root, command: git });
   const text = formatStatus(status);
-  assert.equal(status.local.verdict, "incomplete"); assert.match(text, /startup: failed.*connection rejected/);
-  assert.match(text, /transfer: not reached, unmeasured/); assert.match(text, /cleanup: passed/);
+  assert.equal(status.local.verdict, "incomplete"); assert.match(text, /startup \| failed.*connection rejected/);
+  assert.match(text, /transfer \| not reached \| unmeasured/); assert.match(text, /cleanup \| passed/);
   writeFileSync(path, "malformed");
   const unavailable = collectStatus({ prs: [], "--offline": true }, { directory: root, command: git });
   assert.ok(unavailable.errors.length); assert.equal(unavailable.local, undefined);
@@ -140,7 +140,7 @@ test("live status follows a child pointer before completion and never promotes a
   writeFileSync(child, JSON.stringify({ verdict: "PASS", stages: [{ name: "cleanup", status: "running" }], expectedStages: ["cleanup"] }));
   writeFileSync(report, JSON.stringify({ stages: [{ name: "startup", status: "running" }], startupPointer: pointer }));
   const status = collectStatus({ prs: [], "--offline": true, "--report": report }, { directory: root, command: git });
-  assert.equal(status.startup.verdict, "incomplete"); assert.match(formatStatus(status), /cleanup: running, unmeasured/);
+  assert.equal(status.startup.verdict, "incomplete"); assert.match(formatStatus(status), /cleanup \| running \| unmeasured/);
 });
 
 test("CI must have a workflow on the exact head and prefer its newest rerun", () => {
@@ -166,4 +166,12 @@ test("paired startup cases cover each scenario once and mutate only a verified o
   assert.throws(() => prepareStartupCase(lab, runtime, "restart", 1), /foreign volume/);
   assert.equal(calls.length, 2);
   assert.throws(() => prepareStartupCase(lab, runtime, "restart", 3));
+});
+
+test("stage labels mentioning tokens retain their status while actual secret values remain redacted", () => {
+  const name = "malformed token / mismatched token";
+  const output = formatStatus({ checkedAt: "probe", prs: [], errors: [], startup: { verdict: "FAIL", path: "probe.json",
+    expectedStages: [name], stages: [{ name, status: "failed", elapsedMs: 10, error: "password=hidden-value" }] } });
+  assert.match(output, /malformed token \/ mismatched token \| failed \| 0.01s/);
+  assert.ok(!output.includes("hidden-value")); assert.ok(output.includes("[REDACTED]"));
 });
