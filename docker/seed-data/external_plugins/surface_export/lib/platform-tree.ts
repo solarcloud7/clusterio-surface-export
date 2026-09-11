@@ -1,5 +1,6 @@
 import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
+import { recoveryMode } from "../shared/recovery";
 
 export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
@@ -69,6 +70,7 @@ export class PlatformTree {
 			);
 			return {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
+				recovery: response?.recovery,
 				error: null,
 			};
 		} catch (err: unknown) {
@@ -148,6 +150,7 @@ export class PlatformTree {
 				connected: Boolean(host?.connected),
 				platforms: [],
 				platformError: null,
+				configuredRecoveryMode: recoveryMode(this.plugin.controller.config?.get("surface_export.platform_source_of_truth")),
 			};
 
 			if (hostId !== null && hostNodes.has(hostId)) {
@@ -161,7 +164,8 @@ export class PlatformTree {
 
 			if (host?.connected && node.status === "running") {
 				platformLoads.push((async () => {
-					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
+					const { platforms, error, recovery } = await this.requestInstancePlatforms(instanceId, forceName);
+					node.recovery = recovery;
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)
 						.sort((a, b) => a.platformName.localeCompare(b.platformName));
 					for (const platform of node.platforms) {

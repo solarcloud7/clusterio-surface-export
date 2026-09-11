@@ -41,6 +41,7 @@ local function scenario(options)
     cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true, beacon = true},
         delete_platform = function(platform) mark("discard"); platform.valid = false; return true end}
     cache["core/destination-hold"] = {
+		go_live = function() mark("release"); return true end,
         get = function() if options.foreignHold then return {platform_index = 999, surface_index = 999} end end,
         discard = function() error("discarded a different held platform") end,
         stage = function(id, platform)
@@ -119,7 +120,7 @@ local function scenario(options)
         entity_map = {[1] = {valid = true, type = "inserter", disabled_by_script = true}},
         entities_to_create = {{entity_id = 1, name = "inserter", type = "inserter"},
             {entity_id = 2, name = "beacon", type = "beacon"}},
-        platform_data = {platform = {paused = true}, belt_side_groups = {{}, {}},
+        platform_data = {_standaloneImport = options.snapshot, platform = {paused = true}, belt_side_groups = {{}, {}},
             verification = {item_counts = {}, fluid_counts = {}}}}
     if not options.standalone then job.transfer_id = "transfer" end
     if options.largeInventory then
@@ -207,6 +208,10 @@ local function scenario(options)
         if not options.standalone then
             assert(result.validation.success == true and #eventTicks("hold") == 1)
             assert(eventTicks("hold")[1] == spans.activation.endTick, "activation escaped its hold callback")
+			if options.snapshot then
+				assert(#eventTicks("release") == 1, "validated snapshot remained held for a source deletion that will never arrive")
+				assert(eventTicks("release")[1] == eventTicks("hold")[1])
+			else assert(#eventTicks("release") == 0, "transfer released before controller acknowledgement") end
         else
             assert(#eventTicks("hold") == 0, "standalone import acquired a transfer hold")
         end
@@ -218,6 +223,9 @@ end
 scenario({label = "transfer"})
 scenario({label = "bounded beacon and inventory passes", largeInventory = true, smallBatches = true})
 scenario({label = "standalone", standalone = true})
+scenario({label = "validated standalone snapshot", snapshot = true})
+scenario({label = "rejected standalone snapshot", snapshot = true, reject = true})
+scenario({label = "standalone snapshot hold failure", snapshot = true, holdFailure = true})
 scenario({label = "validation rejection", reject = true})
 scenario({label = "belt failure", beltFailure = true})
 scenario({label = "hold failure", holdFailure = true})

@@ -65,6 +65,7 @@ export class TransferOrchestrator {
 						busy.push(pending.sourceInstanceId, pending.targetInstanceId);
 					}
 				}
+				busy.push(...(this.plugin.recoveryReservations?.keys() || []));
 				return busy;
 			},
 			error: error => this.logger.error(`Transfer queue: ${getErrorMessage(error)}`),
@@ -196,6 +197,9 @@ export class TransferOrchestrator {
 		}
 
 		const transferId = exportData.exportId || exportId;
+		if ([exportData.instanceId, targetInstanceId].some(id => this.plugin.recoveryReservations?.has(id))) {
+			return { success: false, error: "Instance is reconciling its loaded save; retry after recovery completes", safeToUnlockSource: false };
+		}
 		const sourceExportId = exportData.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId || transferId;
 		const existingTransfer = this.plugin.activeTransfers.get(transferId);
 		if (existingTransfer) {
@@ -618,9 +622,8 @@ export class TransferOrchestrator {
 				this.updateTransfer(transfer);
 				await this.broadcastTransferStatus(transfer, "Transfer complete! ✓", "green");
 				await this.txLogger.persistTransactionLog(transferId);
-				if (transfer.exportId) {
-					this.plugin.platformStorage.delete(transfer.exportId);
-				}
+				// Retain the snapshot under max_storage_size for explicit recovery imports.
+				// Terminal transfer identity still rejects replay; retaining bytes is not deletion authority.
 				await this.plugin.persistStorage();
 				this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
 				return { sourceResolved: true };

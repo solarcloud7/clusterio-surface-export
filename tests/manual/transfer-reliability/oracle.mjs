@@ -40,6 +40,19 @@ export function evaluateCopies(before, samples, minimumSamples=2) {
 export function analyze(report) {
   assert.equal(report.schemaVersion,1);
   assert.ok(!report.error,"report contains a harness failure");
+  if(report.case==="save-policy-pending") {
+    assert.equal(report.cleanup?.success,true);assert.deepEqual(report.before?.cargo,expectedCargo);
+    assert.equal(report.beforeReload?.source.present,false);assert.equal(report.beforeReload?.destination.held,true);
+    assert.equal(report.held?.id,report.transferId.slice(report.transferId.indexOf(":")+1));
+    assert.equal(report.held.success,true);assert.equal(report.notices?.mode,"save_game");assert.equal(report.notices.allow,false);
+    assert.equal(report.protected?.source.usable,false);assert.equal(report.identityBefore.uid,report.identityAfter.uid);
+    assert.deepEqual(report.protected.source.cargo,expectedCargo);assert.deepEqual(report.protected.destination.cargo,expectedCargo);
+    assert.equal(report.outcome?.status,"completed");assert.equal(report.final?.source.present,false);
+    assert.equal(report.final?.destination.usable,true);assert.deepEqual(report.final.destination.cargo,expectedCargo);
+    assert.equal(report.events?.[2]?.filter(event=>event.kind==="call"&&event.action==="import"&&event.id===report.transferId).length,1);
+    return {verdict:"PASS",reason:"Save game mode retained pending ownership; normal recovery preserved cargo"};
+  }
+  if(["save-policy-game","save-policy-history","snapshot-recovery"].includes(report.case)) return analyzeSavePolicy(report);
   assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source","restore-old-destination"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="coordinated-restore") return analyzeBackup(report);
@@ -118,6 +131,46 @@ export function analyze(report) {
       : "Lost reply recovered with exact cargo and one usable destination"};
 }
 
+export function analyzeSavePolicy(report) {
+  assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
+  assert.equal(report.browser?.dialog,true,"snapshot dialog unverified");
+  assert.deepEqual(report.browser?.errors,[],"browser errors or missing evidence");
+  assert.deepEqual(report.before?.cargo,expectedCargo,"invalid physical fixture");
+  assert.equal(report.outcome?.status,"completed");
+  if(report.case==="snapshot-recovery") {
+    assert.equal(report.rollback?.source.present,false);assert.equal(report.rollback?.destination.present,false);
+    assert.equal(report.originalHistory?.status,"completed");
+    assert.equal(report.recovery?.success,true);
+    assert.notEqual(report.recovery.operationId,report.transferId);
+    assert.equal(report.duplicate?.operationId,report.recovery.operationId);
+    assert.equal(report.recoveryOutcome?.status,"completed");
+    assert.equal(report.recovered?.source.present,false);assert.equal(report.recovered?.destination.usable,true);
+    assert.deepEqual(report.recovered.destination.cargo,expectedCargo);
+    assert.deepEqual(report.final?.destination.cargo,expectedCargo);assert.equal(report.final?.destination.usable,true);
+    assert.equal(report.finalHistory?.status,"completed");
+    return {verdict:"PASS",reason:"Manual snapshot import restored physical cargo; original rollback remains a separately observed failure"};
+  }
+  assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
+  assert.deepEqual(report.unrelatedRestored?.cargo,expectedCargo);assert.equal(report.unrelatedRestored?.usable,true);
+  assert.equal(report.restored.destination.usable,true);
+  const accepted=report.case==="save-policy-game";
+  assert.equal(report.browser.warnings,true,"restored-source warning unverified");
+  assert.equal(report.restored.source.usable,accepted);
+  assert.equal(report.notices?.mode,accepted?"save_game":"plugin_history");
+  assert.equal(report.notices?.notices[report.identityAfter?.index]?.status,accepted?"accepted":"protected");
+  if(accepted) {
+    assert.equal(report.browser.restartRequired,true,"restart requirement unverified");
+    assert.notEqual(report.identityAfter.uid,report.identityBefore.uid);
+    assert.equal(report.beforeRestartMode,"save_game");
+    assert.equal(report.acceptedRestart?.identity.uid,report.identityAfter.uid);
+    assert.equal(report.acceptedRestart?.sample.source.usable,true);
+    assert.match(report.delayed?.deletion,/^ERROR:/);assert.equal(report.delayed?.unlock,false);
+    assert.notEqual(report.againId,report.transferId);assert.equal(report.againOutcome?.status,"completed");
+    assert.equal(report.final?.source.present,false);assert.equal(report.final?.destination.usable,true);
+    assert.deepEqual(report.final.destination.cargo,expectedCargo);assert.equal(report.originalHistory?.status,"completed");
+  } else assert.equal(report.identityAfter.uid,report.identityBefore.uid);
+  return {verdict:"PASS",reason:"Checkpoint cargo and configured restoration policy verified"};
+}
 export function analyzeDestinationRollback(report) {
   assert.equal(report.contract?.schemaVersion,4,"destination rollback contract missing");
   assert.deepEqual(report.before?.cargo,expectedCargo,"invalid destination rollback fixture");

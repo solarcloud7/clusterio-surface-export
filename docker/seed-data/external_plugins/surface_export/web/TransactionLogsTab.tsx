@@ -7,10 +7,12 @@ import { formatMs } from "../shared/utils";
 import { duration, outcomeGroup, route, statusLabel } from "./logs/evidence";
 import TransferDetail from "./logs/TransferDetail";
 import LogPreview from "./logs/LogPreview";
+import ImportModal, { type RestoreSnapshot } from "./ImportModal";
 import "./logs/style.css";
 
 export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
-	const [selected, setSelected] = useState<string | null>(null);
+	const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get("transfer"));
+	const [restore, setRestore] = useState<RestoreSnapshot | null>(null);
 	const [search, setSearch] = useState(""), [outcome, setOutcome] = useState("all"), [operation, setOperation] = useState("all");
 	const [page, setPage] = useState(1), [preview, setPreview] = useState(false);
 	const [requests, setRequests] = useState<Record<string, { loading: boolean; error?: string }>>({});
@@ -82,8 +84,9 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 				<Pagination size="small" current={currentPage} pageSize={10} total={filtered.length} showSizeChanger={false} onChange={setPage} />
 			</section>
 			<div className="se-detail-panel">{row ? <TransferDetail row={row} detail={state.logDetails[row.transferId]} loading={state.liveStatus === "live" && (request?.loading ?? true)}
-				 error={request?.error} onRetry={() => load(row.transferId)} plugin={plugin} /> : <Empty description="Select an operation to inspect its evidence" />}</div>
+				 error={request?.error} onRetry={() => load(row.transferId)} plugin={plugin} onRestore={setRestore} /> : <Empty description="Select an operation to inspect its evidence" />}</div>
 		</div>
 		{preview && <LogPreview onClose={() => setPreview(false)} />}
+		{restore && <ImportModal open onClose={() => setRestore(null)} plugin={plugin} state={state} snapshot={restore} />}
 	</div>;
 }

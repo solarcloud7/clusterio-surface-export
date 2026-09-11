@@ -12,6 +12,7 @@ import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
+import { recoveryMode, type InstanceRecoveryStatus } from "./shared/recovery";
 
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
@@ -30,6 +31,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private retirementJournal!: SourceRetirementJournal;
 	private retirementLoadError?: string;
 	private timingEpoch = randomUUID();
+	private recoveryStatus?: InstanceRecoveryStatus;
 	private async withTiming<T>(jobId: string, exportId: string | undefined, stage: string, fn: () => Promise<T>): Promise<T> {
 		const clock = new TimingClock(jobId, "instance", record => {
 			record.instanceId = this.i.id;
@@ -116,7 +118,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
 		// Lua's startup gate remains closed until reconciliation acknowledges finish.
 		void this.startRuntime(epoch).catch(error => {
-			if (this.timingEpoch === epoch) this.logger.error(`Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: ${getErrorMessage(error)}`);
+			if (this.timingEpoch === epoch) {
+				if (this.recoveryStatus) { this.recoveryStatus.state = "blocked"; this.recoveryStatus.error = getErrorMessage(error); }
+				this.logger.error(`Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: ${getErrorMessage(error)}`);
+			}
 		});
 	}
 
@@ -149,7 +154,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	private async reconcileSourceRetirements(epoch: string): Promise<void> {
+		this.recoveryStatus = { epoch, state: "reconciling", notices: [] };
 		if (this.retirementLoadError) throw new Error(this.retirementLoadError);
+		const policy = await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "begin" }));
+		this.assertRecoveryRuntime(epoch);
+		this.recoveryStatus = { mode: recoveryMode(policy.mode), epoch, state: "reconciling", notices: [] };
 		const journal = this.retirementJournal.snapshot();
 		const call = async (action: "begin" | "reconcile" | "finish", ...args: Array<string | number | boolean | null>) => {
 			this.assertRecoveryRuntime(epoch);
@@ -157,15 +166,22 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.assertRecoveryRuntime(epoch);
 			return response;
 		};
-		const begin = await call("begin", randomUUID(), journal.id, journal.retirements.length > 0);
+		const begin = await call("begin", epoch, journal.id, journal.retirements.length > 0, recoveryMode(policy.mode), policy.allowAdoption === true);
 		const roster = Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {});
 		let quarantined = 0;
+		const protectedIndexes = policy.protectedSourceIndexes ?? (policy.allowAdoption ? [] : [-1]);
 		for (const platform of roster as Array<{ platformIndex: number; platformUid: string }>) {
 			const retired = journal.retirements.find(record => record.platformUid === platform.platformUid);
-			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null);
+			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null,
+				protectedIndexes.includes(-1) || protectedIndexes.includes(platform.platformIndex));
 			if (response.quarantined) quarantined++;
+			if (response.notice) this.recoveryStatus.notices.push(response.notice);
 		}
 		await call("finish");
+		await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "finish" }));
+		this.assertRecoveryRuntime(epoch);
+		this.recoveryStatus.state = "ready";
+		await this.handlePlatformStateChanged({ force_name: "player" });
 		if (quarantined) this.logger.warn(`${quarantined} retired source platform(s) restored from a save remain quarantined; matching pending transfers may retry deletion.`);
 	}
 
@@ -351,7 +367,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		if (transferResponse.safeToUnlockSource === true) {
 			if (Number.isInteger(platformIndex)) {
-				const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
+				const unlockResult = String(await this.lua.unlockPlatform(platformIndex, undefined, exportId)).trim();
 				if (unlockResult.startsWith("SUCCESS")) {
 					this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
 				} else if (isBenignUnlockError(unlockResult)) {
@@ -535,6 +551,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const parsed = await this.lua.listPlatformsJson(forceName || "player");
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
+				platformUid: platform.platform_uid ?? null,
 				platformName: platform.platform_name,
 				forceName: platform.force_name || forceName || "player",
 				surfaceIndex: platform.surface_index ?? null,
@@ -667,6 +684,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			instanceName: this.i.config.get("instance.name"),
 			forceName,
 			platforms,
+			recovery: this.recoveryStatus,
 		};
 	}
 
@@ -879,7 +897,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return this.withTiming(request.operationId || `unlock:${randomUUID()}`, undefined, "Source unlock handling", () => this.handleUnlockSourcePlatformMeasured(request));
 	}
 
-	async handleUnlockSourcePlatformMeasured(request: { platformIndex: number; platformName?: string }) {
+	async handleUnlockSourcePlatformMeasured(request: { platformIndex: number; platformName?: string; operationId?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
@@ -890,7 +908,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
+			const sourceJobId = request.operationId?.startsWith(`${this.i.id}:`) ? request.operationId.slice(String(this.i.id).length + 1) : undefined;
+			const result = await this.lua.unlockPlatform(platformIndex, request.platformName, sourceJobId);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);

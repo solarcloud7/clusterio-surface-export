@@ -7,9 +7,11 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 export const VOLUME_SUFFIXES = ["seed", "plugins", "tokens", "controller-data", "static", "host-1-data", "host-2-data"];
-export function validateStorageRequest(action, suffix, run, expected) {
+export const PRODUCTION_VOLUME_SUFFIXES = ["controller-data", "controller-static", "controller-logs", "controller-mods", "host-1-data", "host-1-logs", "host-1-mods", "host-2-data", "host-2-logs", "host-2-mods", "tokens", "client"];
+export function validateStorageRequest(action, suffix, run, expected, profile = "lab") {
   assert.match(run || "", /^se-manual-[a-z0-9-]{8,60}$/);
-  assert.ok(VOLUME_SUFFIXES.includes(suffix), "unknown backup volume");
+  assert.ok(["lab", "production"].includes(profile), "unknown storage profile");
+  assert.ok((profile === "production" ? PRODUCTION_VOLUME_SUFFIXES : VOLUME_SUFFIXES).includes(suffix), "unknown backup volume");
   assert.ok(["backup", "erase", "restore"].includes(action), "unknown storage action");
   if (action !== "backup") assert.match(expected || "", /^[a-f0-9]{64}$/, "archive hash required");
 }
@@ -19,8 +21,8 @@ async function digest(file) {
   for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
   return hash.digest("hex");
 }
-export async function storageAction(action, suffix, run, expected) {
-  validateStorageRequest(action, suffix, run, expected);
+export async function storageAction(action, suffix, run, expected, profile = "lab") {
+  validateStorageRequest(action, suffix, run, expected, profile);
   assert.equal(fs.realpathSync("/data"), "/data");
   assert.equal(fs.realpathSync("/backup"), "/backup");
   const archive = `/backup/${suffix}.tar`;
@@ -50,5 +52,5 @@ export async function storageAction(action, suffix, run, expected) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  console.log(JSON.stringify(await storageAction(process.argv[2], process.argv[3], process.env.SE_MANUAL_RUN, process.argv[4])));
+  console.log(JSON.stringify(await storageAction(process.argv[2], process.argv[3], process.env.SE_MANUAL_RUN, process.argv[4], process.argv[5])));
 }

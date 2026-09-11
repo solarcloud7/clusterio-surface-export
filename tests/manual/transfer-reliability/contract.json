@@ -11,6 +11,10 @@
   "forbiddenAssists": ["manufactured successful reply", "editing cargo or validation evidence", "unlocking or deleting copies before observation", "changing recovery timers or receipt capacity"],
   "bounds": {"setupSeconds": 600, "caseSeconds": 600, "commandSeconds": 30, "replyBytes": 1048576, "profileRecordsPerInstance": 2000},
   "cases": [
+    {"id": "save-policy-game", "purpose": "Intentionally restore a mixed checkpoint in Save game mode, prove exact cargo, fresh identity, delayed-message refusal, mode switch and another transfer", "limits": ["Intentional restored duplicates are accepted with a warning", "Does not claim automatic crash recovery"]},
+    {"id": "save-policy-history", "purpose": "Restore the same mixed checkpoint in Plugin history mode; keep the transferred source protected and the unrelated restored platform usable"},
+    {"id": "snapshot-recovery", "purpose": "Reproduce destination-only rollback loss, explicitly import its retained snapshot as a fresh operation, reject duplicate submission and verify after save/restart", "limits": ["Original #315 failure stays recorded separately", "Manual import is not automatic recovery"]},
+    {"id": "save-policy-pending", "purpose": "Withhold a real source-deletion acknowledgement, reload its older save in Save game mode, require protection and normal recovery with exact cargo"},
     {"id": "coordinated-restore", "purpose": "Back up quiesced lab volumes with a completed transfer and an uncertain acknowledgement; erase, restore and require normal recovery plus exact cargo/history"},
     {"id": "lost-source-reply", "purpose": "Real source deletion succeeds; its host response is withheld, then controller disconnects and retries"},
     {"id": "lost-destination-reply", "purpose": "Real destination release succeeds; its host response is withheld, then controller disconnects and retries"},

@@ -11,6 +11,7 @@ import { browserAcceptance } from "../consumer-install/browser.mjs";
 import { ProductionLab } from "./lab.mjs";
 import { profileVerdict } from "./oracle.mjs";
 import { stageTimer } from "../../../tools/shared/stage-timing.mjs";
+import { restoreProduction } from "./restore.mjs";
 
 const [mode, input, client, ...extra] = process.argv.slice(2);
 if (mode === "--analyze") {
@@ -25,11 +26,12 @@ if (mode === "--analyze") {
   const run = `se-manual-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
   const directory = join(ROOT, "ci-artifacts", run); mkdirSync(directory, { recursive: true });
   const lab = new ProductionLab(run, directory);
-  const report = { schemaVersion: 2, run, startedAt: new Date().toISOString(), runtime, cleanup: { success: false }, hashes: {},
-    expectedStages: ["startup", "world creation and assets", "normal transfer", "enable recovery faults", "lost-reply recovery",
+  const report = { schemaVersion: 3, run, startedAt: new Date().toISOString(), runtime, cleanup: { success: false }, hashes: {},
+    expectedStages: ["startup", "world creation and assets", "normal transfer", "complete deployment restore", "enable recovery faults", "lost-reply recovery",
       "controller recreation", "retained history", "browser and assets", "cleanup"], stages: [] };
   for (const file of ["docker/production/compose.yml", "docker/production/settings.json", "docker/production/provision.mjs",
-    "tests/manual/production-profile/lab.mjs", "tests/manual/production-profile/run.mjs", "tests/manual/production-profile/oracle.mjs",
+    "tests/manual/production-profile/lab.mjs", "tests/manual/production-profile/run.mjs", "tests/manual/production-profile/oracle.mjs", "tests/manual/production-profile/restore.mjs",
+    "tests/manual/transfer-reliability/backup-storage.mjs",
     "tests/manual/transfer-reliability/cases.mjs", "tests/manual/transfer-reliability/fault-hook.cjs", "tests/integration/transfer-cleanup/probe.lua"])
     report.hashes[file] = hash(join(ROOT, file));
   const save = () => writeFileSync(join(directory, "result.json"), JSON.stringify(report, null, 2) + "\n");
@@ -60,7 +62,8 @@ if (mode === "--analyze") {
       assert.equal(report.normal.samples.at(-1).destination.usable, true);
       if (report.normal.outcome.status !== "completed") throw new Error("Normal transfer did not complete");
     });
-    console.log("Normal transfer observed; restarting owned hosts with recovery fault hooks");
+    await stage("complete deployment restore", () => restoreProduction(lab,report,save));
+    console.log("Complete deployment restored; restarting owned hosts with recovery fault hooks");
     await stage("enable recovery faults", () => lab.enableFaults());
     report.recovery = { schemaVersion: 1, case: "lost-source-reply", run,
       contract: JSON.parse(readFileSync(new URL("../transfer-reliability/contract.json", import.meta.url))) };

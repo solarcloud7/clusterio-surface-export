@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import { snapshotAvailability } from "../shared/snapshot";
 import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { buildAuditRow } from "./audit-ledger";
@@ -290,6 +291,7 @@ export class TransactionLogger {
 			exportId: info.exportId || null,
 			artifactSizeBytes,
 			downloadable,
+			...snapshotAvailability(storedExport?.exportData),
 			platformName: info.platformName,
 			sourceInstanceId: info.sourceInstanceId,
 			sourceInstanceName: info.sourceInstanceName,
@@ -476,6 +478,7 @@ export class TransactionLogger {
 					queuedRequestId: summary.queuedRequestId ?? this.plugin.persistedTransactionLogs.find(log => log.transferId === summary.transferId)?.transferInfo.queuedRequestId,
 					artifactSizeBytes: summary.artifactSizeBytes ?? storedExport?.size ?? null,
 					downloadable: Boolean(storedExport?.exportData),
+					...snapshotAvailability(storedExport?.exportData),
 				};
 			})
 			.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))

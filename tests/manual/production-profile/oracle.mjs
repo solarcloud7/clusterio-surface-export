@@ -4,10 +4,13 @@ import { settings } from "../../../docker/production/provision.mjs";
 
 import { preservesInstalledCode } from "./mounts.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
+import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
 
 export function analyzeProfile(report) {
-  assert.ok([1, 2].includes(report.schemaVersion));
-  for (const r of [report.normal, report.recovery]) if (r?.before && r.samples?.length) {
+  assert.ok([1, 2, 3].includes(report.schemaVersion));
+  for (const r of [report.normal, report.recovery, report.restoration && {
+    before: report.normal?.before, samples: [report.restoration.physical, report.restoration.after].filter(Boolean),
+  }]) if (r?.before && r.samples?.length) {
     const copies = evaluateCopies(r.before, r.samples, 1);
     if (copies.verdict === "STOP") return copies;
   }
@@ -15,7 +18,7 @@ export function analyzeProfile(report) {
   assert.equal(report.cleanup?.success, true);
   const result = analyze(report.recovery);
   if (result.verdict === "STOP") return result;
-  if (report.schemaVersion === 2) {
+  if (report.schemaVersion >= 2) {
     assert.deepEqual(report.normal?.before?.cargo, expectedCargo);
     assert.equal(report.normal.outcome?.status, "completed");
     assert.equal(report.normal.outcome.transferId, report.normal.transferId);
@@ -53,6 +56,29 @@ export function analyzeProfile(report) {
     assert.equal(game.auto_pause, false);
   }
   assert.equal(report.browser?.success, true);
+  if(report.schemaVersion >= 3) {
+    const restore=report.restoration;
+    for(const entries of [restore?.archives,restore?.restored]) {
+      assert.deepEqual(entries?.map(e=>e.suffix).sort(),[...PRODUCTION_VOLUME_SUFFIXES].sort(),"incomplete deployment backup");
+      for(const entry of entries) {assert.equal(entry.compared,true);assert.match(entry.sha256,/^[a-f0-9]{64}$/);}
+    }
+    for(const key of PRODUCTION_VOLUME_SUFFIXES) {
+      assert.notEqual(restore.sourceVolumes[key],restore.targetVolumes[key]);
+      assert.equal(restore.archives.find(e=>e.suffix===key).sha256,restore.restored.find(e=>e.suffix===key).sha256);
+    }
+    assert.equal(restore.authenticationAfter,restore.authenticationBefore);assert.match(restore.authenticationAfter,/^[a-f0-9]{64}$/);
+    assert.deepEqual(restore.physical?.destination.cargo,expectedCargo);assert.equal(restore.physical?.destination.usable,true);
+    assert.equal(restore.physical.source.present,false);
+    assert.equal(restore.history?.status,"completed");assert.equal(restore.outcome?.status,"completed");
+    assert.equal(restore.history.transferId,report.normal.transferId);
+    assert.equal(restore.outcome.transferId,restore.transferId);
+    assert.equal(restore.after?.source.present,false);assert.equal(restore.after?.destination.usable,true);
+    assert.deepEqual(restore.after.destination.cargo,expectedCargo);assert.equal(restore.browser?.success,true);
+    assert.deepEqual(restore.browser.pageErrors,[]);assert.deepEqual(restore.browser.failedResponses,[]);
+    for(const key of ["assets","visibleGateways","gatewayRoutes"]) assert.deepEqual(restore.browser[key],report.browser[key]);
+    assert.deepEqual(restore.browser.nodes.map(node=>node.id).sort(),report.browser.nodes.map(node=>node.id).sort());
+    assert.deepEqual(restore.localSettings,{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]});
+  }
   const recreated = report.recreatedController;
   assert.notEqual(recreated.before.split(" ")[0], recreated.after.split(" ")[0]);
   assert.equal(recreated.after.split(" ")[1], report.runtime.images.controller);

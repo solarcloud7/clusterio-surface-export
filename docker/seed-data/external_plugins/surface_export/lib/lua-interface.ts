@@ -215,8 +215,8 @@ export class LuaInterface {
 			`"${escapeString(transferId)}", ${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"))`,
 		);
 	}
-	async unlockPlatform(platformIndex: number, platformName?: string): Promise<string> {
-		const nameArg = platformName ? `, "${escapeString(platformName)}"` : "";
+	async unlockPlatform(platformIndex: number, platformName?: string, sourceJobId?: string): Promise<string> {
+		const nameArg = `, ${platformName ? `"${escapeString(platformName)}"` : "nil"}, ${sourceJobId ? `"${escapeString(sourceJobId)}"` : "nil"}`;
 		return this.host.sendRcon(
 			`/sc ` +
 			`local success, err = remote.call("surface_export", "unlock_platform", ${Math.trunc(platformIndex)}${nameArg}); ` +

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { analyzeProfile, profileVerdict } from "./oracle.mjs";
+import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
 
 const fixture = () => JSON.parse(readFileSync(new URL("./evidence/accepted-0.10.281.json", import.meta.url)));
 test("retained production profile passes the independent recovery and deployment oracle", () => {
@@ -68,4 +69,36 @@ test("ordinary acceptance failures stay FAIL and observed cargo violations take 
   report.cleanup.success = false;
   report.recovery.samples.at(-1).destination.cargo.entities.pop();
   assert.equal(profileVerdict(report).verdict, "STOP");
+});
+
+function completeRestoreEvidence() {
+  const report=fixture();report.schemaVersion=3;
+  report.normal={before:report.recovery.before,samples:report.recovery.samples.slice(-2),
+    outcome:report.recovery.outcome,transferId:report.recovery.transferId};
+  for(const c of report.containers) {c.instrumented=false;c.mounts=c.mounts.filter(m=>m.destination!=="/lab");}
+  report.restoration={
+    archives:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,sha256:"a".repeat(64)})),
+    restored:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,sha256:"a".repeat(64)})),
+    sourceVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`source-${key}`])),
+    targetVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`target-${key}`])),
+    authenticationBefore:"b".repeat(64),authenticationAfter:"b".repeat(64),
+    physical:structuredClone(report.normal.samples.at(-1)),after:structuredClone(report.normal.samples.at(-1)),
+    history:report.normal.outcome,outcome:report.normal.outcome,transferId:report.normal.transferId,
+    browser:structuredClone(report.browser),localSettings:{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]},
+  };
+  return report;
+}
+test("complete deployment oracle rejects omitted stores, wrong generations, altered authentication and missing assets",()=>{
+  assert.equal(analyzeProfile(completeRestoreEvidence()).verdict,"PASS");
+  for(const mutate of [r=>delete r.restoration,r=>r.restoration.archives.pop(),r=>r.restoration.restored[0].sha256="c".repeat(64),
+    r=>r.restoration.targetVolumes.tokens=r.restoration.sourceVolumes.tokens,
+    r=>r.restoration.authenticationAfter="d".repeat(64),r=>r.restoration.history={status:"completed",transferId:"wrong"},
+    r=>r.restoration.browser.assets.pop(),r=>r.restoration.browser.pageErrors.push("missing module"),
+    r=>r.restoration.localSettings.host1={}]) {
+    const report=completeRestoreEvidence();mutate(report);assert.notEqual(profileVerdict(report).verdict,"PASS");
+  }
+  for(const mutate of [r=>r.restoration.physical.destination.cargo.entities.pop(),
+    r=>r.restoration.physical.source=structuredClone(r.restoration.physical.destination)]) {
+    const report=completeRestoreEvidence();mutate(report);assert.equal(profileVerdict(report).verdict,"STOP");
+  }
 });

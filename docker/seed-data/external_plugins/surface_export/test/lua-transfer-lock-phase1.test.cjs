@@ -66,7 +66,7 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(surfaceLock, /committed_source_transfer_tombstones/, "committed source tombstones must be keyed outside the mutable platform index registry");
 	assert.match(surfaceLock, /COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS/, "committed source tombstones must have bounded retention");
 	assert.match(surfaceLock, /function\s+SurfaceLock\.prune_committed_source_tombstones\s*\(/, "committed source tombstones must be age-pruned");
-	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
+	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+and not accepting_restoration then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
 	assert.match(surfaceLock, /source_lock_is_committed\s*\(\s*lock_data\s*\)[\s\S]*committed\s*=\s*committed\s*\+\s*1/, "TTL expiry scan must retain committed locks instead of unlocking them");
 	assert.doesNotMatch(surfaceLock, /platform name mismatch|live platform name mismatch/, "source state query must not use mutable platform.name as a state discriminator");
 	assert.match(deleteForTransfer, /SurfaceLock\.clear_committed_source_lock_after_delete\s*\(/, "delete is the sole path allowed to clear a committed source lock");

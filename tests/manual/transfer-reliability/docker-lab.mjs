@@ -27,11 +27,12 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null} = {}) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
     this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
+    this.exposeHttp = exposeHttp;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
       {...h, container: `${run}-host-${h.hostNumber}`} ]));
@@ -143,12 +144,16 @@ export class DockerLab {
     this.docker(["cp",`${seed}/.`,`${helper}:/seed`],{timeout:90_000});
     this.docker(["cp",`${join(this.directory,"bundle")}/.`,`${helper}:/plugins`],{timeout:90_000});
     const common = name => ["run","-d","--name",name,"--label",`${LABEL}=${this.run}`,"--network",this.network];
-    this.docker([...common(this.controller),"--hostname","clusterio-controller","--network-alias","clusterio-controller",
+    this.docker([...common(this.controller),...(this.exposeHttp?["-p","127.0.0.1::8080"]:[]),"--hostname","clusterio-controller","--network-alias","clusterio-controller",
       "-e","HOST_COUNT=2","-e","EXPORT_HOST=0","-e","INIT_CLUSTERIO_ADMIN=manual-lab","-e","DEFAULT_MOD_PACK=Space Age 2.0",
       "-e","SE_SKIP_PREPARE=1","-v",`${data}:/clusterio/data`,"-v",`${staticData}:/clusterio/static`,
       "-v",`${tokens}:/clusterio/tokens`,"-v",`${seedVolume}:/clusterio/seed-data:ro`,
       "-v",`${join(ROOT,"docker/seed-data/mods")}:/clusterio/seed-data/mods:ro`,"-v",`${plugins}:/clusterio/external_plugins`,this.image]);
     this.containers.push(this.controller);
+    if(this.exposeHttp) {
+      const address=this.docker(["port",this.controller,"8080/tcp"]).trim();
+      assert.match(address,/^127\.0\.0\.1:\d+$/);this.url=`http://${address}`;
+    }
     await this.until(() => this.docker(["exec",this.controller,"curl","-sf","http://localhost:8080/"]).length > 0,"controller HTTP",180);
     for (const host of [1,2]) {
       const h=this.hosts[host];

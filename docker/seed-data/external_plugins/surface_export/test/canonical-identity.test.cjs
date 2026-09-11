@@ -35,6 +35,40 @@ const { ControllerPlugin } = require(path.join(distNode, "controller.js"));
 const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
 const messages = require(path.join(distNode, "messages.js"));
 
+test("save restoration requires available recovery authority and reserves startup admission", async () => {
+	const plugin = Object.create(ControllerPlugin.prototype);
+	plugin.controller = { instances: new Map([[1, {}], [2, {}]]) };
+	plugin.recoveryReservations = new Map();
+	plugin.pendingTransfers = new Map(); plugin.activeTransfers = new Map();
+	plugin.orchestrator = { requestQueue: {} };
+	let mode = "plugin_history";
+	plugin.cfg = () => mode;
+	const begin = epoch => plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch, action: "begin"}, {id: 1});
+	assert.equal((await begin("a")).mode, "plugin_history");
+	assert.throws(() => plugin.requireRecoveryReady(1), /reconciling/);
+	mode = "save_game";
+	assert.equal((await begin("a")).mode, "plugin_history", "configuration changed an active startup session");
+	await assert.rejects(plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "a", action: "begin"}, {id: 2}), /identity mismatch/);
+	for (const field of ["pendingTransfersLoadError", "transactionLogLoadError"]) {
+		plugin[field] = "unreadable";
+		await assert.rejects(begin("b"), /unavailable/); plugin[field] = null;
+	}
+	plugin.orchestrator.requestQueue.admissionError = "unreadable";
+	await assert.rejects(begin("b"), /unavailable/);
+	delete plugin.orchestrator.requestQueue.admissionError;
+	plugin.pendingTransfers.set("old", {sourceInstanceId: 1, targetInstanceId: 2});
+	assert.equal((await begin("b")).allowAdoption, false);
+	plugin.pendingTransfers.clear();
+	plugin.activeTransfers.set("old", {sourceInstanceId: 2, targetInstanceId: 1, status: "cleanup_failed"});
+	assert.equal((await begin("c")).allowAdoption, false);
+	plugin.activeTransfers.clear();
+	assert.equal((await begin("d")).allowAdoption, true);
+	await assert.rejects(plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "c", action: "finish"}, {id: 1}), /session changed/);
+	assert.throws(() => plugin.requireRecoveryReady(1), /reconciling/);
+	await plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "d", action: "finish"}, {id: 1});
+	assert.doesNotThrow(() => plugin.requireRecoveryReady(1));
+});
+
 test("canonical transfer id helpers qualify by numeric source instance and parse by first colon", () => {
 	assert.equal(helpers.makeCanonicalTransferId(1, "001_test"), "1:001_test");
 	assert.deepEqual(helpers.parseCanonicalTransferId("12:001_alpha:debug"), {
@@ -394,5 +428,5 @@ test("transfer uses canonical id everywhere except raw source delete correlation
 		validation: { itemCountMatch: true, fluidCountMatch: true },
 	});
 	assert.equal(calls.sourceDeletes[0].exportId, "001_test", "source delete must use raw source job id");
-	assert.deepEqual(calls.storageDeletes, ["1:001_test"]);
+	assert.deepEqual(calls.storageDeletes, [], "completed snapshot should remain until normal retention evicts it");
 });

@@ -734,6 +734,11 @@ function ImportCompletion.run_phase2(job, batch_size)
 				assert(held, hold_error)
 				result.destinationHeld = true
 				LatchRearm.schedule(job)
+				if job.platform_data._standaloneImport == true then
+					local released, release_error = DestinationHold.go_live(job.transfer_id)
+					assert(released, release_error)
+					result.destinationHeld = false
+				end
 			end)
 			if not prepared then
 				success = false

@@ -3,7 +3,12 @@
 Contract fixed before running: use the actual resolved production Compose file and
 baked images, create two fresh saves with the public CLI, verify disabled diagnostic
 and experimental settings, real exported assets and authenticated browser views.
-First transfer with the shipped startup and no fault hook. Then recreate the hosts
+First transfer with the shipped startup and no fault hook. Stop the complete deployment,
+archive and compare all twelve resolved volumes, then restore them into fresh owned volumes
+and containers. Keep the original resources stopped until final cleanup. Require the same
+authentication, cargo, history, hardening settings and authenticated assets, plus another transfer.
+Temporarily disable instance auto-start to select the checkpoint explicitly on restoration,
+then restore and read back its original setting. Then recreate the hosts
 with the fault hook, withhold a successful source-deletion reply, kill/restart the controller container,
 then require exact physical cargo, one import, held destination before acknowledgement,
 completed recovery and retained history. Reuse the existing physical oracle unchanged.
@@ -16,7 +21,7 @@ receipt edits, timer changes or live-cluster operations. Diagnostic defaults sta
 The shipped profile keeps auto-pause off so unattended destinations can process imports.
 
 First run `--cleanup-proof`, deliberately failing after Compose startup. Require verified
-zero owned resources before the full run. Ten-minute setup and ten-minute case limits,
+zero owned resources before the full run. Ten-minute setup and twenty-minute restore limits,
 bounded CLI commands, and cleanup in `finally` apply. Stop on invalid evidence or cargo
 violation. Reports preserve image IDs, profile hashes, settings and physical observations.
 Analyzer changes do not require another game run.
@@ -27,7 +32,7 @@ node tests/manual/production-profile/run.mjs --run <runtime.json> <existing-clie
 node tests/manual/production-profile/run.mjs --analyze <result.json>
 ```
 
-This is fresh installation and same-image controller restart, not an upgrade, off-host
+This is fresh installation, same-image volume restoration and controller restart, not an upgrade, off-host
 restore, mixed-generation reconciliation, public TLS endpoint or universal cargo proof.
 
 ## Historical acceptance: 2026-09-10
