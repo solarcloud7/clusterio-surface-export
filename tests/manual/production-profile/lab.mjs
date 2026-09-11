@@ -7,6 +7,7 @@ import { gatewayMapObserver, verifyGatewayMap } from "../../../tools/surface-exp
 
 import configuration from "../../../docker/production/configure.cjs";
 import { preservesInstalledCode } from "./mounts.mjs";
+import { readTable } from "../../../docker/production/cli-table.mjs";
 
 export class ProductionLab extends DockerLab {
   factorioVersion = pins.factorio;
@@ -126,6 +127,11 @@ export class ProductionLab extends DockerLab {
       this.assertOwned("container", this.hosts[n].container);
     }
     writeFileSync(this.composeFile, JSON.stringify(this.config, null, 2));
+    this.docker(["compose", "-f", this.composeFile, "stop", "host-1", "host-2"], { timeout: 150_000 });
+    await this.until(() => {
+      const hosts = readTable(this.ctl("host", "list"));
+      return [1, 2].every(n => hosts.some(h => h.name === this.hosts[n].host && h.connected === "false"));
+    }, "controller observed both hosts disconnected", 120);
     this.docker(["compose", "-f", this.composeFile, "up", "-d", "--no-deps", "--force-recreate", "--wait",
       "--wait-timeout", "120", "host-1", "host-2"], { timeout: 150_000 });
     for (const n of [1, 2]) {
