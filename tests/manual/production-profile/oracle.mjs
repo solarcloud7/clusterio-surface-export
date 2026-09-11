@@ -80,6 +80,7 @@ export function analyzeProfile(report) {
     for(const key of ["assets","visibleGateways","gatewayRoutes"]) assert.deepEqual(restore.browser[key],report.browser[key]);
     assert.deepEqual(restore.browser.nodes.map(node=>node.id).sort(),report.browser.nodes.map(node=>node.id).sort());
     assert.deepEqual(restore.localSettings,{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]});
+    assert.equal(restore.settingsBrowser?.success,true);
   }
   const recreated = report.recreatedController;
   assert.notEqual(recreated.before.split(" ")[0], recreated.after.split(" ")[0]);

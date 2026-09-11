@@ -93,6 +93,7 @@ function completeRestoreEvidence() {
     physical:structuredClone(report.normal.samples.at(-1)),after:structuredClone(report.normal.samples.at(-1)),
     history:report.normal.outcome,outcome:report.normal.outcome,transferId:report.normal.transferId,
     browser:structuredClone(report.browser),localSettings:{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]},
+    settingsBrowser:{success:true},
   };
   return report;
 }
@@ -102,7 +103,7 @@ test("complete deployment oracle rejects omitted stores, wrong generations, alte
     r=>r.restoration.targetVolumes.tokens=r.restoration.sourceVolumes.tokens,
     r=>r.restoration.authenticationAfter="d".repeat(64),r=>r.restoration.history={status:"completed",transferId:"wrong"},
     r=>r.restoration.browser.assets.pop(),r=>r.restoration.browser.pageErrors.push("missing module"),
-    r=>r.restoration.localSettings.host1={},r=>r.restoration.archives[0].bytes=9*1024**3]) {
+    r=>r.restoration.localSettings.host1={},r=>r.restoration.archives[0].bytes=9*1024**3,r=>r.restoration.settingsBrowser.success=false]) {
     const report=completeRestoreEvidence();mutate(report);assert.notEqual(profileVerdict(report).verdict,"PASS");
   }
   for(const mutate of [r=>r.restoration.physical.destination.cargo.entities.pop(),

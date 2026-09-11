@@ -32,6 +32,7 @@ if (mode === "--analyze") {
   for (const file of ["docker/production/compose.yml", "docker/production/settings.json", "docker/production/provision.mjs",
     "tests/manual/production-profile/lab.mjs", "tests/manual/production-profile/run.mjs", "tests/manual/production-profile/oracle.mjs", "tests/manual/production-profile/restore.mjs",
     "tests/manual/transfer-reliability/backup-storage.mjs",
+    "tests/integration/settings/run-tests.mjs",
     "tests/manual/transfer-reliability/cases.mjs", "tests/manual/transfer-reliability/fault-hook.cjs", "tests/integration/transfer-cleanup/probe.lua"])
     report.hashes[file] = hash(join(ROOT, file));
   const save = () => writeFileSync(join(directory, "result.json"), JSON.stringify(report, null, 2) + "\n");

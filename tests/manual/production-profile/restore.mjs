@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { ROOT } from "../transfer-reliability/docker-lab.mjs";
 import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
 import { sample, start, summary, terminal } from "../transfer-reliability/cases.mjs";
@@ -92,4 +93,10 @@ export async function restoreProduction(lab,report,save) {
   result.transferId=start(lab,another);result.outcome=await terminal(lab,result.transferId);assert.equal(result.outcome.status,"completed");
   result.after=sample(lab,another);assert.equal(result.after.source.present,false);assert.deepEqual(result.after.destination.cargo,expectedCargo);
   const browserReport={recovery:{name:another}};await browserAcceptance(lab,browserReport);result.browser=browserReport.browser;save();
+  const settingsOutput=execFileSync(process.execPath,[join(ROOT,"tests/integration/settings/run-tests.mjs")],{
+    cwd:ROOT,env:{...process.env,SE_SETTINGS_URL:lab.url,SE_SETTINGS_CONTROLLER:lab.controller},
+    encoding:"utf8",timeout:90000,maxBuffer:1024*1024,
+  });
+  assert.match(settingsOutput,/PASS: grouped settings/);
+  result.settingsBrowser={success:true,output:settingsOutput.trim()};save();
 }
