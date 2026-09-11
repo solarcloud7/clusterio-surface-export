@@ -143,8 +143,11 @@ Run the [manual acceptance lab](../../tests/manual/production-profile/README.md)
 before adopting a new built image pair. No registry publication or live deployment is
 performed by the build or lab tools.
 
-The [retained 0.10.281 acceptance](../../tests/manual/production-profile/evidence/accepted-0.10.281.json)
-passed fresh saves, diagnostic/access settings, physical cargo and lost-reply recovery,
-controller recreation, retained history and six browser-loaded assets. Its image IDs
+The [complete 0.10.281 restoration acceptance](../../tests/manual/production-profile/evidence/complete-restore-0.10.281.json.gz)
+passed fresh saves, all twelve volume archives restored into new owned resources, selected
+checkpoint markers, settings, authentication, physical cargo, retained history and another
+transfer. Lost-reply recovery, controller recreation and six browser-loaded assets passed
+afterward. The [earlier acceptance](../../tests/manual/production-profile/evidence/accepted-0.10.281.json)
+remains separate and did not exercise this complete restore. The reports' image IDs
 are local build identities, not published registry references. The acceptance covers
 the recorded image pair and fixture; it does not certify a future rebuild or upgrade.

@@ -14,6 +14,14 @@ export const contract = { requires: ["owned disposable production profile", "res
   "does not": ["erase original deployment volumes", "backup the development cluster", "prove historical upgrades"] };
 const label = "surface-export.manual-run";
 const digest = value => createHash("sha256").update(value).digest("hex");
+function settingsBrowser(lab) {
+  const output=execFileSync(process.execPath,[join(ROOT,"tests/integration/settings/run-tests.mjs")],{
+    cwd:ROOT,env:{...process.env,SE_WEB_URL:lab.url,SE_SETTINGS_URL:lab.url,SE_SETTINGS_CONTROLLER:lab.controller},
+    encoding:"utf8",timeout:90000,maxBuffer:1024*1024,
+  });
+  assert.match(output,/PASS: grouped settings/);
+  return {success:true,output:output.trim()};
+}
 
 export function restoreConfiguration(config, run) {
   assert.match(run, /^se-manual-[a-z0-9-]{8,60}$/);
@@ -38,6 +46,9 @@ export async function restoreProduction(lab,report,save) {
   const originalServices=Object.values(original.services).map(s=>s.container_name);
   const backup=`${lab.run}-production-backup`, result=report.restoration={archives:[],restored:[],sourceVolumes:{},targetVolumes:{}};
   result.composeSha256=digest(JSON.stringify(original));
+  result.initialSettingsBrowser=settingsBrowser(lab);save();
+  const policyField="surface_export.platform_source_of_truth";
+  result.policyBefore=readConfigList(lab.ctl("controller","config","list"),[policyField])[policyField];
   const tokenHash=()=>digest(lab.docker(["exec",lab.controller,"cat",lab.controlConfig]));
   result.authenticationBefore=tokenHash();
   result.autoStart={};
@@ -48,7 +59,9 @@ export async function restoreProduction(lab,report,save) {
     lab.ctl("instance","config","set",instance,"instance.auto_start","false");
     assert.equal(readConfigList(lab.ctl("instance","config","list",instance),["instance.auto_start"])["instance.auto_start"],false);
   }
-  await lab.checkpoint("manual-production-backup");
+  result.marker={run:lab.run,checkpoint:"manual-production-backup"};
+  for(const host of [1,2]) lab.lua(host,`storage.manual_production_restore={run=${JSON.stringify(lab.run)},checkpoint='manual-production-backup'};return {success=true}`);
+  result.checkpoint=await lab.checkpoint("manual-production-backup");
   for(const host of [1,2]) lab.ctl("instance","stop",lab.hosts[host].instance);
   for(const name of originalServices) lab.assertOwned("container",name);
   lab.docker(["compose","-f",lab.composeFile,"stop"],{timeout:180000});
@@ -76,7 +89,16 @@ export async function restoreProduction(lab,report,save) {
   lab.docker(["compose","-p",`${lab.run}-restored`,"-f",file,"up","-d","--wait","--wait-timeout","180"],{timeout:210000});
   for(const name of originalServices) assert.equal(lab.docker(["inspect",name,"--format","{{.State.Running}}"]).trim(),"false");
   lab.url=`http://${lab.docker(["port",lab.controller,"8080/tcp"]).trim()}`;
-  for(const host of [1,2]) await lab.until(()=>{lab.ctl("instance","start",lab.hosts[host].instance,"--save","manual-production-backup.zip");return true;},"restored save startup",120);
+  result.loadedCheckpoints={};
+  for(const host of [1,2]) {
+    // The pinned image's boot guard can restart an existing instance despite auto_start=false.
+    // Wait for it, then explicitly select the checkpoint instead of accepting its chosen world.zip.
+    await lab.until(()=>lab.docker(["logs","--tail","300",lab.hosts[host].container]).includes("boot-race guard: complete"),"restored host boot guard",120);
+    await lab.ready();
+    await lab.load(host,"manual-production-backup");
+    result.loadedCheckpoints[host]=lab.lua(host,"return {success=true,marker=storage.manual_production_restore}").result.marker;
+    assert.deepEqual(result.loadedCheckpoints[host],result.marker,"restored instance loaded another save generation");save();
+  }
   await lab.ready();
   for(const host of [1,2]) {
     lab.ctl("instance","config","set",lab.hosts[host].instance,"instance.auto_start",String(result.autoStart[host]));
@@ -88,15 +110,21 @@ export async function restoreProduction(lab,report,save) {
   assert.deepEqual(result.physical.destination.cargo,expectedCargo);assert.equal(result.physical.destination.usable,true);
   result.history=summary(lab,report.normal.transferId);assert.equal(result.history.status,"completed");
   result.localSettings={controller:lab.localSettings("controller",lab.controller),host1:lab.localSettings("host",lab.hosts[1].container),host2:lab.localSettings("host",lab.hosts[2].container)};
+  const controllerFields=[...Object.keys(report.controllerSettings),policyField];
+  const restoredController=readConfigList(lab.ctl("controller","config","list"),controllerFields);
+  result.policyAfter=restoredController[policyField];assert.equal(result.policyAfter,result.policyBefore);
+  delete restoredController[policyField];result.controllerSettings=restoredController;
+  assert.deepEqual(result.controllerSettings,report.controllerSettings);
+  result.instanceSettings={};
+  for(const host of [1,2]) {
+    const name=lab.hosts[host].instance;
+    result.instanceSettings[name]=readConfigList(lab.ctl("instance","config","list",name),Object.keys(report.settings[name]));
+    assert.deepEqual(result.instanceSettings[name],report.settings[name]);
+  }
   const another=`transfer-cleanup-${lab.run}-restored-deployment`;
   result.before=lab.probe(1,"build",another).state;assert.deepEqual(result.before.cargo,expectedCargo);
   result.transferId=start(lab,another);result.outcome=await terminal(lab,result.transferId);assert.equal(result.outcome.status,"completed");
   result.after=sample(lab,another);assert.equal(result.after.source.present,false);assert.deepEqual(result.after.destination.cargo,expectedCargo);
   const browserReport={recovery:{name:another}};await browserAcceptance(lab,browserReport);result.browser=browserReport.browser;save();
-  const settingsOutput=execFileSync(process.execPath,[join(ROOT,"tests/integration/settings/run-tests.mjs")],{
-    cwd:ROOT,env:{...process.env,SE_SETTINGS_URL:lab.url,SE_SETTINGS_CONTROLLER:lab.controller},
-    encoding:"utf8",timeout:90000,maxBuffer:1024*1024,
-  });
-  assert.match(settingsOutput,/PASS: grouped settings/);
-  result.settingsBrowser={success:true,output:settingsOutput.trim()};save();
+  result.settingsBrowser=settingsBrowser(lab);save();
 }

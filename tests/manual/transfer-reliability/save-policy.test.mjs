@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 
 test("retained native recovery observations still satisfy the independent physical oracle",()=>{
-  for(const name of ["save-policy-game","save-policy-history","save-policy-pending","snapshot-recovery","snapshot-recovery-sectional"]) {
+  for(const name of ["save-policy-game","save-policy-history","save-policy-pending","snapshot-recovery","snapshot-recovery-sectional","snapshot-offline-recovery"]) {
     const report=JSON.parse(gunzipSync(readFileSync(new URL(`./evidence/${name}-2.1.17.json.gz`,import.meta.url))));
     assert.equal(analyze(report).verdict,"PASS");
     const destination=report.final?.destination || report.restored.destination;

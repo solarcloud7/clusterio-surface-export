@@ -79,7 +79,8 @@ try {
 	await page.getByRole("status").filter({ hasText: "Settings saved." }).waitFor();
 	assert.deepEqual(writes, [{ "surface_export.transaction_log_detail_entries": String(changed) }]);
 	assert.equal(await input.inputValue(), String(changed));
-	await policy.click();await page.getByRole("option",{name:"Save game",exact:true}).click();
+	await page.locator(".se-settings .ant-select").filter({has:policy}).click();
+	await page.locator(".ant-select-item-option").filter({hasText:/^Save game$/}).click();
 	await page.getByRole("button",{name:"Save changes"}).click();
 	await page.getByRole("status").filter({hasText:"Settings saved."}).waitFor();
 	assert.deepEqual(writes.at(-1),{"surface_export.platform_source_of_truth":"save_game"});

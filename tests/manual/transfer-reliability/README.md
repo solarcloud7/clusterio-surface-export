@@ -85,6 +85,7 @@ the implementation's base commit):
 | Plugin history mixed checkpoint | [Physical observations](evidence/save-policy-history-2.1.17.json.gz) | PASS; restored source protected, unrelated platform usable |
 | Pending source-deletion acknowledgement | [Physical observations](evidence/save-policy-pending-2.1.17.json.gz) | PASS; adoption refused, normal recovery completed with exact cargo |
 | Manual snapshot recovery | [Existing codec](evidence/snapshot-recovery-2.1.17.json.gz), [sectional codec](evidence/snapshot-recovery-sectional-2.1.17.json.gz) | PASS; missing-copy reproduction, fresh import, duplicate refusal and save/restart |
+| Offline destination | [Physical and browser observations](evidence/snapshot-offline-recovery-2.1.17.json.gz) | PASS; offline instance reported as unverified, destination disabled, exact cargo after restart |
 
 `save-policy.test.mjs` reads these reports and rejects cargo mutations. The original
 [Factorio callback require error](evidence/save-policy-require-failure-2.1.17.json.gz) and

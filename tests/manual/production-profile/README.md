@@ -7,8 +7,10 @@ First transfer with the shipped startup and no fault hook. Stop the complete dep
 archive and compare all twelve resolved volumes, then restore them into fresh owned volumes
 and containers. Keep the original resources stopped until final cleanup. Require the same
 authentication, cargo, history, hardening settings and authenticated assets, plus another transfer.
-Temporarily disable instance auto-start to select the checkpoint explicitly on restoration,
-then restore and read back its original setting. Then recreate the hosts
+Temporarily disable instance auto-start, wait for the pinned host boot guard to finish,
+then stop its running world and explicitly load the checkpoint. A saved per-instance marker
+must identify the backed-up generation; `already running` is not checkpoint proof. Restore
+and read back the original auto-start setting. Then recreate the hosts
 with the fault hook, withhold a successful source-deletion reply, kill/restart the controller container,
 then require exact physical cargo, one import, held destination before acknowledgement,
 completed recovery and retained history. Reuse the existing physical oracle unchanged.
@@ -33,6 +35,11 @@ stopped at the old 2 GiB limit after eleven volumes and cleaned up successfully
 larger cap applies only to the client store; exact hashes and archive comparisons remain
 required for every volume.
 
+The [startup failure](evidence/restored-startup-failure.json.gz) retained twelve successful
+archive/restore comparisons, but the host boot guard had started `world.zip` and the
+fixture kept retrying `start`. It failed and cleaned up. Explicit checkpoint selection
+and the saved generation marker prevent accepting an arbitrary already-running world.
+
 ```
 node tests/manual/production-profile/run.mjs --cleanup-proof <runtime.json> <existing-client-volume>
 node tests/manual/production-profile/run.mjs --run <runtime.json> <existing-client-volume>
@@ -41,6 +48,27 @@ node tests/manual/production-profile/run.mjs --analyze <result.json>
 
 This is fresh installation, same-image volume restoration and controller restart, not an upgrade, off-host
 restore, mixed-generation reconciliation, public TLS endpoint or universal cargo proof.
+
+## Complete restoration acceptance
+
+[Retained native observations](evidence/complete-restore-0.10.281.json.gz),
+`se-manual-mtx3dlbq-aea579fd`, passed all ten stages and removed every owned resource.
+The run took 399.203 seconds including setup and cleanup; the complete restoration
+stage took 112.734 seconds. These are one fixture's elapsed times, not service guarantees.
+All twelve archives matched their stopped source volumes and fresh restored volumes.
+Saved markers proved both instances loaded the intended checkpoint. Authentication,
+controller/instance settings, recovery policy, history, physical cargo and assets matched;
+another transfer and subsequent lost-reply/controller-restart recovery passed.
+Settings browser checks passed before and after restoration, including intercepted
+policy changes, permissions, and read/save failures. Restart requirements are exercised
+separately by the [save-policy fixture](../transfer-reliability/README.md#configurable-save-recovery).
+
+The exact accepted plugin was `0.10.281`, source `ae803548c0d871ea483909d4dfcf028eccb4c507`,
+SHA-256 `db272eac88c2449d1225e44bd0d7658966cf466a082633ec1096664f05008f9e`.
+The report records the pinned runtime image IDs and gateway ZIP digest. Later changes
+in this PR only refine fixtures, retained evidence and documentation. The regression
+suite reads these physical observations and rejects altered cargo, missing stores,
+wrong checkpoint generations, settings/authentication loss and failed cleanup.
 
 ## Historical acceptance: 2026-09-10
 

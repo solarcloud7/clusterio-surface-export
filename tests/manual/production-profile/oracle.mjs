@@ -81,6 +81,15 @@ export function analyzeProfile(report) {
     assert.deepEqual(restore.browser.nodes.map(node=>node.id).sort(),report.browser.nodes.map(node=>node.id).sort());
     assert.deepEqual(restore.localSettings,{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]});
     assert.equal(restore.settingsBrowser?.success,true);
+    assert.equal(restore.initialSettingsBrowser?.success,true);
+    assert.equal(restore.policyBefore,"plugin_history");assert.equal(restore.policyAfter,restore.policyBefore);
+    assert.deepEqual(restore.controllerSettings,report.controllerSettings);
+    assert.deepEqual(restore.instanceSettings,report.settings);
+    assert.deepEqual(restore.marker,{run:report.run,checkpoint:"manual-production-backup"});
+    for(const host of [1,2]) {
+      assert.match(restore.checkpoint?.[host]||"",/^[a-f0-9]{64}$/);
+      assert.deepEqual(restore.loadedCheckpoints?.[host],restore.marker,"wrong restored save generation");
+    }
   }
   const recreated = report.recreatedController;
   assert.notEqual(recreated.before.split(" ")[0], recreated.after.split(" ")[0]);

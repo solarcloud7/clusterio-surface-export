@@ -76,15 +76,17 @@ upgrades were not exercised. See the [retained package evidence](tests/manual/pa
 and [consumer evidence](tests/manual/consumer-install/evidence/accepted-0.10.281.json).
 
 The [packaged deployment profile](docker/production/README.md) separates runtime images
-and persistent data from development source. Its [retained acceptance](tests/manual/production-profile/evidence/accepted-0.10.281.json)
-passed fresh worlds, explicit settings, exact cargo recovery, controller recreation,
-and browser/assets checks. The [incident procedure](docker/README.md#incident-and-backup-procedure)
-still applies. Broader rollout needs the following acceptance evidence.
+and persistent data from development source. Its [complete restoration acceptance](tests/manual/production-profile/evidence/complete-restore-0.10.281.json.gz)
+passed fresh worlds, all twelve volumes restored into new owned resources, explicit save
+selection, settings, authentication, exact cargo, history, assets and another transfer.
+Lost-reply recovery and controller recreation also passed. The [incident procedure](docker/README.md#incident-and-backup-procedure)
+still applies. This supports a supervised first deployment on the tested stack; broader
+rollout needs the following evidence.
 
 | Priority | Work | Why it matters / acceptance evidence | Effort |
 |---|---|---|---|
-| Blocking | Recovery with inconsistent or missing authority | Lost replies, controller restart, abrupt source-host loss and earlier source-save restoration have bounded passing fixtures. [Destination rollback after release](tests/manual/transfer-reliability/README.md#destination-save-rollback) reproduces a missing physical platform in both running worlds, with completed history unchanged. Mixed backup generations, missing journals and receipt eviction still need acceptance evidence. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
-| Blocking | Extend backup and restore acceptance | The [quiesced volume restore drill](tests/manual/transfer-reliability/backup-restore.md) passes with completed history and an uncertain transfer. It erases/restores all seven lab volumes and checks exact cargo and recovery. Full host rebuild, mixed backup generations and off-host backup handling remain untested. Local pre-deploy saves alone do not establish these. | Medium |
+| Before broader rollout | Recovery with inconsistent or missing authority | Both save policies, pending handoffs and explicit snapshot recovery pass [bounded fixtures](tests/manual/transfer-reliability/README.md#configurable-save-recovery). The original unassisted [destination rollback after release](tests/manual/transfer-reliability/README.md#destination-save-rollback) still leaves a missing platform; manual restoration creates a separate import and preserves that history. Missing journals and receipt eviction remain unproven. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
+| Before broader rollout | Broader backup and restore acceptance | The [complete profile drill](tests/manual/production-profile/README.md) restores all twelve stores into fresh containers and volumes on the same machine and image pair. Mixed backup generations, rebuilding another host and off-host backup handling remain untested. Local pre-deploy saves alone do not establish these. | Medium |
 | Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
 | Release gate | Define and test upgrades and compatible rollback | Exact-package fresh installation and the publishing handoff are exercised. A compatible historical baseline, saves/journal migration and code rollback still need acceptance. The old published package's peer range does not accept the pinned Clusterio prerelease; forced installation is not compatibility evidence. | Medium |
 
