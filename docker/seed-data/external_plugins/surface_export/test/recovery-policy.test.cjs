@@ -23,6 +23,7 @@ test("pending source ownership survives a checkpoint without a Lua retirement re
 function harness() {
 	const plugin = Object.create(InstancePlugin.prototype), calls = [];
 	plugin.timingEpoch = "boot";
+	plugin.lua = {uploads: {initialize: async () => calls.push("uploads:initialize")}};
 	plugin.logger = {warn() {}, info() {}};
 	plugin.retirementJournal = {snapshot: () => ({id: "journal", retirements: [{platformUid: "old", exportId: "job"}]})};
 	plugin.instance = {id: 1, sendTo: async (_target, request) => {
@@ -39,7 +40,7 @@ function harness() {
 }
 test("startup obtains policy before Lua reconciliation and reports applied mode after both finish acknowledgements", async () => {
 	const {plugin,calls} = harness();await plugin.reconcileSourceRetirements("boot");
-	assert.deepEqual(calls,["controller:begin","lua:begin","lua:reconcile","lua:finish","controller:finish","broadcast"]);
+	assert.deepEqual(calls,["controller:begin","lua:begin","lua:reconcile","uploads:initialize","lua:finish","controller:finish","broadcast"]);
 	assert.equal(plugin.recoveryStatus.mode,"save_game");assert.equal(plugin.recoveryStatus.state,"ready");
 	assert.equal(plugin.recoveryStatus.notices[0].status,"accepted");
 });

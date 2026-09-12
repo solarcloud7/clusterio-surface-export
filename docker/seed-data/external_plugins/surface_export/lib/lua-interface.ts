@@ -2,8 +2,9 @@ import { timed, timedSync } from "./timing";
 import { normalizeSectionExport, prepareSectionImport } from "./section-codec";
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
+import { UploadSessions, type UploadReceipt } from "./upload-session";
 import {
-	sendChunkedJson, chunkify, RCON_CHUNK_SIZE,
+	chunkify,
 	GATEWAY_CONFIG_SINGLE_LIMIT, GATEWAY_CONFIG_CHUNK_SIZE,
 	toAsciiJson, simpleChecksum, bracketWrap, getErrorMessage,
 	type FactorioInstance,
@@ -32,11 +33,16 @@ export interface LuaConfigure {
 export class LuaInterface {
 	private readonly host: RconHost;
 	private sectionedCodec = false;
+	readonly uploads: UploadSessions;
  constructor(host: RconHost, private readonly logger: ChunkLogger) {
   this.host = { sendRcon: (command, expectEmpty) => timed("RCON request round trip", "round-trip", () => host.sendRcon(command, expectEmpty)) };
+  this.uploads = new UploadSessions(async (action, request) => this.protocolCall("upload_session_json", request, action), message => this.logger.info(message));
  }
 
 	async configure(cfg: LuaConfigure): Promise<void> {
+		if (!Number.isInteger(cfg.batchSize) || cfg.batchSize < 1 || !Number.isInteger(cfg.maxConcurrentJobs) || cfg.maxConcurrentJobs < 1) {
+			throw new Error("Lua batch size and shared job budget must be positive integers");
+		}
 		this.sectionedCodec = cfg.sectionedCodec === true;
 		const beltBudget = cfg.beltBatchSize ?? 500;
 		if (!Number.isInteger(beltBudget) || beltBudget < 1 || beltBudget > 1_000_000) {
@@ -176,16 +182,20 @@ export class LuaInterface {
 		targetName: string,
 		forceName: string,
 		exportData: ExportData | Record<string, unknown>,
-	): Promise<void> {
+	): Promise<UploadReceipt> {
 		const transportData = this.sectionedCodec
 			? await timed("Sectioned payload preparation", "inclusive", () => prepareSectionImport(exportData)) : exportData;
-		await sendChunkedJson(
-			this.host,
-			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}", "${escapeString(String(exportData._operationId || exportData._transferId || ""))}"))`,
-			transportData,
-			this.logger,
-			RCON_CHUNK_SIZE,
-		);
+		return this.uploads.send(String(exportData._operationId || exportData._transferId || ""), targetName, forceName, transportData);
+	}
+
+	private async protocolCall<T>(endpoint: string, request: unknown, action?: string): Promise<T> {
+		const args = `${action ? `"${escapeString(action)}", ` : ""}${bracketWrap(toAsciiJson(JSON.stringify(request)))}`;
+		const raw = await this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "${endpoint}", ${args}))`);
+		return JSON.parse(raw.trim()) as T;
+	}
+
+	async jobStatus(jobs: Array<{jobId?: string; operationId?: string}>) {
+		return this.protocolCall<import("../shared/job-status").JobStatusBatch>("get_job_status_json", {version: 1, jobs});
 	}
 
 	async destinationTransferGate(transferId: string, action: "verify" | "go_live"): Promise<string> {

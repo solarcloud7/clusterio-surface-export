@@ -105,6 +105,28 @@ function makeControllerHarness() {
 	return { plugin, operation, logged };
 }
 
+test("a lost standalone import reply stays pending; duplicate verdicts keep the first completion", async () => {
+	const {plugin,operation,logged}=makeControllerHarness();
+	plugin.recoveryReservations=new Map();
+	plugin.platformTree.resolveTargetInstance=()=>({id:2,instance:{}});
+	plugin.createOperationRecord=async()=>operation;
+	let sends=0;
+	plugin.controller={sendTo:async()=>{sends++;throw Object.assign(Error("Session closed"),{code:"SessionLost"});}};
+	const response=await plugin.handleImportUploadedExportRequestMeasured({targetInstanceId:2,exportData:{platform_name:"fixture",platform:{force:"player"},entities:[]}});
+	assert.equal(response.success,true);
+	assert.equal(operation.status,"awaiting_completion");
+	assert.equal(operation.completedAt??null,null);
+	assert.equal(operation.jobObservation.message,"Status unavailable");
+	const event=new messages.ImportOperationCompleteEvent({operationId:operation.transferId,instanceId:2,
+		platformName:"fixture",success:true,validation:PASSING_VERDICT});
+	await plugin.handleImportOperationCompleteEvent(event);
+	const completed=operation.completedAt;
+	await plugin.handleImportOperationCompleteEvent(event);
+	assert.equal(operation.completedAt,completed);
+	assert.equal(logged.filter(e=>e.eventType==="import_completed").length,1);
+	assert.equal(sends,1);
+});
+
 test("restoration uses the retained artifact, creates new authority, and never mutates the old export", async () => {
 	const { plugin, logged } = makeControllerHarness();
 	const original = {platform_name: "fixture", platform: {force: "player"}, entities: [], _transferId: "1:old", _sourceInstanceId: 1, _operationId: "old"};

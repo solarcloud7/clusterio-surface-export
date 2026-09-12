@@ -71,6 +71,45 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+test("admitted queue work remains observable through repeated controller restarts", async t => {
+	const fs = require("node:fs/promises"), os = require("node:os");
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-admitted-observation-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const journal = path.join(dir, "queue.json");
+	const h = makeHarness(() => {throw Error("must not replay import");});
+	t.after(() => h.orch.stop());
+	h.plugin.persistedTransactionLogs = [];
+	const operation = {transferId:"1:queued",operationType:"transfer",sourceInstanceId:1,targetInstanceId:2,
+		platformIndex:3,platformName:"fixture",forceName:"player",status:"transporting",sourceExportId:"queued"};
+	await fs.writeFile(journal, JSON.stringify([{id:"request:1",request:{},operation}]));
+	await h.orch.requestQueue.init(journal);
+	const restored = onlyTransfer(h.activeTransfers);
+	assert.equal(restored.status,"awaiting_validation");assert.equal(restored.completedAt,undefined);
+	assert.equal(restored.awaitingLateVerdict,true);assert.equal(h.calls.importSends,0);
+	h.plugin.persistedTransactionLogs = [{transferId:restored.transferId,transferInfo:{...restored}}];
+	h.activeTransfers.clear();
+	h.orch.restoreImportObservations();
+	assert.equal(onlyTransfer(h.activeTransfers).status,"awaiting_validation");
+	assert.equal(onlyTransfer(h.activeTransfers).sourceExportId,"queued");
+	assert.equal(h.calls.importSends,0);assert.equal(h.calls.unlockRouteTaken,0);
+});
+
+test("standalone import and source export observation restart without replay or fabricated duration", () => {
+	const h = makeHarness(() => {throw Error("must not replay");});
+	h.plugin.persistedTransactionLogs = ["import","export"].map(kind => ({transferId:`${kind}:1`,transferInfo:{
+		operationType:kind,status:kind==="import"?"awaiting_completion":"in_progress",sourceInstanceId:1,targetInstanceId:2,
+		platformName:"fixture",platformIndex:3,sourceExportId:"source-job",destinationJobId:"import_1",observedDurationMs:123,
+	}}));
+	h.orch.restoreImportObservations();
+	for (const operation of h.activeTransfers.values()) {
+		assert.equal(operation.observedDurationMs??null,null);assert.equal(operation.completedAt??null,null);
+		assert.equal(operation.jobObservation.state,"unavailable");
+	}
+	assert.equal(h.activeTransfers.get("import:1").destinationJobId,"import_1");
+	assert.equal(h.activeTransfers.get("export:1").sourceExportId,"source-job");
+	assert.equal(h.calls.importSends,0);h.orch.stop();
+});
+
 test("an unusable queue journal refuses direct gateway admission without unlocking or importing", async t => {
 	const fs = require("node:fs/promises"), os = require("node:os");
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-direct-admission-"));
@@ -190,7 +229,9 @@ test("actual timeout retains uncertainty and accepts a later genuine verdict", a
 	finally { global.setTimeout = original; }
 	await timers.find(timer => timer.ms === 30_000).fn();
 	const transfer = onlyTransfer(h.activeTransfers);
-	assert.equal(transfer.status, "cleanup_failed");
+	assert.equal(transfer.status, "awaiting_validation");
+ assert.equal(transfer.completedAt ?? null, null);
+ assert.equal(transfer.jobObservation.message, "Status unavailable");
 	assert.equal(transfer.validationResult, undefined, "missing reply is not failed cargo evidence");
 	assert.equal(h.calls.unlockRouteTaken, 0);
 	assert.equal(h.calls.pendingRemoved, undefined);
@@ -199,6 +240,30 @@ test("actual timeout retains uncertainty and accepts a later genuine verdict", a
 	assert.equal(transfer.status, "completed");
 	assert.equal(transfer.validationResult.itemCountMatch, true);
 	assert.equal(h.calls.importSends, 1);
+});
+
+test("queued Lua work past the observation threshold survives controller recovery without deletion", async () => {
+	const timers = [], original = global.setTimeout;
+	let deletes = 0;
+	const h = makeHarness(() => ({success:true,jobId:"import_7",epoch:"runtime-1"}), msg => {
+		if (msg.constructor.name === "JobsStatusRequest") return {version:1,epoch:"runtime-1",observedTick:2400,
+			jobs:msg.jobs.map(ref=>({...ref,state:"queued",phase:"tiles",work:{entities:0},observedTick:2400}))};
+		if (msg.constructor.name === "DeleteSourcePlatformRequest") deletes++;
+		return {success:false,error:"no completed hold yet"};
+	});
+	global.setTimeout=(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer;};
+	let started;
+	try {started=await h.orch.transferPlatform("1:queued",2);} finally {global.setTimeout=original;}
+	await timers.find(t=>t.ms===30_000).fn();
+	const operation=onlyTransfer(h.activeTransfers);
+	assert.equal(operation.jobObservation.message,"Waiting in Lua queue");
+	assert.equal(operation.completedAt??null,null);
+	h.plugin.pendingTransfers=new Map([[started.transferId,h.calls.pendingPersisted]]);
+	h.activeTransfers.clear();
+	await h.orch.recoverPendingTransfers();
+	assert.equal(onlyTransfer(h.activeTransfers).status,"awaiting_validation");
+	assert.equal(onlyTransfer(h.activeTransfers).completedAt??null,null);
+	assert.equal(deletes,0); assert.equal(h.calls.unlockRouteTaken,0); assert.equal(h.calls.importSends,1);
 });
 
 for (const failure of ["verify", "delete-refused", "delete-lost", "activate-lost"]) {

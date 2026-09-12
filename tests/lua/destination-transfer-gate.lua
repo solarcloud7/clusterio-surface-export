@@ -46,6 +46,16 @@ assert(not holds.stage("released", platform, force, true), "released ID created 
 assert(not holds.go_live("unknown"), "missing receipt manufactured activation success")
 print("PASS activation receipt is idempotent and cannot stage another destination")
 
+-- Hiding an unfinished platform is not a validated hold. The eventual hold must
+-- restore the visibility captured before import preparation, not its temporary hiding.
+platform.hidden = true
+assert(not holds.get("preparing"), "temporary hiding manufactured a validated hold")
+assert(not holds.go_live("preparing"), "temporary hiding authorized activation")
+assert(holds.stage("preparing", platform, force, true, {platform_hidden = false, surface_hidden = false}))
+assert(holds.go_live("preparing"))
+assert(platform.hidden == false, "completed import retained temporary preparation visibility")
+print("PASS early preparation visibility is restored only through a validated hold")
+
 -- Deferred latch work must not execute or consume its job while the hold owns the surface.
 env.storage = {destination_holds = {transfer = {}}, latch_rearm_jobs = {
     latch = {transfer_id = "transfer", at_tick = 0, stage = "preflight", items = {}},

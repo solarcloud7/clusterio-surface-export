@@ -70,6 +70,7 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	jobObservation?: import("./job-status").JobObservation;
 	queuedRequestId?: string;
 	observedDurationMs?: number | null;
 	transferId: string;

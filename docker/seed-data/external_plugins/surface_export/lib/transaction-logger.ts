@@ -249,6 +249,7 @@ export class TransactionLogger {
 			transferId: transfer.transferId,
 			operationType: transfer.operationType || "transfer",
 			exportId: transfer.exportId,
+			sourceExportId: transfer.sourceExportId,
 			artifactSizeBytes: transfer.artifactSizeBytes ?? null,
 			platformName: transfer.platformName,
 			platformIndex: transfer.platformIndex,
@@ -258,6 +259,9 @@ export class TransactionLogger {
 			targetInstanceId: transfer.targetInstanceId,
 			targetInstanceName: transfer.targetInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.targetInstanceId),
 			status: transfer.status,
+			jobObservation: transfer.jobObservation,
+			destinationJobId: transfer.destinationJobId,
+			jobEpoch: transfer.jobEpoch,
 			startedAt: transfer.startedAt || null,
 			observedDurationMs: transfer.observedDurationMs ?? null,
 			completedAt: transfer.completedAt || null,
@@ -286,6 +290,7 @@ export class TransactionLogger {
 		const downloadable = Boolean(storedExport?.exportData);
 		return {
 			queuedRequestId: info.queuedRequestId,
+			jobObservation: transfer.jobObservation,
 			transferId,
 			operationType: info.operationType,
 			exportId: info.exportId || null,

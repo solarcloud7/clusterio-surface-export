@@ -209,6 +209,16 @@ export class GetStoredExportRequest {
 	};
 }
 
+export type ImportUploadedExportOptions = {
+	targetInstanceId: number;
+	exportData: Record<string, unknown>;
+	restoreExportId?: string | null;
+	restoreRequestId?: string | null;
+	forceName?: string;
+	platformName?: string | null;
+	targetPlanet?: string | null;
+};
+
 export class ImportUploadedExportRequest {
 	declare ["constructor"]: typeof ImportUploadedExportRequest;
 	static plugin = PLUGIN_NAME;
@@ -239,7 +249,7 @@ export class ImportUploadedExportRequest {
 	platformName: string | null;
 	targetPlanet: string | null;
 
-	constructor(json: { targetInstanceId: number; exportData: Record<string, unknown>; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	constructor(json: ImportUploadedExportOptions) {
 		this.targetInstanceId = json.targetInstanceId;
 		this.exportData = json.exportData;
 		this.restoreExportId = json.restoreExportId ?? null;
@@ -249,7 +259,7 @@ export class ImportUploadedExportRequest {
 		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { targetInstanceId: number; exportData: Record<string, unknown>; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	static fromJSON(json: ImportUploadedExportOptions) {
 		return new ImportUploadedExportRequest(json);
 	}
 
@@ -651,8 +661,28 @@ export class ImportPlatformRequest {
 	toJSON() { return { exportId: this.exportId, exportData: this.exportData, forceName: this.forceName, targetPlanet: this.targetPlanet }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { platformName?: string }; },
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, jobId: {type: "string"}, epoch: {type: "string"}, attemptId: {type: "string"}, admissionUncertain: {type: "boolean"} }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as ImportResult & { platformName?: string }; },
+	};
+}
+
+export class JobsStatusRequest {
+	declare ["constructor"]: typeof JobsStatusRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: {jobs: {type: "array", maxItems: 100, items: {
+			type: "object", properties: {jobId: {type: "string"}, operationId: {type: "string"}}, additionalProperties: false,
+		}}}, required: ["jobs"], additionalProperties: false,
+	};
+	constructor(readonly jobs: import("./shared/job-status").JobReference[]) {}
+	static fromJSON(json: {jobs: import("./shared/job-status").JobReference[]}) { return new JobsStatusRequest(json.jobs); }
+	toJSON() { return {jobs: this.jobs}; }
+	static Response = {
+		jsonSchema: {type: "object", properties: {version: {type: "number"}, epoch: {type: "string"}, observedTick: {type: "number"}, jobs: {type: "array", items: {type: "object"}}}, required: ["version", "epoch", "jobs"]} as JsonSchema,
+		fromJSON(json: unknown) { return json as import("./shared/job-status").JobStatusBatch; },
 	};
 }
 
@@ -1064,10 +1094,7 @@ export class ImportPlatformFromFileRequest {
 
 	toJSON() { return { filename: this.filename, platformName: this.platformName, forceName: this.forceName }; }
 
-	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse; },
-	};
+	static Response = ImportPlatformRequest.Response;
 }
 
 export class TransferValidationEvent {
@@ -1483,6 +1510,7 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+ destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
 	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;
 	timingPendingRecovery?: boolean;
@@ -1577,6 +1605,7 @@ export interface SourceCommitMarker {
 }
 
 export interface IControllerPlugin {
+	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
 	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
 	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
@@ -1698,7 +1727,7 @@ export type OperationOptions = {
 
 export type ExportResult = { success: boolean; exportId?: string; error?: string };
 
-export type ImportResult = { success: boolean; error?: string };
+export type ImportResult = { success: boolean; error?: string; jobId?: string; epoch?: string; attemptId?: string; admissionUncertain?: boolean };
 
 export type PendingTransfer = {
 	platform_index?: number;

@@ -49,6 +49,7 @@ export function shipPhaseFor(status: string | null | undefined): ShipPhase | nul
 }
 
 export interface PositionedTransfer {
+	jobObservation?: import("./job-status").JobObservation;
 	status?: string;
 	platformName?: string;
 }
@@ -84,7 +85,8 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 			continue;
 		}
 		const distance = isReversed(ship) ? 1 - phase.distance : phase.distance;
-		const key = `${ship.status}@${distance}`;
+		const label = ship.jobObservation ? `${ship.jobObservation.message}${ship.jobObservation.phase ? ` · ${ship.jobObservation.phase}` : ""}` : phase.label;
+		const key = `${ship.status}@${distance}@${label}`;
 		const marker = byPosition.get(key);
 		if (marker) {
 			marker.count += 1;
@@ -95,7 +97,7 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 				tone: phase.tone,
 				distance,
 				count: 1,
-				label: phase.label,
+				label,
 				platformNames: [ship.platformName || "platform"],
 			});
 		}

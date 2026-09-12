@@ -7,8 +7,9 @@ import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
+import { UploadUncertain } from "./lib/upload-session";
 import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
@@ -100,6 +101,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
+		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.DestinationTransferGateRequest, this.handleDestinationTransferGate.bind(this));
@@ -178,6 +180,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			if (response.quarantined) quarantined++;
 			if (response.notice) this.recoveryStatus.notices.push(response.notice);
 		}
+		await this.lua.uploads.initialize(epoch);
+		this.assertRecoveryRuntime(epoch);
 		await call("finish");
 		await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "finish" }));
 		this.assertRecoveryRuntime(epoch);
@@ -273,11 +277,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	override async onStop() {
+		this.lua.uploads.stop();
 		this.timingEpoch = randomUUID(); // Invalidate work awaiting an old RCON reply.
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 
 	override onExit() {
+		this.lua.uploads.stop();
 		// Clusterio also calls this on abrupt exit, without a preceding onStop.
 		this.timingEpoch = randomUUID();
 	}
@@ -481,26 +487,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async waitForExportData(exportId: string, timeoutMs = EXPORT_POLL_TIMEOUT_MS, intervalMs = EXPORT_POLL_INTERVAL_MS) {
-		const deadline = Date.now() + timeoutMs;
-		let lastAttempt: ExportData | null = null;
-		while (Date.now() < deadline) {
-			lastAttempt = await this.getExportData(exportId, { logOnMissing: false });
-			if (lastAttempt) {
-				return lastAttempt;
-			}
-			await wait(intervalMs);
-		}
-		this.logger.error(`Timed out waiting for export data for ${exportId} after ${timeoutMs}ms`);
-		try {
-			const availableExports = await this.listExports();
-			this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
-		} catch (listErr: unknown) {
-			this.logger.error(`Failed to list available exports: ${getErrorMessage(listErr)}`);
-		}
-		return null;
-	}
-
 	async getExportData(exportId: string, options: { logOnMissing?: boolean } = {}): Promise<ExportData | null> {
 		try {
 			const { logOnMissing = true } = options;
@@ -587,12 +573,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			await timed("RCON payload upload", "round-trip", () => this.lua.importPlatformChunked(platformName, forceName, exportData));
+			const receipt = await timed("RCON payload upload", "round-trip", () => this.lua.importPlatformChunked(platformName, forceName, exportData));
 
 			this.logger.info("All chunks sent, import queued for async processing");
-			return { success: true };
+			return { success: true, jobId: receipt.jobId, epoch: receipt.epoch, attemptId: receipt.attemptId };
 
 		} catch (err: unknown) {
+			if (err instanceof UploadUncertain) return {success: false, admissionUncertain: true,
+				error: err.message, jobId: err.jobId, epoch: err.epoch, attemptId: err.attemptId};
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Import failed: ${errMsg}`);
 			return { success: false, error: errMsg };
@@ -614,15 +602,21 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			const targetPlatformName = platformName || exportData.platform_name || `Imported_${Date.now()}`;
 
-			await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
+			exportData._operationId = `file-import:${randomUUID()}`;
+			exportData._standaloneImport = true;
+			delete exportData._transferId;
+			delete exportData._sourceInstanceId;
+			const receipt = await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
 
 			this.logger.info("Platform import chunks sent successfully");
 
-			return { success: true };
+			return { success: true, jobId: receipt.jobId, epoch: receipt.epoch, attemptId: receipt.attemptId };
 
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Import from file failed: ${errMsg}`);
+			if (err instanceof UploadUncertain) return {success: false, admissionUncertain: true,
+				error: err.message, jobId: err.jobId, epoch: err.epoch, attemptId: err.attemptId};
 			return { success: false, error: errMsg };
 		}
 	}

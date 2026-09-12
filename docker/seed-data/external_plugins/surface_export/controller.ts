@@ -15,7 +15,7 @@ import { buildAuditRow } from "./lib/audit-ledger";
 import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } from "./lib/export-storage";
 import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit";
 import type { AuditRow } from "./lib/audit-ledger";
-import { TransferOrchestrator } from "./lib/transfer-orchestrator";
+import { TransferOrchestrator, JobObservationStopped } from "./lib/transfer-orchestrator";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
 import { recoveryMode, hasUnresolvedOwnership, protectedSourceIndexes, type PlatformSourceOfTruth } from "./shared/recovery";
 import { importableSnapshot } from "./shared/snapshot";
@@ -149,6 +149,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"));
+		this.orchestrator.restoreImportObservations();
 
 		this.c.handle(messages.OperationTimingEvent, async (event: messages.OperationTimingEvent) => {
 			this.txLogger.acceptTiming(event.record);
@@ -181,11 +182,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (this.pendingTransfers.size > 0) {
 			this.logger.warn(`${this.pendingTransfers.size} pending transfer(s); recovery requires a validated destination hold and matching source identity or deletion receipt.`);
 		}
+		let nextRecovery = 0;
 		this.recoveryTimer = setInterval(() => {
-			void this.orchestrator.recoverPendingTransfers().catch(error => {
+			// Status observation has its own cadence; a slow recovery request must not
+			// delay observations on other instances. The observer bounds outstanding requests.
+			const recover = performance.now() >= nextRecovery;
+			if (recover) nextRecovery = performance.now() + 30_000;
+			void (recover ? this.orchestrator.recoverPendingTransfers() : this.orchestrator.observeJobs()).catch(error => {
 				this.logger.error(`Transfer recovery failed: ${getErrorMessage(error)}`);
 			});
-		}, 30_000);
+		}, 5_000);
 		this.recoveryTimer.unref();
 	}
 
@@ -218,7 +224,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	override async onShutdown() {
 		if (this.recoveryTimer) clearInterval(this.recoveryTimer);
-		this.orchestrator.requestQueue.stop();
+		this.orchestrator.stop();
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
@@ -360,7 +366,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return operation;
 	}
 
-	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	async handleImportUploadedExportRequest(request: messages.ImportUploadedExportOptions) {
 		if (!request.restoreExportId) return this.observeUploadedImport(request);
 		if (!request.restoreRequestId || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(request.restoreRequestId)) {
 			return { success: false, error: "Snapshot restoration requires a fresh request UUID" };
@@ -385,7 +391,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		try { return await result; } finally { this.snapshotRequests.delete(id); }
 	}
 
-	private async observeUploadedImport(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	private async observeUploadedImport(request: messages.ImportUploadedExportOptions) {
 		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
 		const result = await timingContext.run(clock, () => this.handleImportUploadedExportRequestMeasured(request));
 		if (!result.success && !clock.operationId) {
@@ -395,7 +401,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return result;
 	}
 
-	async handleImportUploadedExportRequestMeasured(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	async handleImportUploadedExportRequestMeasured(request: messages.ImportUploadedExportOptions) {
 		const { targetInstanceId, forceName, platformName, targetPlanet, restoreExportId } = request;
 		this.requireRecoveryReady(targetInstanceId);
 		const snapshot = restoreExportId ? this.platformStorage.get(restoreExportId) : undefined;
@@ -460,11 +466,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					forceName: resolvedForceName,
 					targetPlanet: targetPlanet ?? null,
 				}),
-			)) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
+			)) as messages.ImportResult & { platformName?: string; targetInstanceId?: number };
 			// Completion can arrive before the queued-request acknowledgement, including a lost reply.
 			const terminalReply = completedReply();
 			if (terminalReply) return terminalReply;
-			if (!response?.success) {
+			if (!response?.success && !response?.admissionUncertain) {
 				const error = response?.error || "Import failed on target instance";
 				operation.error = error;
 				await this.failOperation(operation, "import_failed", `Import request failed: ${error}`, { error });
@@ -475,6 +481,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				};
 			}
 			operation.status = "awaiting_completion";
+			operation.destinationJobId = response.jobId;
+			operation.jobEpoch = response.epoch;
 			operation.platformName = response.platformName || importData.platform_name || operation.platformName;
 			this.txLogger.logTransactionEvent(operation.transferId, "import_queued",
 				`Import accepted by instance ${resolved.id}; awaiting completion callback`, {
@@ -494,10 +502,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const terminalReply = completedReply();
 			if (terminalReply) return terminalReply;
 			const errMsg = getErrorMessage(err);
-			operation.error = errMsg;
-			await this.failOperation(operation, "import_failed", `Import request failed: ${errMsg}`, { error: errMsg });
-			this.logger.error(`Upload import failed: ${errMsg}`);
-			return { success: false, error: errMsg };
+			// The handler may have accepted a job before the request reply was lost.
+			// Only an explicit rejection or the retained composite result is terminal.
+			operation.status = "awaiting_completion";
+			operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: errMsg};
+			this.subscriptions.emitTransferUpdate(operation);
+			await this.txLogger.persistTransactionLog(operation.transferId);
+			return {success: true, operationId: operation.transferId, message: "Import status unavailable; awaiting confirmation"};
 		}
 	}
 
@@ -566,7 +577,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
 			operation.exportId = canonicalExportId;
 			operation.sourceExportId = exportResponse.exportId;
-			const stored = await timed("Await artifact storage", "wait", () => this.orchestrator.waitForStoredExport(canonicalExportId, 60000));
+			const stored = await timed("Await artifact storage", "wait", () => this.orchestrator.waitForStoredExport(canonicalExportId));
 			const waitForStoredMs = performance.now() - waitForStoreStartMs;
 			operation.platformName = stored.platformName || operation.platformName;
 			operation.sourceInstanceId = stored.instanceId;
@@ -604,6 +615,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			};
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
+			if (err instanceof JobObservationStopped) {
+				operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: errMsg};
+				this.subscriptions.emitTransferUpdate(operation);
+				return {success: false, operationId: operation.transferId, error: errMsg};
+			}
 			operation.error = errMsg;
 			await this.failOperation(operation, "export_failed", `Export failed: ${errMsg}`, { error: errMsg });
 			return { success: false, error: errMsg };
@@ -617,6 +633,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 
 		let operation = this.activeTransfers.get(operationId);
+		const retained = this.persistedTransactionLogs?.find(log => log.transferId === operationId);
+		if (operation && (operation.operationType !== "import" || operation.targetInstanceId !== event.instanceId)) {
+			this.logger.warn(`Ignoring mismatched import completion for ${operationId}`);
+			return;
+		}
+		if (["completed", "failed", "error", "cleanup_failed"].includes(operation?.status || retained?.transferInfo.status || "")) return;
 		if (!operation) {
 			operation = await this.createOperationRecord("import", {
 				operationId,
@@ -629,6 +651,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				"Recovered import operation record from completion callback", {});
 		}
 
+		delete operation.jobObservation;
 		operation.platformName = event.platformName || operation.platformName;
 		if (Number.isInteger(Number(event.instanceId)) && Number(event.instanceId) > 0) {
 			operation.targetInstanceId = Number(event.instanceId);
