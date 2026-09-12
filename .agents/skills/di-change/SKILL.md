@@ -22,8 +22,12 @@ and Factorio API shapes in fixtures; a convenient mock is not runtime evidence.
   protections. Destination release requires the existing source-deletion acknowledgement.
 - A lost reply or missing/pruned status is uncertain delivery, not permission to replay,
   unlock, delete, or create another platform.
+- On definite failure, audit the existing rollback and destination-discard path. If
+  delivery or destination cleanup remains uncertain, retain unresolved ownership.
 - Preserve existing save-policy decisions, pending journals, platform identities, and
   protections during restart and reconciliation.
+- Address platforms by per-force index and the applicable persistent identity or transfer
+  ID. Display names are not ownership or deletion authority.
 
 ## Prove the change
 
@@ -32,7 +36,9 @@ and Factorio API shapes in fixtures; a convenient mock is not runtime evidence.
    regression fails. Do not mutate live mounted code to run a mutation test.
 2. Use independent physical observations for cargo and restored state. Count source and
    destination items, qualities, belt sides, and fluids; inspect fixture entity state.
-   The validator's own totals are not an independent oracle. Compare commensurate values;
+   The validator's own totals are not an independent oracle. Before designing a change
+   around an engine behavior, verify that assumption with the pinned API or a bounded
+   runtime probe. An API shape alone cannot prove reconstruction behavior. Compare commensurate values;
    a redundant count with different semantics must not become a second validation gate.
 3. Verify phase boundaries against what can still move or change between ticks. A partially
    restored world cannot certify final cargo. Inactive belts are not assumed frozen.
@@ -73,6 +79,8 @@ do not build into the live plugin or restart development services merely to run 
 Stay in the canonical checkout. Keep unrelated changes out of the commit. Do not merge,
 deploy, or publish review comments without the user's applicable authorization. Omit
 attribution and session links from commits and PR bodies.
+When a merge is authorized, verify main's own post-merge checks before calling that
+delivery complete; PR checks do not establish the merged revision's result.
 
 The canonical checklist is `.agents/skills/di-change/SKILL.md`; the Claude entrypoint
 links here so both tools use the same requirements.
