@@ -70,6 +70,8 @@ jobs:
           lua5.2 tests/lua/source-recovery.lua
           lua5.2 tests/lua/export-phase-yields.lua
           lua5.2 tests/lua/preparation-timing.lua
+          lua5.2 tests/lua/import-setup-cleanup.lua
+          lua5.2 tests/lua/sync-mode-gate.lua
           lua5.2 tests/lua/tile-scanner.lua
           lua5.2 tests/lua/tile-batching.lua
           lua5.2 tests/lua/payload-encoder.lua
@@ -77,6 +79,8 @@ jobs:
           lua5.2 tests/lua/section-import.lua
           lua5.2 tests/lua/shared-work-budget.lua
           lua5.2 tests/lua/chunk-operation-isolation.lua
+          lua5.2 tests/lua/upload-sessions.lua
+          lua5.2 tests/lua/job-status.lua
           lua5.2 tests/lua/destination-transfer-gate.lua
           lua5.2 tests/lua/callback-profiler.lua
           lua5.2 tests/manual/transfer-reliability/performance.test.lua

@@ -12,7 +12,7 @@ const fields = [
 	// Gateway layout stays out of this editor until multi-gateway configuration is ready.
 	{ name: "surface_export.transaction_log_detail_entries", group: "records", unit: "transfers", help: "Keep step timings and audit evidence for this many transfers. Failed transfers take priority; older transfers keep their summary and outcome.", applies: "Takes effect at the next log trim.", min: 10, max: 5000 },
 	{ name: "surface_export.max_storage_size", group: "records", unit: "files", help: "Keep this many platform files available to download. The oldest file is removed when the limit is reached. Transfer logs are separate.", applies: "Takes effect on the next stored export.", min: 1 },
-	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Transfer validation timeout", group: "recovery", unit: "seconds", help: "Wait this long for import and validation after the destination accepts the payload. Recovery begins if time runs out.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
+	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Check delayed job status after", group: "recovery", unit: "seconds", help: "Check Lua job progress after this wait. Queued or delayed work remains pending; this does not cancel the transfer.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
 ];
 
 const groups = [

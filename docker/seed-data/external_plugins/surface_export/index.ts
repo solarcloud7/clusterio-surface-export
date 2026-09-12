@@ -137,9 +137,8 @@ export const plugin = {
 			initialValue: 100,
 		},
 		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
-			title: "Transfer validation timeout (seconds)",
-			description: "Seconds to wait for import and validation after the destination accepts the payload. Expiry starts recovery. "
-				+ "If the destination finishes after timeout, cleanup may need attention; inspect the transfer result before retrying. "
+			title: "Check delayed job status after (seconds)",
+			description: "After this wait, verify the Lua job state and progress. Queue waits and unavailable status do not cancel work or release platforms. "
 				+ "Range: 5–120 seconds. Applies to the next transfer without a restart.",
 			type: "number",
 			initialValue: 30,
@@ -151,6 +150,8 @@ export const plugin = {
 		messages.ExportPlatformRequest,
 		messages.PlatformExportEvent,
 		messages.ImportPlatformRequest,
+		messages.JobsStatusRequest,
+		messages.ReadExportRequest,
 		messages.ImportPlatformFromFileRequest,
 		messages.ListExportsRequest,
 		messages.GetStoredExportRequest,

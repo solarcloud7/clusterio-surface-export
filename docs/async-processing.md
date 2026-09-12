@@ -34,9 +34,9 @@ its instances. Duplicate requests for the same source platform reuse the queue e
 a different destination is refused while that entry exists.
 
 Unknown operations and unresolved recovery intents block their endpoints even when
-the overlap limit is raised. Chunk uploads carrying operation IDs are isolated by
-that identity; platform names are not unique. Legacy callers without an ID retain
-the old name/force session key and must not interleave same-name uploads.
+the overlap limit is raised. [Upload sessions](upload-job-status.md) isolate temporary
+bytes by operation and sender attempt. Platform names are not unique. Legacy implicit
+chunk callers are rejected; matching Node and save-patched Lua must be deployed together.
 
 Queued platforms remain untouched until dispatch. The gateway map shows a queued marker
 at the source endpoint, followed by preparation and then transfer motion. The controller's
@@ -83,7 +83,7 @@ become saved job state. Missing profiler measurements after reload stay unavaila
 These are local execution boundaries, not aligned controller/Lua clock intervals. A
 job's decode envelope includes ticks between callbacks; accumulated execution excludes
 those waits. A decode exception interrupts the job rather than replaying its callback;
-normal controller timeout/recovery still applies. This path does not make platform
+read-only job observation and guarded recovery still apply. This path does not make platform
 creation, native string concatenation, oversized records or belt capture incremental.
 
 Bounded acceptance on Factorio 2.1.17: the three golden platforms retained all 1,830
@@ -205,6 +205,13 @@ module locals, and check that no side effects repeat. A separate real hold-modul
 checks that interruption quarantine cannot be released. These are simulated engine
 failures, not evidence of live crash recovery.
 
+Failed platform preparation has a narrower retry path: if deletion is refused or throws,
+the partial destination remains in `storage.async_jobs` with its platform/surface identity
+and original error. Its failed hold cannot authorize activation. Only deletion retries,
+using the shared Lua step budget with backoff from 60 to 18,000 ticks. Preparation itself
+does not replay. Successful cleanup removes the job and hold and retains a failed result.
+Changed identities remain pending for inspection.
+
 Factorio 2.1.17, save-patched Lua 0.10.281: the disposable 1,359-entity fixture
 completed host 1 -> 2 and host 2 -> 1, then deliberately rejected a third transfer.
 Every tested phase boundary above advanced to a later tick. Entity creation used
@@ -286,23 +293,14 @@ engine's inverted name filter. It retains every other tile, including modded til
 without an area or result limit. The query and projection remain synchronous;
 this optimization does not establish a callback deadline.
 
-### Candidate limits and required consistency checks
+### Measurement limits
 
-| Work | Candidate boundary | What must remain true |
-|---|---|---|
-| Export preparation | Separate entity collection, sorting, and tile-scan measurements; bounded spatial tile queries | Preserve the exact exported tile set; avoid gathering an unbounded list before the first yield |
-| Tile placement / beacon creation | Tile batches, then beacon batches, before general entities | Foundation precedes overlays; no entity creation before its supporting tiles and required beacons are ready |
-| Import inventories | Cursor over inventories and item slots, with beacons/modules first | Preserve slot identity and item-state session cleanup on success, failure and reload; entity count alone cannot bound a large inventory |
-| Entity state / connections | Ordered passes with retained cursors | All referenced entities exist; verify circuit memory, copper links, proxies and logistic groups across inserted ticks |
-| Belt and fluid contents / cargo verification | Only independently isolated networks or proven consistent snapshots | Moving contents must not be double-counted or missed between reads; keep the mandatory cargo gate and defer activation until it passes |
-| Serialization, compression, native deletion | Bound input size or redesign payload/storage boundaries | A tick before an indivisible native call does not limit that call; preserve payload compatibility and cleanup acknowledgements |
-
-The first measurement change should wrap the whole scheduler invocation and its
-per-job visit, including consecutive completion phases. Setup invoked from RCON
-needs its own callback measurement. Use the existing optional batch telemetry cap;
-do not sum overlapping parent/child intervals or introduce a second time conversion.
-Do not allow a stage transition to run the next heavy stage in the same job visit.
-A shared work allowance must also account for multiple jobs visited in one tick.
+Whole-callback execution, per-job visits, and phase envelopes are distinct
+measurements. Parent and child intervals can overlap and cannot be summed as
+exclusive processing time. Work counts bound scheduled units, not the time needed
+for an indivisible engine call or a single large inventory or belt lane group.
+The current scheduler and phase boundaries are described above; the original
+callback audit does not establish a deadline for those boundaries.
 
 Lua cannot use a profiler reading as a numeric deadline: the
 [2.1.17 LuaProfiler API](https://lua-api.factorio.com/latest/classes/LuaProfiler.html)
@@ -310,8 +308,7 @@ intentionally withholds raw times from Lua because they are nondeterministic. Us
 deterministic work counts and tune them from external profiler analysis. The
 [tile search API](https://lua-api.factorio.com/latest/classes/LuaSurface.html#find_tiles_filtered)
 supports bounded areas; an unbounded query followed by a smaller Lua loop is not
-bounded preparation. API support alone does not prove the speed or fidelity of a
-replacement; use a bounded fixture and compare the resulting tile set before rollout.
+bounded preparation. API support alone is not a speed or fidelity measurement.
 
 Reproduce the offline analysis after building the plugin:
 
@@ -363,14 +360,20 @@ Temporary Lua-side configuration uses unprefixed keys:
 ```
 
 The entity scheduler values are module-local; belt controls are retained in storage. Remote adjustments do not update Clusterio's
-instance configuration; instance startup sends its configured values again. The belt budget enforces integers from 1 through 1,000,000. Entity/job setters
-do not enforce positive-integer ranges. Use positive integers for the batch/job
-counts; zero is not a supported pause mechanism.
+instance configuration; instance startup sends its configured values again. The belt budget
+enforces integers from 1 through 1,000,000, and the shared job-step limit requires a finite
+positive integer. The entity-batch setter does not validate its range; use positive integers.
+Zero is not a supported pause mechanism.
 
-`/export-sync-mode on` changes the effective batch size to **1,000,000**, for both
+`/export-sync-mode on` requires `debug_mode=true` and changes the effective batch size to **1,000,000**, for both
 export and import. It does not introduce another execution model, process unlimited
 entities, or remove import's deferred phase-2 boundary. `/export-sync-mode off`
-restores the configured batch size. No argument toggles the mode; it is not a read.
+restores the configured batch size. Disabling debug also clears sync mode at the next
+scheduler batch-size read. No argument toggles the mode; it is not a read.
+
+Automatic and manual export-cache pruning preserve payloads referenced by active or
+committed source locks. A retention limit is not permission to remove a transfer-owned
+payload; protected entries may keep the cache above that limit.
 
 Smaller batches can reduce work per entity callback while increasing job latency.
 Fewer visits can reduce aggregate work per tick while increasing queue waits.
@@ -584,8 +587,8 @@ redirection is added.
 
 The budget remains a soft work target: one large captured side group can exceed it.
 This change does not batch source belt capture, serialization, or other Lua phases.
-Destructive source capture/removal is still an experiment; it needs durable recovery
-before production use.
+Destructive source capture/removal is an experiment, not the production export
+path; its isolated parity results do not establish durable recovery.
 
 Isolated 2.1.17 acceptance: eight dense topology/order arms (816 items), four junction
 arms (516 items), and the retained 596-belt fixture (19,700 items in 14 callbacks)

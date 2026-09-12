@@ -112,6 +112,11 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 			<Alert className="se-operation-outcome" data-testid="operation-outcome" showIcon
 				type={model.tone as "info" | "success" | "error"} message={failed ? failureTitle : model.outcome}
 				description={<>
+					{!terminal(row.status) && row.jobObservation && <div role="status" data-testid="job-observation">
+						<strong>{row.jobObservation.message}</strong>
+						{row.jobObservation.phase && <span> · {row.jobObservation.phase}</span>}
+						{row.jobObservation.observedTick != null && <div className="se-muted">Observed at simulation tick {row.jobObservation.observedTick}.</div>}
+					</div>}
 					{failure != null && <div className="se-outcome-stage">Failed stage: <strong>{String(failure)}</strong></div>}
 					{reason && <div>{String(reason)}</div>}
 					{model.entities.failure && <Button className="se-outcome-inspect" size="small" onClick={() => setActiveTab("entities")}>Inspect entity evidence</Button>}

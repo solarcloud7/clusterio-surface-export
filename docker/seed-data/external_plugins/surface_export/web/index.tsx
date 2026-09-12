@@ -360,7 +360,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
-	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	async importUploadedExport(payload: messageDefs.ImportUploadedExportOptions) {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 

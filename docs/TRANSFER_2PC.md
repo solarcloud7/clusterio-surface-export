@@ -32,26 +32,27 @@ this is not proof of arbitrary crash or backup-restore safety.
   are online. It never imports a second copy. The ordinary completion path performs the
   hold/receipt check, source deletion request, activation, audit and payload cleanup.
   A failed recovery-intent disk write prevents the source deletion request.
-- A validation timeout retains uncertainty and does not invent failed item/fluid checks or
-  unlock the source. A later genuine verdict can settle the same transfer. Unknown recovery
+- The configured delay triggers [job-status observation](upload-job-status.md), not failure.
+  It does not invent failed item/fluid checks or unlock the source. A later genuine verdict can settle the same transfer. Unknown recovery
   outcomes leave the destination held; they do not authorize discarding it.
 - A failed destination preparation cannot activate. Cleanup may discard a registered
   hold only when its platform and surface indices match the failed import job.
-- Ordinary transfer locks expire after 36,000 simulation ticks. Expiry unlocks the
-  source; it never deletes it. Manual locks and old locks without timing are skipped.
-  An expired source lock prevents a later deletion request from deleting that platform.
+- Transfer-owned locks remain protected until explicit resolution. Elapsed ticks cannot
+  release an active or unresolved transfer. The existing expiry scan can still remove an
+  orphan standalone export lock; it skips active export jobs, manual locks, and old locks
+  without timing.
 - Unresolved controller intents no longer expire with wall-clock age. Explicit resolution
   removes them. Missing intents, legacy transfers without canonical IDs, missing receipts and changed identities
   cannot be automatically resolved. Destination holds have no automatic expiry. An
   unresolved destination may remain hidden indefinitely and needs investigation.
 
-## Required recovery contract
+## Recovery boundaries
 
 Exact cargo preservation and at most one usable copy are both required. In particular,
 **a timeout or offline source does not authorize deleting a held destination**: the
 source may already have been deleted and its reply lost.
 
-Recovery must preserve these boundaries; the durability distinction remains a release gate:
+The implementation and its tests distinguish these boundaries:
 
 1. Retain an identity-bound receipt for accepted source deletion and destination
    release. Absence of a platform is not evidence of a matching transfer deletion.
@@ -135,9 +136,9 @@ When recovery refuses:
 3. Repair availability or restore a verified matching journal, then restart the affected
    instance through the established save-preserving deploy/start process. Retained
    handoffs retry every 30 seconds through the normal validation/deletion gate.
-4. A completed transfer's quarantined duplicate or a missing/conflicting identity needs
-   operator adjudication. There is no force-release fallback. Do not delete the journal
-   or unlock the duplicate to make the warning disappear.
+4. Inspect the configured save policy and any available snapshot before choosing a
+   recovery action. Missing/conflicting identity is not proof of absence. Do not
+   delete the journal or unlock a duplicate to make the warning disappear.
 
 Unresolved intents reserve both participating instances, including after loss of the
 active timing record. Unrelated instance pairs may still transfer. This can require
@@ -147,15 +148,15 @@ acknowledgement, never a benign/successful unlock.
 
 Restoring older copies of the external journal/controller state as well as the worlds,
 destination rollback after release, journal loss, and storage-device failure are not
-covered by the successful source-only restore test. Journal entries are not age-pruned;
-backup retention and journal compaction need a separate, explicit policy.
+covered by the successful source-only restore test. The plugin does not age-prune
+or compact the retirement journal.
 
 Restart recovery retains available audit evidence and starts timing on a new process clock.
 It does not manufacture one continuous measured duration across the restart.
 
-### PR #305 review verification
+### Regression coverage
 
-| Finding | Disposition and evidence |
+| Boundary | Observed regression evidence |
 |---|---|
 | Startup hook budget | Reproduced a held RCON reply blocking `onStart`. Background recovery now returns the hook, visits a 500-entry simulated roster before finish, reports refusal, and stops after an old-runtime reply. No live 500-platform performance claim. |
 | Export callback replay | Faults in entity work, belt capture, verification, serialization, compression, cache output and post-publication pruning now interrupt the saved job. Scheduler reload cannot repeat the work; recorded completion is invalidated after a publication exception. Source lock expiry and controller recovery remain separate mechanisms. |

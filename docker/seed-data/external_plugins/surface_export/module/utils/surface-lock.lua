@@ -595,8 +595,12 @@ function SurfaceLock.scan_transfer_expiries()
     for platform_index, lock_data in pairs(storage.locked_platforms) do
         if type(lock_data) == "table" and EXPIRABLE_LOCK_KINDS[lock_data.kind] then
             checked = checked + 1
+            -- Transfer ownership is resolved by an explicit verdict/recovery action, never elapsed ticks.
+            -- An export job may be queued or interrupted for arbitrarily long periods.
             if SurfaceLock.source_lock_is_committed(lock_data) then
                 committed = committed + 1
+                skipped = skipped + 1
+            elseif lock_data.kind == "transfer" or (storage.async_jobs or {})[lock_data.transfer_job_id] then
                 skipped = skipped + 1
             else
                 local locked_tick = lock_data.locked_tick

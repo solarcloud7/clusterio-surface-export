@@ -116,7 +116,7 @@ end
 local function ttl_expiry_unlock_over_hold(details)
 	local force, platform, entity = make_platform("ttl")
 	local transfer_id = stage_hold("ttl", force, platform)
-	install_lock(force, platform, entity, { kind = "transfer", locked_tick = game.tick - 120, expires_tick = game.tick - 1 })
+	install_lock(force, platform, entity, { kind = "export", locked_tick = game.tick - 120, expires_tick = game.tick - 1 })
 	local summary = SurfaceLock.scan_transfer_expiries()
 	check(details, "ttl_expiry_unlock_over_hold", summary.expired == 1 and summary.failed == 0, "summary mismatch")
 	local state = read_state(force, platform, entity)

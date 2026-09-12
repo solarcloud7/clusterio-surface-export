@@ -2,7 +2,8 @@ param(
     [ValidateSet('all', 'node', 'web', 'lint', 'test', 'smoke')][string]$Target = 'all',
     [switch]$Fresh,
     [switch]$RestartController,
-    [switch]$RestartHosts
+    [switch]$RestartHosts,
+    [string]$OutputDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +11,17 @@ $ErrorActionPreference = 'Stop'
 $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugins/surface_export").Path
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
+$OutputMount = @()
+if ($OutputDirectory) {
+    if ($RestartController -or $RestartHosts) { throw 'An isolated build cannot restart the development cluster.' }
+    $RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
+    $ResolvedOutput = [IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+    $ArtifactRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'ci-artifacts')) + [IO.Path]::DirectorySeparatorChar
+    if (-not $ResolvedOutput.StartsWith($ArtifactRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Isolated build output must be under ci-artifacts.'
+    }
+    New-Item -ItemType Directory -Force -Path $ResolvedOutput | Out-Null
+}
 
 . "$PSScriptRoot/../shared/workflow-lock.ps1"
 Invoke-WorkflowLock {
@@ -51,7 +63,9 @@ if ($Target -in @('lint', 'test', 'smoke')) {
 }
 
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
+if ($OutputDirectory) { $OutputMount = @('--mount', "type=bind,src=$ResolvedOutput,dst=$WorkDir/dist") }
 docker run --rm `
+    @OutputMount `
     --mount "type=bind,src=$MountSrc,dst=$MountDst" `
     --mount "type=bind,src=$lockPath,dst=$WorkDir/package-lock.json,readonly" `
     -v "${DepsVolume}:$WorkDir/node_modules" `

@@ -83,14 +83,14 @@ local function transfer_lock_selftest()
 
 		local summary = SurfaceLock.scan_transfer_expiries()
 
-		check("expired_transfer_unlocked", storage.locked_platforms[1] == nil,
-			"expired transfer lock should be removed")
+		check("expired_transfer_retained", storage.locked_platforms[1] ~= nil,
+			"elapsed ticks cannot release unresolved transfer ownership")
 		check("manual_lock_untouched", storage.locked_platforms[2] ~= nil,
 			"manual lock without kind must not be touched")
 		check("old_save_without_locked_tick_skipped", storage.locked_platforms[3] ~= nil,
 			"old-save transfer lock without locked_tick must be skipped")
-		check("fallback_ttl_unlocked", storage.locked_platforms[4] == nil,
-			"missing expires_tick should fall back to locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS")
+		check("transfer_without_expiry_retained", storage.locked_platforms[4] ~= nil,
+			"missing expiry cannot authorize transfer source release")
 		check("fresh_transfer_untouched", storage.locked_platforms[5] ~= nil,
 			"fresh transfer lock must not be touched")
 		check("committed_ttl_retained", storage.locked_platforms[7] ~= nil,
@@ -100,16 +100,16 @@ local function transfer_lock_selftest()
 			unlocked_names[unlock.name] = true
 		end
 		check("unlock_uses_name_tripwire",
-			#unlocks == 3 and unlocked_names.expired and unlocked_names.fallback and unlocked_names["expired-export"],
-			"expired unlocks must pass the stored platform_name tripwire (order-independent: the set {expired, fallback, expired-export})")
+			#unlocks == 1 and unlocked_names["expired-export"],
+			"only the orphaned standalone export may expire, with its stored name tripwire")
 		check("summary_counts",
-			summary.checked == 6 and summary.expired == 3 and summary.skipped == 2 and summary.failed == 0 and summary.committed == 1,
+			summary.checked == 6 and summary.expired == 1 and summary.skipped == 5 and summary.failed == 0 and summary.committed == 1,
 			"unexpected summary: checked=" .. tostring(summary.checked) ..
 				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped) ..
 				" failed=" .. tostring(summary.failed) .. " committed=" .. tostring(summary.committed))
-		check("ttl_exceeds_worst_case_transfer_duration",
+		check("orphan_export_default_exceeds_legacy_floor",
 			SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS >= SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS,
-			"TTL must exceed the worst-case total transfer duration, not only validation timeout")
+			"legacy orphan-export expiry floor changed")
 	end)
 
 	SurfaceLock.unlock_platform = old_unlock

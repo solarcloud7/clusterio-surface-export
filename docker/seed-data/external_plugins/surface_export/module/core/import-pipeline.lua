@@ -1,4 +1,5 @@
 local Timing = require("modules/surface_export/utils/operation-timing")
+local clusterio_api = require("modules/clusterio/api")
 local Deserializer = require("modules/surface_export/core/deserializer")
 local Util = require("modules/surface_export/utils/util")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
@@ -11,9 +12,73 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
 local ImportTarget = require("modules/surface_export/core/import-target")
+local ImportCompletion = require("modules/surface_export/core/import-completion")
+local DestinationHold = require("modules/surface_export/core/destination-hold")
+local JobResults = require("modules/surface_export/core/job-results")
 
 local SectionCodec = require("modules/surface_export/utils/section-codec")
 local ImportPipeline = {}
+
+-- Failed setup never resumes restoration. Only removal of its own partial
+-- platform may run again, under the same scheduler budget as other Lua jobs.
+function ImportPipeline.process_setup_cleanup(job)
+	local cleanup = job.setup_cleanup
+	cleanup.attempts = (cleanup.attempts or 0) + 1
+	cleanup.next_tick = game.tick + 60 * math.min(cleanup.attempts, 300)
+	local ok, removed = pcall(function()
+		local platform = job.target_platform
+		local hold = DestinationHold.get(cleanup.hold_id)
+		if hold and (hold.platform_index ~= cleanup.platform_index or hold.surface_index ~= cleanup.surface_index
+			or hold.force_name ~= job.force_name) then
+			error("Cleanup hold belongs to a different platform")
+		end
+		if not (platform and platform.valid) then
+			if hold then return DestinationHold.discard(cleanup.hold_id) end
+			return true
+		end
+		-- A missing entry in the old force roster is not proof this live platform was deleted.
+		if not (platform.force and platform.force.valid and platform.force.name == job.force_name) then
+			error("Cleanup platform force changed or is unavailable")
+		end
+		if platform.index ~= cleanup.platform_index or not (platform.surface and platform.surface.valid)
+			or platform.surface.index ~= cleanup.surface_index then error("Cleanup platform surface changed or is unavailable") end
+		if not hold and cleanup.attempts > 1 then
+			ImportCompletion.interrupt(job, cleanup.error)
+			hold = DestinationHold.get(cleanup.hold_id)
+			if not hold then error("Cleanup quarantine unavailable") end
+		end
+		if hold then
+			if not hold.preparation_failed then error("Cleanup cannot discard a validated destination") end
+			return DestinationHold.discard(cleanup.hold_id)
+		end
+		return GameUtils.delete_platform(platform)
+	end)
+	if ok and removed == true then
+		storage.async_jobs[job.job_id] = nil
+		storage.async_job_results = storage.async_job_results or {}
+		local validation = {success = false, failedStage = "setup", mismatchDetails = cleanup.error}
+		local completion = {job_id = job.job_id, platform_name = job.platform_name, success = false,
+			failed_stage = "setup", error = cleanup.error, validation = validation,
+			operation_id = job.operation_id, transfer_id = job.transfer_id, source_instance_id = job.source_instance_id}
+		storage.async_job_results[job.job_id] = {status = "failed", complete = true, type = "import",
+			job_id = job.job_id, platform_name = job.platform_name, error = cleanup.error,
+			operation_id = job.operation_id, transfer_id = job.transfer_id, validation = validation, completion = completion}
+		JobResults.prune(25)
+		PhaseProfiler.discard(job.job_id)
+		Timing.finish(job.job_id, "failed")
+		log("[Import] Failed setup cleaned up for " .. job.job_id)
+		if clusterio_api and clusterio_api.send_json then
+			clusterio_api.send_json("surface_export_import_complete", completion)
+		end
+		return true
+	end
+	cleanup.last_error = tostring(ok and "Destination deletion refused" or removed)
+	if cleanup.attempts == 1 then ImportCompletion.interrupt(job, cleanup.error) end
+	if cleanup.attempts == 1 or cleanup.attempts % 10 == 0 then
+		log("[Import] Setup cleanup pending for " .. job.job_id .. ": " .. cleanup.last_error)
+	end
+	return false
+end
 
 function ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
 	local filepath = "platform_exports/" .. filename
@@ -28,8 +93,11 @@ end
 
 function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing, pending_job)
 	if storage.source_recovery_ready == false then return nil, "Startup recovery is not ready" end
-	if not pending_job then storage.async_job_id_counter = storage.async_job_id_counter + 1 end
-	local job_id = pending_job and pending_job.job_id or ("import_" .. storage.async_job_id_counter)
+	local job_id = pending_job and pending_job.job_id or (receive_timing and receive_timing.import_job_id)
+	if not job_id then
+		storage.async_job_id_counter = storage.async_job_id_counter + 1
+		job_id = "import_" .. storage.async_job_id_counter
+	end
 
 	log(string.format("[Import Queue] job_id=%s, platform='%s', force=%s, requester=%s, data_type=%s",
 		job_id, tostring(new_platform_name), tostring(force_name), tostring(requester_name), type(json_data)))
@@ -55,8 +123,18 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	else
 		parsed_data = json_data
 	end
+	if type(parsed_data) ~= "table" then
+		Timing.finish(job_id, "failed")
+		PhaseProfiler.discard(job_id)
+		return nil, "Import payload must be a JSON object"
+	end
 
 	Timing.stop(job_id, "decode")
+	if receive_timing and receive_timing.operation_id
+		and receive_timing.operation_id ~= (parsed_data._operationId or parsed_data._transferId) then
+		Timing.finish(job_id, "failed")
+		return nil, "Upload operation identity differs from payload"
+	end
 	Timing.bind(job_id, parsed_data._operationId or parsed_data._transferId)
 	if parsed_data.section_codec ~= nil then
 		local envelope_ok, decoder = pcall(function()
@@ -136,6 +214,17 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		parsed_data._transferId = platform_data._transferId
 	end
 	local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
+	local operation_id = platform_data._operationId or parsed_data._operationId
+	local transfer_id = platform_data._transferId or parsed_data._transferId
+	for _, existing in pairs(storage.async_jobs or {}) do
+		if existing ~= pending_job and existing.setup_cleanup
+			and ((transfer_id and existing.transfer_id == transfer_id)
+				or (operation_id and existing.operation_id == operation_id)) then
+			Timing.finish(job_id, "failed")
+			PhaseProfiler.discard(job_id)
+			return nil, "Previous import setup cleanup is pending: " .. existing.job_id
+		end
+	end
 	local imported_schedule = platform_data
 		and platform_data.platform
 		and platform_data.platform.schedule
@@ -245,217 +334,250 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	log(string.format("[Import Queue] Platform created: '%s' (index=%s, planet=%s)", final_name, tostring(new_platform.index), target_planet))
 
-	Timing.start(job_id, "starter_pack", "execution", "platform_preparation")
-	local ok, err = pcall(function()
-		new_platform.apply_starter_pack()
-		-- Starter cargo belongs to platform construction, not the imported payload.
-		-- Empty source inventories may be omitted, so restoration cannot clear it later.
-		local hub = new_platform.hub
-		assert(hub and hub.valid, "starter pack did not create a valid hub")
-		local inventory = hub.get_inventory(defines.inventory.hub_main)
-		assert(inventory, "starter hub has no main inventory")
-		inventory.clear()
-	end)
-	Timing.stop(job_id, "starter_pack")
+	-- Keep the created platform reachable even if preparation fails before the normal job exists.
+	local created_platform_index = new_platform.index
+	local setup_job = pending_job or {type = "import", job_id = job_id, started_tick = game.tick}
+	setup_job.platform_name, setup_job.force_name = new_platform.name, force.name
+	setup_job.target_platform, setup_job.target_surface = new_platform, new_platform.surface
+	setup_job.transfer_id, setup_job.operation_id = transfer_id, operation_id
+	storage.async_jobs[job_id] = setup_job
+	local function prepare_platform()
+		Timing.start(job_id, "starter_pack", "execution", "platform_preparation")
+		local ok, err = pcall(function()
+			new_platform.apply_starter_pack()
+			-- Starter cargo belongs to platform construction, not the imported payload.
+			-- Empty source inventories may be omitted, so restoration cannot clear it later.
+			local hub = new_platform.hub
+			assert(hub and hub.valid, "starter pack did not create a valid hub")
+			local inventory = hub.get_inventory(defines.inventory.hub_main)
+			assert(inventory, "starter hub has no main inventory")
+			inventory.clear()
+		end)
+		Timing.stop(job_id, "starter_pack")
 
-	if not ok then
-		Timing.fail(job_id, "starter_pack")
-		log(string.format("[Import Queue] FAILED: apply_starter_pack errored for platform '%s': %s",
-			final_name, tostring(err)))
-		GameUtils.delete_platform(new_platform)
-		Timing.finish(job_id, "failed")
-		return nil, "Failed to apply starter pack: " .. tostring(err)
-	end
-
-	if not new_platform.surface or not new_platform.surface.valid then
-		Timing.fail(job_id, "starter_pack")
-		GameUtils.delete_platform(new_platform)
-		log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
-		Timing.finish(job_id, "failed")
-		return nil, "Platform surface not valid after activation"
-	end
-
-	Timing.start(job_id, "starter_cleanup", "execution", "platform_preparation")
-	local starter_entities = new_platform.surface.find_entities_filtered({})
-	log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s') — destroying non-hub starters", #starter_entities, final_name))
-	for _, ent in ipairs(starter_entities) do
-		if ent.valid then
-			if ent.name == "space-platform-hub" then
-				log(string.format("[Import Queue]   Keeping starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
-			else
-				log(string.format("[Import Queue]   Destroying starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
-				ent.destroy()
-			end
-		end
-	end
-
-	Timing.stop(job_id, "starter_cleanup")
-	Timing.start(job_id, "platform_parking", "execution", "platform_preparation")
-	if is_transfer then
-		new_platform.paused = true
-		log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
-	end
-
-	local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
-	if gateway_target and not Gateway.is_gateway(gateway_target) then
-		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
-			tostring(gateway_target)))
-		gateway_target = nil
-	end
-	local park_target = requested_park or gateway_target
-
-	if park_target then
-		if not is_transfer then
-			new_platform.paused = true
-		end
-		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(park_target) end)
-		if not ok_unlock then
-			log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
-				tostring(park_target), final_name, tostring(err_unlock)))
-		end
-		local ok_loc, err_loc = pcall(function() new_platform.space_location = park_target end)
-		if ok_loc then
-			log(string.format("[Gateway] Platform %s parked at '%s' at CREATION (pre-restoration)",
-				final_name, park_target))
-		else
-			log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
-				final_name, tostring(park_target), tostring(err_loc)))
-		end
-	end
-	Timing.stop(job_id, "platform_parking")
-	Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
-	if park_target and Gateway.is_gateway(park_target) and imported_schedule then
-		local stripped = Gateway.strip_gateway_records(imported_schedule)
-		if stripped then
-			log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
-				park_target, #(imported_schedule.records or {}), #stripped.records))
-			imported_schedule = stripped
-		else
-			log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it",
-				park_target))
-		end
-	end
-
-	if imported_schedule then
-		local filtered_schedule, dropped_stops = PlatformSchedule.filter_for_import(imported_schedule)
-		if dropped_stops and #(dropped_stops.stations or {}) > 0 then
-			if dropped_stops.skipped_empty then
-				log(string.format("[Schedule] %d unroutable stop(s) on this instance (%s) but ALL records are unroutable — kept original schedule to avoid an empty (invalid) schedule",
-					#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
-			else
-				log(string.format("[Schedule] stripped %d unroutable stop(s) not present on this instance: %s",
-					#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
-				imported_schedule = filtered_schedule
-			end
-		end
-		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
-		if not schedule_apply_ok then
-			Timing.fail(job_id, "schedule_restoration")
-			GameUtils.delete_platform(new_platform)
+		if not ok then
+			Timing.fail(job_id, "starter_pack")
+			log(string.format("[Import Queue] FAILED: apply_starter_pack errored for platform '%s': %s",
+				final_name, tostring(err)))
 			Timing.finish(job_id, "failed")
-		return nil, "Failed to restore platform schedule: " .. tostring(schedule_apply_err)
+			return nil, "Failed to apply starter pack: " .. tostring(err)
 		end
-		local imported_schedule_summary = PlatformSchedule.summarize(imported_schedule)
-		log(string.format("[Import] Restored platform schedule: records=%d, interrupts=%d, group=%s",
-			imported_schedule_summary.record_count,
-			imported_schedule_summary.interrupt_count,
-			tostring(imported_schedule_summary.group)))
-	elseif is_transfer then
-		Timing.fail(job_id, "schedule_restoration")
-		GameUtils.delete_platform(new_platform)
-		Timing.finish(job_id, "failed")
-		return nil, "Transfer payload missing required platform schedule"
-	end
 
-	Timing.stop(job_id, "schedule_restoration")
-	Timing.start(job_id, "import_cargo_totals", "execution", "platform_preparation")
-	local total_items = 0
-	local total_fluids = 0
-	if platform_data.verification then
-		total_items = Util.sum_items(platform_data.verification.item_counts or {})
-		total_fluids = Util.sum_fluids(platform_data.verification.fluid_counts or {})
-	end
+		if not new_platform.surface or not new_platform.surface.valid then
+			Timing.fail(job_id, "starter_pack")
+			log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
+			Timing.finish(job_id, "failed")
+			return nil, "Platform surface not valid after activation"
+		end
+		if is_transfer then
+			-- Admission is not validation. Hide the unfinished copy without creating a
+			-- releasable destination hold; only completion may establish that authority.
+			setup_job.preparation_visibility = {
+				surface_hidden = force.get_surface_hidden(new_platform.surface),
+				platform_hidden = new_platform.hidden,
+			}
+			new_platform.paused = true
+			force.set_surface_hidden(new_platform.surface, true)
+			new_platform.hidden = true
+		end
 
-	Timing.stop(job_id, "import_cargo_totals")
-	PhaseProfiler.stop(job_id, "queue_setup")
-	Timing.stop(job_id, "platform_preparation")
-	Timing.stop(job_id, "queue_setup")
-	Timing.start(job_id, "scheduler_wait", "wait")
-
-	storage.async_jobs[job_id] = {
-		type = "import",
-		job_id = job_id,
-		platform_name = new_platform.name,
-		force_name = force_name,
-		requester = requester_name,
-		started_tick = pending_job and pending_job.started_tick or game.tick,
-		last_step_tick = pending_job and pending_job.last_step_tick or nil,
-
-		platform_data = platform_data,
-		source_bucket = source_bucket,
-		runtime_bucket = runtime_bucket,
-		target_surface = new_platform.surface,
-		tiles_to_place = platform_data.tiles or {},
-		tiles_placed = false,
-		entities_to_create = (function()
-			local ordered, proxies = {}, {}
-			for _, record in ipairs(platform_data.entities or {}) do
-				if record.type == "item-request-proxy" then proxies[#proxies + 1] = record
-				else ordered[#ordered + 1] = record end
+		Timing.start(job_id, "starter_cleanup", "execution", "platform_preparation")
+		local starter_entities = new_platform.surface.find_entities_filtered({})
+		log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s') — destroying non-hub starters", #starter_entities, final_name))
+		for _, ent in ipairs(starter_entities) do
+			if ent.valid then
+				if ent.name == "space-platform-hub" then
+					log(string.format("[Import Queue]   Keeping starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
+				else
+					log(string.format("[Import Queue]   Destroying starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
+					ent.destroy()
+				end
 			end
-			for _, record in ipairs(proxies) do ordered[#ordered + 1] = record end
-			return ordered
-		end)(),
-		total_entities = #(platform_data.entities or {}),
-		total_items = total_items,
-		total_fluids = math.floor(total_fluids),
-		current_index = 0,
+		end
 
-		entity_map = {},
+		Timing.stop(job_id, "starter_cleanup")
+		Timing.start(job_id, "platform_parking", "execution", "platform_preparation")
+		if is_transfer then
+			new_platform.paused = true
+			log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
+		end
 
-		frozen_states = platform_data.frozen_states or {},
+		local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
+		if gateway_target and not Gateway.is_gateway(gateway_target) then
+			log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
+				tostring(gateway_target)))
+			gateway_target = nil
+		end
+		local park_target = requested_park or gateway_target
 
-		transfer_id = platform_data._transferId or parsed_data._transferId,
-		source_instance_id = platform_data._sourceInstanceId or parsed_data._sourceInstanceId,
-		operation_id = platform_data._operationId or parsed_data._operationId,
+		if park_target then
+			if not is_transfer then
+				new_platform.paused = true
+			end
+			local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(park_target) end)
+			if not ok_unlock then
+				log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
+					tostring(park_target), final_name, tostring(err_unlock)))
+			end
+			local ok_loc, err_loc = pcall(function() new_platform.space_location = park_target end)
+			if ok_loc then
+				log(string.format("[Gateway] Platform %s parked at '%s' at CREATION (pre-restoration)",
+					final_name, park_target))
+			else
+				log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
+					final_name, tostring(park_target), tostring(err_loc)))
+			end
+		end
+		Timing.stop(job_id, "platform_parking")
+		Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
+		if park_target and Gateway.is_gateway(park_target) and imported_schedule then
+			local stripped = Gateway.strip_gateway_records(imported_schedule)
+			if stripped then
+				log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
+					park_target, #(imported_schedule.records or {}), #stripped.records))
+				imported_schedule = stripped
+			else
+				log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it",
+					park_target))
+			end
+		end
 
-		target_platform = new_platform,
-		imported_schedule = imported_schedule,
-		park_target = park_target,
+		if imported_schedule then
+			local filtered_schedule, dropped_stops = PlatformSchedule.filter_for_import(imported_schedule)
+			if dropped_stops and #(dropped_stops.stations or {}) > 0 then
+				if dropped_stops.skipped_empty then
+					log(string.format("[Schedule] %d unroutable stop(s) on this instance (%s) but ALL records are unroutable — kept original schedule to avoid an empty (invalid) schedule",
+						#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
+				else
+					log(string.format("[Schedule] stripped %d unroutable stop(s) not present on this instance: %s",
+						#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
+					imported_schedule = filtered_schedule
+				end
+			end
+			local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
+			if not schedule_apply_ok then
+				Timing.fail(job_id, "schedule_restoration")
+				Timing.finish(job_id, "failed")
+			return nil, "Failed to restore platform schedule: " .. tostring(schedule_apply_err)
+			end
+			local imported_schedule_summary = PlatformSchedule.summarize(imported_schedule)
+			log(string.format("[Import] Restored platform schedule: records=%d, interrupts=%d, group=%s",
+				imported_schedule_summary.record_count,
+				imported_schedule_summary.interrupt_count,
+				tostring(imported_schedule_summary.group)))
+		elseif is_transfer then
+			Timing.fail(job_id, "schedule_restoration")
+			Timing.finish(job_id, "failed")
+			return nil, "Transfer payload missing required platform schedule"
+		end
 
-		metrics = {
-			delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,
-			delivery_completed_tick = receive_timing and receive_timing.delivery_completed_tick or nil,
-			tiles_started_tick = nil,
-			tiles_completed_tick = nil,
-			entities_started_tick = nil,
-			entities_completed_tick = nil,
-			fluids_started_tick = nil,
-			fluids_completed_tick = nil,
-			belts_started_tick = nil,
-			belts_completed_tick = nil,
-			state_started_tick = nil,
-			state_completed_tick = nil,
-			validation_started_tick = nil,
-			validation_completed_tick = nil,
-			tiles_placed = 0,
-			entities_created = 0,
-			entities_failed = 0,
-			entities_skipped = 0,
-			entities_mapped = 0,
-			fluids_restored = 0,
-			belt_items_restored = 0,
-			circuits_connected = 0,
+		Timing.stop(job_id, "schedule_restoration")
+		Timing.start(job_id, "import_cargo_totals", "execution", "platform_preparation")
+		local total_items = 0
+		local total_fluids = 0
+		if platform_data.verification then
+			total_items = Util.sum_items(platform_data.verification.item_counts or {})
+			total_fluids = Util.sum_fluids(platform_data.verification.fluid_counts or {})
+		end
+
+		Timing.stop(job_id, "import_cargo_totals")
+		PhaseProfiler.stop(job_id, "queue_setup")
+		Timing.stop(job_id, "platform_preparation")
+		Timing.stop(job_id, "queue_setup")
+		Timing.start(job_id, "scheduler_wait", "wait")
+
+		storage.async_jobs[job_id] = {
+			type = "import",
+			job_id = job_id,
+			platform_name = new_platform.name,
+			force_name = force_name,
+			requester = requester_name,
+			started_tick = pending_job and pending_job.started_tick or game.tick,
+			last_step_tick = pending_job and pending_job.last_step_tick or nil,
+
+			platform_data = platform_data,
+			source_bucket = source_bucket,
+			runtime_bucket = runtime_bucket,
+			target_surface = new_platform.surface,
+			tiles_to_place = platform_data.tiles or {},
+			tiles_placed = false,
+			entities_to_create = (function()
+				local ordered, proxies = {}, {}
+				for _, record in ipairs(platform_data.entities or {}) do
+					if record.type == "item-request-proxy" then proxies[#proxies + 1] = record
+					else ordered[#ordered + 1] = record end
+				end
+				for _, record in ipairs(proxies) do ordered[#ordered + 1] = record end
+				return ordered
+			end)(),
+			total_entities = #(platform_data.entities or {}),
+			total_items = total_items,
+			total_fluids = math.floor(total_fluids),
+			current_index = 0,
+
+			entity_map = {},
+
+			frozen_states = platform_data.frozen_states or {},
+
+			transfer_id = platform_data._transferId or parsed_data._transferId,
+			source_instance_id = platform_data._sourceInstanceId or parsed_data._sourceInstanceId,
+			operation_id = platform_data._operationId or parsed_data._operationId,
+
+			target_platform = new_platform,
+			preparation_visibility = setup_job.preparation_visibility,
+			imported_schedule = imported_schedule,
+			park_target = park_target,
+
+			metrics = {
+				delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,
+				delivery_completed_tick = receive_timing and receive_timing.delivery_completed_tick or nil,
+				tiles_started_tick = nil,
+				tiles_completed_tick = nil,
+				entities_started_tick = nil,
+				entities_completed_tick = nil,
+				fluids_started_tick = nil,
+				fluids_completed_tick = nil,
+				belts_started_tick = nil,
+				belts_completed_tick = nil,
+				state_started_tick = nil,
+				state_completed_tick = nil,
+				validation_started_tick = nil,
+				validation_completed_tick = nil,
+				tiles_placed = 0,
+				entities_created = 0,
+				entities_failed = 0,
+				entities_skipped = 0,
+				entities_mapped = 0,
+				fluids_restored = 0,
+				belt_items_restored = 0,
+				circuits_connected = 0,
+			}
 		}
-	}
 
-	log(string.format("[Import Job] Created job %s for platform '%s' (transfer_id=%s, source=%s, operation_id=%s)",
-		job_id, new_platform.name,
-		tostring(storage.async_jobs[job_id].transfer_id),
-		tostring(storage.async_jobs[job_id].source_instance_id),
-		tostring(storage.async_jobs[job_id].operation_id)))
+		log(string.format("[Import Job] Created job %s for platform '%s' (transfer_id=%s, source=%s, operation_id=%s)",
+			job_id, new_platform.name,
+			tostring(storage.async_jobs[job_id].transfer_id),
+			tostring(storage.async_jobs[job_id].source_instance_id),
+			tostring(storage.async_jobs[job_id].operation_id)))
 
-	return job_id
+		return job_id
+	end
+	local prepared, result, preparation_error = pcall(prepare_platform)
+	if prepared and result then return result end
+	local reason = tostring(prepared and preparation_error or result)
+	log("[Import] Platform preparation failed for " .. job_id .. ": " .. reason)
+	-- apply_starter_pack creates the surface. Capture its identity after the attempt,
+	-- including partial failures, before cleanup can cross a callback boundary.
+	if new_platform.valid then setup_job.target_surface = new_platform.surface end
+	setup_job.setup_cleanup = {error = reason, attempts = 0, next_tick = game.tick,
+		platform_index = created_platform_index,
+		surface_index = setup_job.target_surface and setup_job.target_surface.valid and setup_job.target_surface.index,
+		hold_id = transfer_id or ("interrupted:" .. job_id)}
+	-- process_setup() may have been called by the scheduler with this same job.
+	-- Do not throw after recording its cleanup state: that would replay setup or lose ownership.
+	storage.async_jobs[job_id] = setup_job
+	local removed = ImportPipeline.process_setup_cleanup(setup_job)
+	return nil, reason .. (removed and "" or ("; cleanup pending: " .. job_id))
 end
 
 
@@ -476,7 +598,7 @@ function ImportPipeline.process_setup(job)
 		return
 	end
 	local id, err = ImportPipeline.queue(job.decoded_data, job.platform_name, job.force_name, job.requester, job.receive_timing, job)
-	assert(id, err)
+	if not job.setup_cleanup then assert(id, err) end
 end
 
 function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
