@@ -11,6 +11,7 @@ import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
+import RecoveryWarnings from "./RecoveryWarnings";
 import SettingsTab from "./SettingsTab";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
@@ -108,10 +109,10 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
+		children: <><RecoveryWarnings state={state} /><GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} /></>,
 	});
 
-	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} /> });
+	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} state={state} /> });
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "gateways";
 
 	useEffect(() => {
@@ -359,7 +360,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
-	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 

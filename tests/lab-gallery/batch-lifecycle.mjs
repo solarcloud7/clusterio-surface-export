@@ -89,18 +89,24 @@ export function sanitizePlatformName(name) {
 	return out;
 }
 
-export function makeExportJobId(counter, platformName) {
-	return `${String(counter).padStart(3, "0")}_${sanitizePlatformName(platformName)}`;
+export function makeExportJobId(counter, platformName, epoch) {
+	return `${String(counter).padStart(3, "0")}_${sanitizePlatformName(platformName)}${epoch ? `_${epoch}` : ""}`;
+}
+
+export function recoveryEpoch(host) {
+	const result = lua(host, "return {success=true,epoch=storage.source_recovery_epoch,ready=storage.source_recovery_ready}");
+	if (!result.ready || !result.epoch) throw new Error(`Host ${host} has not finished recovery`);
+	return result.epoch;
 }
 
 export function canonicalTransferId(instanceId, jobId) {
 	return `${instanceId}:${jobId}`;
 }
 
-export function predictCanonicalIds({ instanceId, counter, platformName, count = 10 }) {
+export function predictCanonicalIds({ instanceId, counter, platformName, count = 10, epoch }) {
 	const ids = [];
 	for (let i = 1; i <= count; i++) {
-		ids.push(canonicalTransferId(instanceId, makeExportJobId(counter + i, platformName)));
+		ids.push(canonicalTransferId(instanceId, makeExportJobId(counter + i, platformName, epoch)));
 	}
 	return ids;
 }
@@ -466,7 +472,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		CONTROLLER, CTL_CONFIG, HOSTS, FLUID_EPSILON, DOUBLE_EPSILON,
 		sleep, lastLine, docker, ctl, rcon, lua, instanceIds, instancePath,
 		preflightState, assertLeaseClean, loadedSave, waitReady, assignSave, readContainerJson,
-		exportIdFloor, bumpExportIdCounter,
+		exportIdFloor, bumpExportIdCounter, recoveryEpoch,
 		sanitizePlatformName, makeExportJobId, canonicalTransferId,
 		predictCanonicalIds, fetchTransferSummaries, checkTransferIdCollisions,
 		loadGoldenPair, dropMarker, filesNewerThanMarker, waitForImportResult, restoreLivePair,

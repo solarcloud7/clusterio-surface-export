@@ -31,6 +31,7 @@ local function scenario(side, fault)
     local schedule = {records = {}}
     local modules = {
         ["utils/operation-timing"] = timing,
+		["core/source-recovery"] = {export_job_id = function(counter, name) return string.format("%03d_%s_test-epoch", counter, name) end},
         ["utils/game-utils"] = {platform_has_hub = function() return true end,
             delete_platform = function() called("delete"); deleted = true end},
         ["utils/surface-lock"] = {DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,

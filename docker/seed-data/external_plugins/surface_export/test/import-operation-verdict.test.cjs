@@ -105,6 +105,63 @@ function makeControllerHarness() {
 	return { plugin, operation, logged };
 }
 
+test("restoration uses the retained artifact, creates new authority, and never mutates the old export", async () => {
+	const { plugin, logged } = makeControllerHarness();
+	const original = {platform_name: "fixture", platform: {force: "player"}, entities: [], _transferId: "1:old", _sourceInstanceId: 1, _operationId: "old"};
+	plugin.recoveryReservations = new Map();
+	plugin.platformStorage = new Map([["1:old", {exportData: original}]]);
+	plugin.platformTree.resolveTargetInstance = () => ({id: 2, instance: {}});
+	let sent;
+	plugin.controller = {sendTo: async (_target, request) => {sent = request; return {success: true};}};
+	plugin.createOperationRecord = async (kind, options) => createOperationRecord(kind, options);
+	const request = {targetInstanceId: 2, restoreExportId: "1:old", restoreRequestId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", exportData: {malicious: true}};
+	const result = await plugin.handleImportUploadedExportRequestMeasured(request);
+	assert.equal(result.success, true);
+	assert.equal(sent.exportData._operationId, `restore:${request.restoreRequestId}`);
+	assert.equal(sent.exportData._sourceInstanceId, undefined);
+	assert.equal(sent.exportData._transferId, undefined);
+	assert.equal(sent.exportData._standaloneImport, true);
+	assert.equal(sent.exportData._restoreSnapshot, true);
+	assert.equal(original._transferId, "1:old");assert.equal(original._sourceInstanceId, 1);
+	assert.ok(logged.some(e => e.data.restoredFromExportId === "1:old"));
+	plugin.platformStorage.clear();sent = undefined;
+	assert.equal((await plugin.handleImportUploadedExportRequestMeasured(request)).success, false);
+	assert.equal(sent, undefined, "expired snapshot still sent an import");
+});
+
+test("an import completion arriving before its request reply stays terminal", async () => {
+	for (const succeeds of [true,false]) for (const lostReply of [true,false]) {
+		const {plugin,operation} = makeControllerHarness();
+		plugin.recoveryReservations = new Map();
+		plugin.platformTree.resolveTargetInstance = () => ({id:2,instance:{}});
+		plugin.createOperationRecord = async () => operation;
+		plugin.controller = {sendTo: async () => {
+			await plugin.handleImportOperationCompleteEvent(new messages.ImportOperationCompleteEvent({
+				operationId:operation.transferId,instanceId:2,platformName:"fixture",success:succeeds,
+				error:succeeds?null:"rejected",validation:succeeds?PASSING_VERDICT:GATE_VERDICT}));
+			if (lostReply) throw Error("delayed request disconnect");
+			return {success:true};
+		}};
+		const reply = await plugin.handleImportUploadedExportRequestMeasured({targetInstanceId:2,
+			exportData:{platform:{force:"player"},entities:[]}});
+		assert.equal(operation.status,succeeds?"completed":"failed");
+		assert.equal(reply.success,succeeds);
+	}
+});
+
+test("duplicate snapshot requests share one admission and retained identity prevents replay after restart", async () => {
+	const {plugin} = makeControllerHarness();
+	plugin.snapshotRequests = new Map();plugin.auditIndex = new Map();plugin.persistedTransactionLogs = [];
+	let complete, calls = 0;
+	plugin.observeUploadedImport = async () => {calls++; return new Promise(resolve => {complete = resolve;});};
+	const request = {targetInstanceId: 2, restoreExportId: "1:old", restoreRequestId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", exportData: {}};
+	const first = plugin.handleImportUploadedExportRequest(request), second = plugin.handleImportUploadedExportRequest(request);
+	assert.equal(calls, 1);complete({success: true});assert.deepEqual(await first, await second);
+	plugin.auditIndex.set(`restore:${request.restoreRequestId}`, {targetInstanceId: 2, exportId: "1:old", status: "completed"});
+	assert.equal((await plugin.handleImportUploadedExportRequest(request)).success, true);assert.equal(calls, 1);
+	assert.equal((await plugin.handleImportUploadedExportRequest({...request, targetInstanceId: 3})).success, false);
+});
+
 test("destination hold failures retain their emitted stage in standalone operation details", async () => {
 	const {plugin, operation} = makeControllerHarness();
 	await plugin.handleImportOperationCompleteEvent({operationId: operation.transferId,

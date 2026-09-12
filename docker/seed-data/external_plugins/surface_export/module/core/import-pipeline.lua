@@ -27,6 +27,7 @@ function ImportPipeline.queue_from_file(filename, new_platform_name, force_name,
 end
 
 function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing, pending_job)
+	if storage.source_recovery_ready == false then return nil, "Startup recovery is not ready" end
 	if not pending_job then storage.async_job_id_counter = storage.async_job_id_counter + 1 end
 	local job_id = pending_job and pending_job.job_id or ("import_" .. storage.async_job_id_counter)
 
@@ -123,6 +124,17 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		return nil, schema_err
 	end
 
+	-- A manual import is a new operation, even when its snapshot came from a
+	-- transfer. Never inherit authority to delete or unlock the original source.
+	if parsed_data._standaloneImport then
+		platform_data._standaloneImport = true
+		local validate_snapshot = parsed_data._restoreSnapshot or platform_data._transferId or parsed_data._transferId
+		platform_data._sourceInstanceId = nil
+		parsed_data._sourceInstanceId = nil
+		platform_data._operationId = parsed_data._operationId
+		platform_data._transferId = validate_snapshot and parsed_data._operationId or nil
+		parsed_data._transferId = platform_data._transferId
+	end
 	local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
 	local imported_schedule = platform_data
 		and platform_data.platform
@@ -456,7 +468,7 @@ function ImportPipeline.process_setup(job)
 		assert(raw, "Failed to decompress section")
 		job.decoded_data = Timing.scope(job.job_id, "decode_payload", SectionCodec.decode_step, decoder, raw)
 		if job.decoded_data then
-			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet"}) do
+			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet", "_standaloneImport", "_restoreSnapshot"}) do
 				if job.section_envelope[key] ~= nil then job.decoded_data[key] = job.section_envelope[key] end
 			end
 			job.section_decoder, job.section_envelope = nil, nil

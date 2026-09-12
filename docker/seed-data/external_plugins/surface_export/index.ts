@@ -122,6 +122,13 @@ export const plugin = {
 			type: "number",
 			initialValue: 20,
 		},
+		[`${PLUGIN_NAME}.platform_source_of_truth`]: {
+			title: "Platform source of truth",
+			description: "plugin_history protects restored source copies that already transferred away. save_game accepts restored copies with a warning. Applies when each instance restarts; active transfers remain protected.",
+			type: "string",
+			enum: ["plugin_history", "save_game"],
+			initialValue: "plugin_history",
+		},
 		[`${PLUGIN_NAME}.transaction_log_detail_entries`]: {
 			title: "Saved Detailed Transfer Logs",
 			description: "Number of transfers retaining step timings and audit evidence. Failed transfers take priority, followed by recent successes; "
@@ -171,6 +178,7 @@ export const plugin = {
 		messages.GetGatewaysRequest,
 		messages.SetGatewayLinkRequest,
 		messages.GetGatewayConfigRequest,
+		messages.RecoveryPolicyRequest,
 		messages.GetInstanceRosterRequest,
 		messages.PushGatewayConfigRequest,
 	],

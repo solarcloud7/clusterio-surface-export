@@ -17,6 +17,8 @@ import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow }
 import type { AuditRow } from "./lib/audit-ledger";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
+import { recoveryMode, hasUnresolvedOwnership, protectedSourceIndexes, type PlatformSourceOfTruth } from "./shared/recovery";
+import { importableSnapshot } from "./shared/snapshot";
 import type {
 	IControllerPlugin,
 	ActiveTransfer,
@@ -84,6 +86,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
 	sourceCommitMarkersPath!: string;
 	private recoveryTimer?: ReturnType<typeof setInterval>;
+	pendingTransfersLoadError: string | null = null;
+	recoveryReservations = new Map<number, { epoch: string; mode: PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes: number[] }>();
+	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
 
 	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -165,6 +170,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetGatewaysRequest, this.handleGetGatewaysRequest.bind(this));
 		this.c.handle(messages.SetGatewayLinkRequest, this.handleSetGatewayLinkRequest.bind(this));
 		this.c.handle(messages.GetGatewayConfigRequest, this.handleGetGatewayConfigRequest.bind(this));
+		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -181,6 +187,33 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			});
 		}, 30_000);
 		this.recoveryTimer.unref();
+	}
+
+	async handleRecoveryPolicyRequest(request: messages.RecoveryPolicyRequest, source?: { id: number }) {
+		if (!source || source.id !== request.instanceId) throw new Error("Recovery instance identity mismatch");
+		if (!Number.isInteger(request.instanceId) || !this.c.instances.get(request.instanceId) || !request.epoch) {
+			throw new Error("Invalid recovery instance or epoch");
+		}
+		if (this.pendingTransfersLoadError || this.transactionLogLoadError || this.orchestrator.requestQueue.admissionError) {
+			throw new Error("Controller recovery state is unavailable");
+		}
+		if (request.action === "begin") {
+			const existing = this.recoveryReservations.get(request.instanceId);
+			if (existing?.epoch === request.epoch) return existing;
+			const session = { epoch: request.epoch, mode: recoveryMode(this.cfg("surface_export.platform_source_of_truth")),
+				allowAdoption: !hasUnresolvedOwnership(request.instanceId, this.pendingTransfers.values(), this.activeTransfers.values()),
+				protectedSourceIndexes: protectedSourceIndexes(request.instanceId, this.pendingTransfers.values(), this.activeTransfers.values()) };
+			this.recoveryReservations.set(request.instanceId, session);
+			return session;
+		}
+		const session = this.recoveryReservations.get(request.instanceId);
+		if (request.action !== "finish" || session?.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
+		this.recoveryReservations.delete(request.instanceId);
+		return session;
+	}
+
+	private requireRecoveryReady(instanceId: number) {
+		if (this.recoveryReservations.has(instanceId)) throw new Error("Instance is reconciling its loaded save; retry after recovery completes");
 	}
 
 	override async onShutdown() {
@@ -327,7 +360,32 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return operation;
 	}
 
-	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+		if (!request.restoreExportId) return this.observeUploadedImport(request);
+		if (!request.restoreRequestId || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(request.restoreRequestId)) {
+			return { success: false, error: "Snapshot restoration requires a fresh request UUID" };
+		}
+		const id = `restore:${request.restoreRequestId}`;
+		const signature = JSON.stringify([request.restoreExportId, request.targetInstanceId, request.forceName || "player", request.platformName || null, request.targetPlanet || null]);
+		const pending = this.snapshotRequests.get(id);
+		if (pending) return pending.signature === signature ? pending.result : {success: false, error: "This request already belongs to another import"};
+		const prior = this.activeTransfers.get(id) || this.auditIndex.get(id)
+			|| this.persistedTransactionLogs.find(log => log.transferId === id)?.transferInfo;
+		if (prior) {
+			if (prior.targetInstanceId !== request.targetInstanceId || prior.exportId !== request.restoreExportId) {
+				return { success: false, error: "This restoration request already belongs to another import" };
+			}
+			return { success: !["failed", "error", "cleanup_failed"].includes(String(prior.status)), operationId: id,
+				platformName: prior.platformName, targetInstanceId: prior.targetInstanceId,
+				error: prior.error || undefined };
+		}
+		if (this.snapshotRequests.size >= 100) return { success: false, error: "Too many pending restorations" };
+		const result = this.observeUploadedImport(request);
+		this.snapshotRequests.set(id, {signature, result});
+		try { return await result; } finally { this.snapshotRequests.delete(id); }
+	}
+
+	private async observeUploadedImport(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
 		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
 		const result = await timingContext.run(clock, () => this.handleImportUploadedExportRequestMeasured(request));
 		if (!result.success && !clock.operationId) {
@@ -337,8 +395,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return result;
 	}
 
-	async handleImportUploadedExportRequestMeasured(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
-		const { targetInstanceId, exportData, forceName, platformName, targetPlanet } = request;
+	async handleImportUploadedExportRequestMeasured(request: { targetInstanceId: number; exportData: ExportData; restoreExportId?: string | null; restoreRequestId?: string | null; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+		const { targetInstanceId, forceName, platformName, targetPlanet, restoreExportId } = request;
+		this.requireRecoveryReady(targetInstanceId);
+		const snapshot = restoreExportId ? this.platformStorage.get(restoreExportId) : undefined;
+		if (restoreExportId && !snapshot) return { success: false, error: "This snapshot is no longer available. No platform was imported." };
+		const suppliedData = snapshot ? snapshot.exportData : request.exportData;
+		let extracted;
+		try { extracted = importableSnapshot(suppliedData); }
+		catch (error) { return { success: false, error: getErrorMessage(error) }; }
+		const exportData = extracted.payload;
 
 		if (!exportData || typeof exportData !== "object" || Array.isArray(exportData)) {
 			return { success: false, error: "exportData must be a non-null object" };
@@ -351,15 +417,22 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 
 		const importData: ExportData = { ...exportData };
+		const validateSnapshot = Boolean(snapshot || extracted.fromBlackBox || importData._transferId);
+		delete importData._sourceInstanceId;
+		delete importData._transferId;
+		importData._standaloneImport = true;
+		importData._restoreSnapshot = validateSnapshot;
 		if (platformName && String(platformName).trim()) {
 			importData.platform_name = String(platformName).trim();
 		}
 		const resolvedForceName = forceName || importData?.platform?.force || "player";
 		const operation = await this.createOperationRecord("import", {
+			operationId: restoreExportId ? `restore:${request.restoreRequestId}` : undefined,
 			platformName: importData.platform_name || "Uploaded platform",
 			forceName: resolvedForceName,
 			sourceInstanceId: -1,
-			sourceInstanceName: "Uploaded JSON",
+			sourceInstanceName: snapshot ? "Restored snapshot" : "Uploaded JSON",
+			exportId: restoreExportId || undefined,
 			targetInstanceId: resolved.id,
 		});
 		(importData as Record<string, unknown>)._operationId = operation.transferId;
@@ -369,9 +442,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			`Upload import requested for ${operation.platformName}`, {
 				targetInstanceId: resolved.id,
 				payloadSizeBytes,
+				restoredFromExportId: restoreExportId || null,
 			});
 		this.subscriptions.emitTransferUpdate(operation);
 		const uploadExportId = generateOperationId("uploaded");
+		const completedReply = () => ["completed", "failed", "error"].includes(operation.status) ? {
+			success: operation.status === "completed", operationId: operation.transferId,
+			platformName: operation.platformName, targetInstanceId: resolved.id, error: operation.error || undefined,
+		} : null;
 
 		try {
 			const response = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
@@ -383,6 +461,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					targetPlanet: targetPlanet ?? null,
 				}),
 			)) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
+			// Completion can arrive before the queued-request acknowledgement, including a lost reply.
+			const terminalReply = completedReply();
+			if (terminalReply) return terminalReply;
 			if (!response?.success) {
 				const error = response?.error || "Import failed on target instance";
 				operation.error = error;
@@ -410,6 +491,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				targetInstanceId: resolved.id,
 			};
 		} catch (err: unknown) {
+			const terminalReply = completedReply();
+			if (terminalReply) return terminalReply;
 			const errMsg = getErrorMessage(err);
 			operation.error = errMsg;
 			await this.failOperation(operation, "import_failed", `Import request failed: ${errMsg}`, { error: errMsg });
@@ -430,6 +513,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	async handleExportPlatformForDownloadRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
+		this.requireRecoveryReady(sourceInstanceId);
 		const sourcePlatformIndex = Number(request.sourcePlatformIndex);
 		const forceName = request.forceName || "player";
 
@@ -847,6 +931,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		try {
 			const content = await fs.readFile(this.pendingTransfersPath, "utf8");
 			const entries = JSON.parse(content);
+			if (!Array.isArray(entries) || entries.some(e => !e || typeof e.transferId !== "string"
+				|| !Number.isInteger(e.sourceInstanceId) || !Number.isInteger(e.targetInstanceId))) throw new Error("Invalid pending transfer records");
 			if (Array.isArray(entries)) {
 				for (const e of entries) {
 					if (e && typeof e.transferId === "string") {
@@ -863,6 +949,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				return;
 			}
 			this.logger.error(`Failed to load pending transfers: ${getErrorMessage(err)}`);
+			this.pendingTransfersLoadError = getErrorMessage(err);
 		}
 	}
 
@@ -948,6 +1035,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return pruned;
 	}
 	isInstanceOnline(instanceId: number): boolean {
+		if (this.recoveryReservations.has(instanceId)) return false;
 		const inst = this.c.instances.get(instanceId);
 		if (!inst || inst.isDeleted) {
 			return false;

@@ -6,6 +6,9 @@ import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs"
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 
 const browser = await launchChromiumOrSkip("settings");
+const origin = process.env.SE_SETTINGS_URL || "http://localhost:8080";
+assert.match(origin, /^http:\/\/(?:localhost|127\.0\.0\.1):\d+\/?$/, "Settings fixture requires a local test endpoint");
+const controller = process.env.SE_SETTINGS_CONTROLLER || "surface-export-controller";
 try {
 	const page = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
 	const errors = [], writes = [];
@@ -36,23 +39,25 @@ try {
 					frame.type = "responseError";
 					frame.data = { message: operation.write ? "Injected settings save failure" : "Injected settings read failure", code: "RequestError" };
 				} else if (operation.write) {
-					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("gateway_mode") ? value : Number(value);
+					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("gateway_mode") || key.endsWith("platform_source_of_truth") ? value : Number(value);
 					delete frame.data;
 				} else Object.assign(frame.data, shadow);
 			}
 			socket.send(JSON.stringify(frame));
 		});
 	});
-	await page.goto("http://localhost:8080", { waitUntil: "domcontentloaded" });
-	const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
+	await page.goto(origin, { waitUntil: "domcontentloaded" });
+	const config = JSON.parse(execFileSync("docker", ["exec", controller, "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
 	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
-	await page.goto("http://localhost:8080/surface-export?tab=settings", { waitUntil: "domcontentloaded" });
+	await page.goto(`${origin}/surface-export?tab=settings`, { waitUntil: "domcontentloaded" });
 	const input = page.getByRole("spinbutton", { name: "Saved Detailed Transfer Logs" });
 	await input.waitFor();
 	assert.equal(await page.getByRole("spinbutton", { name: "Stored Payload Downloads" }).count(), 1);
-	assert.equal(await page.locator(".se-settings .ant-select").count(), 0, "Gateway mode is not editable here");
+	assert.equal(await page.getByLabel("Gateway mode", { exact: true }).count(), 0, "Gateway mode is not editable here");
+	const policy=page.getByRole("combobox",{name:"Platform source of truth",exact:true});
+	assert.equal(await policy.count(),1,"Recovery policy must be selectable");
 	assert.equal(await page.locator(".se-settings aside ul").count(), 0, "Instance names are not listed");
-	assert.equal(await page.locator(".se-settings .ant-form-item").count(), 3, "Only the three supported settings are shown");
+	assert.equal(await page.locator(".se-settings .ant-form-item").count(), 4, "Three numeric settings and the recovery policy are shown");
 	assert.equal(await page.getByRole("region", { name: "Transfer records", exact: true }).count(), 1);
 	assert.equal(await page.getByRole("region", { name: "Transfer recovery", exact: true }).count(), 1);
 	assert.ok(await page.getByRole("button", { name: "Save changes" }).isDisabled());
@@ -74,6 +79,11 @@ try {
 	await page.getByRole("status").filter({ hasText: "Settings saved." }).waitFor();
 	assert.deepEqual(writes, [{ "surface_export.transaction_log_detail_entries": String(changed) }]);
 	assert.equal(await input.inputValue(), String(changed));
+	await page.locator(".se-settings .ant-select").filter({has:policy}).click();
+	await page.locator(".ant-select-item-option").filter({hasText:/^Save game$/}).click();
+	await page.getByRole("button",{name:"Save changes"}).click();
+	await page.getByRole("status").filter({hasText:"Settings saved."}).waitFor();
+	assert.deepEqual(writes.at(-1),{"surface_export.platform_source_of_truth":"save_game"});
 	failSave = true;
 	await input.fill("103");
 	await page.getByRole("button", { name: "Save changes" }).click();
@@ -103,10 +113,12 @@ try {
 	await page.reload();
 	await page.getByText("Read only. Saving requires permission to update controller configuration.").waitFor();
 	assert.ok(await input.isDisabled());
+	assert.ok(await policy.isDisabled());
 	mode = "denied";
 	await page.reload();
 	await page.getByText("Controller settings require permission to view controller configuration.").waitFor();
 	assert.equal(await input.count(), 0);
+	assert.equal(await policy.count(), 0);
 	assert.deepEqual(errors, []);
 	console.log("PASS: grouped settings, keyboard guidance, dirty-only intercepted save, discard, save/read failures, read-only/denied permissions, tab return, desktop/tablet/mobile layout; no real configuration writes");
 } finally { await browser.close(); }

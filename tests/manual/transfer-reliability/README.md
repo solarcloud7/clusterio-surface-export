@@ -14,8 +14,17 @@ node tests/manual/transfer-reliability/run.mjs --case lost-source-reply
 node tests/manual/transfer-reliability/run.mjs --case lost-destination-reply
 node tests/manual/transfer-reliability/run.mjs --case crash-source-before-save
 node tests/manual/transfer-reliability/run.mjs --case restore-old-source
+node tests/manual/transfer-reliability/run.mjs --case save-policy-game
+node tests/manual/transfer-reliability/run.mjs --case save-policy-history
+node tests/manual/transfer-reliability/run.mjs --case save-policy-pending
+node tests/manual/transfer-reliability/run.mjs --case snapshot-recovery
 node tests/manual/transfer-reliability/run.mjs --case performance
 ```
+
+If an older source checkpoint predates its transfer lock and retirement record, but the
+controller still owns that source, startup remains blocked for manual reconciliation.
+The regression exercises that missing-lock boundary; it does not claim automatic recovery
+of an arbitrary older checkpoint. Identifiable retired sources use the normal retry path.
 
 The shorter entry point is `npm run test:manual:transfers -- --case <id>`.
 Use `npm run test:manual:transfers -- --all` to run all listed cases sequentially. It continues
@@ -30,12 +39,61 @@ deadlines. Individual commands and output are bounded. Image startup includes de
 setup; this time is outside the measured transfer callbacks.
 
 The lab has a unique network, containers, volumes, generated credentials, and plugin runtime
-copy under ignored `ci-artifacts`. It publishes no ports. It reads canonical mod archives through
+copy under ignored `ci-artifacts`. Recovery-policy and snapshot cases publish a random loopback
+HTTP port for their browser assertions; other cases publish no ports. It reads canonical mod archives through
 read-only mounts; it never uses the live data or Steam client volumes. Resource deletion checks
 both the exact run label and its name. There is no live-cluster target option. Host process
 interception exists only in the disposable containers through `NODE_OPTIONS`.
 
 ## What each case proves
+
+### Configurable save recovery
+
+`save-policy-game` and `save-policy-history` use the same mixed checkpoint. One unrelated
+platform is deliberately destroyed and another is transferred away. Reloading the source
+checkpoint must restore the unrelated platform with its physical cargo. The transferred
+source is accepted with a fresh persistent identity in Save game mode, or remains protected
+in Plugin history mode. The destination's cargo must remain intact in both cases.
+
+The Save game arm also changes the configured policy before restarting, checks the browser's
+restart notice, saves/reloads the accepted world, rejects old deletion and unlock requests,
+and transfers the accepted copy again with a new export ID. Its deliberate duplicate is an
+operator-approved restoration, not a successful exactly-once transfer claim.
+
+`save-policy-pending` withholds the reply to an executed source deletion, then reloads the
+earlier source checkpoint in Save game mode. The restored source must keep its old identity
+and protection while that handoff is unresolved. After removing the communication fault and
+restarting the controller, normal recovery must leave one usable destination with exact cargo.
+
+`snapshot-recovery` reproduces the missing destination after loading its earlier checkpoint,
+retains the original completed history, then submits a separate stored-snapshot import. A
+repeated request UUID must return the same operation. Independent physical item/quality,
+belt-side, fluid and fixture-entity observations must survive another save/restart. Passing
+this arm does not turn the original unassisted destination-rollback STOP into a PASS.
+
+These cases also exercise the inline warning, snapshot confirmation and Settings page in
+headless Chromium. Install the repository's Playwright Chromium if it is not available.
+Run `--sectioned` to exercise the sectional payload path. Ordinary runs exercise the existing
+codec configuration. Each JSON result records which codec was enabled and the staged hashes.
+
+Retained Factorio 2.1.17 observations (the reports include staged hashes; their `head` is
+the implementation's base commit):
+
+| Case | Evidence | Result |
+|---|---|---|
+| Save game mixed checkpoint and second transfer | [Physical observations](evidence/save-policy-game-2.1.17.json.gz) | PASS; fresh persistent identity, old delete/unlock rejected, cargo and browser checks |
+| Plugin history mixed checkpoint | [Physical observations](evidence/save-policy-history-2.1.17.json.gz) | PASS; restored source protected, unrelated platform usable |
+| Pending source-deletion acknowledgement | [Physical observations](evidence/save-policy-pending-2.1.17.json.gz) | PASS; adoption refused, normal recovery completed with exact cargo |
+| Manual snapshot recovery | [Existing codec](evidence/snapshot-recovery-2.1.17.json.gz), [sectional codec](evidence/snapshot-recovery-sectional-2.1.17.json.gz) | PASS; missing-copy reproduction, fresh import, duplicate refusal and save/restart |
+| Offline destination | [Physical and browser observations](evidence/snapshot-offline-recovery-2.1.17.json.gz) | PASS; offline instance reported as unverified, destination disabled, exact cargo after restart |
+
+`save-policy.test.mjs` reads these reports and rejects cargo mutations. The original
+[Factorio callback require error](evidence/save-policy-require-failure-2.1.17.json.gz) and
+[unavailable post-transfer snapshot](evidence/snapshot-retention-failure-2.1.17.json.gz)
+remain failed runs. The fixes move the require to module parsing and retain successful
+transfer payloads under the existing storage cap. Missing-lock, unavailable-authority,
+permission, malformed/diagnostic payload and completion-before-reply boundaries also have
+regressions; those are simulated failures, not additional live-engine acceptance claims.
 
 ### Destination save rollback
 

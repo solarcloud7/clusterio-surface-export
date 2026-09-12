@@ -77,6 +77,8 @@ export interface TransferSummaryModel {
 	exportId: string | null;
 	artifactSizeBytes: number | null;
 	downloadable: boolean;
+	restorable?: boolean;
+	restoreUnavailableReason?: string | null;
 	platformName: string;
 	sourceInstanceId: number;
 	sourceInstanceName: string | null;
@@ -108,6 +110,7 @@ export interface TransactionLogEntryModel {
 	[key: string]: unknown;
 }
 export interface PlatformModel {
+	platformUid?: string | null;
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
@@ -127,6 +130,8 @@ export interface PlatformModel {
 	transferStatus?: string;
 }
 export interface InstanceNodeModel {
+	recovery?: import("./recovery").InstanceRecoveryStatus;
+	configuredRecoveryMode?: import("./recovery").PlatformSourceOfTruth;
 	instanceId: number;
 	instanceName: string;
 	hostId: number | null;
