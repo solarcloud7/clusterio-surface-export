@@ -178,8 +178,21 @@ export function analyzeSavePolicy(report) {
   } else assert.equal(report.identityAfter.uid,report.identityBefore.uid);
   return {verdict:"PASS",reason:"Checkpoint cargo and configured restoration policy verified"};
 }
+export function destinationRollbackBounds(contract) {
+  assert.equal(contract?.schemaVersion,4,"destination rollback contract missing");
+  const matches=contract.cases?.filter(c=>c.id==="restore-old-destination");
+  assert.equal(matches?.length,1,"destination rollback bounds missing or duplicated");
+  const bounds=matches[0];
+  assert.ok([bounds.observationMs,bounds.intervalMs,bounds.maximumSamples]
+    .every(value=>Number.isSafeInteger(value)&&value>0)
+    && bounds.intervalMs<=bounds.observationMs
+    && bounds.maximumSamples>=Math.ceil(bounds.observationMs/bounds.intervalMs)+1,
+  "invalid destination rollback bounds");
+  return bounds;
+}
+
 export function analyzeDestinationRollback(report) {
-  assert.equal(report.contract?.schemaVersion,4,"destination rollback contract missing");
+  const bounds=destinationRollbackBounds(report.contract);
   assert.deepEqual(report.before?.cargo,expectedCargo,"invalid destination rollback fixture");
   assert.equal(evaluateCopies(report.before,[report.initial],1).verdict,"PASS","initial physical observation changed");
   assert.equal(report.initial.source.usable,true,"initial source not usable");
@@ -203,7 +216,7 @@ export function analyzeDestinationRollback(report) {
     assert.equal(outcome.status,"completed","control transfer incomplete");
   }
   const samples=report.rollback.samples;
-  assert.ok(Array.isArray(samples)&&samples.length>=2&&samples.length<=16,"bounded rollback observations required");
+  assert.ok(Array.isArray(samples)&&samples.length>=2&&samples.length<=bounds.maximumSamples,"bounded rollback observations required");
   let previous=-1;
   for(const s of samples) {
     assert.ok(Number.isFinite(s.offsetMs)&&s.offsetMs>=0&&s.offsetMs>previous,"invalid observation clock");
@@ -211,7 +224,7 @@ export function analyzeDestinationRollback(report) {
     assert.equal(s.outcome?.transferId,report.transferId,"observed history missing or for another operation");
     assert.equal(typeof s.outcome.status,"string","history outcome unavailable");
   }
-  assert.ok(previous>=65000,"full recovery observation window required");
+  assert.ok(previous>=bounds.observationMs,"full recovery observation window required");
   assert.ok(Number.isFinite(report.rollback.observedMs)&&report.rollback.observedMs>=previous,"observation duration missing");
   assert.ok(Array.isArray(report.events?.[1])&&Array.isArray(report.events?.[2]),"request observations unavailable");
   const imports=report.events[2].filter(e=>e.kind==="call"&&e.action==="import"&&e.id===report.transferId);
@@ -224,6 +237,7 @@ export function analyzeDestinationRollback(report) {
   return {verdict:violations.length?"STOP":"PASS",violations,
     observation:{missingPhysicalCopy:samples.some(s=>!s.source.present&&!s.destination.present),
       finalSourcePresent:last.source.present,finalDestinationPresent:last.destination.present,
+      finalDestinationUsable:last.destination.usable===true,
       finalHistoryStatus:last.outcome.status,importRequests:imports.length,observationMs:report.rollback.observedMs},
     reason:"Physical world observations and historical operation status are separate; backup and cached-payload recovery was not attempted"};
 }

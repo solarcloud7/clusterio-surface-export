@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 import { sleep } from "./docker-lab.mjs";
 import { sample, start, summary, terminal } from "./cases.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
+import { destinationRollbackBounds } from "./oracle.mjs";
 
 export const contract = { requires: ["owned disposable Docker lab", "Factorio 2.1.17"],
   produces: ["latest-save control", "destination-only rollback observations", "checkpoint hashes and generation markers"],
@@ -38,8 +39,7 @@ export function assertCompletedControl(report,snapshot,outcome) {
 }
 
 export async function destinationRollbackCase(lab,report,save,{failAfterControl=false,now=()=>performance.now(),delay=sleep}={}) {
-  const bounds=report.contract.cases.find(c=>c.id==="restore-old-destination");
-  assert.equal(bounds.observationMs,65000);assert.equal(bounds.maximumSamples,16);assert.equal(bounds.intervalMs,5000);
+  const bounds=destinationRollbackBounds(report.contract);
   report.name=`transfer-cleanup-${lab.run}-restore-old-destination`;
   report.mutationOccurred=true;
   report.before=lab.probe(1,"build",report.name).state;

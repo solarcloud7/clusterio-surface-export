@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
+import vm from "node:vm";
 import { analyze, performanceCargo } from "./oracle.mjs";
 import { DockerLab } from "./docker-lab.mjs";
-import { loadDestinationCheckpoint } from "./destination-rollback.mjs";
+import { destinationRollbackCase, loadDestinationCheckpoint } from "./destination-rollback.mjs";
 
 const run="se-manual-destination-offline";
 const absent=()=>({present:false,tick:10});
@@ -16,7 +17,8 @@ function report() {
   const outcome={transferId,status:"completed"};
   const checkpoints=Object.fromEntries(["before","after"].map((generation,i)=>[generation,
     {host:2,name:`manual-destination-${generation}`,sha256:String(i+1).repeat(64),marker:{run,generation}}]));
-  return {schemaVersion:1,contract:{schemaVersion:4},case:"restore-old-destination",run,name,transferId,
+  const contract=JSON.parse(readFileSync(new URL("contract.json",import.meta.url)));
+  return {schemaVersion:1,contract,case:"restore-old-destination",run,name,transferId,
     cleanup:{success:true},before:copy(),initial:{source:copy(),destination:absent()},checkpoints,
     outcome,transferred:sample(),control:{load:structuredClone(checkpoints.after),reconciliationReady:true,sample:sample(),outcome},
     rollback:{load:structuredClone(checkpoints.before),observedMs:65010,
@@ -37,6 +39,71 @@ test("completed history cannot hide missing physical copies after destination ro
   assert.ok(result.violations.includes("no physical platform copy in either running world"));
   assert.equal(result.observation.finalHistoryStatus,"completed");
   assert.equal(result.observation.finalSourcePresent,false);assert.equal(result.observation.finalDestinationPresent,false);
+  assert.equal(result.observation.finalDestinationUsable,false);
+});
+
+test("destination rollback summary distinguishes presence from every usability protection",()=>{
+  for(const mutate of [s=>s.platformHidden=true,s=>s.surfaceHidden=true,s=>s.locked=true,
+    s=>s.held=true,s=>s.canary.active=false,s=>s.canary.disabled=true]) {
+    const r=report(),last=r.rollback.samples.at(-1).destination;
+    mutate(last);last.usable=false;
+    const result=analyze(r);
+    assert.equal(result.verdict,"STOP");
+    assert.equal(result.observation.finalDestinationPresent,true);
+    assert.equal(result.observation.finalDestinationUsable,false);
+    assert.ok(result.violations.includes("normal recovery did not leave one usable destination within the observation window"));
+  }
+  assert.equal(analyze(report()).observation.finalDestinationUsable,true);
+});
+
+test("destination rollback uses and validates the report's embedded observation bounds",async()=>{
+  const bounds=r=>r.contract.cases.find(c=>c.id==="restore-old-destination");
+  const longer=report();bounds(longer).observationMs=70000;
+  assert.throws(()=>analyze(longer),/full recovery observation window/);
+  const shorter=report();bounds(shorter).observationMs=60000;
+  shorter.rollback.samples[1].offsetMs=60000;shorter.rollback.observedMs=60010;
+  assert.equal(analyze(shorter).verdict,"PASS");
+  for(const mutate of [r=>delete r.contract.cases,r=>r.contract.cases=[],
+    r=>r.contract.cases.push({...bounds(r)}),r=>bounds(r).observationMs=0,
+    r=>bounds(r).observationMs=NaN,r=>bounds(r).intervalMs=0,
+    r=>bounds(r).maximumSamples=1,r=>bounds(r).maximumSamples=1.5]) {
+    const r=report();mutate(r);
+    assert.throws(()=>analyze(r),/rollback.*bounds|rollback.*contract/);
+    await assert.rejects(destinationRollbackCase({},r,()=>{}),/rollback.*bounds|rollback.*contract/);
+  }
+  await assert.rejects(destinationRollbackCase({run,probe:()=>{throw Error("fixture setup reached");}},shorter,()=>{}),/fixture setup reached/);
+});
+
+test("oversized checkpoints stop at the size guard without retrying or reading the file",async()=>{
+  const lab=new DockerLab(run,"unused");let stats=0,reads=0;
+  lab.lua=()=>({result:{success:true}});
+  const until=lab.until.bind(lab);lab.until=(read,label)=>until(read,label,.001);
+  lab.docker=args=>{
+    let output="";
+    const modules={fs:{statSync:()=>{stats++;return {size:268435457};},
+      readFileSync:()=>{reads++;throw Error("oversized file was read");}},jszip:{},crypto:{}};
+    vm.runInNewContext(args.at(-2),{require:name=>modules[name],process:{argv:["node",args.at(-1)]},
+      console:{log:value=>{output=String(value);}}});
+    return output;
+  };
+  await assert.rejects(lab.checkpoint("manual-oversized",[2]),error=>{
+    assert.match(error.message,/checkpoint exceeds 256 MiB/);
+    assert.doesNotMatch(error.message,/timed out/);
+    assert.equal(error.retryable,false);return true;
+  });
+  assert.equal(stats,1);assert.equal(reads,0);
+});
+
+test("checkpoint retries incomplete writes and still requires a verified digest",async()=>{
+  const lab=new DockerLab(run,"unused");let attempts=0;
+  lab.lua=()=>({result:{success:true}});
+  lab.docker=()=>{
+    if(++attempts===1)throw Error("ZIP still being written");
+    return JSON.stringify({sha256:"a".repeat(64)});
+  };
+  const until=lab.until.bind(lab);lab.until=(read,label)=>until(read,label,2);
+  assert.deepEqual(await lab.checkpoint("manual-pending",[2]),{2:"a".repeat(64)});
+  assert.equal(attempts,2);
 });
 
 test("late recovery cannot erase an earlier absence and one import cannot hide changed cargo",()=>{
