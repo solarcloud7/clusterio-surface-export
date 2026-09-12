@@ -12,11 +12,13 @@ const output=process.argv[2];
 assert.ok(output,'Usage: node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/<candidate-dist>');
 const candidate=resolve(ROOT,output);
 assert.ok(candidate.startsWith(resolve(ROOT,'ci-artifacts')+'/') || candidate.startsWith(resolve(ROOT,'ci-artifacts')+'\\'));
+const packageSource=process.argv[3] ? resolve(ROOT,process.argv[3]) : PLUGIN;
+if(process.argv[3]) assert.ok(packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'/') || packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'\\'));
 
 await withWorkflowLock(async()=>{
   const run=`se-manual-upload-${randomUUID().slice(0,8)}`, directory=join(ROOT,'ci-artifacts',run);
   const bundle=join(directory,'candidate'); mkdirSync(bundle,{recursive:true});
-  for(const part of ['module','package.json','package-lock.json','scripts']) cpSync(join(PLUGIN,part),join(bundle,part),{recursive:true});
+  for(const part of ['module','package.json','package-lock.json','scripts']) cpSync(join(packageSource,part),join(bundle,part),{recursive:true});
   cpSync(candidate,join(bundle,'dist'),{recursive:true});
   const lab=new DockerLab(run,directory,{packageDirectory:bundle,exposeHttp:true});
   const report={run,candidateHash:hashTree(bundle),started:new Date().toISOString(),
@@ -58,11 +60,12 @@ await withWorkflowLock(async()=>{
 
     const incomplete=begin('save-receiving');
     const checkpoint=await lab.checkpoint('manual-upload-receiving',[2]);
-    await lab.load(2,'manual-upload-receiving');
+    lab.ctl('instance','config','set',lab.hosts[2].instance,'instance.auto_start','false');
+    await lab.load(2,'manual-upload-receiving',{crash:true});
     epoch=await lab.until(()=>{const e=lab.lua(2,'return {success=true,epoch=(storage.import_sessions or {}).epoch}').result.epoch;return e!==incomplete.epoch&&e;},'new sender epoch');
     sequence=0;
     assert.equal(call('status',{attemptId:incomplete.attemptId}).state,'aborted');
-    report.cases.push({name:'saved receiving buffer retired on new sender epoch',checkpoint,status:'PASS'});save();
+    report.cases.push({name:'saved receiving buffer retired after host process crash and new sender epoch',checkpoint,status:'PASS'});save();
 
     const name=`transfer-cleanup-${run}-queued`;
     const before=lab.probe(1,'build',name).state;assert.deepEqual(before.cargo,expectedCargo);
@@ -143,7 +146,7 @@ await withWorkflowLock(async()=>{
     assert.equal(report.standaloneRestart.status,'awaiting_completion');
     // The accepted receipt and job are both saved. Reload resumes that job, not a new upload.
     report.acceptedCheckpoint=await lab.checkpoint('manual-upload-accepted',[2]);
-    await lab.load(2,'manual-upload-accepted');
+    await lab.load(2,'manual-upload-accepted',{crash:true});
     report.standaloneOutcome=await terminal(lab,restored.operationId);assert.equal(report.standaloneOutcome.status,'completed');
     report.restoredCargo=lab.probe(2,'read',restoredName).state;
     assert.deepEqual(report.restoredCargo.cargo,expectedCargo);assert.equal(report.restoredCargo.usable,true);

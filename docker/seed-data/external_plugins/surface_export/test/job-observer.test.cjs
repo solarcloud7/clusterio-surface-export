@@ -12,11 +12,11 @@ test("job observations distinguish queue, waits, no progress and new process epo
  job.state="running"; job.observedTick=10000;
  assert.equal(observer.observe("operation",job,30000).message,"No progress observed");
  job.work.entities=1;
- assert.equal(observer.observe("operation",job,30000).message,"Lua work progressing");
+ assert.equal(observer.observe("operation",job,30000).message,"Lua job running");
  now+=40000; job.state="waiting"; job.waitUntilTick=10001;
  assert.equal(observer.observe("operation",job,30000).message,"Waiting for a scheduled Lua phase");
  job.state="running"; job.epoch="second";
- assert.equal(observer.observe("operation",job,30000).message,"Lua work progressing");
+ assert.equal(observer.observe("operation",job,30000).message,"Lua job running");
  assert.equal(observer.observe("operation",{state:"unavailable"},30000).message,"Status unavailable");
 });
 

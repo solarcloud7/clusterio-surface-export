@@ -76,7 +76,7 @@ Ownership recovery keeps its separate 30-second cadence.
 |---|---|
 | Waiting in Lua queue | Accepted work has not received a scheduler step. |
 | Waiting for a scheduled Lua phase | A persisted deferred-wait boundary is still ahead. |
-| Lua work progressing | Persisted phase or work counters changed within the observation threshold. |
+| Lua job running | The job has received a scheduler step. The first observation establishes a baseline; later phase or work changes reset the no-progress threshold. |
 | No progress observed | Running work has unchanged counters across that threshold. |
 | Status unavailable | The instance, protocol response, job, or retained result cannot be verified. |
 | Lua work completed; awaiting confirmed resolution | Job completion alone has not settled ownership. |
@@ -115,8 +115,21 @@ resources. Its `ci-artifacts/<run>/result.json` records the candidate hash, pinn
 case outcomes, physical observations, and cleanup result. `commands.jsonl` and the browser
 capture accompany the result. A nonzero exit is not a passing acceptance result.
 
+An optional second argument selects an extracted plugin package under `ci-artifacts`
+as the Lua/package source. Use it with that package's built `dist` to test committed
+artifacts without including unrelated working-file changes:
+
+```powershell
+node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/upload-pr-runtime/dist ci-artifacts/upload-pr-runtime
+```
+
+The fixture checks host process crashes after receiving and accepted-job checkpoints,
+controller restart during queued work, and a queued successor proceeding only after
+the first transfer resolves. Accepted work resumes from its checkpoint rather than
+being uploaded again. It also saves and reloads failed-preparation cleanup obligations.
+
 Scheduler pauses and lost replies are injected at module/transport boundaries. Cargo,
-Factorio execution, saves, and controller restarts are real. Capacity cases reserve
+Factorio execution, saves, and process restarts are real. Capacity cases reserve
 declared sizes without allocating a 1 GiB test payload. Unit tests separately exercise
 receipt pruning and malformed protocol calls. None of these tests establishes a universal
 memory, throughput, or crash-safety guarantee.

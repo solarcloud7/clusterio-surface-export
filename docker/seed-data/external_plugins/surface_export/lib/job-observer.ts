@@ -37,7 +37,7 @@ export class JobObserver {
 		const stalled = this.now() - this.progress.get(key)!.at >= thresholdMs;
 		const message = status.state === "queued" ? "Waiting in Lua queue"
 			: status.state === "waiting" ? "Waiting for a scheduled Lua phase"
-				: status.state === "running" ? (stalled ? "No progress observed" : "Lua work progressing")
+				: status.state === "running" ? (stalled ? "No progress observed" : "Lua job running")
 					: status.state === "completed" ? "Lua work completed; awaiting confirmed resolution"
 						: status.state === "failed" ? "Lua job failed; awaiting recovery result"
 							: status.state === "interrupted" ? "Lua job interrupted; protections retained"
