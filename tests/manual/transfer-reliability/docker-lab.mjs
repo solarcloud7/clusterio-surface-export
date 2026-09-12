@@ -65,7 +65,15 @@ export class DockerLab {
   }
   mutateContainer(verb, name, extra = []) {
     this.assertOwned("container", name);
-    return this.docker([verb, ...extra, name], {timeout:60_000});
+    const result=this.docker([verb, ...extra, name], {timeout:60_000});
+    if(verb==="start" && name===this.controller) this.refreshBrowserAddress();
+    return result;
+  }
+  refreshBrowserAddress() {
+    if(!this.exposeHttp) return;
+    // Docker may allocate a different ephemeral published port after a restart.
+    const address=this.docker(["port",this.controller,"8080/tcp"]).trim();
+    assert.match(address,/^127\.0\.0\.1:\d+$/);this.url=`http://${address}`;
   }
   ctl(...args) {
     return this.docker(["exec", this.controller, "npx", "clusterioctl", "--log-level", "error",
@@ -150,10 +158,7 @@ export class DockerLab {
       "-v",`${tokens}:/clusterio/tokens`,"-v",`${seedVolume}:/clusterio/seed-data:ro`,
       "-v",`${join(ROOT,"docker/seed-data/mods")}:/clusterio/seed-data/mods:ro`,"-v",`${plugins}:/clusterio/external_plugins`,this.image]);
     this.containers.push(this.controller);
-    if(this.exposeHttp) {
-      const address=this.docker(["port",this.controller,"8080/tcp"]).trim();
-      assert.match(address,/^127\.0\.0\.1:\d+$/);this.url=`http://${address}`;
-    }
+    this.refreshBrowserAddress();
     await this.until(() => this.docker(["exec",this.controller,"curl","-sf","http://localhost:8080/"]).length > 0,"controller HTTP",180);
     for (const host of [1,2]) {
       const h=this.hosts[host];
