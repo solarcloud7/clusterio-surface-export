@@ -70,6 +70,7 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	lateDestinationCleanup?: boolean;
 	sourceRollback?: import("./recovery").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
@@ -157,6 +158,7 @@ export interface HostNodeModel {
 export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
+	lateDestinationCleanup?: boolean;
 	sourceRollback?: import("./recovery").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;

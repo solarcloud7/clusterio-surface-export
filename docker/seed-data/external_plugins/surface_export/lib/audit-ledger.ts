@@ -21,6 +21,7 @@ type RowInput = {
 	eventCount: number;
 	lastEventAt: number | null;
 	info: {
+		lateDestinationCleanup?: boolean | null;
 		timingPendingRecovery?: boolean | null;
 		sourceRestored?: boolean;
 		sourceRollback?: import("../shared/recovery").SourceRollback | null;
@@ -75,6 +76,7 @@ export function buildAuditRow(input: RowInput): AuditRow {
 	if (typeof info.timingPendingRecovery === "boolean") row.timingPendingRecovery = info.timingPendingRecovery;
 	if (typeof info.sourceRestored === "boolean") row.sourceRestored = info.sourceRestored;
 	if (info.sourceRollback) row.sourceRollback = info.sourceRollback;
+	if (typeof info.lateDestinationCleanup === "boolean") row.lateDestinationCleanup = info.lateDestinationCleanup;
 	return row;
 }
 

@@ -59,7 +59,8 @@ export function shipPhaseFor(transfer: string | PositionedTransfer | null | unde
 	if (transfer && typeof transfer === "object") {
 		const unresolved = transfer.timingPendingRecovery
 			|| transfer.sourceRollback === "attempted" || transfer.sourceRollback === "failed";
-		if (status === "cleanup_failed" && (unresolved || transfer.registrySource === "active")) return CLEANUP_PENDING;
+		if (status === "cleanup_failed"
+			&& (unresolved || transfer.lateDestinationCleanup || transfer.registrySource === "active")) return CLEANUP_PENDING;
 		if (status === "failed" || status === "error") {
 			if (unresolved) return RECOVERY_PENDING;
 			if (transfer.sourceRollback === "succeeded" || transfer.sourceRestored) return RETURNED;
@@ -69,6 +70,7 @@ export function shipPhaseFor(transfer: string | PositionedTransfer | null | unde
 }
 
 export interface PositionedTransfer {
+	lateDestinationCleanup?: boolean;
 	sourceRollback?: import("./recovery").SourceRollback;
 	registrySource?: "active" | "persisted";
 	timingPendingRecovery?: boolean;

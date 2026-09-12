@@ -56,6 +56,8 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 		...(["attempted", "succeeded", "failed"].includes(String(transferInfo.sourceRollback))
 			? { sourceRollback: transferInfo.sourceRollback as TransferSummary["sourceRollback"] } : {}),
 		...(typeof transferInfo.sourceRestored === "boolean" ? { sourceRestored: transferInfo.sourceRestored } : {}),
+		...(typeof transferInfo.lateDestinationCleanup === "boolean"
+			? { lateDestinationCleanup: transferInfo.lateDestinationCleanup } : {}),
 		...(typeof transferInfo.timingPendingRecovery === "boolean"
 			? { timingPendingRecovery: transferInfo.timingPendingRecovery } : {}),
 		...(transferInfo.jobObservation && typeof transferInfo.jobObservation === "object"
@@ -63,7 +65,7 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 		...(["active", "persisted"].includes(String(transferInfo.registrySource))
 			? { registrySource: transferInfo.registrySource as TransferSummary["registrySource"] } : {}),
 		operationType: getString(transferInfo, "operationType", "transfer") as TransferSummary["operationType"],
-	exportId: getString(transferInfo, "exportId", null),
+		exportId: getString(transferInfo, "exportId", null),
 		artifactSizeBytes: getNumber(transferInfo, "artifactSizeBytes", null),
 		downloadable: false,
 		platformName: getString(transferInfo, "platformName", "Unknown"),

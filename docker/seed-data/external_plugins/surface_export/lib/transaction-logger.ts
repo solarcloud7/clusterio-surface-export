@@ -8,7 +8,7 @@ import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransact
 import { TimingClock } from "./timing";
 import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
 import { getErrorMessage, PLUGIN_NAME } from "../helpers";
-import { sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery";
+import { lateDestinationCleanupFromEvents, sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery";
 
 export class TransactionLogger {
 	private recoveryHydrated = new WeakSet<object>();
@@ -245,16 +245,21 @@ export class TransactionLogger {
 		this.plugin = plugin;
 	}
 
-	private hydrateRollback(transfer: { sourceRollback?: SourceRollback | null }, events: { eventType?: unknown }[]) {
+	private hydrateRecovery(
+		transfer: { sourceRollback?: SourceRollback | null; lateDestinationCleanup?: boolean | null },
+		events: { eventType?: unknown; settledStatus?: unknown; newStatus?: unknown }[],
+	) {
 		if (!this.recoveryHydrated.has(transfer)) {
 			transfer.sourceRollback ??= sourceRollbackFromEvents(events);
+			transfer.lateDestinationCleanup ??= lateDestinationCleanupFromEvents(events);
 			this.recoveryHydrated.add(transfer);
 		}
 	}
 
 	buildTransferInfo(transfer: ActiveTransfer) {
-		this.hydrateRollback(transfer, this.plugin.transactionLogs.get(transfer.transferId) || []);
+		this.hydrateRecovery(transfer, this.plugin.transactionLogs.get(transfer.transferId) || []);
 		return {
+			lateDestinationCleanup: transfer.lateDestinationCleanup,
 			sourceRollback: transfer.sourceRollback,
 			timingPendingRecovery: transfer.timingPendingRecovery,
 			sourceRestored: !transfer.timingPendingRecovery && ["failed", "error"].includes(transfer.status)
@@ -307,6 +312,7 @@ export class TransactionLogger {
 			timingPendingRecovery: info.timingPendingRecovery,
 			sourceRestored: info.sourceRestored,
 			sourceRollback: info.sourceRollback,
+			lateDestinationCleanup: info.lateDestinationCleanup,
 			jobObservation: transfer.jobObservation,
 			transferId,
 			operationType: info.operationType,
@@ -444,6 +450,7 @@ export class TransactionLogger {
 					timingPendingRecovery: row.timingPendingRecovery,
 					sourceRestored: row.sourceRestored,
 					sourceRollback: row.sourceRollback,
+					lateDestinationCleanup: row.lateDestinationCleanup,
 					...(row.observedDurationMs !== undefined ? { observedDurationMs: row.observedDurationMs } : {}),
 					startedAt: row.startedAt || row.savedAt || Date.now(),
 					completedAt: row.completedAt || null,
@@ -458,7 +465,7 @@ export class TransactionLogger {
 
 		for (const persistedLog of this.plugin.persistedTransactionLogs) {
 			const transferInfo = persistedLog.transferInfo || {};
-			this.hydrateRollback(transferInfo, persistedLog.events || []);
+			this.hydrateRecovery(transferInfo, persistedLog.events || []);
 			const existing = byId.get(persistedLog.transferId);
 			const ledgerRow = this.plugin.auditIndex.get(persistedLog.transferId);
 			// A start row is not a verdict. Retained terminal detail can survive a
@@ -477,6 +484,9 @@ export class TransactionLogger {
 					}
 					if (existing.sourceRestored === undefined) existing.sourceRestored = transferInfo.sourceRestored;
 					if (existing.sourceRollback === undefined) existing.sourceRollback = transferInfo.sourceRollback;
+					if (existing.lateDestinationCleanup === undefined) {
+						existing.lateDestinationCleanup = transferInfo.lateDestinationCleanup;
+					}
 				}
 				continue;
 			}
@@ -497,6 +507,7 @@ export class TransactionLogger {
 				timingPendingRecovery: transferInfo.timingPendingRecovery,
 				sourceRestored: transferInfo.sourceRestored,
 				sourceRollback: transferInfo.sourceRollback,
+				lateDestinationCleanup: transferInfo.lateDestinationCleanup,
 				...(transferInfo.observedDurationMs !== undefined ? { observedDurationMs: transferInfo.observedDurationMs } : {}),
 				startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
 				completedAt: transferInfo.completedAt || null,
@@ -527,6 +538,7 @@ export class TransactionLogger {
 		const observed = this.plugin.activeTransfers.get(transferId);
 		const rollback = sourceRollbackFromEvents([{ eventType }]);
 		if (observed && rollback) observed.sourceRollback = rollback;
+		if (observed && lateDestinationCleanupFromEvents([{ eventType, ...data }])) observed.lateDestinationCleanup = true;
 		if (observed) this.finishObservation(observed);
 		if (!this.plugin.transactionLogs.has(transferId)) {
 			this.plugin.transactionLogs.set(transferId, []);

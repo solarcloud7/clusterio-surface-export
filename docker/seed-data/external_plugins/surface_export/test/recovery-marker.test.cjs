@@ -32,6 +32,10 @@ test("historical cleanup failures expire while unresolved markers start at their
 	const row = { transferId: "old-cleanup", status: "cleanup_failed", registrySource: "persisted",
 		operationType: "transfer", sourceInstanceId: 1, targetInstanceId: 2 };
 	assert.equal(motion.shipsInFlight([row], 100000).length, 0);
+	const late = { ...row, lateDestinationCleanup: true, sourceRollback: "succeeded", timingPendingRecovery: false };
+	assert.equal(motion.shipsInFlight([late], 100000).length, 1);
+	assert.equal(motion.shipExpiryMs(late, 100000), null);
+	assert.equal(motion.shipsInFlight([{ ...late, status: "completed" }], 100000).length, 0);
 	const live = { ...row, registrySource: "active" };
 	assert.equal(motion.shipsInFlight([live], 100000).length, 1);
 	for (const reversed of [true, false]) {
@@ -50,10 +54,12 @@ test("debug scenarios and replay candidates preserve recovery presentation", () 
 		{ status: "failed", sourceRollback: "succeeded" },
 		{ status: "failed", sourceRollback: "failed" },
 		{ status: "cleanup_failed", timingPendingRecovery: true },
+		{ status: "cleanup_failed", lateDestinationCleanup: true, registrySource: "persisted" },
 	]) {
 		const ships = debug.scenarioToShips({ instances: [{}, {}], ships: [{ from: 0, to: 1, ...presentation }] });
 		const candidate = debug.replayCandidates(ships)[0];
 		assert.equal(shipPhaseFor(candidate).label, shipPhaseFor(presentation).label);
+		assert.equal(shipPhaseFor(candidate).terminal, shipPhaseFor(presentation).terminal);
 		assert.equal(shipPhaseFor(debug.replayShips(ships, [candidate.transferId])[0]).label,
 			shipPhaseFor(presentation).label);
 	}
@@ -78,6 +84,12 @@ test("log summary conversion replaces stale rollback claims and preserves explic
 		assert.equal(rows[0].registrySource, "active");
 		assert.equal(rows[0].jobObservation.message, "Recorded job state");
 		assert.equal(shipPhaseFor(rows[0]).terminal, restored);
+	}
+	for (const lateDestinationCleanup of [true, false]) {
+		rows = utils.mergeTransferSummary(rows, utils.summaryFromTransferInfo({ transferId: "live",
+			status: "cleanup_failed", registrySource: "persisted", lateDestinationCleanup }));
+		assert.equal(rows[0].lateDestinationCleanup, lateDestinationCleanup);
+		assert.equal(shipPhaseFor(rows[0]).terminal, !lateDestinationCleanup);
 	}
 });
 
