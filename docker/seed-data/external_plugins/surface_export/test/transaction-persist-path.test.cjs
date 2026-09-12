@@ -78,6 +78,33 @@ function makeHarness({ detailCap, extraLogIds = [] } = {}) {
 	return { txLogger: new TransactionLogger(plugin), plugin, transferId, file };
 }
 
+test("rollback evidence is hydrated once, updated by events, and survives detail retention", async () => {
+	const { txLogger, plugin, transferId, file } = makeHarness();
+	const transfer = plugin.activeTransfers.get(transferId);
+	transfer.status = "failed";
+	const events = [{ eventType: "rollback_failed" }];
+	let reads = 0;
+	plugin.transactionLogs.set(transferId, new Proxy(events, { get(target, key) {
+		if (key === "0") reads++;
+		return Reflect.get(target, key);
+	} }));
+	for (let i = 0; i < 5; i++) assert.equal(txLogger.buildTransferInfo(transfer).sourceRollback, "failed");
+	assert.equal(reads, 1);
+	await txLogger.persistTransactionLog(transferId);
+	const recorded = plugin.auditRows.at(-1);
+	assert.equal(recorded.sourceRollback, "failed");
+	plugin.activeTransfers.clear();
+	plugin.persistedTransactionLogs = [];
+	plugin.auditIndex.set(transferId, recorded);
+	assert.equal(txLogger.getTransferSummaries().find(row => row.transferId === transferId).sourceRollback, "failed");
+	plugin.activeTransfers.set(transferId, transfer);
+	txLogger.logTransactionEvent(transferId, "rollback_success", "acknowledged");
+	assert.equal(txLogger.buildTransferInfo(transfer).sourceRollback, "succeeded");
+	assert.equal(txLogger.buildTransferInfo(transfer).sourceRestored, true);
+	await txLogger.persistTransactionLog(transferId);
+	assert.equal(JSON.parse(fs.readFileSync(file, "utf8"))[0].transferInfo.sourceRollback, "succeeded");
+});
+
 test("the ledger row is written BEFORE the detail entry", async () => {
 	const { txLogger, transferId } = makeHarness();
 

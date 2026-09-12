@@ -84,6 +84,27 @@ function makeLogger({ active = [], persisted = [], extraRows = [], dropLedgerRow
 
 const byId = (summaries) => new Map(summaries.map(s => [s.transferId, s]));
 
+test("live transfer and log emissions identify active cleanup failures without waiting for a tree refresh", () => {
+	const { SubscriptionManager } = require(path.join(distNode, "lib", "subscription-manager.js"));
+	const { shipPhaseFor } = require(path.join(distNode, "shared", "transfer-status.js"));
+	const logger = makeLogger({ active: [{ transferId: ACTIVE_ID, status: "cleanup_failed" }] });
+	const plugin = logger.plugin, emitted = [];
+	plugin.txLogger = logger;
+	plugin.transferRevision = 0;
+	plugin.logRevision = 0;
+	plugin.surfaceExportSubscriptions = new Map([[{ send: event => emitted.push(event) }, { transfers: true, logs: true }]]);
+	const manager = new SubscriptionManager(plugin, { RateLimiter: class { activate() {} cancel() {} } },
+		require(path.join(distNode, "messages.js")));
+	const transfer = plugin.activeTransfers.get(ACTIVE_ID);
+	transfer.transferId = ACTIVE_ID;
+	manager.emitTransferUpdate(transfer);
+	assert.equal(emitted[0].transfer.registrySource, "active");
+	assert.equal(shipPhaseFor(emitted[0].transfer).terminal, false);
+	manager.emitLogUpdate(ACTIVE_ID, { eventType: "transfer_failed", timestampMs: 100 });
+	assert.equal(emitted[1].transferInfo.registrySource, "active");
+	assert.equal(shipPhaseFor(emitted[1].transferInfo).terminal, false);
+});
+
 test("gateway summaries preserve pending recovery and only expose acknowledged source recovery", () => {
 	const logger=makeLogger({active:[{transferId:ACTIVE_ID,status:"error"}]});
 	const transfer=logger.plugin.activeTransfers.get(ACTIVE_ID);
@@ -94,7 +115,8 @@ test("gateway summaries preserve pending recovery and only expose acknowledged s
 	assert.equal(row.timingPendingRecovery,true);assert.equal(row.sourceRestored,false);
 	transfer.timingPendingRecovery=false;
 	row=logger.getTransferSummaries()[0];assert.equal(row.sourceRestored,true);
-	logger.plugin.transactionLogs.get(ACTIVE_ID).push({eventType:"rollback_failed"});
+	logger.plugin.subscriptions = { emitLogUpdate() {} };
+	logger.logTransactionEvent(ACTIVE_ID, "rollback_failed", "unlock rejected");
 	assert.equal(logger.getTransferSummaries()[0].sourceRestored,false);
 });
 test("terminal ledger summaries keep recovery flags across detail eviction and older ledger formats",()=>{

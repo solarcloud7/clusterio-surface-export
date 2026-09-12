@@ -2,7 +2,7 @@ import type { TransferSummary } from "../view-models";
 import { shipPhaseFor } from "../../shared/transfer-status";
 import type { ShipTone } from "../../shared/transfer-status";
 
-export { groupEdgeShips, shipPhaseFor } from "../../shared/transfer-status";
+export { groupEdgeShips, shipPhaseFor, shipLabel, initialShipDistance } from "../../shared/transfer-status";
 export type { EdgeShipGroups, EdgeStatusMarker, ShipPhase, ShipTone } from "../../shared/transfer-status";
 
 const LEGEND_LABELS: Record<ShipTone, string> = {

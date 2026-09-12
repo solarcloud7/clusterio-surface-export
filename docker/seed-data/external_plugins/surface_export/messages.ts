@@ -1530,6 +1530,7 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	sourceRollback?: import("./shared/recovery").SourceRollback;
  destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
 	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;

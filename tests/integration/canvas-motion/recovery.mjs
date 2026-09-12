@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-/** Exercise the production edge renderer without modifying any transfer or gateway. */
 export async function checkRecoveryPreview(page) {
  await page.getByRole('button',{name:'Preview round trip',exact:true}).click();
  await page.getByRole('button',{name:'Pause',exact:true}).click();
@@ -11,7 +10,7 @@ export async function checkRecoveryPreview(page) {
   return el && Math.abs(parseFloat(getComputedStyle(el).offsetDistance)-50)<.001;
  });
  const marker=scene.locator('.surface-export-edge-status');
- assert.match(await marker.getAttribute('title'),/recovery needs attention/);
+ assert.match(await marker.getAttribute('title'),/cleanup needs attention/);
  assert.doesNotMatch(await marker.getAttribute('title'),/arrived|returned/);
  await page.waitForTimeout(10500);
  assert.equal(await marker.count(),1);

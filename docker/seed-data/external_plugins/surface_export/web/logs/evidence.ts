@@ -1,6 +1,7 @@
 import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
 import type { EntityEvidence } from "../../shared/entity-evidence";
 import { buildDetailedLogSummary, buildExpectedActualRows } from "../utils";
+import { sourceRollbackFromEvents } from "../../shared/recovery";
 
 export function record(value: unknown): JsonObject {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
@@ -80,10 +81,10 @@ export function evidence(row: TransferSummary, detail?: LogDetail) {
 		skipped: measuredCount(placement.entities_skipped),
 	};
 	const events = retained ? detail?.events || [] : [];
-	const recovery = [...events].reverse().find(event => ["rollback_success", "rollback_failed", "rollback_attempt"].includes(String(event.eventType)));
-	const recoveryText = recovery?.eventType === "rollback_success" ? "Rollback succeeded"
-		: recovery?.eventType === "rollback_failed" ? "Rollback failed — attention required"
-			: recovery?.eventType === "rollback_attempt" ? "Rollback attempted; outcome not recorded" : null;
+	const recovery = row.sourceRollback ?? detail?.transferInfo?.sourceRollback ?? sourceRollbackFromEvents(events);
+	const recoveryText = recovery === "succeeded" ? "Rollback succeeded"
+		: recovery === "failed" ? "Rollback failed — attention required"
+			: recovery === "attempted" ? "Rollback attempted; outcome not recorded" : null;
 	const verified = validation.success === true && items.state === "passed" && fluids.state === "passed";
 	const verb = operation === "import" ? "Imported" : "Arrived";
 	const outcome = status === "cleanup_failed" ? "Cleanup needs attention"

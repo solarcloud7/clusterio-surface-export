@@ -70,7 +70,7 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
-	/** Display evidence, never an authorization to change platform ownership. */
+	sourceRollback?: import("./recovery").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
 	jobObservation?: import("./job-status").JobObservation;
@@ -157,6 +157,7 @@ export interface HostNodeModel {
 export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
+	sourceRollback?: import("./recovery").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
 	observedDurationMs?: number | null;

@@ -1,4 +1,4 @@
-import { getErrorMessage, toAsciiJson } from "../helpers";
+import { getErrorMessage, RCON_CHUNK_SIZE, toAsciiJson } from "../helpers";
 
 export const UPLOAD_PROTOCOL = 1;
 export interface UploadLimits {
@@ -45,7 +45,8 @@ export class UploadSessions {
 		const limits = reply.limits;
 		if (!limits || ![limits.chunkBytes, limits.maxUploadBytes, limits.maxBufferedBytes, limits.maxSessions]
 			.every(value => Number.isSafeInteger(value) && value > 0)
-			|| limits.chunkBytes > limits.maxUploadBytes || limits.maxUploadBytes > limits.maxBufferedBytes) {
+			|| limits.chunkBytes > RCON_CHUNK_SIZE || limits.chunkBytes > limits.maxUploadBytes
+			|| limits.maxUploadBytes > limits.maxBufferedBytes) {
 			throw new Error("Invalid or missing receiver upload limits; deploy matching Node and Lua");
 		}
 		this.limits = Object.freeze({ ...limits });

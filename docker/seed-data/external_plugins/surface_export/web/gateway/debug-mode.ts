@@ -162,7 +162,7 @@ export function mockShips(routes: readonly MockShipRoute[], phases: readonly str
 	}).filter(ship => ship.sourceInstanceId !== ship.targetInstanceId) as ShipTransfer[];
 }
 
-export type ReplayCandidate = {
+export type ReplayCandidate = import("../../shared/transfer-status").PositionedTransfer & {
 	transferId: string;
 	status: string;
 	sourceInstanceId: number;
@@ -178,6 +178,11 @@ export function replayCandidates(summaries: readonly TransferSummary[] | null | 
 			&& Number.isFinite(summary.targetInstanceId)
 			&& shipPhaseFor(summary) !== null)
 		.map(summary => ({
+			timingPendingRecovery: summary.timingPendingRecovery,
+			sourceRestored: summary.sourceRestored,
+			sourceRollback: summary.sourceRollback,
+			registrySource: summary.registrySource,
+			jobObservation: summary.jobObservation,
 			transferId: summary.transferId,
 			status: String(summary.status),
 			sourceInstanceId: Number(summary.sourceInstanceId),
@@ -210,7 +215,7 @@ export type DebugScenario = {
 		platforms?: Array<string | { name?: string; location?: string; status?: string; locked?: boolean }>;
 	}>;
 	links?: Array<[number, number]>;
-	ships?: Array<{ from: number; to: number; status: string }>;
+	ships?: Array<import("../../shared/transfer-status").PositionedTransfer & { from: number; to: number; status: string }>;
 };
 
 const SCENARIO_HOST = "scenario (debug)";
@@ -274,6 +279,11 @@ export function scenarioToShips(scenario: DebugScenario): ShipTransfer[] {
 	return (scenario.ships || [])
 		.filter(ship => ship.from !== ship.to)
 		.map((ship, index) => ({
+			timingPendingRecovery: ship.timingPendingRecovery,
+			sourceRestored: ship.sourceRestored,
+			sourceRollback: ship.sourceRollback,
+			registrySource: ship.registrySource,
+			jobObservation: ship.jobObservation,
 			transferId: `${MOCK_SHIP_PREFIX}scenario-${index}-${ship.status}`,
 			operationType: "transfer" as const,
 			status: ship.status,
