@@ -29,6 +29,8 @@ An attempt has a sender startup epoch and increasing sequence number. It also ca
 the operation ID; canonical transfer IDs and platform payload formats are unchanged.
 Begin validates immutable metadata. Chunk calls cannot create attempts. Identical
 chunks acknowledge existing progress; conflicting chunks are rejected.
+The Node sender encodes the small request envelope as JSON and passes chunk bytes
+separately in a delimiter-safe Lua string, avoiding a second JSON escape of the payload.
 
 Commit records an admitting state and reserves a job ID before preparation. Successful
 admission retains that association and releases the chunks. A repeated commit returns
@@ -58,6 +60,11 @@ Startup initializes uploads after recovery policy reconciliation. A new sender e
 retires receiving buffers from the previous epoch, preserving accepted jobs and uncertain
 admissions. Legacy unowned buffers are retired with a diagnostic. Deploy matching Node
 and save-patched Lua together; the old implicit chunk endpoint rejects callers explicitly.
+
+An admitting attempt is reconciled when its reserved job ID gains matching operation
+evidence in a live job or retained result. It then becomes accepted and no longer uses
+a receiving slot. Missing or mismatched evidence keeps the admission unresolved; neither
+age nor a new sender epoch permits discarding its ownership record.
 
 ## Status observation
 
@@ -96,6 +103,14 @@ Record retention keeps unresolved operations and their retry guards in memory; t
 exports complete only when their canonical source artifact is stored, or fail on explicit
 source failure evidence. A completed Lua job alone does not prove the download is available.
 The confirmation timestamp is recorded without reconstructing a duration across the restart.
+An explicit failure to send the Lua export notification is retained as a failed job
+result. The controller can then resolve the failed request through its existing failure
+path. A completed job with delivery still in flight is not treated as proof of failure.
+
+Unresolved records remain eligible for status observation. Online instances therefore
+continue receiving bounded status requests until resolution, even when the original
+result was lost. Known offline instances produce an unavailable observation without an
+RCON request. Unavailable reads do not reset the last confirmed progress baseline.
 
 Unfinished transfer destinations are hidden and paused before yielding. Temporary hiding
 is not a validated destination hold. Transfer-owned source locks do not expire solely
@@ -128,6 +143,10 @@ artifacts without including unrelated working-file changes:
 ```powershell
 node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/upload-pr-runtime/dist ci-artifacts/upload-pr-runtime
 ```
+
+A fourth argument, `notification` or `admitting`, runs only the corresponding review
+regression in the same disposable lab. The default runs the complete fixture. Results
+record the selection so a focused pass cannot be confused with full acceptance.
 
 The fixture checks host process crashes after receiving and accepted-job checkpoints,
 controller restart during queued work, and a queued successor proceeding only after

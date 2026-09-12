@@ -510,6 +510,7 @@ local function publish_completion(job)
 		PhaseProfiler.discard(job.job_id)
 	end
 
+	local notification_error
 	if clusterio_api and clusterio_api.send_json then
 		local event_payload = {
 			export_id = export_id,
@@ -545,14 +546,17 @@ local function publish_completion(job)
 		if send_success then
 			log("[send_json] Export notification sent successfully")
 		else
+			notification_error = "Export notification failed: " .. tostring(send_err)
 			log(string.format("[send_json ERROR] Failed to send notification: %s", tostring(send_err)))
 		end
 	else
+		notification_error = "Export notification failed: Clusterio API unavailable"
 		log("[WARN] clusterio_api not available, export notification not sent to plugin")
 	end
 
 	storage.async_job_results[job.job_id] = {
-		status = "complete",
+		status = notification_error and "failed" or "complete",
+		error = notification_error,
 		complete = true,
 		type = "export",
 		job_id = job.job_id,

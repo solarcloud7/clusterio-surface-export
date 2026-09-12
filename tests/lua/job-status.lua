@@ -23,3 +23,22 @@ assert(status.read("import_1").state=="unavailable")
 storage.async_job_results.import_1={status="complete",validation={success=false}}
 assert(status.read("import_1").state=="failed","completed processing is not a successful import")
 print("PASS: job state uses persisted phases, work cursors and exact ticks")
+
+local request
+local original_require=require
+function require(name)
+  if name=="modules/surface_export/core/import-session" then return {VERSION=1} end
+  if name=="modules/surface_export/core/async-processor" then return {get_job_status=status.read} end
+  if name=="modules/surface_export/utils/json-compat" then return {json_to_table_compat=function() return request end} end
+  return original_require(name)
+end
+local upload=dofile("docker/seed-data/external_plugins/surface_export/module/interfaces/remote/upload-session.lua")
+storage.async_jobs.unowned={type="import",job_id="unowned",setup_pending=true,current_index=42}
+request={version=1,jobs={{jobId="unowned",operationId="another-operation"}}}
+local response=upload.jobs("request")
+assert(response.jobs[1].state=="unavailable" and response.jobs[1].work==nil,
+  "unowned jobs cannot acquire the caller's identity")
+request={version=999,jobs={}}
+local ok,err=pcall(upload.jobs,"request")
+assert(ok and err.success==false and err.error:find("Unsupported",1,true),"version rejection needs an error envelope")
+print("PASS: status identity and protocol errors remain explicit")

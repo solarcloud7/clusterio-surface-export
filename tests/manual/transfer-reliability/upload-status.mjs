@@ -6,6 +6,7 @@ import { DockerLab, ROOT, PLUGIN, hashTree } from './docker-lab.mjs';
 import { summary, terminal, sample, recoveryCase } from './cases.mjs';
 import { expectedCargo } from '../../integration/transfer-cleanup/oracle.mjs';
 import { withWorkflowLock } from '../../../tools/shared/workflow-lock.mjs';
+import { exportNotificationFailure, resolvedAdmissions } from './upload-review-cases.mjs';
 
 // Explicit candidate output; never builds, deploys, or reads the development cluster's saves.
 const output=process.argv[2];
@@ -14,6 +15,8 @@ const candidate=resolve(ROOT,output);
 assert.ok(candidate.startsWith(resolve(ROOT,'ci-artifacts')+'/') || candidate.startsWith(resolve(ROOT,'ci-artifacts')+'\\'));
 const packageSource=process.argv[3] ? resolve(ROOT,process.argv[3]) : PLUGIN;
 if(process.argv[3]) assert.ok(packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'/') || packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'\\'));
+const selection=process.argv[4]||'all';
+assert.ok(['all','notification','admitting'].includes(selection),'Unknown acceptance case selection');
 
 await withWorkflowLock(async()=>{
   const run=`se-manual-upload-${randomUUID().slice(0,8)}`, directory=join(ROOT,'ci-artifacts',run);
@@ -21,10 +24,10 @@ await withWorkflowLock(async()=>{
   for(const part of ['module','package.json','package-lock.json','scripts']) cpSync(join(packageSource,part),join(bundle,part),{recursive:true});
   cpSync(candidate,join(bundle,'dist'),{recursive:true});
   const lab=new DockerLab(run,directory,{packageDirectory:bundle,exposeHttp:true});
-  const report={run,candidateHash:hashTree(bundle),started:new Date().toISOString(),
+  const report={run,selection,candidateHash:hashTree(bundle),started:new Date().toISOString(),
     invariant:'Receiving buffers are bounded and disposable; accepted attempts keep one job; queue/status observation never releases either platform.',
     oracle:'Independent physical fixture cargo, actual Lua job/attempt storage, controller history and browser status.',
-    bounds:{startupSeconds:600,acceptanceSeconds:600,rconBytes:32768},
+    bounds:{startupSeconds:600,acceptanceSeconds:720,rconBytes:32768},
     limitations:['Scheduler delay and lost replies are deliberately injected; Factorio processing, saves, cargo and connections are real.','Capacity checks reserve declared bytes without allocating a 1 GiB test payload.'],cases:[]};
   const save=()=>writeFileSync(join(directory,'result.json'),JSON.stringify(report,null,2));
   const module=name=>`assert(package.loaded['__level__/modules/surface_export/${name}.lua'])`;
@@ -40,8 +43,12 @@ await withWorkflowLock(async()=>{
   save();
   try {
     console.log(`Starting ${run}`);
-    report.environment=await lab.setup();save();lab.deadline=Date.now()+600_000;
+    report.environment=await lab.setup();save();lab.deadline=Date.now()+720_000;
+    if(selection!=='admitting') await exportNotificationFailure(lab,report,save,startQueued);
+    if(selection!=='notification') await resolvedAdmissions(lab,report,save);
+    if(selection!=='all') {report.verdict='PASS';return;}
     epoch=await lab.until(()=>lab.lua(2,'return {success=true,epoch=(storage.import_sessions or {}).epoch}').result.epoch,'upload protocol initialized');
+    sequence=lab.lua(2,'return {success=true,value=storage.import_sessions.high_water}').result.value;
     const receiving=begin('abandoned');assert.equal(receiving.state,'receiving');
     assert.equal(call('chunk',{attemptId:receiving.attemptId,index:1,data:'{}'}).receivedBytes,2);
     assert.equal(call('chunk',{attemptId:receiving.attemptId,index:1,data:'{}'}).receivedBytes,2);

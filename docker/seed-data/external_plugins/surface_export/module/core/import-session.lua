@@ -16,6 +16,13 @@ local function release(r, state, reason)
  r.chunks=nil; r.state, r.error=state, reason
  Timing.finish(r.timing_id, state == "accepted" and "completed" or "interrupted")
 end
+local function reconcile(r)
+ if r.state~="admitting" then return end
+ local evidence=(storage.async_jobs or {})[r.job_id] or (storage.async_job_results or {})[r.job_id]
+ if evidence and (evidence.operation_id==r.operation_id or evidence.transfer_id==r.operation_id) then
+  release(r,"accepted",r.error)
+ end
+end
 function Sessions.initialize(epoch)
  assert(type(epoch)=="string" and epoch~="" and epoch==storage.source_recovery_epoch,
   "Upload sender must match the reconciled runtime epoch")
@@ -60,6 +67,7 @@ function Sessions.begin(q)
  s.high_water=q.sequence
  local count,bytes=0,0
  for _,other in pairs(s.records) do
+  reconcile(other)
   if other.operation_id==q.operationId then
    assert(other.platform_name==q.platformName and other.force_name==q.forceName
     and other.total_bytes==q.totalBytes and other.total_chunks==q.totalChunks,"Upload metadata changed")
@@ -102,6 +110,7 @@ function Sessions.chunk(id,index,data)
 end
 function Sessions.commit(id,queue)
  local r=find(id)
+ reconcile(r)
  if r.state~="receiving" then return reply(r) end
  assert(r.epoch==store().epoch,"Upload sender epoch changed")
  assert(r.received_count==r.total_chunks and r.received_bytes==r.total_bytes,"Upload is incomplete")
@@ -128,6 +137,7 @@ function Sessions.commit(id,queue)
 end
 function Sessions.status(id)
  local r=store().records[id]
+ if r then reconcile(r) end
  return r and reply(r) or {version=Sessions.VERSION,success=true,state="unavailable"}
 end
 function Sessions.abort(id)
@@ -143,6 +153,7 @@ function Sessions.prune(force)
  s.next_prune_tick=game.tick+300
  local closed={}
  for id,r in pairs(s.records) do
+  reconcile(r)
   if r.state~="receiving" and r.state~="admitting" and not (storage.async_jobs or {})[r.job_id] then
    closed[#closed+1]=id
   end

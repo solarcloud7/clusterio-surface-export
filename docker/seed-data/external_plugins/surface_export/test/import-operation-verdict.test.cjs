@@ -105,6 +105,35 @@ function makeControllerHarness() {
 	return { plugin, operation, logged };
 }
 
+test("a definite controller dispatch rejection cannot acknowledge an import", async () => {
+	const {plugin,operation}=makeControllerHarness();
+	plugin.recoveryReservations=new Map();
+	plugin.platformTree.resolveTargetInstance=()=>({id:2,instance:{}});
+	plugin.createOperationRecord=async()=>operation;
+	plugin.controller={sendTo:async()=>{throw new (require("@clusterio/lib").RequestError)("Host containing instance is not connected");}};
+	const response=await plugin.handleImportUploadedExportRequestMeasured({targetInstanceId:2,
+		exportData:{platform:{force:"player"},entities:[]}});
+	assert.equal(response.success,false);
+	assert.equal(operation.status,"failed");
+	assert.equal(operation.jobObservation,undefined);
+});
+
+test("concurrent recovered import completions create and settle one operation", async () => {
+	const {plugin,operation,logged}=makeControllerHarness();
+	plugin.activeTransfers.clear();
+	let creations=0, release;
+	const blocked=new Promise(resolve=>{release=resolve;});
+	plugin.createOperationRecord=async()=>{creations++; await blocked; plugin.activeTransfers.set(operation.transferId,operation);return operation;};
+	const event=new messages.ImportOperationCompleteEvent({operationId:operation.transferId,instanceId:2,
+		platformName:"fixture",success:true,validation:PASSING_VERDICT});
+	const first=plugin.handleImportOperationCompleteEvent(event);
+	const second=plugin.handleImportOperationCompleteEvent(event);
+	await Promise.resolve();release();
+	await Promise.all([first,second]);
+	assert.equal(creations,1);
+	assert.equal(logged.filter(e=>e.eventType==="import_completed").length,1);
+});
+
 test("a lost standalone import reply stays pending; duplicate verdicts keep the first completion", async () => {
 	const {plugin,operation,logged}=makeControllerHarness();
 	plugin.recoveryReservations=new Map();

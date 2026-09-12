@@ -2,6 +2,19 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {JobObserver}=require("../dist/node/lib/job-observer.js");
 
+test("unavailable reads do not reset the last confirmed progress baseline",()=>{
+ let now=0;
+ const observer=new JobObserver(()=>{},()=>now);
+ const job={state:"running",epoch:"runtime",phase:"entities",work:{entities:2}};
+ observer.observe("operation",job,30000);
+ for(now=5000;now<=35000;now+=5000) {
+  observer.observe("operation",{state:"unavailable",epoch:""},30000);
+  const result=observer.observe("operation",job,30000);
+  assert.equal(result.message,now>=30000?"No progress observed":"Lua job running");
+ }
+ assert.equal(observer.observe("operation",{...job,epoch:"restarted"},30000).message,"Lua job running");
+});
+
 test("job observations distinguish queue, waits, no progress and new process epochs",()=>{
  let now=0;
  const observer=new JobObserver(()=>{},()=>now);

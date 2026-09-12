@@ -2,6 +2,30 @@ const {test}=require("node:test");
 const assert=require("node:assert/strict");
 const {UploadSessions,UploadUncertain}=require("../dist/node/lib/upload-session.js");
 
+test("chunk transport preserves raw bytes without JSON-escaping the payload twice",async()=>{
+ const {LuaInterface}=require("../dist/node/lib/lua-interface.js");
+ let command;
+ const lua=new LuaInterface({sendRcon:async value=>{command=value;return '{"version":1,"success":true}';}}, {info(){},verbose(){}});
+ const data=JSON.stringify({text:']]=] ]==] \\"'.repeat(2000)});
+ await lua.protocolCall("upload_session_json",{version:1,attemptId:"boot:1",index:1,data},"chunk");
+ assert.ok(command.includes(data),"payload must appear verbatim inside the Lua literal");
+ assert.ok(Buffer.byteLength(command)-Buffer.byteLength(data)<300,"envelope overhead must not grow with payload quotes");
+});
+
+test("job protocol rejection retains the Lua error message",async()=>{
+ const {LuaInterface}=require("../dist/node/lib/lua-interface.js");
+ const lua=new LuaInterface({sendRcon:async()=>'{"version":1,"success":false,"error":"Unsupported job status request"}'},{info(){},verbose(){}});
+ await assert.rejects(lua.jobStatus([{jobId:"job"}]),/Unsupported job status request/);
+});
+
+test("missing operation identities never occupy a deduplication slot",async()=>{
+ const h=harness();await h.client.initialize("runtime");
+ const invalid=h.client.send("","fixture","player",{});
+ assert.equal(h.client.active.size,0);
+ await assert.rejects(invalid,/operation identity/);
+ assert.deepEqual(h.calls,["initialize"]);h.client.stop();
+});
+
 function harness(fault) {
  const records=new Map(), calls=[];
  let jobs=0;

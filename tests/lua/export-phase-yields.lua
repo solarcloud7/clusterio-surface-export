@@ -74,6 +74,13 @@ for tick = 100, 103 do
         end
         assert(size(events) == count, "interrupted export advanced after " .. error_at)
         assert(attempts == attempts_before, "interrupted export retried " .. error_at)
+        if error_at == "surface_export_complete" then
+            local result = assert(env.storage.async_job_results.test)
+            assert(result.status == "failed" and result.error:find("notification", 1, true),
+                "notification failure was reported as a completed job")
+            assert(not events.unlock, "transfer notification failure unlocked without controller resolution")
+            return
+        end
         assert(job.completion_interrupted, "export can replay " .. error_at .. " after interruption")
         assert(not env.storage.async_job_results.test or not env.storage.async_job_results.test.complete)
         assert(not events.unlock, "interrupted export unlocked its source")
@@ -94,6 +101,7 @@ assert(not env.storage.async_jobs.test and env.storage.async_job_results.test.co
 end
 scenario(false)
 scenario(true)
+scenario(false, "surface_export_complete")
 for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
     scenario(false, phase)
 end

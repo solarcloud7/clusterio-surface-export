@@ -90,3 +90,26 @@ fails(function() sessions.commit(expired.attemptId,function() admissions=admissi
 fails(function() sessions.chunk(expired.attemptId,1,"{}") end,"no longer available")
 assert(admissions==1,"expired receipt replay admitted another job")
 print("PASS: upload ownership, duplicate commit, capacity, cleanup uncertainty, receipt expiry and reload")
+
+storage={source_recovery_epoch="admitting",async_jobs={},async_job_results={}}
+sessions.initialize("admitting");sequence=0
+local unresolved={}
+for index=1,4 do
+  local receipt=begin(2,"uncertain"..index);sessions.chunk(receipt.attemptId,1,"{}")
+  unresolved[index]=sessions.commit(receipt.attemptId,function() error("uncertain admission") end)
+end
+fails(function() begin() end,"capacity exhausted")
+for _,receipt in ipairs(unresolved) do
+  storage.async_job_results[receipt.jobId]={status="complete",operation_id="foreign-operation"}
+end
+sessions.prune(true)
+fails(function() begin() end,"capacity exhausted")
+for index,receipt in ipairs(unresolved) do
+  storage.async_job_results[receipt.jobId]={status="complete",operation_id="uncertain"..index}
+end
+sessions.prune(true)
+assert(begin().state=="receiving","resolved admission must return staging capacity")
+for _,receipt in ipairs(unresolved) do
+  assert(sessions.commit(receipt.attemptId,function() error("must not replay") end).state=="accepted")
+end
+print("PASS: late job evidence resolves admitting receipts without another import")

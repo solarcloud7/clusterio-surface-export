@@ -189,9 +189,18 @@ export class LuaInterface {
 	}
 
 	private async protocolCall<T>(endpoint: string, request: unknown, action?: string): Promise<T> {
-		const args = `${action ? `"${escapeString(action)}", ` : ""}${bracketWrap(toAsciiJson(JSON.stringify(request)))}`;
+		let envelope = request;
+		let rawChunk = "";
+		if (action === "chunk" && request && typeof request === "object" && "data" in request && typeof request.data === "string") {
+			const {data, ...metadata} = request;
+			envelope = metadata;
+			rawChunk = `, ${bracketWrap(data)}`;
+		}
+		const args = `${action ? `"${escapeString(action)}", ` : ""}${bracketWrap(toAsciiJson(JSON.stringify(envelope)))}${rawChunk}`;
 		const raw = await this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "${endpoint}", ${args}))`);
-		return JSON.parse(raw.trim()) as T;
+		const response = JSON.parse(raw.trim());
+		if (response?.success === false) throw new Error(response.error || "Lua protocol request rejected");
+		return response as T;
 	}
 
 	async jobStatus(jobs: Array<{jobId?: string; operationId?: string}>) {

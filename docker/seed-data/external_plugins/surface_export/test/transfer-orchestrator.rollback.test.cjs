@@ -104,6 +104,41 @@ test("source export waiting ignores unrelated standalone uploads with no source 
 	assert.equal(await h.orch.waitForStoredExport(stored.exportId),stored);
 });
 
+test("completed Lua work can precede artifact delivery without failing or unlocking", async () => {
+	const h=makeHarness(()=>{throw Error("must not replay");});
+	h.plugin.platformStorage=new Map();
+	const operation={operationType:"export",sourceInstanceId:1,sourceExportId:"source-job",status:"in_progress",
+		jobObservation:{state:"completed"}};
+	h.activeTransfers.set("export:1",operation);
+	let reads=0;
+	const stored={exportId:"1:source-job",instanceId:1,sourceExportId:"source-job"};
+	h.orch.observeJobs=async()=>{if(++reads===2)h.plugin.platformStorage.set(stored.exportId,stored);};
+	assert.equal(await h.orch.waitForStoredExport(stored.exportId),stored);
+	assert.equal(h.calls.unlockRouteTaken,0);
+});
+
+test("explicit source delivery failure ends artifact waiting without an import", async () => {
+	const h=makeHarness(()=>{throw Error("must not replay");});
+	h.plugin.platformStorage=new Map();
+	h.activeTransfers.set("export:1",{operationType:"export",sourceInstanceId:1,sourceExportId:"source-job",status:"in_progress",
+		jobObservation:{state:"failed",reason:"Export notification failed: injected"}});
+	h.orch.observeJobs=async()=>{};
+	await assert.rejects(h.orch.waitForStoredExport("1:source-job"),/Export notification failed/);
+	assert.equal(h.calls.importSends,0);
+});
+
+test("known offline instances remain visible without sending status requests", async () => {
+	let sends=0;
+	const h=makeHarness(()=>{throw Error("must not replay");},()=>{sends++;throw Error("must not poll offline");});
+	h.calls.offlineInstances=new Set([2]);
+	h.activeTransfers.set("op",{transferId:"op",operationType:"import",targetInstanceId:2,status:"awaiting_completion"});
+	h.orch.observationDue.set("op",0);
+	await h.orch.observeJobs();
+	assert.equal(sends,0);
+	assert.match(h.activeTransfers.get("op").jobObservation.reason,/offline/);
+	assert.equal(h.activeTransfers.get("op").status,"awaiting_completion");
+});
+
 test("retention cannot evict unresolved jobs or their retry guards", () => {
 	const h = makeHarness(() => {throw Error("must not replay");});
 	const protectedRecords = [

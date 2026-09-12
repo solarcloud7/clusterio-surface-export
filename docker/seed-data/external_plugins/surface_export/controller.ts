@@ -89,6 +89,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	pendingTransfersLoadError: string | null = null;
 	recoveryReservations = new Map<number, { epoch: string; mode: PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes: number[] }>();
 	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
+	private importCompletions = new Map<string, Promise<void>>();
 
 	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -502,6 +503,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const terminalReply = completedReply();
 			if (terminalReply) return terminalReply;
 			const errMsg = getErrorMessage(err);
+			// The pinned controller rejects this request before calling connection.sendRequest.
+			// Other exceptions may follow admission, so they remain uncertain.
+			if (err instanceof lib.RequestError && errMsg === "Host containing instance is not connected") {
+				operation.error = errMsg;
+				await this.failOperation(operation, "import_failed", `Import request rejected before dispatch: ${errMsg}`, {error: errMsg});
+				return {success: false, operationId: operation.transferId, error: errMsg};
+			}
 			// The handler may have accepted a job before the request reply was lost.
 			// Only an explicit rejection or the retained composite result is terminal.
 			operation.status = "awaiting_completion";
@@ -609,12 +617,19 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async handleImportOperationCompleteEvent(event: messages.ImportOperationCompleteEvent) {
+	async handleImportOperationCompleteEvent(event: messages.ImportOperationCompleteEvent): Promise<void> {
 		const operationId = event.operationId.trim();
-		if (!operationId) {
-			return;
-		}
+		if (!operationId) return;
+		this.importCompletions ??= new Map();
+		const inFlight = this.importCompletions.get(operationId);
+		if (inFlight) { await inFlight; return this.handleImportOperationCompleteEvent(event); }
+		// Defer execution until the guard is installed, including record creation's first await.
+		const settling = Promise.resolve().then(() => this.handleImportOperationCompleteMeasured(event, operationId));
+		this.importCompletions.set(operationId, settling);
+		try { await settling; } finally { this.importCompletions.delete(operationId); }
+	}
 
+	private async handleImportOperationCompleteMeasured(event: messages.ImportOperationCompleteEvent, operationId: string) {
 		let operation = this.activeTransfers.get(operationId);
 		const retained = this.persistedTransactionLogs?.find(log => log.transferId === operationId);
 		if (operation && (operation.operationType !== "import" || operation.targetInstanceId !== event.instanceId)) {

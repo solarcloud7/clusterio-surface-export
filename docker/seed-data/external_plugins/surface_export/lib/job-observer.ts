@@ -31,10 +31,11 @@ export class JobObserver {
 	observe(key: string, status: JobStatus, thresholdMs: number): JobObservation {
 		const signature = JSON.stringify([status.phase, Object.entries(status.work || {}).sort(([a], [b]) => a.localeCompare(b))]);
 		const previous = this.progress.get(key);
-		if (!previous || previous.epoch !== status.epoch || previous.signature !== signature) {
+		if (status.state !== "unavailable" && (!previous || previous.epoch !== status.epoch || previous.signature !== signature)) {
 			this.progress.set(key, { signature, epoch: status.epoch, at: this.now() });
 		}
-		const stalled = this.now() - this.progress.get(key)!.at >= thresholdMs;
+		const baseline = this.progress.get(key);
+		const stalled = baseline !== undefined && this.now() - baseline.at >= thresholdMs;
 		const message = status.state === "queued" ? "Waiting in Lua queue"
 			: status.state === "waiting" ? "Waiting for a scheduled Lua phase"
 				: status.state === "running" ? (stalled ? "No progress observed" : "Lua job running")

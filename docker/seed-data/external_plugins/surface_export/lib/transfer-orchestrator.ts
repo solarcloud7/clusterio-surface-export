@@ -50,8 +50,11 @@ export class TransferOrchestrator {
 	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
-		this.observer = new JobObserver((instanceId, jobs) => this.plugin.controller.sendTo(
-			{instanceId}, new this.messages.JobsStatusRequest(jobs)));
+		this.observer = new JobObserver(async (instanceId, jobs) => {
+			if (!this.plugin.isInstanceOnline(instanceId)) return {version: 1, epoch: "", observedTick: 0,
+				jobs: jobs.map(ref => ({...ref, state: "unavailable" as const, error: "Instance is offline or unknown"}))};
+			return this.plugin.controller.sendTo({instanceId}, new this.messages.JobsStatusRequest(jobs));
+		});
 		this.requestQueue = new TransferRequestQueue({
 			run: entry => this.runQueuedRequest(entry),
 			interrupted: async entry => {

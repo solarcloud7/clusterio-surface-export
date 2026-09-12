@@ -56,6 +56,7 @@ export class UploadSessions {
 	}
 
 	send(operationId: string, platformName: string, forceName: string, data: unknown): Promise<UploadReceipt> {
+		if (!operationId) return Promise.reject(new Error("Upload requires an operation identity"));
 		const existing = this.active.get(operationId);
 		if (existing) return existing;
 		if (this.active.size + this.cleanup.size >= 4) return Promise.reject(new Error("Upload admission is full or cleanup is pending"));
@@ -70,7 +71,6 @@ export class UploadSessions {
 	private async upload(operationId: string, platformName: string, forceName: string, data: unknown): Promise<UploadReceipt> {
 		const epoch = this.epoch;
 		if (!epoch) throw new Error("Upload runtime is not ready");
-		if (!operationId) throw new Error("Upload requires an operation identity");
 		if (this.cleanup.size >= 4) throw new Error("Incomplete upload cleanup is pending; upload admission paused");
 		// ASCII JSON makes string offsets exact encoded-byte offsets, including Unicode names.
 		const json = toAsciiJson(JSON.stringify(data));
