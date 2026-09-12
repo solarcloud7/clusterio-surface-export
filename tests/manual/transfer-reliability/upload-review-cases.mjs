@@ -110,9 +110,10 @@ export async function lostExportNotification(lab, report, save, startQueued) {
     // Deliver the original push after recovery and settlement. It must not dispatch a second import.
     lab.lua(1,`local api=${api};api.send_json=assert(_G.manual_lost_export_send);api.send_json('surface_export_complete',assert(_G.manual_lost_export_payload));return {success=true}`);
     result.latePush=await lab.until(()=>{
-      const script="const fs=require('fs'),p='/clusterio/logs/cluster';process.stdout.write(fs.readdirSync(p).filter(n=>n.endsWith('.log')).map(n=>fs.readFileSync(p+'/'+n,'utf8')).join(''))";
-      const logs=lab.docker(['exec',lab.controller,'node','-e',script]);
-      return logs.includes('Sent platform export '+sourceJob+' to controller');
+      const needle='Sent platform export '+sourceJob+' to controller';
+      const script="const fs=require('fs'),p='/clusterio/logs/cluster',needle="+JSON.stringify(needle)
+        +";process.stdout.write(JSON.stringify(fs.readdirSync(p).filter(n=>n.endsWith('.log')).some(n=>fs.readFileSync(p+'/'+n,'utf8').includes(needle))))";
+      return JSON.parse(lab.docker(['exec',lab.controller,'node','-e',script]));
     },'original completion forwarded after cache recovery');
     result.afterLatePush=sample(lab,name);
     assert.equal(result.afterLatePush.source.present,false);
