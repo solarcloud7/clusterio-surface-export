@@ -69,16 +69,51 @@ Recovery must preserve these boundaries; the durability distinction remains a re
 The retirement journal is intent evidence, not a deletion receipt. A missing source
 still requires its save-local receipt to acknowledge a replay. If an earlier checkpoint
 restores that source, reconciliation binds its saved identity to the original committed
-lock; the matching pending handoff can retry the real deletion. A completed handoff's
-resurrected source remains quarantined, with no automatic deletion or re-import.
+lock; the matching pending handoff can retry the real deletion. In the default
+`plugin_history` mode, a completed handoff's resurrected source remains protected,
+with no automatic deletion or re-import.
+
+## Save recovery policy
+
+`surface_export.platform_source_of_truth` is controller configuration, defaulting
+to `plugin_history`. The instance fetches policy and current handoff authority
+before completing startup reconciliation. The Settings tab displays configured and
+applied modes and whether a restart is required. Clusterio rejects other policy
+values when configuration is written.
+
+- **Plugin history:** a restored source recorded as transferred away remains protected.
+- **Save game:** when no unresolved handoff owns it, reconciliation restores the
+  saved operational state and assigns the accepted platform a fresh persistent
+  identity. The warning records the earlier export; another usable copy may exist.
+
+Both modes preserve active and unresolved handoffs. Controller or journal
+unavailability does not authorize release. Historical retirement records remain;
+an accepted restoration retains its fresh identity through subsequent mode changes.
+New export jobs include the startup epoch, while existing job IDs remain valid.
+These checks live in [source-recovery.lua](../docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua)
+and [instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts).
+
+**Restore from snapshot** creates a separate import through the existing import
+dialog when retained bytes are importable. It replaces old routing metadata and
+does not replay source deletion. Missing/expired snapshots are disabled with a
+reason; supported failure black boxes supply only their importable replay payload.
+Original outcomes stay unchanged. Offline or uncertain identity matches remain
+unverified. If a restore response fails or cannot be confirmed, the dialog keeps
+that attempt's identity, disables resubmission, and links to its transfer history.
+Inspect that attempt before closing and reopening the dialog to start another restore;
+an acknowledgement failure does not prove that no platform was imported.
+See [the production runbook](../docker/production/README.md) for the
+CLI recovery command and [manual fixtures](../tests/manual/transfer-reliability/README.md#configurable-save-recovery)
+for the observed save-policy, duplicate-submission, and snapshot-recovery results.
 
 ## Startup and operator recovery
 
 Clusterio's save-patch startup event protects existing platforms before the Node
 background reconciliation, launched by `onStart` without holding Clusterio's hook open.
 The ordinary Lua scheduler and unlock/expiry path wait for
-reconciliation. Normal startup locks are released; retired sources keep committed
-locks. This uses the server-startup event, not `on_load`, which also runs on client join.
+reconciliation. Normal startup locks are released; historical source protection
+follows the policy above. This uses the server-startup event, not `on_load`, which
+also runs on client join.
 Startup protection does not force-finish cargo pods or reject pending circuit restoration;
 those transfer-preparation actions do not belong to ordinary server startup. The Lua
 regression reproduced the unwanted pod call before that separation was added.

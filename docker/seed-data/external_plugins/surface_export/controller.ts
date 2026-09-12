@@ -190,7 +190,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handleRecoveryPolicyRequest(request: messages.RecoveryPolicyRequest, source?: { id: number }) {
-		if (source && source.id !== request.instanceId) throw new Error("Recovery instance identity mismatch");
+		if (!source || source.id !== request.instanceId) throw new Error("Recovery instance identity mismatch");
 		if (!Number.isInteger(request.instanceId) || !this.c.instances.get(request.instanceId) || !request.epoch) {
 			throw new Error("Invalid recovery instance or epoch");
 		}

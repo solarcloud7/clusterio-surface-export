@@ -8,7 +8,7 @@ import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
@@ -909,7 +909,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			const sourceJobId = request.operationId?.startsWith(`${this.i.id}:`) ? request.operationId.slice(String(this.i.id).length + 1) : undefined;
+			const identity = request.operationId ? parseCanonicalTransferId(request.operationId) : null;
+			const sourceJobId = identity?.sourceInstanceId === this.i.id ? identity.sourceJobId : undefined;
 			const result = await this.lua.unlockPlatform(platformIndex, request.platformName, sourceJobId);
 
 			if (result.trim() === "SUCCESS") {

@@ -30,6 +30,7 @@ type ImportModalProps = {
 export default function ImportModal({ open, onClose, plugin, state, snapshot }: ImportModalProps) {
 	const submitting = useRef(false);
 	const [restoreRequestId] = useState(newRestoreRequestId);
+	const [restoreError, setRestoreError] = useState<string | null>(null);
 	const [fileList, setFileList] = useState<UploadFile[]>([]);
 	const [payload, setPayload] = useState<JsonObject | null>(snapshot?.exportData || null);
 	const [parseError, setParseError] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 	}
 
 	async function handleSubmit() {
-		if (targetInstanceId === null || !payload || submitting.current) return;
+		if (targetInstanceId === null || !payload || submitting.current || restoreError) return;
 		submitting.current = true;
 		setImporting(true);
 		try {
@@ -121,7 +122,11 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 			}
 			handleClose();
 		} catch (err: unknown) {
-			antMessage.error(getErrorMessage(err, "Failed to import JSON"), 10);
+			const error = getErrorMessage(err, "Failed to import JSON");
+			// A rejected reply can also mean the acknowledgement was lost. Keep this
+			// attempt's identity and require inspection before an explicit new restore.
+			if (snapshot) setRestoreError(error);
+			antMessage.error(error, 10);
 		} finally {
 			submitting.current = false;
 			setImporting(false);
@@ -138,7 +143,7 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 			closable={!importing}
 			maskClosable={!importing}
 			cancelButtonProps={{ disabled: importing }}
-			okButtonProps={{ loading: importing, disabled: !payload || targetInstanceId === null }}
+			okButtonProps={{ loading: importing, disabled: !!restoreError || !payload || targetInstanceId === null }}
 		>
 			<Space direction="vertical" size="middle" style={{ width: "100%" }}>
 				{snapshot ? <Alert type="warning" showIcon message={snapshot.platformName}
@@ -153,6 +158,11 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 				</Upload>}
 
 				{parseError ? <Alert type="error" showIcon message={parseError} /> : null}
+				{restoreError ? <Alert type="error" showIcon message="Restore was not confirmed"
+					description={<>{restoreError}. Check this attempt’s transfer history before starting another restoration. {" "}
+						<a href={`/surface-export?tab=logs&transfer=${encodeURIComponent(`restore:${restoreRequestId}`)}`}>
+							View this restoration attempt
+						</a></>} /> : null}
 				{payload && !snapshot ? (
 					<Alert
 						type="success"

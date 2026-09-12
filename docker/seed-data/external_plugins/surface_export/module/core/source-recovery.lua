@@ -68,6 +68,7 @@ function Recovery.begin(epoch, journal_id, has_retirements, mode, allow_adoption
 	storage.source_recovery_allow_adoption = allow_adoption == true
 	storage.source_recovery_notices = storage.source_recovery_notices or {}
 	local roster = {}
+	local present = {}
 	for _, force in pairs(game.forces) do
 		for _, platform in pairs(force.platforms) do
 			if platform.valid and platform.surface and platform.surface.valid then
@@ -78,11 +79,20 @@ function Recovery.begin(epoch, journal_id, has_retirements, mode, allow_adoption
 				uid = uid or assign(platform)
 				if not uid then return {success = false, error = "Platform has no stable hub identity"} end
 				roster[#roster + 1] = {platformIndex = platform.index, platformUid = uid}
+				present[platform.index] = true
 			end
 		end
 	end
 	-- Bound the bootstrap reply; larger worlds remain protected instead of truncating authority.
 	if #roster > 500 then return {success = false, error = "Recovery roster exceeds 500 platforms"} end
+	-- Only a complete roster can retire absent-world metadata. Transfer authority
+	-- (locks, jobs, receipts and retirement journals) has its own recovery lifecycle.
+	for index in pairs(storage.source_recovery_notices) do
+		if not present[index] then storage.source_recovery_notices[index] = nil end
+	end
+	for index in pairs(storage.source_recovery_identities or {}) do
+		if not present[index] then storage.source_recovery_identities[index] = nil end
+	end
 	storage.source_recovery_journal = journal_id
 	return {success = true, platforms = roster}
 end
