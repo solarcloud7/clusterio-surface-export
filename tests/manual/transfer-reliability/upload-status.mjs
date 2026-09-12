@@ -165,8 +165,10 @@ await withWorkflowLock(async()=>{
     await exportPage.locator('.surface-export-platform-node-row').filter({hasText:exportName}).getByRole('button').click();
     report.exportQueued=await lab.until(()=>{
       const rows=JSON.parse(lab.ctl('surface-export','list-transfers','200').trim().split(/\r?\n/).at(-1));
-      return rows.find(row=>row.operationType==='export'&&row.sourceInstanceId===lab.ids[1]&&row.jobObservation?.state==='queued');
+      return rows.find(row=>row.operationType==='export'&&row.sourceInstanceId===lab.ids[1]
+        && (row.jobObservation?.state==='queued'||['failed','error','completed'].includes(row.status)));
     },'standalone source export queued',65);save();
+    assert.equal(report.exportQueued.jobObservation?.state,'queued',report.exportQueued.error||'expected queued source work');
     lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);await lab.ready();
     lab.lua(1,`local a=${module('core/async-processor')};a.get_max_concurrent_jobs=assert(_G.manual_upload_budget);_G.manual_upload_budget=nil;return {success=true}`);
     report.exportRecovered=await terminal(lab,report.exportQueued.transferId);

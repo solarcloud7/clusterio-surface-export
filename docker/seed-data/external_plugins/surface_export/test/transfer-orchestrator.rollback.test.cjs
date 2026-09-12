@@ -94,6 +94,16 @@ test("admitted queue work remains observable through repeated controller restart
 	assert.equal(h.calls.importSends,0);assert.equal(h.calls.unlockRouteTaken,0);
 });
 
+test("source export waiting ignores unrelated standalone uploads with no source instance", async () => {
+	const h=makeHarness(()=>{throw Error("must not replay");});
+	h.plugin.platformStorage=new Map();
+	h.activeTransfers.set("upload:1",{operationType:"import",sourceInstanceId:-1,status:"completed"});
+	h.activeTransfers.set("export:1",{operationType:"export",sourceInstanceId:1,sourceExportId:"source-job",status:"in_progress"});
+	const stored={exportId:"1:source-job",instanceId:1,sourceExportId:"source-job"};
+	h.orch.observeJobs=async()=>h.plugin.platformStorage.set(stored.exportId,stored);
+	assert.equal(await h.orch.waitForStoredExport(stored.exportId),stored);
+});
+
 test("retention cannot evict unresolved jobs or their retry guards", () => {
 	const h = makeHarness(() => {throw Error("must not replay");});
 	const protectedRecords = [

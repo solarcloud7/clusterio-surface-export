@@ -209,13 +209,14 @@ export class TransferOrchestrator {
 	async waitForStoredExport(exportId: string) {
 		// Storage delivery and the source Lua queue can outlast any observation threshold.
 		// Only explicit failure evidence can end this wait; elapsed time cannot release the source.
+		const identity = parseCanonicalTransferId(exportId);
 		for (;;) {
 			if (this.stopped) throw new JobObservationStopped("Controller stopped observing; source ownership remains unresolved");
 			const stored = this.plugin.platformStorage.get(exportId);
 			if (stored) return stored;
 			await this.observeJobs();
 			const source = [...this.plugin.activeTransfers.values()].find(t => t.exportId === exportId
-				|| makeCanonicalTransferId(t.sourceInstanceId, t.sourceExportId || "") === exportId);
+				|| (identity && t.sourceInstanceId === identity.sourceInstanceId && t.sourceExportId === identity.sourceJobId));
 			if (source?.jobObservation?.state === "failed") throw new Error(source.jobObservation.reason || "Source export job failed");
 			await wait(500);
 		}
