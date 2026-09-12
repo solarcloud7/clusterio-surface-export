@@ -38,6 +38,13 @@ export async function resolvedAdmissions(lab, report, save) {
   assert.ok(result.resolved.replies.every(r=>r.state==='accepted'),'resolved jobs left their receipts admitting');
   result.next=lab.lua(2,`local sessions=${module('core/import-session')};local r=sessions.begin{version=1,epoch=storage.import_sessions.epoch,sequence=storage.import_sessions.high_water+1,operationId='${lab.run}:after-admitting',platformName='unused',forceName='player',totalBytes=2,totalChunks=1};sessions.abort(r.attemptId);return {success=true,state=r.state}`).result;
   assert.equal(result.next.state,'receiving');result.status='PASS';save();
+  // This probe is a second protocol sender. Restart the owned instance after a
+  // checkpoint so Node reconciles the advanced sequence before subsequent cases.
+  const priorEpoch=lab.lua(2,'return {success=true,epoch=storage.import_sessions.epoch}').result.epoch;
+  result.checkpoint=await lab.checkpoint('manual-admission-probe',[2]);
+  await lab.load(2,'manual-admission-probe');
+  await lab.until(()=>lab.lua(2,'return {success=true,epoch=storage.import_sessions.epoch}').result.epoch!==priorEpoch,'sender epoch reconciled');
+  result.senderReconciled=true;save();
 }
 
 // Faults run only inside DockerLab's owned cluster. Teardown removes all its resources.

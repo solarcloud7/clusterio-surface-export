@@ -19,6 +19,7 @@ export class UploadUncertain extends Error {
 		super(message);
 	}
 }
+class UploadIdentityMismatch extends Error {}
 
 export class UploadSessions {
 	private epoch = "";
@@ -27,7 +28,7 @@ export class UploadSessions {
 	private sequence = 0;
 	private begins: Promise<unknown> = Promise.resolve();
 	private active = new Map<string, Promise<UploadReceipt>>();
-	private cleanup = new Set<string>();
+	private cleanup = new Map<string, string>();
 	private cleanupTimer?: NodeJS.Timeout;
 	private cleanupRunning = false;
 	private cleanupErrors = new Map<string, string>();
@@ -71,6 +72,13 @@ export class UploadSessions {
 		return reply;
 	}
 
+	private checkIdentity(reply: UploadReceipt, operationId: string, attemptId: string, begin = false): void {
+		if (reply.state !== "unavailable" && (typeof reply.attemptId !== "string" || !reply.attemptId || reply.operationId !== operationId
+			|| (!begin && reply.attemptId !== attemptId))) {
+			throw new UploadIdentityMismatch("Upload receipt identity does not match this operation");
+		}
+	}
+
 	send(operationId: string, platformName: string, forceName: string, data: unknown): Promise<UploadReceipt> {
 		if (!operationId) return Promise.reject(new Error("Upload requires an operation identity"));
 		const existing = this.active.get(operationId);
@@ -97,8 +105,9 @@ export class UploadSessions {
 		let commitSent = false;
 		const invoke = async (action: string, fields: Record<string, unknown> = {}) => {
 			if (this.epoch !== epoch) throw new Error("Upload runtime stopped or replaced");
-			const reply = this.check(await this.call(action, { version: UPLOAD_PROTOCOL, attemptId, ...fields }));
+			const reply = this.check(await this.call(action, { version: UPLOAD_PROTOCOL, attemptId, operationId, ...fields }));
 			if (this.epoch !== epoch) throw new Error("Upload runtime stopped or replaced");
+			this.checkIdentity(reply, operationId, attemptId, action === "begin");
 			return reply;
 		};
 		try {
@@ -133,7 +142,10 @@ export class UploadSessions {
 						commitSent = false;
 					} else if (status.state === "rejected" || status.state === "aborted") commitSent = false;
 				} catch (cleanupError) {
-					this.cleanup.add(attemptId);
+					if (cleanupError instanceof UploadIdentityMismatch) {
+						throw new UploadUncertain(cleanupError.message, attemptId, epoch);
+					}
+					this.cleanup.set(attemptId, operationId);
 					this.reportCleanup(attemptId, cleanupError);
 					this.scheduleCleanup(epoch);
 					if (commitSent) throw new UploadUncertain(`${getErrorMessage(error)}; status check: ${getErrorMessage(cleanupError)}`, attemptId, epoch);
@@ -167,17 +179,26 @@ export class UploadSessions {
 		if (this.cleanupRunning || !epoch || this.epoch !== epoch) return;
 		this.cleanupRunning = true;
 		try {
-			for (const attemptId of [...this.cleanup].slice(0, this.limits?.maxSessions ?? 0)) {
+			for (const [attemptId, operationId] of [...this.cleanup].slice(0, this.limits?.maxSessions ?? 0)) {
 				if (this.epoch !== epoch) break;
 				try {
-					const request = { version: UPLOAD_PROTOCOL, attemptId };
+					const request = { version: UPLOAD_PROTOCOL, attemptId, operationId };
 					const status = this.check(await this.call("status", request));
 					if (this.epoch !== epoch) break;
+					this.checkIdentity(status, operationId, attemptId);
 					if (status.state === "receiving") this.check(await this.call("abort", request));
 					// Admitting/accepted/unavailable belong to job observation; never replay or release them.
 					this.cleanup.delete(attemptId);
 					this.cleanupErrors.delete(attemptId);
-				} catch (error) { return this.reportCleanup(attemptId, error); }
+				} catch (error) {
+					if (error instanceof UploadIdentityMismatch) {
+						this.cleanup.delete(attemptId);
+						this.cleanupErrors.delete(attemptId);
+						this.report(`Upload buffer cleanup refused for ${attemptId}: ${error.message}`);
+						continue;
+					}
+					return this.reportCleanup(attemptId, error);
+				}
 			}
 		} finally {
 			this.cleanupRunning = false;

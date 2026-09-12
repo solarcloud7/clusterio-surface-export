@@ -64,6 +64,12 @@ belong to job observation and recovery. A bounded housekeeping pass retries unre
 buffer cleanup every five seconds, with one pass outstanding. It cannot alter platforms,
 locks, or accepted jobs.
 
+The sender verifies the operation and attempt on receipts before accepting a job or
+aborting bytes. Begin may return an existing attempt for the same operation; subsequent
+calls must match that attempt. A foreign receipt remains uncertain and cannot supply a
+job or authorize cleanup. Direct protocol probes must reconcile the Node sender before
+resuming production requests, so the two callers do not allocate overlapping sequences.
+
 Startup initializes uploads after recovery policy reconciliation. A new sender epoch
 retires receiving buffers from the previous epoch, preserving accepted jobs and uncertain
 admissions. Legacy unowned buffers are retired with a diagnostic. Deploy matching Node

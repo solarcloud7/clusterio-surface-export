@@ -34,7 +34,7 @@ function harness(fault) {
   const r=records.get(q.attemptId);
   if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4}};
   if(action==="begin") {
-   const record={version:1,success:true,state:"receiving",attemptId:q.attemptId,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4},chunks:[]};
+   const record={version:1,success:true,state:"receiving",attemptId:q.attemptId,operationId:q.operationId,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4},chunks:[]};
    records.set(q.attemptId,record); return record;
   }
   if(action==="chunk") {
@@ -86,7 +86,7 @@ test("repeated startup handshake resumes the receiver's sequence checkpoint",asy
  const sequences=[];
  const client=new UploadSessions(async(action,q)=>{
   if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4},highWater:40};
-  if(action==="begin") {sequences.push(q.sequence);return {version:1,success:true,state:"accepted",jobId:"retained"};}
+  if(action==="begin") {sequences.push(q.sequence);return {version:1,success:true,state:"accepted",attemptId:q.attemptId,operationId:q.operationId,jobId:"retained"};}
   throw Error(action);
  });
  await client.initialize("boot");await client.send("op","fixture","player",{});
@@ -99,11 +99,11 @@ test("unresolved cleanup retries receiving bytes but never aborts an accepted jo
   const client=new UploadSessions(async(action,q)=>{
    calls.push(action);
    if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4}};
-   if(action==="begin") return {version:1,success:true,state:"receiving",attemptId:q.attemptId};
+   if(action==="begin") return {version:1,success:true,state:"receiving",attemptId:q.attemptId,operationId:q.operationId};
    if(action==="chunk") throw Error("connection interrupted");
    if(action==="status"&&unreachable) throw Error("status unreachable");
-   if(action==="status") return {version:1,success:true,state,jobId:state==="accepted"?"job_1":undefined};
-   if(action==="abort") return {version:1,success:true,state:"aborted"};
+   if(action==="status") return {version:1,success:true,attemptId:q.attemptId,operationId:q.operationId,state,jobId:state==="accepted"?"job_1":undefined};
+   if(action==="abort") return {version:1,success:true,attemptId:q.attemptId,operationId:q.operationId,state:"aborted"};
    throw Error(action);
   }, message=>reports.push(message));
   await client.initialize("boot");

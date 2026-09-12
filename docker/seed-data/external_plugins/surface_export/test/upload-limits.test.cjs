@@ -7,7 +7,7 @@ test('sender uses receiver chunk size and rejects oversized encoded payloads bef
  const client=new UploadSessions(async(action,q)=>{
   calls.push({action,...q});
   if(action==='initialize')return {version:1,success:true,epoch:q.epoch,limits};
-  return {version:1,success:true,attemptId:q.attemptId,state:action==='commit'?'accepted':'receiving',jobId:action==='commit'?'one':undefined};
+  return {version:1,success:true,attemptId:q.attemptId,operationId:q.operationId,state:action==='commit'?'accepted':'receiving',jobId:action==='commit'?'one':undefined};
  });
  await client.initialize('boot');
  await client.send('op','fixture','player',{text:'x'.repeat(20)});
@@ -47,7 +47,7 @@ test('receiver session cap preserves same-operation deduplication',async()=>{
  let admit;
  const client=new UploadSessions(async(action,q)=>{
   if(action==='initialize')return {version:1,success:true,epoch:q.epoch,limits:{...limits,maxSessions:1}};
-  if(action==='begin')return new Promise(resolve=>admit=()=>resolve({version:1,success:true,state:'accepted',jobId:'existing'}));
+  if(action==='begin')return new Promise(resolve=>admit=()=>resolve({version:1,success:true,attemptId:q.attemptId,operationId:q.operationId,state:'accepted',jobId:'existing'}));
   throw Error(action);
  });
  await client.initialize('boot');
@@ -55,4 +55,20 @@ test('receiver session cap preserves same-operation deduplication',async()=>{
  assert.equal(client.send('one','fixture','player',{}),first);
  await assert.rejects(client.send('two','fixture','player',{}),/admission/);
  await new Promise(resolve=>setImmediate(resolve));admit();await first;client.stop();
+});
+test('a conflicting receiver receipt cannot adopt or abort another operation',async()=>{
+ for(const state of ['accepted','receiving']) {
+  const calls=[];
+  const client=new UploadSessions(async(action,q)=>{
+   calls.push(action);
+   if(action==='initialize')return {version:1,success:true,epoch:q.epoch,limits};
+   if(action==='begin')return {version:1,success:false,error:'Upload metadata changed'};
+   if(action==='status')return {version:1,success:true,attemptId:q.attemptId,operationId:'foreign',state,jobId:state==='accepted'?'foreign-job':undefined};
+   return {version:1,success:true,state:'aborted'};
+  });
+  await client.initialize('boot');
+  await assert.rejects(client.send('mine','fixture','player',{}),/identity/);
+  await client.reconcileCleanup();
+  assert.deepEqual(calls,['initialize','begin','status']);client.stop();
+ }
 });
