@@ -79,7 +79,7 @@ test("snapshot retrieval and import keep their existing control permission bound
 test("source unlock uses canonical identity without accepting foreign or empty jobs", async () => {
 	const {plugin} = harness();
 	const calls = [];
-	plugin.lua.unlockPlatform = async (...args) => { calls.push(args); return "SUCCESS"; };
+	plugin.lua = {unlockPlatform: async (...args) => { calls.push(args); return "SUCCESS"; }};
 	for (const [operationId, expected] of [
 		["1:job:attempt", "job:attempt"], ["11:job", undefined],
 		["1:", undefined], ["bad:job", undefined], [undefined, undefined],
