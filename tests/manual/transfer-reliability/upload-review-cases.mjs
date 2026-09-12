@@ -37,7 +37,12 @@ export async function resolvedAdmissions(lab, report, save) {
   assert.equal(result.resolved.replies.length,4);
   assert.ok(result.resolved.replies.every(r=>r.state==='accepted'),'resolved jobs left their receipts admitting');
   result.next=lab.lua(2,`local sessions=${module('core/import-session')};local r=sessions.begin{version=1,epoch=storage.import_sessions.epoch,sequence=storage.import_sessions.high_water+1,operationId='${lab.run}:after-admitting',platformName='unused',forceName='player',totalBytes=2,totalChunks=1};sessions.abort(r.attemptId);return {success=true,state=r.state}`).result;
-  assert.equal(result.next.state,'receiving');result.status='PASS';save();
+  assert.equal(result.next.state,'receiving');save();
+  const priorEpoch=lab.lua(2,'return {success=true,epoch=storage.import_sessions.epoch}').result.epoch;
+  result.checkpoint=await lab.checkpoint('manual-admission-probe',[2]);
+  await lab.load(2,'manual-admission-probe');
+  await lab.until(()=>lab.lua(2,'return {success=true,epoch=storage.import_sessions.epoch}').result.epoch!==priorEpoch,'sender epoch reconciled');
+  result.senderReconciled=true;result.status='PASS';save();
 }
 
 // Faults run only inside DockerLab's owned cluster. Teardown removes all its resources.
@@ -103,9 +108,10 @@ export async function lostExportNotification(lab, report, save, startQueued) {
     // Deliver the original push after recovery and settlement. It must not dispatch a second import.
     lab.lua(1,`local api=${api};api.send_json=assert(_G.manual_lost_export_send);api.send_json('surface_export_complete',assert(_G.manual_lost_export_payload));return {success=true}`);
     result.latePush=await lab.until(()=>{
-      const script="const fs=require('fs'),p='/clusterio/logs/cluster';process.stdout.write(fs.readdirSync(p).filter(n=>n.endsWith('.log')).map(n=>fs.readFileSync(p+'/'+n,'utf8')).join(''))";
-      const logs=lab.docker(['exec',lab.controller,'node','-e',script]);
-      return logs.includes('Sent platform export '+sourceJob+' to controller');
+      const needle='Sent platform export '+sourceJob+' to controller';
+      const script="const fs=require('fs'),p='/clusterio/logs/cluster',needle="+JSON.stringify(needle)
+        +";process.stdout.write(JSON.stringify(fs.readdirSync(p).filter(n=>n.endsWith('.log')).some(n=>fs.readFileSync(p+'/'+n,'utf8').includes(needle))))";
+      return JSON.parse(lab.docker(['exec',lab.controller,'node','-e',script]));
     },'original completion forwarded after cache recovery');
     result.afterLatePush=sample(lab,name);
     assert.equal(result.afterLatePush.source.present,false);

@@ -3,13 +3,45 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
-	SUITES, checkoutFacts, laneRefusal, idleRefusal, readOutcome, combineVerdict, formatVerdict, mutationRun,
+	SUITES, checkoutFacts, laneRefusal, idleRefusal, readOutcome, combineVerdict, formatVerdict, mutationRun, importMutation,
 } from "../../tools/tests/testkit/mutation-run.mjs";
 
 const MAIN = path.resolve("/repo");
 const TARGET = path.resolve("/repo/tools/tests/testkit/mutation-run.mjs");
+
+test("in-memory mutations preserve source files, relative imports and fixture paths", async t => {
+	const directory = tempDir(t, "se-import-mutation-");
+	const url = pathToFileURL(path.join(directory, "guard.mjs"));
+	const source = 'import { value } from "./dependency.mjs"; import { readFileSync } from "node:fs";'
+		+ 'export const limit = 5; export const dependency = value;'
+		+ 'export const fixture = readFileSync(new URL("fixture.txt", import.meta.url), "utf8");';
+	writeFileSync(url, source);
+	writeFileSync(path.join(directory, "dependency.mjs"), 'export const value = 7;');
+	writeFileSync(path.join(directory, "fixture.txt"), "original fixture");
+	const original = await import(url.href);
+	const mutant = await importMutation(url, { find: "limit = 5", replace: "limit = 9" });
+	assert.equal(mutant.limit, 9); assert.equal(mutant.dependency, 7); assert.equal(mutant.fixture, "original fixture");
+	assert.equal(original.limit, 5); assert.equal((await import(url.href)).limit, 5);
+	assert.equal(readFileSync(url, "utf8"), source);
+	assert.equal((await importMutation(url, { find: "limit = 5", replace: "limit = 10" })).limit, 10);
+});
+
+test("mutation setup errors propagate and cannot be counted as a killed guard", async t => {
+	const directory = tempDir(t, "se-invalid-mutation-");
+	const url = pathToFileURL(path.join(directory, "guard.mjs"));
+	writeFileSync(url, "export const limit = 5; export const other = 5;");
+	for (const find of ["missing", "= 5"]) {
+		await assert.rejects(importMutation(url, { find, replace: "0" }), /match exactly once/);
+	}
+	await assert.rejects(importMutation(url, { find: "limit = 5", replace: "limit = (" }), SyntaxError);
+	assert.equal((await import(url.href)).limit, 5);
+	await assert.rejects(importMutation(url, { find: "", replace: "x" }), /nonempty find/);
+	await assert.rejects(importMutation(new URL("https://example.com/test.mjs"), { find: "x", replace: "y" }), /local .mjs/);
+	await assert.rejects(importMutation(url, { find: "limit", replace: "limit" }), /nonempty find/);
+});
 
 function outcome(suite, failed, names = []) {
 	return { suite, failed, names };

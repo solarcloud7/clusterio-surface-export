@@ -84,6 +84,62 @@ function makeLogger({ active = [], persisted = [], extraRows = [], dropLedgerRow
 
 const byId = (summaries) => new Map(summaries.map(s => [s.transferId, s]));
 
+test("live transfer and log emissions identify active cleanup failures without waiting for a tree refresh", () => {
+	const { SubscriptionManager } = require(path.join(distNode, "lib", "subscription-manager.js"));
+	const { shipPhaseFor } = require(path.join(distNode, "shared", "transfer-status.js"));
+	const logger = makeLogger({ active: [{ transferId: ACTIVE_ID, status: "cleanup_failed" }] });
+	const plugin = logger.plugin, emitted = [];
+	plugin.txLogger = logger;
+	plugin.transferRevision = 0;
+	plugin.logRevision = 0;
+	plugin.surfaceExportSubscriptions = new Map([[{ send: event => emitted.push(event) }, { transfers: true, logs: true }]]);
+	const manager = new SubscriptionManager(plugin, { RateLimiter: class { activate() {} cancel() {} } },
+		require(path.join(distNode, "messages.js")));
+	const transfer = plugin.activeTransfers.get(ACTIVE_ID);
+	transfer.transferId = ACTIVE_ID;
+	manager.emitTransferUpdate(transfer);
+	assert.equal(emitted[0].transfer.registrySource, "active");
+	assert.equal(shipPhaseFor(emitted[0].transfer).terminal, false);
+	manager.emitLogUpdate(ACTIVE_ID, { eventType: "transfer_failed", timestampMs: 100 });
+	assert.equal(emitted[1].transferInfo.registrySource, "active");
+	assert.equal(shipPhaseFor(emitted[1].transferInfo).terminal, false);
+});
+
+test("gateway summaries preserve pending recovery and only expose acknowledged source recovery", () => {
+	const logger=makeLogger({active:[{transferId:ACTIVE_ID,status:"error"}]});
+	const transfer=logger.plugin.activeTransfers.get(ACTIVE_ID);
+	transfer.transferId=ACTIVE_ID;
+	transfer.timingPendingRecovery=true;
+	logger.plugin.transactionLogs.set(ACTIVE_ID,[{eventType:"rollback_success"}]);
+	let row=logger.getTransferSummaries()[0];
+	assert.equal(row.timingPendingRecovery,true);assert.equal(row.sourceRestored,false);
+	transfer.timingPendingRecovery=false;
+	row=logger.getTransferSummaries()[0];assert.equal(row.sourceRestored,true);
+	logger.plugin.subscriptions = { emitLogUpdate() {} };
+	logger.logTransactionEvent(ACTIVE_ID, "rollback_failed", "unlock rejected");
+	assert.equal(logger.getTransferSummaries()[0].sourceRestored,false);
+});
+test("terminal ledger summaries keep recovery flags across detail eviction and older ledger formats",()=>{
+	for(const legacy of [false,true]) {
+		const logger=makeLogger({persisted:[{transferId:PERSISTED_ID,status:'error'}]});
+		const entry=logger.plugin.persistedTransactionLogs[0];
+		entry.transferInfo.timingPendingRecovery=true;
+		const row=logger.plugin.auditIndex.get(PERSISTED_ID);
+		if(!legacy) {
+			Object.assign(row,buildAuditRow({transferId:PERSISTED_ID,rowKind:'terminal',savedAt:entry.savedAt,
+				eventCount:0,lastEventAt:null,info:entry.transferInfo}));
+			logger.plugin.persistedTransactionLogs=[];
+		}
+		assert.equal(logger.getTransferSummaries()[0].timingPendingRecovery,true);
+	}
+});
+test("old retained detail cannot reinstate recovery after a newer explicit ledger observation",()=>{
+	const logger=makeLogger({persisted:[{transferId:PERSISTED_ID,status:'error'}]});
+	logger.plugin.persistedTransactionLogs[0].transferInfo.timingPendingRecovery=true;
+	Object.assign(logger.plugin.auditIndex.get(PERSISTED_ID),{timingPendingRecovery:false,savedAt:9000});
+	assert.equal(logger.getTransferSummaries()[0].timingPendingRecovery,false);
+});
+
 test("an in-memory transfer is stamped registrySource 'active'", () => {
 	const summaries = makeLogger({ active: [{ transferId: ACTIVE_ID }] }).getTransferSummaries();
 	assert.equal(byId(summaries).get(ACTIVE_ID).registrySource, "active",

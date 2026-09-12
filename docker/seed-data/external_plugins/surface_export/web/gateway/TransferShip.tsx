@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { shipPosition, shipTravelDuration } from "./ship-motion";
 import type { ShipPhase, ShipTransfer } from "./transfer-motion";
+import { initialShipDistance, shipLabel } from "./transfer-motion";
 
 export default function TransferShip({ path, phase, reversed, summary, hidden, onSettled }: {
 	path: string;
@@ -12,8 +13,7 @@ export default function TransferShip({ path, phase, reversed, summary, hidden, o
 	onSettled: (id: string, status: string, distance: number) => void;
 }) {
 	const target = reversed ? 1 - phase.distance : phase.distance;
-	// A terminal snapshot has no observed journey to replay. Live ships start at their source.
-	const initial = useRef(phase.terminal ? target : reversed ? 1 : 0);
+	const initial = useRef(initialShipDistance(summary, reversed));
 	const distance = useRef(initial.current);
 	const element = useRef<HTMLDivElement>(null);
 	const { transferId } = summary;
@@ -39,7 +39,7 @@ export default function TransferShip({ path, phase, reversed, summary, hidden, o
 		return () => cancelAnimationFrame(frame);
 	}, [target, transferId, status, onSettled]);
 
-	const title = `${summary.platformName || "platform"} — ${summary.jobObservation?.message || phase.label}`
+	const title = `${summary.platformName || "platform"} — ${shipLabel(summary, phase)}`
 		+ (summary.error ? `: ${summary.error}` : "");
 
 	return (

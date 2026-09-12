@@ -21,6 +21,10 @@ type RowInput = {
 	eventCount: number;
 	lastEventAt: number | null;
 	info: {
+		lateDestinationCleanup?: boolean | null;
+		timingPendingRecovery?: boolean | null;
+		sourceRestored?: boolean;
+		sourceRollback?: import("../shared/recovery").SourceRollback | null;
 		operationType?: string | null;
 		platformName?: string | null;
 		platformIndex?: number | null;
@@ -69,6 +73,10 @@ export function buildAuditRow(input: RowInput): AuditRow {
 		row.errorTruncated = true;
 	}
 	if (info.observedDurationMs !== undefined) row.observedDurationMs = info.observedDurationMs;
+	if (typeof info.timingPendingRecovery === "boolean") row.timingPendingRecovery = info.timingPendingRecovery;
+	if (typeof info.sourceRestored === "boolean") row.sourceRestored = info.sourceRestored;
+	if (info.sourceRollback) row.sourceRollback = info.sourceRollback;
+	if (typeof info.lateDestinationCleanup === "boolean") row.lateDestinationCleanup = info.lateDestinationCleanup;
 	return row;
 }
 

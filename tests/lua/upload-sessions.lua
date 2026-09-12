@@ -20,9 +20,11 @@ local function begin(size, operation)
   sequence=sequence+1
   return sessions.begin({version=1,epoch=storage.source_recovery_epoch,sequence=sequence,
     operationId=operation or "op"..sequence,platformName="same name",forceName="player",
-    totalBytes=size or 2,totalChunks=math.ceil((size or 2)/100000)})
+    totalBytes=size or 2,totalChunks=math.ceil((size or 2)/sessions.MAX_CHUNK_BYTES)})
 end
-sessions.initialize("epoch")
+local handshake=sessions.initialize("epoch")
+assert(handshake.limits.chunkBytes==sessions.MAX_CHUNK_BYTES and handshake.limits.maxSessions==sessions.MAX_SESSIONS)
+assert(handshake.limits.maxUploadBytes==sessions.MAX_BYTES and handshake.limits.maxBufferedBytes==sessions.MAX_BUFFERED_BYTES)
 local a=begin(); local b=begin()
 sessions.chunk(a.attemptId,1,"{}")
 game.tick=50000

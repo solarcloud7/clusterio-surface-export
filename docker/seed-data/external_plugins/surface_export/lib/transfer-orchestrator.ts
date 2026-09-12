@@ -288,12 +288,23 @@ export class TransferOrchestrator {
 	}
 
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
+		transfer.sourceRollback = "attempted";
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		const err = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName));
+		let err;
+		try {
+			err = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(
+				transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName,
+			));
+		} catch (error) {
+			transfer.sourceRollback = "failed";
+			throw error;
+		}
 		if (!err) {
+			transfer.sourceRollback = "succeeded";
 			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
 			return null;
 		}
+		transfer.sourceRollback = "failed";
 		this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
 		return err;
 	}

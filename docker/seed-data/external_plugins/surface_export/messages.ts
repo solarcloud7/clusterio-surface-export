@@ -1530,6 +1530,8 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	sourceRollback?: import("./shared/recovery").SourceRollback;
+	lateDestinationCleanup?: boolean;
  destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
 	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;
@@ -1582,7 +1584,7 @@ export interface StoredExport {
 
 export interface PersistedTransactionLog {
 	transferId: string;
-	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string };
+	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string; sourceRestored?: boolean };
 	summary: Record<string, unknown>;
 	events: TransactionLogEntryModel[];
 	savedAt: number;

@@ -78,6 +78,36 @@ function makeHarness({ detailCap, extraLogIds = [] } = {}) {
 	return { txLogger: new TransactionLogger(plugin), plugin, transferId, file };
 }
 
+test("rollback evidence is hydrated once, updated by events, and survives detail retention", async () => {
+	const { txLogger, plugin, transferId, file } = makeHarness();
+	const transfer = plugin.activeTransfers.get(transferId);
+	transfer.status = "failed";
+	const events = [{ eventType: "rollback_failed" }];
+	let reads = 0;
+	plugin.transactionLogs.set(transferId, new Proxy(events, { get(target, key) {
+		if (key === "0") reads++;
+		return Reflect.get(target, key);
+	} }));
+	assert.equal(txLogger.buildTransferInfo(transfer).sourceRollback, "failed");
+	const hydratedReads = reads;
+	assert.ok(hydratedReads > 0);
+	for (let i = 0; i < 5; i++) assert.equal(txLogger.buildTransferInfo(transfer).sourceRollback, "failed");
+	assert.equal(reads, hydratedReads);
+	await txLogger.persistTransactionLog(transferId);
+	const recorded = plugin.auditRows.at(-1);
+	assert.equal(recorded.sourceRollback, "failed");
+	plugin.activeTransfers.clear();
+	plugin.persistedTransactionLogs = [];
+	plugin.auditIndex.set(transferId, recorded);
+	assert.equal(txLogger.getTransferSummaries().find(row => row.transferId === transferId).sourceRollback, "failed");
+	plugin.activeTransfers.set(transferId, transfer);
+	txLogger.logTransactionEvent(transferId, "rollback_success", "acknowledged");
+	assert.equal(txLogger.buildTransferInfo(transfer).sourceRollback, "succeeded");
+	assert.equal(txLogger.buildTransferInfo(transfer).sourceRestored, true);
+	await txLogger.persistTransactionLog(transferId);
+	assert.equal(JSON.parse(fs.readFileSync(file, "utf8"))[0].transferInfo.sourceRollback, "succeeded");
+});
+
 test("the ledger row is written BEFORE the detail entry", async () => {
 	const { txLogger, transferId } = makeHarness();
 
@@ -85,6 +115,47 @@ test("the ledger row is written BEFORE the detail entry", async () => {
 
 	assert.deepEqual(trace, ["ledger", "detail"]);
 });
+
+for (const success of [true, false]) {
+	test(`late ${success ? "success" : "discard failure"} keeps cleanup visible after history reload`, async t => {
+		const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
+		const { shipPhaseFor } = require(path.join(distNode, "shared", "transfer-status.js"));
+		const { txLogger, plugin, transferId, file } = makeHarness();
+		plugin.txLogger = txLogger;
+		plugin.subscriptions.emitTransferUpdate = () => {};
+		plugin.subscriptions.queueTreeBroadcast = () => {};
+		plugin.controller.sendTo = () => assert.fail("late verdict must not send platform commands");
+		const transfer = plugin.activeTransfers.get(transferId);
+		Object.assign(transfer, { status: "failed", sourceRollback: "succeeded", timingPendingRecovery: false });
+		const orch = new TransferOrchestrator(plugin, {});
+		t.after(() => orch.stop());
+		t.after(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }));
+		await orch.handleTransferValidation({ transferId, success,
+			validation: success ? {} : { cleanup_failed: true, cleanup_error: "discard rejected" } });
+		assert.equal(transfer.status, "cleanup_failed");
+		assert.equal(transfer.sourceRollback, "succeeded");
+		assert.equal(transfer.timingPendingRecovery, false);
+		const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+		const audit = JSON.parse(JSON.stringify(plugin.auditRows.at(-1)));
+		assert.ok(stored[0].events.some(event => event.eventType === "validation_after_settle"));
+		plugin.activeTransfers.clear();
+		plugin.transactionLogs.clear();
+		plugin.persistedTransactionLogs = stored;
+		const restarted = new TransactionLogger(plugin);
+		const assertPending = () => {
+			const row = restarted.getTransferSummaries().find(entry => entry.transferId === transferId);
+			assert.equal(row.registrySource, "persisted");
+			assert.equal(shipPhaseFor(row).terminal, false, "unresolved destination cleanup must survive reload");
+		};
+		assertPending();
+		delete stored[0].transferInfo.lateDestinationCleanup;
+		const legacy = new TransactionLogger(plugin).getTransferSummaries().find(row => row.transferId === transferId);
+		assert.equal(shipPhaseFor(legacy).terminal, false, "older details must recover the existing late-verdict evidence");
+		plugin.auditIndex.set(transferId, audit);
+		plugin.persistedTransactionLogs = [];
+		assertPending();
+	});
+}
 
 test("the persisted entry snapshots its events instead of aliasing the live array", async () => {
 	const { txLogger, plugin, transferId } = makeHarness();

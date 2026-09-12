@@ -71,6 +71,55 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+test("import and validation failures expose the actual source rollback acknowledgement", async t => {
+	const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
+	const { shipPhaseFor } = require(path.join(distNode, "shared", "transfer-status.js"));
+	for (const handler of ["import", "validation"]) {
+		for (const error of [null, "source offline"]) {
+			const h = makeHarness(() => { throw Error("must not replay import"); });
+			t.after(() => h.orch.stop());
+			delete h.orch.tryUnlockSource;
+			let reply;
+			h.orch.sendUnlockRequest = () => new Promise(resolve => { reply = resolve; });
+			h.orch.broadcastTransferStatus = async () => {};
+			const row = { transferId: "rollback:1", platformIndex: 3, platformName: "fixture", forceName: "player",
+				sourceInstanceId: 1, targetInstanceId: 2, status: "awaiting_validation" };
+			h.activeTransfers.set(row.transferId, row);
+			h.plugin.transactionLogs = new Map();
+			const recorded = [];
+			h.plugin.txLogger.logTransactionEvent = (_id, type) => recorded.push({ type, outcome: row.sourceRollback });
+			const result = handler === "import" ? h.orch.handleImportFailure(row.transferId, "rejected", 1)
+				: h.orch.handleValidationFailure(row.transferId, row, { mismatchDetails: "rejected" });
+			await new Promise(resolve => setImmediate(resolve));
+			assert.equal(row.sourceRollback, "attempted");
+			assert.equal(recorded.find(event => event.type === "rollback_attempt").outcome, "attempted");
+			reply(error);
+			await result;
+			const expected = error ? "failed" : "succeeded";
+			assert.equal(row.sourceRollback, expected);
+			assert.equal(recorded.find(event => event.type === (error ? "rollback_failed" : "rollback_success")).outcome,
+				expected);
+			const view = new TransactionLogger(h.plugin).buildTransferInfo(row);
+			assert.equal(view.sourceRollback, expected);
+			assert.equal(view.sourceRestored, !error);
+			assert.equal(shipPhaseFor(view).terminal, !error);
+			assert.equal(shipPhaseFor(view).distance, error ? 0.5 : 0);
+			assert.equal(h.calls.importSends, 0);
+		}
+	}
+});
+
+test("an unexpected source-unlock exception leaves failed rollback evidence", async t => {
+	const h = makeHarness(() => {});
+	t.after(() => h.orch.stop());
+	delete h.orch.tryUnlockSource;
+	h.orch.sendUnlockRequest = async () => { throw Error("unlock exception"); };
+	const row = { sourceInstanceId: 1, platformIndex: 3 };
+	await assert.rejects(h.orch.tryUnlockSource("rollback:throw", row), /unlock exception/);
+	assert.equal(row.sourceRollback, "failed");
+	assert.ok(!h.calls.events.includes("rollback_success"));
+});
+
 test("admitted queue work remains observable through repeated controller restarts", async t => {
 	const fs = require("node:fs/promises"), os = require("node:os");
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-admitted-observation-"));

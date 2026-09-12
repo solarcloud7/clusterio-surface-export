@@ -1,3 +1,5 @@
+import { runLab } from './lifecycle.mjs';
+import { checkRecoveryPreview } from '../../integration/canvas-motion/recovery.mjs';
 import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -37,11 +39,11 @@ await withWorkflowLock(async()=>{
     return {success:true,transferId:line.slice('Transfer queued: '.length)};
   };
   const call=(action,q)=>lab.lua(2,`local raw=remote.call('surface_export','upload_session_json','${action}',[==[${JSON.stringify({version:1,...q})}]==]);return {success=true,receipt=helpers.json_to_table(raw)}`).result.receipt;
-  let sequence=0,epoch;
-  const begin=(name,bytes=2)=>call('begin',{epoch,sequence:++sequence,operationId:`${run}:${name}`,platformName:name,forceName:'player',totalBytes:bytes,totalChunks:Math.ceil(bytes/100000)});
+  let sequence=0,epoch,limits;
+  const begin=(name,bytes=2)=>call('begin',{epoch,sequence:++sequence,operationId:`${run}:${name}`,platformName:name,forceName:'player',totalBytes:bytes,totalChunks:Math.ceil(bytes/limits.chunkBytes)});
   let browser;
   save();
-  try {
+  process.exitCode=await runLab({lab,report,save,work:async()=>{
     console.log(`Starting ${run}`);
     report.environment=await lab.setup();save();lab.deadline=Date.now()+720_000;
     if(['all','notification'].includes(selection)) await exportNotificationFailure(lab,report,save,startQueued);
@@ -50,7 +52,8 @@ await withWorkflowLock(async()=>{
     if(selection==='diagnostics') await unresolvedAdmissionDiagnostics(lab,report,save);
     if(selection!=='all') {report.verdict='PASS';return;}
     epoch=await lab.until(()=>lab.lua(2,'return {success=true,epoch=(storage.import_sessions or {}).epoch}').result.epoch,'upload protocol initialized');
-    sequence=lab.lua(2,'return {success=true,value=storage.import_sessions.high_water}').result.value;
+    const handshake=call('initialize',{epoch});limits=handshake.limits;sequence=handshake.highWater;
+    report.uploadLimits=limits;
     const receiving=begin('abandoned');assert.equal(receiving.state,'receiving');
     assert.equal(call('chunk',{attemptId:receiving.attemptId,index:1,data:'{}'}).receivedBytes,2);
     assert.equal(call('chunk',{attemptId:receiving.attemptId,index:1,data:'{}'}).receivedBytes,2);
@@ -58,12 +61,12 @@ await withWorkflowLock(async()=>{
     assert.equal(call('abort',{attemptId:receiving.attemptId}).state,'aborted');
     assert.equal(call('chunk',{attemptId:receiving.attemptId,index:1,data:'{}'}).success,false);
     assert.equal(call('status',{attemptId:'missing'}).state,'unavailable');
-    const slots=Array.from({length:4},(_,i)=>begin(`slot-${i}`));
+    const slots=Array.from({length:limits.maxSessions},(_,i)=>begin(`slot-${i}`));
     assert.ok(slots.every(r=>r.state==='receiving'));assert.equal(begin('overflow').success,false);
     for(const r of slots) call('abort',{attemptId:r.attemptId});
-    const reserved=[begin('large-a',512*1024*1024),begin('large-b',512*1024*1024)];
+    const reserved=[begin('large-a',limits.maxUploadBytes),begin('large-b',limits.maxUploadBytes)];
     assert.ok(reserved.every(r=>r.state==='receiving'));assert.equal(begin('aggregate-overflow').success,false);
-    assert.equal(begin('too-large',512*1024*1024+1).success,false);
+    assert.equal(begin('too-large',limits.maxUploadBytes+1).success,false);
     for(const r of reserved)call('abort',{attemptId:r.attemptId});
     report.cases.push({name:'real protocol duplicates, closure and capacity',status:'PASS'});save();
 
@@ -106,6 +109,10 @@ await withWorkflowLock(async()=>{
     await page.getByTestId('job-observation').filter({hasText:'Waiting in Lua queue'}).waitFor({timeout:20_000});
     await page.screenshot({path:join(directory,'queued.png'),fullPage:true});
     report.cases.push({name:'queued beyond 30 seconds, repeated commit and browser presentation',status:'PASS'});save();
+    await page.goto(`${lab.url}/surface-export?tab=gateways`);
+    await page.getByRole('button',{name:'toggle debug mode',exact:true}).click();
+    await checkRecoveryPreview(page);
+    report.cases.push({name:'recovery marker stays unresolved and visible beyond terminal fade',status:'PASS'});save();
 
     // Controller restart must observe the existing job, never replay admission or call failure cleanup.
     lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);
@@ -210,11 +217,6 @@ await withWorkflowLock(async()=>{
       result.status='PASS';save();
     }
     report.verdict='PASS';
-  } catch(error) {report.verdict=error.code==='ACCEPTANCE_STOP'?'STOP':'HARNESS_ERROR';report.error=error.stack;process.exitCode=1;}
-  finally {
-    await browser?.close();report.cleanup=await lab.cleanup();
-    if(!report.cleanup.success){report.verdict='HARNESS_ERROR';process.exitCode=1;}
-    report.finished=new Date().toISOString();save();
-    console.log(JSON.stringify({verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,artifact:join(directory,'result.json')},null,2));
-  }
+  },beforeCleanup:()=>browser?.close()});
+  console.log(JSON.stringify({verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,artifact:join(directory,'result.json')},null,2));
 });

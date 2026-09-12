@@ -10,10 +10,10 @@ const STEPS = [
 	{ sourceInstanceId: -1, targetInstanceId: -2, status: "completed" },
 	{ sourceInstanceId: -2, targetInstanceId: -1, status: "transporting" },
 	{ sourceInstanceId: -2, targetInstanceId: -1, status: "awaiting_validation" },
-	{ sourceInstanceId: -2, targetInstanceId: -1, status: "failed" },
+	{ sourceInstanceId: -2, targetInstanceId: -1, status: "failed", sourceRestored: true },
 	{ sourceInstanceId: -2, targetInstanceId: -1, status: "transporting" },
 	{ sourceInstanceId: -2, targetInstanceId: -1, status: "awaiting_validation" },
-	{ sourceInstanceId: -2, targetInstanceId: -1, status: "cleanup_failed" },
+	{ sourceInstanceId: -2, targetInstanceId: -1, status: "cleanup_failed", timingPendingRecovery: true },
 ];
 
 // Uses the real edge renderer, but never calls the plugin or changes gateway configuration.
@@ -26,7 +26,7 @@ export default function MotionPreview({ onClose }: { onClose: () => void }) {
 		const timer = setInterval(() => setStep(value => value + 1), 2200);
 		return () => clearInterval(timer);
 	}, [playing]);
-	const current = { ...STEPS[step % STEPS.length], ...(queued ? { status: "queued" } : {}) };
+	const current = { ...STEPS[step % STEPS.length], ...(queued ? { status: "queued", timingPendingRecovery: false, sourceRestored: false } : {}) };
 	const ship = {
 		...current,
 		transferId: `preview-${Math.floor(step / STEPS.length)}-${Math.floor((step % STEPS.length) / 3)}`,
@@ -49,7 +49,7 @@ export default function MotionPreview({ onClose }: { onClose: () => void }) {
 			</div>
 		</div>
 		<Typography.Paragraph>
-			{current.sourceInstanceId === -1 ? "A → B" : "B → A"}: {shipPhaseFor(current.status)?.label}
+			{current.sourceInstanceId === -1 ? "A → B" : "B → A"}: {shipPhaseFor(current)?.label}
 		</Typography.Paragraph>
 		<Space>
 			<Button onClick={() => { setQueued(false); setPlaying(value => !value); }}>{playing ? "Pause" : "Play round trip"}</Button>

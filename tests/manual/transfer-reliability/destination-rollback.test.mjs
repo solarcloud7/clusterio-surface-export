@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { analyze, performanceCargo } from "./oracle.mjs";
 import { DockerLab } from "./docker-lab.mjs";
 import { destinationRollbackCase, loadDestinationCheckpoint } from "./destination-rollback.mjs";
+import { importMutation } from "../../../tools/tests/testkit/mutation-run.mjs";
 
 const run="se-manual-destination-offline";
 const absent=()=>({present:false,tick:10});
@@ -104,6 +105,27 @@ test("checkpoint retries incomplete writes and still requires a verified digest"
   const until=lab.until.bind(lab);lab.until=(read,label)=>until(read,label,2);
   assert.deepEqual(await lab.checkpoint("manual-pending",[2]),{2:"a".repeat(64)});
   assert.equal(attempts,2);
+});
+
+for(const guard of [
+  {name:"destination usability summary",file:"oracle.mjs",find:"finalDestinationUsable:last.destination.usable===true",
+    replace:"finalDestinationUsable:true",check:module=>{
+      const r=report();for(const s of r.rollback.samples)s.destination=absent();
+      assert.equal(module.analyze(r).observation.finalDestinationUsable,false);
+    }},
+  {name:"embedded observation window",file:"oracle.mjs",find:"previous>=bounds.observationMs",replace:"true",check:module=>{
+    const r=report();r.contract.cases.find(c=>c.id==="restore-old-destination").observationMs=70000;
+    assert.throws(()=>module.analyze(r),/full recovery observation window/);
+  }},
+  {name:"permanent checkpoint error",file:"docker-lab.mjs",find:"if(error.retryable===false) throw error;",replace:"",check:async module=>{
+    const lab=new module.DockerLab(run,"unused"),fatal=Object.assign(new Error("checkpoint exceeds 256 MiB"),{retryable:false});
+    await assert.rejects(lab.until(()=>{throw fatal;},"verified checkpoint",.001),error=>error===fatal);
+  }}
+]) test(`regression rejects removal of ${guard.name}`,async()=>{
+  const url=new URL(guard.file,import.meta.url);
+  await guard.check(await import(url.href));
+  const mutant=await importMutation(url,guard);
+  await assert.rejects(async()=>guard.check(mutant),{name:"AssertionError"});
 });
 
 test("late recovery cannot erase an earlier absence and one import cannot hide changed cargo",()=>{

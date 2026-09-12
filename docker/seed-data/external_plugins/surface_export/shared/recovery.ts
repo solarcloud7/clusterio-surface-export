@@ -1,5 +1,25 @@
 export type PlatformSourceOfTruth = "plugin_history" | "save_game";
 
+export type SourceRollback = "attempted" | "succeeded" | "failed";
+
+export function lateDestinationCleanupFromEvents(
+	events: readonly { eventType?: unknown; settledStatus?: unknown; newStatus?: unknown }[],
+): true | undefined {
+	return events.some(event => event.eventType === "validation_after_settle"
+		&& event.settledStatus === "failed" && event.newStatus === "cleanup_failed") ? true : undefined;
+}
+
+export function sourceRollbackFromEvents(events: readonly { eventType?: unknown }[]): SourceRollback | undefined {
+	for (let i = events.length - 1; i >= 0; i--) {
+		switch (events[i].eventType) {
+			case "rollback_attempt": return "attempted";
+			case "rollback_success": return "succeeded";
+			case "rollback_failed": return "failed";
+		}
+	}
+	return undefined;
+}
+
 export interface RecoveryNotice {
 	platformIndex: number;
 	platformName: string;
