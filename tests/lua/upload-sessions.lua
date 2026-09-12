@@ -98,7 +98,20 @@ for index=1,4 do
   local receipt=begin(2,"uncertain"..index);sessions.chunk(receipt.attemptId,1,"{}")
   unresolved[index]=sessions.commit(receipt.attemptId,function() error("uncertain admission") end)
 end
+local previous_diagnostics=#diagnostics
 fails(function() begin() end,"capacity exhausted")
+assert(#diagnostics==previous_diagnostics+4,"capacity rejection must identify every unresolved admission")
+for _,receipt in ipairs(unresolved) do
+  local found=false
+  for i=previous_diagnostics+1,#diagnostics do
+    local message=diagnostics[i]
+    if message:find(receipt.attemptId,1,true) and message:find("uncertain admission",1,true) then found=true end
+  end
+  assert(found,"capacity diagnostic omitted attempt identity or retained error")
+end
+sessions=dofile(root.."core/import-session.lua")
+fails(function() begin() end,"capacity exhausted")
+assert(#diagnostics==previous_diagnostics+4,"retries and reloads must not repeat admission warnings")
 for _,receipt in ipairs(unresolved) do
   storage.async_job_results[receipt.jobId]={status="complete",operation_id="foreign-operation"}
 end

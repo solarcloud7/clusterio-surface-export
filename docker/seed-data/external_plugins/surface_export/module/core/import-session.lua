@@ -76,7 +76,16 @@ function Sessions.begin(q)
   if other.chunks or other.state=="admitting" then count=count+1 end
   if other.chunks then bytes=bytes+other.total_bytes end
  end
- assert(count<Sessions.MAX_SESSIONS and bytes+q.totalBytes<=Sessions.MAX_BUFFERED_BYTES,"Upload capacity exhausted")
+ if count>=Sessions.MAX_SESSIONS or bytes+q.totalBytes>Sessions.MAX_BUFFERED_BYTES then
+  for _,other in pairs(s.records) do
+   if other.state=="admitting" and not other.capacity_reported then
+    other.capacity_reported=true
+    local reason=tostring(other.error or "No matching job evidence"):gsub("[\r\n]"," "):sub(1,2048)
+    log("[Upload] Capacity blocked by unresolved admission "..other.id..": "..reason)
+   end
+  end
+  error("Upload capacity exhausted")
+ end
  r={id=id,epoch=q.epoch,operation_id=q.operationId,state="receiving",platform_name=q.platformName,
   force_name=q.forceName,total_bytes=q.totalBytes,total_chunks=q.totalChunks,chunks={},received_count=0,
   received_bytes=0,started_tick=game.tick,last_progress_tick=game.tick,timing_id="upload:"..id}

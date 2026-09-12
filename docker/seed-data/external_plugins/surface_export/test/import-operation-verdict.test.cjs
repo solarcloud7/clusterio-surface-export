@@ -102,8 +102,32 @@ function makeControllerHarness() {
 	plugin.subscriptions = { emitTransferUpdate() {}, queueTreeBroadcast() {} };
 	plugin.platformTree = { resolveInstanceName: (id) => `instance-${id}` };
 	plugin.orchestrator = { pruneOldTransfers() {} };
+	plugin.isInstanceOnline = () => true;
 	return { plugin, operation, logged };
 }
+
+test("unassigned, stopped, disconnected and removed destinations cannot acknowledge an unsent import", async () => {
+	for (const state of ["unassigned", "stopped", "disconnected", "removed"]) {
+		const {plugin, operation} = makeControllerHarness();
+		plugin.recoveryReservations = new Map();
+		plugin.platformTree.resolveTargetInstance = () => ({id: 2, instance: {}});
+		plugin.createOperationRecord = async () => operation;
+		delete plugin.isInstanceOnline; // Exercise the actual controller guard, including a valid host 0.
+		let sends = 0;
+		plugin.controller = {
+			instances: new Map(state === "removed" ? [] : [[2, {status: state === "stopped" ? "stopped" : "running",
+				config: {get: () => state === "unassigned" ? null : 0}}]]),
+			hosts: new Map([[0, {connected: state !== "disconnected"}]]),
+			sendTo: async () => { sends++; throw new Error("dispatch must not run"); },
+		};
+		const response = await plugin.handleImportUploadedExportRequestMeasured({targetInstanceId: 2,
+			exportData: {platform: {force: "player"}, entities: []}});
+		assert.equal(response.success, false, state);
+		assert.equal(sends, 0, state);
+		assert.equal(operation.status, "failed", state);
+		assert.equal(operation.jobObservation, undefined, state);
+	}
+});
 
 test("a definite controller dispatch rejection cannot acknowledge an import", async () => {
 	const {plugin,operation}=makeControllerHarness();

@@ -102,6 +102,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
+		this.i.handle(messages.ReadExportRequest, this.handleReadExportRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.DestinationTransferGateRequest, this.handleDestinationTransferGate.bind(this));
@@ -485,6 +486,16 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.error(`Export failed: ${errMsg}`);
 			return { success: false, error: errMsg };
 		}
+	}
+
+	async handleReadExportRequest(request: messages.ReadExportRequest): Promise<ReturnType<typeof messages.ReadExportRequest.Response.fromJSON>> {
+		this.assertRecoveryRuntime(request.epoch);
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source runtime is not ready");
+		const exportData = await this.withTiming(request.exportId, request.exportId, "Retained export retrieval",
+			() => this.getExportData(request.exportId, {logOnMissing: false}));
+		this.assertRecoveryRuntime(request.epoch);
+		return exportData ? {success: true, exportId: request.exportId, epoch: request.epoch, exportData}
+			: {success: false, error: "Completed export payload is no longer available in the source cache"};
 	}
 
 	async getExportData(exportId: string, options: { logOnMissing?: boolean } = {}): Promise<ExportData | null> {

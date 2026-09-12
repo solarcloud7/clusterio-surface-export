@@ -65,6 +65,9 @@ An admitting attempt is reconciled when its reserved job ID gains matching opera
 evidence in a live job or retained result. It then becomes accepted and no longer uses
 a receiving slot. Missing or mismatched evidence keeps the admission unresolved; neither
 age nor a new sender epoch permits discarding its ownership record.
+If capacity is exhausted, each unresolved admission logs its attempt ID and retained
+error once. The diagnostic flag survives save/reload. Reporting does not reclaim the
+slot, release a platform, or authorize another import.
 
 ## Status observation
 
@@ -107,6 +110,18 @@ An explicit failure to send the Lua export notification is retained as a failed 
 result. The controller can then resolve the failed request through its existing failure
 path. A completed job with delivery still in flight is not treated as proof of failure.
 
+For a tracked source job observed as completed without a stored artifact, the controller
+issues a read-only `ReadExportRequest` for that job's existing Lua export cache entry.
+It reads at most once per operation and observed instance startup epoch during a controller
+process lifetime. The instance checks the epoch before and after retrieval. The controller
+checks the response identity and retains the first artifact if the original push arrives too.
+This neither reruns export nor dispatches import; the original transfer flow resumes when
+storage becomes available. Missing data or a failed read leaves the operation protected with
+“Export completed; payload unavailable” and the read error. A later push can still resolve it;
+a new instance epoch or controller restart permits another read. Cache data lost with an
+unsaved world cannot be reconstructed by this path. Export metrics that existed only in the
+lost notification remain unavailable.
+
 Unresolved records remain eligible for status observation. Online instances therefore
 continue receiving bounded status requests until resolution, even when the original
 result was lost. Known offline instances produce an unavailable observation without an
@@ -144,9 +159,12 @@ artifacts without including unrelated working-file changes:
 node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/upload-pr-runtime/dist ci-artifacts/upload-pr-runtime
 ```
 
-A fourth argument, `notification` or `admitting`, runs only the corresponding review
-regression in the same disposable lab. The default runs the complete fixture. Results
-record the selection so a focused pass cannot be confused with full acceptance.
+A fourth argument, `notification`, `admitting`, `lost-notification`, or `diagnostics`,
+runs only the corresponding review regression in the same disposable lab. The default
+includes lost-notification recovery with the original fixture. The diagnostics case runs
+separately because it intentionally leaves all four admission slots unresolved until lab
+teardown. Results record the selection so a focused pass cannot be confused with full
+acceptance.
 
 The fixture checks host process crashes after receiving and accepted-job checkpoints,
 controller restart during queued work, and a queued successor proceeding only after
@@ -160,3 +178,8 @@ Factorio execution, saves, and process restarts are real. Capacity cases reserve
 declared sizes without allocating a 1 GiB test payload. Unit tests separately exercise
 receipt pruning and malformed protocol calls. None of these tests establishes a universal
 memory, throughput, or crash-safety guarantee.
+
+The lost-notification fixture suppresses one completion message while Lua reports success,
+then follows the canonical transfer ID through cache retrieval, normal validation, delayed
+duplicate delivery, and a destination save/reload. It compares physical cargo independently.
+This simulates a missing message; it does not establish survival of an unsaved host crash.

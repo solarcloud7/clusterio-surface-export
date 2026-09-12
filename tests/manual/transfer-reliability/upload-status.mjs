@@ -6,7 +6,7 @@ import { DockerLab, ROOT, PLUGIN, hashTree } from './docker-lab.mjs';
 import { summary, terminal, sample, recoveryCase } from './cases.mjs';
 import { expectedCargo } from '../../integration/transfer-cleanup/oracle.mjs';
 import { withWorkflowLock } from '../../../tools/shared/workflow-lock.mjs';
-import { exportNotificationFailure, resolvedAdmissions } from './upload-review-cases.mjs';
+import { exportNotificationFailure, resolvedAdmissions, lostExportNotification, unresolvedAdmissionDiagnostics } from './upload-review-cases.mjs';
 
 // Explicit candidate output; never builds, deploys, or reads the development cluster's saves.
 const output=process.argv[2];
@@ -16,7 +16,7 @@ assert.ok(candidate.startsWith(resolve(ROOT,'ci-artifacts')+'/') || candidate.st
 const packageSource=process.argv[3] ? resolve(ROOT,process.argv[3]) : PLUGIN;
 if(process.argv[3]) assert.ok(packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'/') || packageSource.startsWith(resolve(ROOT,'ci-artifacts')+'\\'));
 const selection=process.argv[4]||'all';
-assert.ok(['all','notification','admitting'].includes(selection),'Unknown acceptance case selection');
+assert.ok(['all','notification','admitting','lost-notification','diagnostics'].includes(selection),'Unknown acceptance case selection');
 
 await withWorkflowLock(async()=>{
   const run=`se-manual-upload-${randomUUID().slice(0,8)}`, directory=join(ROOT,'ci-artifacts',run);
@@ -44,8 +44,10 @@ await withWorkflowLock(async()=>{
   try {
     console.log(`Starting ${run}`);
     report.environment=await lab.setup();save();lab.deadline=Date.now()+720_000;
-    if(selection!=='admitting') await exportNotificationFailure(lab,report,save,startQueued);
-    if(selection!=='notification') await resolvedAdmissions(lab,report,save);
+    if(['all','notification'].includes(selection)) await exportNotificationFailure(lab,report,save,startQueued);
+    if(['all','admitting'].includes(selection)) await resolvedAdmissions(lab,report,save);
+    if(['all','lost-notification'].includes(selection)) await lostExportNotification(lab,report,save,startQueued);
+    if(selection==='diagnostics') await unresolvedAdmissionDiagnostics(lab,report,save);
     if(selection!=='all') {report.verdict='PASS';return;}
     epoch=await lab.until(()=>lab.lua(2,'return {success=true,epoch=(storage.import_sessions or {}).epoch}').result.epoch,'upload protocol initialized');
     sequence=lab.lua(2,'return {success=true,value=storage.import_sessions.high_water}').result.value;
@@ -208,7 +210,7 @@ await withWorkflowLock(async()=>{
       result.status='PASS';save();
     }
     report.verdict='PASS';
-  } catch(error) {report.verdict='HARNESS_ERROR';report.error=error.stack;process.exitCode=1;}
+  } catch(error) {report.verdict=error.code==='ACCEPTANCE_STOP'?'STOP':'HARNESS_ERROR';report.error=error.stack;process.exitCode=1;}
   finally {
     await browser?.close();report.cleanup=await lab.cleanup();
     if(!report.cleanup.success){report.verdict='HARNESS_ERROR';process.exitCode=1;}

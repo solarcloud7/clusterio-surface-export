@@ -37,6 +37,7 @@ export class TransferOrchestrator {
 	private readonly observer: JobObserver;
 	private observationDue = new Map<string, number>();
 	private restoredExports = new Set<string>();
+	private exportReads = new Map<string, {epoch: string; error?: string}>();
 	private stopped = false;
 
 	stop() {
@@ -207,6 +208,47 @@ export class TransferOrchestrator {
 				try { await recovery; } finally { this.settlingTransfers.delete(intent.transferId); }
 			}
 		} finally { this.recoveryRunning = false; }
+	}
+
+	private async recoverExportArtifact(transfer: ActiveTransfer, epoch: string) {
+		if (!transfer.sourceExportId || !epoch || !this.plugin.isInstanceOnline(transfer.sourceInstanceId)) return;
+		const exportId = makeCanonicalTransferId(transfer.sourceInstanceId, transfer.sourceExportId);
+		if (this.plugin.platformStorage.has(exportId)) return;
+		let read = this.exportReads.get(transfer.transferId);
+		const current = () => !this.stopped && this.exportReads.get(transfer.transferId) === read
+			&& this.plugin.activeTransfers.get(transfer.transferId) === transfer
+			&& ["in_progress", "preparing"].includes(transfer.status)
+			&& this.plugin.isInstanceOnline(transfer.sourceInstanceId)
+			&& (!transfer.jobObservation?.epoch || transfer.jobObservation.epoch === epoch);
+		if (read?.epoch !== epoch) {
+			read = {epoch};
+			// Reserve before awaiting: concurrent observation cannot duplicate a large read.
+			this.exportReads.set(transfer.transferId, read);
+			try {
+				const response = await timed("Retained export retrieval round trip", "round-trip", () =>
+					this.plugin.controller.sendTo({instanceId: transfer.sourceInstanceId},
+						new this.messages.ReadExportRequest(transfer.sourceExportId!, epoch)));
+				if (!current()) return;
+				if (!response.success || response.exportId !== transfer.sourceExportId || response.epoch !== epoch || !response.exportData) {
+					throw new Error(response.error || "Retained export response identity is unavailable or mismatched");
+				}
+				await this.plugin.handlePlatformExport(new this.messages.PlatformExportEvent({
+					exportId: transfer.sourceExportId, instanceId: transfer.sourceInstanceId,
+					platformIndex: transfer.platformIndex,
+					platformName: response.exportData.platform_name || transfer.platformName,
+					exportData: response.exportData, timestamp: Date.now(),
+				}));
+			} catch (error) {
+				if (!current()) return;
+				read.error = getErrorMessage(error);
+				this.logger.warn(`Retained export ${exportId} could not be recovered: ${read.error}`);
+			}
+		}
+		if (current() && read?.error && transfer.jobObservation && !this.plugin.platformStorage.has(exportId)) {
+			transfer.jobObservation.message = "Export completed; payload unavailable";
+			transfer.jobObservation.reason = read.error;
+			this.updateTransfer(transfer);
+		}
 	}
 
 	async waitForStoredExport(exportId: string) {
@@ -557,6 +599,10 @@ export class TransferOrchestrator {
 
 	/** Shared with the existing recovery heartbeat; never starts or cancels a Lua job. */
 	async observeJobs(): Promise<void> {
+		for (const id of this.exportReads.keys()) {
+			const transfer = this.plugin.activeTransfers.get(id);
+			if (!transfer || !["in_progress", "preparing"].includes(transfer.status)) this.exportReads.delete(id);
+		}
 		if (this.stopped) return;
 		const groups = new Map<number, ActiveTransfer[]>();
 		for (const transfer of this.plugin.activeTransfers.values()) {
@@ -607,6 +653,9 @@ export class TransferOrchestrator {
 				}
 				// Only the original composite verdict can enter the existing transfer success/failure path.
 				const result = status.completion;
+				if (["in_progress", "preparing"].includes(transfer.status) && transfer.sourceExportId && status.state === "completed") {
+					await this.recoverExportArtifact(transfer, batch.epoch);
+				}
 				if (this.restoredExports.has(transfer.transferId) && status.state === "failed") {
 					transfer.status = "failed";
 					transfer.failedAt = Date.now();

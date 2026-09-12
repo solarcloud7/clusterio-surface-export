@@ -666,6 +666,26 @@ export class ImportPlatformRequest {
 	};
 }
 
+export class ReadExportRequest {
+	declare ["constructor"]: typeof ReadExportRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: {exportId: {type: "string", minLength: 1}, epoch: {type: "string", minLength: 1}},
+		required: ["exportId", "epoch"], additionalProperties: false,
+	};
+	constructor(readonly exportId: string, readonly epoch: string) {}
+	static fromJSON(json: {exportId: string; epoch: string}) { return new ReadExportRequest(json.exportId, json.epoch); }
+	toJSON() { return {exportId: this.exportId, epoch: this.epoch}; }
+	static Response = {
+		jsonSchema: {type: "object", properties: {success: {type: "boolean"}, error: {type: "string"},
+			exportId: {type: "string"}, epoch: {type: "string"}, exportData: {type: "object"}}, required: ["success"]} as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & {exportId?: string; epoch?: string; exportData?: ExportData}; },
+	};
+}
+
 export class JobsStatusRequest {
 	declare ["constructor"]: typeof JobsStatusRequest;
 	static plugin = PLUGIN_NAME;
@@ -1605,6 +1625,7 @@ export interface SourceCommitMarker {
 }
 
 export interface IControllerPlugin {
+	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
 	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
 	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
 	pendingTransfers?: Map<string, PendingTransferIntent>;

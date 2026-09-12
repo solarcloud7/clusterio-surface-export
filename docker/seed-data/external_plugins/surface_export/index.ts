@@ -151,6 +151,7 @@ export const plugin = {
 		messages.PlatformExportEvent,
 		messages.ImportPlatformRequest,
 		messages.JobsStatusRequest,
+		messages.ReadExportRequest,
 		messages.ImportPlatformFromFileRequest,
 		messages.ListExportsRequest,
 		messages.GetStoredExportRequest,

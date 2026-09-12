@@ -254,6 +254,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async handlePlatformExportMeasured(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		const sourceExportId = event.exportId;
 		const canonicalExportId = makeCanonicalTransferId(event.instanceId, sourceExportId);
+		// A recovery read can win a race with the original completion event.
+		// One immutable source job has one artifact; duplicate delivery cannot replace it.
+		if (this.platformStorage.has(canonicalExportId)) return;
 		this.logger.info(`Received platform export: ${canonicalExportId} (source ${sourceExportId}) from instance ${event.instanceId} (${event.platformName})`);
 
 		try {
@@ -459,6 +462,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		} : null;
 
 		try {
+			// Check immediately before dispatch, after record persistence may have yielded.
+			if (!this.isInstanceOnline(resolved.id)) {
+				operation.error = `Destination instance ${resolved.id} is offline, unassigned, or unavailable`;
+				await this.failOperation(operation, "import_failed", operation.error);
+				return {success: false, operationId: operation.transferId, error: operation.error};
+			}
 			const response = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: resolved.id },
 				new messages.ImportPlatformRequest({
@@ -1061,7 +1070,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!inst || inst.isDeleted) {
 			return false;
 		}
-		const hostId = Number(inst.config.get("instance.assigned_host"));
+		const assignedHost = inst.config.get("instance.assigned_host");
+		if (assignedHost === null || assignedHost === undefined) return false;
+		const hostId = Number(assignedHost);
 		const host = Number.isInteger(hostId) ? this.c.hosts.get(hostId) : null;
 		return Boolean(host?.connected) && String(inst.status) === "running";
 	}

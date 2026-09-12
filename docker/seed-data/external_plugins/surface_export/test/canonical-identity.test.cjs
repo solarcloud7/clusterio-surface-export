@@ -123,6 +123,17 @@ test("controller stores source exports by canonical sourceInstanceId:sourceExpor
 	assert.equal(plugin.platformStorage.get("2:001_test").exportId, "2:001_test");
 });
 
+test("a late export push cannot replace an artifact already recovered by reading its cache", async () => {
+	const {plugin, calls} = makeControllerHarness();
+	const event = {exportId: "source-job", platformName: "fixture", platformIndex: 3, instanceId: 1,
+		exportData: {platform: {force: "player"}}, timestamp: 1};
+	await plugin.handlePlatformExport(event);
+	const first = plugin.platformStorage.get("1:source-job");
+	await plugin.handlePlatformExport({...event, platformIndex: 99, exportData: {different: true}, timestamp: 2});
+	assert.equal(plugin.platformStorage.get("1:source-job"), first);
+	assert.equal(calls.persisted, 1);
+});
+
 test("controller loadStorage migrates legacy raw source export ids without dropping unmigratable entries", async () => {
 	const { plugin, calls } = makeControllerHarness();
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-storage-"));
