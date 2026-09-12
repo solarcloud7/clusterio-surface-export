@@ -1,3 +1,4 @@
+import type { ImportUploadedExportOptions } from "../messages";
 import { useMemo, useRef, useState } from "react";
 import {
 	Alert,
@@ -104,7 +105,7 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 		submitting.current = true;
 		setImporting(true);
 		try {
-			const request: JsonObject = {
+			const request: ImportUploadedExportOptions = {
 				targetInstanceId,
 				exportData: payload,
 				restoreExportId: snapshot?.exportId || null,
