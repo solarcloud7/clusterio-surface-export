@@ -31,7 +31,7 @@ import type {
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 type GatewayLinkUpdate = {
@@ -579,30 +579,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			operation.sourceExportId = exportResponse.exportId;
 			const stored = await timed("Await artifact storage", "wait", () => this.orchestrator.waitForStoredExport(canonicalExportId));
 			const waitForStoredMs = performance.now() - waitForStoreStartMs;
-			operation.platformName = stored.platformName || operation.platformName;
-			operation.sourceInstanceId = stored.instanceId;
-			operation.sourceInstanceName = this.platformTree.resolveInstanceName(stored.instanceId);
 			operation.exportMetrics = normalizeExportMetrics({
 				...(stored.exportMetrics || {}),
 				requestExportAndLockMs: exportRequestMs,
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			});
-			operation.payloadMetrics = buildPayloadMetrics(stored.exportData || {}).payloadMetrics;
-			operation.artifactSizeBytes = stored.size ?? operation.artifactSizeBytes ?? null;
-			operation.status = "completed";
-			operation.completedAt = Date.now();
-			const durationMs = this.txLogger.getObservedDuration(operation);
-			this.txLogger.logTransactionEvent(operation.transferId, "export_completed",
-				`Export ready for download: ${stored.exportId}`, {
-					exportId: stored.exportId,
-					durationMs,
-					exportMetrics: operation.exportMetrics,
-					payloadMetrics: operation.payloadMetrics,
-				});
-			this.subscriptions.emitTransferUpdate(operation);
-			await this.txLogger.persistTransactionLog(operation.transferId);
-			this.orchestrator.pruneOldTransfers();
+			await this.orchestrator.completeStoredExport(operation, stored);
 			return {
 				success: true,
 				operationId: operation.transferId,

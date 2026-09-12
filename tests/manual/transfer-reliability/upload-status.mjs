@@ -152,6 +152,31 @@ await withWorkflowLock(async()=>{
     assert.deepEqual(report.restoredCargo.cargo,expectedCargo);assert.equal(report.restoredCargo.usable,true);
     report.cases.push({name:'standalone queued import, controller restart and accepted-job save/reload',status:'PASS'});save();
 
+    // Exercise the actual browser download request, whose awaiting handler disappears at restart.
+    const exportName=`transfer-cleanup-${run}-download`;
+    report.exportBefore=lab.probe(1,'build',exportName).state;
+    assert.deepEqual(report.exportBefore.cargo,expectedCargo);
+    lab.lua(1,`local a=${module('core/async-processor')};_G.manual_upload_budget=a.get_max_concurrent_jobs;a.get_max_concurrent_jobs=function() return 0 end;return {success=true}`);
+    browser=await chromium.launch({headless:true});
+    const exportPage=await browser.newPage();
+    await exportPage.goto(lab.url);await exportPage.evaluate(t=>localStorage.setItem('controller_token',t),token);
+    await exportPage.goto(`${lab.url}/surface-export?tab=gateways`);
+    await exportPage.locator('.react-flow__node').filter({hasText:lab.hosts[1].instance}).click();
+    await exportPage.locator('.surface-export-platform-node-row').filter({hasText:exportName}).getByRole('button').click();
+    report.exportQueued=await lab.until(()=>{
+      const rows=JSON.parse(lab.ctl('surface-export','list-transfers','200').trim().split(/\r?\n/).at(-1));
+      return rows.find(row=>row.operationType==='export'&&row.sourceInstanceId===lab.ids[1]&&row.jobObservation?.state==='queued');
+    },'standalone source export queued',65);save();
+    lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);await lab.ready();
+    lab.lua(1,`local a=${module('core/async-processor')};a.get_max_concurrent_jobs=assert(_G.manual_upload_budget);_G.manual_upload_budget=nil;return {success=true}`);
+    report.exportRecovered=await terminal(lab,report.exportQueued.transferId);
+    assert.equal(report.exportRecovered.status,'completed');
+    assert.equal(report.exportRecovered.observedDurationMs??null,null);
+    report.exportAfter=sample(lab,exportName);
+    assert.deepEqual(report.exportAfter.source.cargo,expectedCargo);assert.equal(report.exportAfter.destination.present,false);
+    report.cases.push({name:'browser export resumes observation after controller restart and confirms stored artifact',status:'PASS'});save();
+    await browser.close();browser=undefined;
+
     // Reuse the existing failed-preparation probe and its independent physical assertions.
     const cleanupLua=readFileSync(join(ROOT,'tests/manual/transfer-reliability/setup-cleanup.lua'),'utf8');
     const cleanupProbe=(action,id)=>lab.lua(1,`return (function() ${cleanupLua} end)()('${action}','${id}')`).result;

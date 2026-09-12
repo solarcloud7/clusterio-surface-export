@@ -66,7 +66,7 @@ and exact simulation tick observations. Controller requests name tracked jobs or
 there is no continuous historical scan. Responses distinguish queued, running, waiting,
 completed, failed, interrupted, cleanup-pending, and unavailable state.
 
-The existing `surface_export.transfer_timeout_seconds` setting (default 30, range 5–120)
+The existing `surface_export.transfer_validation_timeout_seconds` setting (default 30, range 5–120)
 now controls when delayed work is checked. It is not an upload timeout or a cancellation
 deadline. Controller observation runs every five seconds, with at most one outstanding
 status request per instance and 100 job references per request. Larger groups rotate.
@@ -90,6 +90,12 @@ A delayed or unavailable observation leaves the operation nonterminal and its in
 instances reserved. It does not write a completion timestamp, retry an import, delete a
 platform, or unlock the source. Genuine composite validation results enter the existing
 validation/recovery path. Original failures and subsequent recovery remain separate.
+
+Record retention keeps unresolved operations and their retry guards in memory; the
+100-record limit applies only to resolved history. After controller restart, standalone
+exports complete only when their canonical source artifact is stored, or fail on explicit
+source failure evidence. A completed Lua job alone does not prove the download is available.
+The confirmation timestamp is recorded without reconstructing a duration across the restart.
 
 Unfinished transfer destinations are hidden and paused before yielding. Temporary hiding
 is not a validated destination hold. Transfer-owned source locks do not expire solely
@@ -127,6 +133,8 @@ The fixture checks host process crashes after receiving and accepted-job checkpo
 controller restart during queued work, and a queued successor proceeding only after
 the first transfer resolves. Accepted work resumes from its checkpoint rather than
 being uploaded again. It also saves and reloads failed-preparation cleanup obligations.
+The browser export case queues a source job, restarts the controller, and checks that
+its original download operation completes after the artifact arrives.
 
 Scheduler pauses and lost replies are injected at module/transport boundaries. Cargo,
 Factorio execution, saves, and process restarts are real. Capacity cases reserve
