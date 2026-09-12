@@ -22,7 +22,7 @@ export default function EdgeTransfers({ path, ships, anchorInstanceId }: {
 	}, [ships]);
 	const reversed = (ship: ShipTransfer) => anchorInstanceId !== undefined && ship.sourceInstanceId !== anchorInstanceId;
 	const { markers, transit } = groupEdgeShips(ships, reversed, ship => {
-		const phase = shipPhaseFor(ship.status);
+		const phase = shipPhaseFor(ship);
 		const at = settled[ship.transferId];
 		return !!phase && at?.status === ship.status
 			&& at.distance === (reversed(ship) ? 1 - phase.distance : phase.distance);
@@ -30,7 +30,7 @@ export default function EdgeTransfers({ path, ships, anchorInstanceId }: {
 	const moving = new Set(transit.map(ship => ship.transferId));
 	return <>
 		{ships.map(ship => {
-			const phase = shipPhaseFor(ship.status);
+			const phase = shipPhaseFor(ship);
 			return phase ? <TransferShip
 				key={ship.transferId}
 				path={path}

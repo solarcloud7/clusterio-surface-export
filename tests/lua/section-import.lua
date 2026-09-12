@@ -47,3 +47,41 @@ assert(reads==failedReads,'failed frame replayed on the next tick')
 local rejected,reason=pipeline.queue({section_codec=1,section_count=2,sections={'one'}},'bad','player','RCON')
 assert(not rejected and reason:find('missing section'),'accepted missing tail')
 print('PASS deferred frame decode, later preparation, routing identity and interrupted-frame replay guard')
+
+-- Stop at the real mandatory cargo gate after decoding. Even routing metadata hidden
+-- inside a compressed/sectional snapshot must lose its old source authority.
+local captured
+modules['utils/version-compat'] = nil -- pipeline retains its original stub; override that table below.
+stub.parse = function() return {bucket='test'} end
+stub.runtime_bucket = function() return 'test' end
+stub.migrate = function(value) captured=value;return value end
+stub.check_payload_schema = function() return true end
+stub.validate_transfer_payload = function() return true end
+stub.json_to_table_compat = function(raw) return decoded[raw] end
+for _,codec in ipairs({'plain','compressed','sectional'}) do
+  local payload={platform={schedule={}},entities={},_transferId='1:old',_sourceInstanceId=1,_operationId='old'}
+  local value=payload
+  if codec=='compressed' then
+    decoded.legacy=payload;value={compressed=true,payload='legacy'}
+  elseif codec=='sectional' then
+    local frames={}
+    for _,key in ipairs({'platform','entities','_transferId','_sourceInstanceId','_operationId'}) do
+      local token='snapshot-'..key
+      decoded[token]={version=1,seq=#frames+1,key=key,value=payload[key]};frames[#frames+1]=token
+    end
+    value={section_codec=1,section_count=#frames,sections=frames}
+  end
+  value._standaloneImport=true;value._restoreSnapshot=true;value._operationId='restore:fresh'
+  local queued,err=pipeline.queue(value,'snapshot','player','RCON')
+  if codec=='sectional' then
+    local pending=env.storage.async_jobs[queued]
+    while not pending.decoded_data do pipeline.process_setup(pending) end
+    queued,err=pipeline.queue(pending.decoded_data,'snapshot','player','RCON',nil,pending)
+  end
+  assert(not queued and err:find('missing required verification counts',1,true),'snapshot bypassed cargo validation')
+  assert(captured._transferId=='restore:fresh' and captured._operationId=='restore:fresh',codec..' retained old transfer authority')
+  assert(captured._sourceInstanceId==nil and captured._standaloneImport==true,codec..' retained old source')
+end
+env.storage.source_recovery_ready=false
+assert(pipeline.queue({},'blocked','player','RCON')==nil,'startup admitted an import before reconciliation')
+print('PASS plain, compressed and sectional recovery replace routing authority and retain cargo gate')

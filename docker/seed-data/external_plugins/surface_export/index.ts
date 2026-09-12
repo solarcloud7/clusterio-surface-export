@@ -122,6 +122,13 @@ export const plugin = {
 			type: "number",
 			initialValue: 20,
 		},
+		[`${PLUGIN_NAME}.platform_source_of_truth`]: {
+			title: "Platform source of truth",
+			description: "plugin_history protects restored source copies that already transferred away. save_game accepts restored copies with a warning. Applies when each instance restarts; active transfers remain protected.",
+			type: "string",
+			enum: ["plugin_history", "save_game"],
+			initialValue: "plugin_history",
+		},
 		[`${PLUGIN_NAME}.transaction_log_detail_entries`]: {
 			title: "Saved Detailed Transfer Logs",
 			description: "Number of transfers retaining step timings and audit evidence. Failed transfers take priority, followed by recent successes; "
@@ -130,9 +137,8 @@ export const plugin = {
 			initialValue: 100,
 		},
 		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
-			title: "Transfer validation timeout (seconds)",
-			description: "Seconds to wait for import and validation after the destination accepts the payload. Expiry starts recovery. "
-				+ "If the destination finishes after timeout, cleanup may need attention; inspect the transfer result before retrying. "
+			title: "Check delayed job status after (seconds)",
+			description: "After this wait, verify the Lua job state and progress. Queue waits and unavailable status do not cancel work or release platforms. "
 				+ "Range: 5–120 seconds. Applies to the next transfer without a restart.",
 			type: "number",
 			initialValue: 30,
@@ -144,6 +150,8 @@ export const plugin = {
 		messages.ExportPlatformRequest,
 		messages.PlatformExportEvent,
 		messages.ImportPlatformRequest,
+		messages.JobsStatusRequest,
+		messages.ReadExportRequest,
 		messages.ImportPlatformFromFileRequest,
 		messages.ListExportsRequest,
 		messages.GetStoredExportRequest,
@@ -171,6 +179,7 @@ export const plugin = {
 		messages.GetGatewaysRequest,
 		messages.SetGatewayLinkRequest,
 		messages.GetGatewayConfigRequest,
+		messages.RecoveryPolicyRequest,
 		messages.GetInstanceRosterRequest,
 		messages.PushGatewayConfigRequest,
 	],

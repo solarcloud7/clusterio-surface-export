@@ -1,6 +1,7 @@
 local Timing = require("modules/surface_export/utils/operation-timing")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local ImportSession = require("modules/surface_export/core/import-session")
+local JobStatus = require("modules/surface_export/core/job-status")
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
@@ -24,14 +25,18 @@ function AsyncProcessor.init()
 	storage.async_jobs = storage.async_jobs or {}
 	storage.async_job_id_counter = storage.async_job_id_counter or 0
 	storage.async_job_results = storage.async_job_results or {}
-	storage.import_sessions = storage.import_sessions or {}
 end
 
 function AsyncProcessor.set_batch_size(value)
+	assert(type(value) == "number" and value >= 1 and value % 1 == 0 and value < math.huge,
+		"batch_size must be a positive finite integer")
 	config.batch_size = value
 end
 
 function AsyncProcessor.set_sync_mode(value)
+	assert(type(value) == "boolean", "sync mode must be a boolean")
+	assert(not value or (storage.surface_export_config and storage.surface_export_config.debug_mode == true),
+		"sync mode requires debug_mode")
 	config.sync_mode = value
 	if value then
 		log("[AsyncProcessor] SYNC MODE ENABLED - all entities will be processed in single tick")
@@ -43,6 +48,9 @@ function AsyncProcessor.set_sync_mode(value)
 end
 
 function AsyncProcessor.get_sync_mode()
+	if not (storage.surface_export_config and storage.surface_export_config.debug_mode == true) then
+		config.sync_mode = false
+	end
 	return config.sync_mode
 end
 
@@ -70,7 +78,7 @@ function AsyncProcessor.get_max_concurrent_jobs()
 end
 
 local function get_batch_size()
-	if config.sync_mode then
+	if AsyncProcessor.get_sync_mode() then
 		return 1000000
 	end
 	return config.batch_size
@@ -96,21 +104,6 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
 	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name)
 end
 
-function AsyncProcessor.begin_import_session(session_id, total_chunks, platform_name, force_name)
-	AsyncProcessor.init()
-	return ImportSession.begin(session_id, total_chunks, platform_name, force_name)
-end
-
-function AsyncProcessor.enqueue_import_chunk(session_id, chunk_index, chunk_data)
-	AsyncProcessor.init()
-	return ImportSession.enqueue_chunk(session_id, chunk_index, chunk_data)
-end
-
-function AsyncProcessor.finalize_import_session(session_id, checksum)
-	AsyncProcessor.init()
-	return ImportSession.finalize(session_id, checksum, ImportPipeline.queue)
-end
-
 function AsyncProcessor.queue_import_from_file(filename, new_platform_name, force_name, requester_name)
 	AsyncProcessor.init()
 	return ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
@@ -130,7 +123,8 @@ function AsyncProcessor.process_tick()
 
 	local job_list = {}
 	for job_id, job in pairs(storage.async_jobs) do
-		if not job.completion_interrupted and not (job.pending_beacon_tick and game.tick < job.pending_beacon_tick) then
+		local cleanup_ready = job.setup_cleanup and game.tick >= job.setup_cleanup.next_tick
+		if cleanup_ready or (not job.completion_interrupted and not (job.pending_beacon_tick and game.tick < job.pending_beacon_tick)) then
 			table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0,
 				last_step = job.last_step_tick or -1})
 		end
@@ -179,7 +173,9 @@ function AsyncProcessor.process_tick()
 			end
 		elseif job.type == "import" then
 			local ok, err = pcall(function()
-				if job.setup_pending then
+				if job.setup_cleanup then
+					ImportPipeline.process_setup_cleanup(job)
+				elseif job.setup_pending then
 					ImportPipeline.process_setup(job)
 				elseif job.pending_beacon_tick then
 					if game.tick >= job.pending_beacon_tick then
@@ -229,29 +225,7 @@ function AsyncProcessor.get_active_jobs()
 end
 
 function AsyncProcessor.get_job_status(job_id)
-	AsyncProcessor.init()
-
-	if storage.async_jobs[job_id] then
-		local job = storage.async_jobs[job_id]
-		return {
-			status = job.completion_interrupted and "interrupted" or "active",
-			error = job.completion_interrupted and job.completion_interrupted.error,
-			complete = false,
-			type = job.type,
-			job_id = job_id,
-			platform_name = job.platform_name,
-			progress = calculate_progress(job),
-			entities_processed = job.current_index,
-			total_entities = job.total_entities,
-			elapsed_ticks = game.tick - job.started_tick
-		}
-	end
-
-	if storage.async_job_results[job_id] then
-		return storage.async_job_results[job_id]
-	end
-
-	return nil, "Job not found"
+	return JobStatus.read(job_id)
 end
 
 function AsyncProcessor.activate_platform(surface)

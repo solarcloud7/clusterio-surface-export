@@ -1,21 +1,23 @@
 import { useContext, useEffect, useState } from "react";
-import { Alert, Button, Form, InputNumber, Spin, Typography } from "antd";
+import { Alert, Button, Form, InputNumber, Select, Spin, Typography } from "antd";
 import { CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined, RightOutlined, SettingOutlined } from "@ant-design/icons";
 import { ControlContext, useAccount } from "@clusterio/web_ui";
 import { Config, ConfigAccess, ControllerConfig, ControllerConfigGetRequest, ControllerConfigSetRequest } from "@clusterio/lib";
 import { getErrorMessage } from "./utils";
 import "./settings.css";
+import type { SurfaceExportState } from "./view-models";
 
 const fields = [
+	{ name: "surface_export.platform_source_of_truth", label: "Platform source of truth", group: "recovery", unit: "", help: "Choose how to handle platforms restored by loading an older save. Active and unresolved transfers remain protected in both modes.", applies: "Takes effect when each instance restarts.", min: 0 },
 	// Gateway layout stays out of this editor until multi-gateway configuration is ready.
 	{ name: "surface_export.transaction_log_detail_entries", group: "records", unit: "transfers", help: "Keep step timings and audit evidence for this many transfers. Failed transfers take priority; older transfers keep their summary and outcome.", applies: "Takes effect at the next log trim.", min: 10, max: 5000 },
 	{ name: "surface_export.max_storage_size", group: "records", unit: "files", help: "Keep this many platform files available to download. The oldest file is removed when the limit is reached. Transfer logs are separate.", applies: "Takes effect on the next stored export.", min: 1 },
-	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Transfer validation timeout", group: "recovery", unit: "seconds", help: "Wait this long for import and validation after the destination accepts the payload. Recovery begins if time runs out.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
+	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Check delayed job status after", group: "recovery", unit: "seconds", help: "Check Lua job progress after this wait. Queued or delayed work remains pending; this does not cancel the transfer.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
 ];
 
 const groups = [
 	{ id: "records", title: "Transfer records", description: "Choose what stays available after a transfer.", icon: <DatabaseOutlined /> },
-	{ id: "recovery", title: "Transfer recovery", description: "Set the time allowed for the destination to finish.", icon: <ClockCircleOutlined /> },
+	{ id: "recovery", title: "Transfer recovery", description: "Choose how saves and unfinished transfers are handled.", icon: <ClockCircleOutlined /> },
 ];
 
 const instanceSettings = [
@@ -27,7 +29,7 @@ const instanceSettings = [
 
 type Values = Record<string, ReturnType<ControllerConfig["get"]>>;
 
-export default function SettingsTab({ active }: { active: boolean }) {
+export default function SettingsTab({ active, state }: { active: boolean; state?: SurfaceExportState }) {
 	const control = useContext(ControlContext);
 	const account = useAccount();
 	const canRead = account.hasPermission("core.controller.get_config") === true;
@@ -39,6 +41,7 @@ export default function SettingsTab({ active }: { active: boolean }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState("");
+	const instances = [...(state?.tree?.hosts.flatMap(host => host.instances) || []), ...(state?.tree?.unassignedInstances || [])];
 
 	function acceptConfig(next: Config<Values>) {
 		const values: Values = {};
@@ -116,13 +119,23 @@ export default function SettingsTab({ active }: { active: boolean }) {
 												<label htmlFor={id}>{field.label || def.title || field.name}</label>
 												<p id={`${id}-help`}>{field.help}</p>
 												<span className="se-setting-applies" id={`${id}-applies`}>{field.applies}</span>
+												{field.name === "surface_export.platform_source_of_truth" && <>
+													<p><strong>Save game:</strong> Accept restored platforms with a warning. Example: reload yesterday’s save to recover a destroyed platform. Copies on other instances remain unchanged.</p>
+													<p><strong>Plugin history:</strong> Protect restored copies that already transferred away. Example: roll back one instance while keeping the platform that arrived elsewhere.</p>
+													{instances.map(instance => <p key={instance.instanceId}>{instance.instanceName}: {instance.status !== "running" || !instance.connected || !instance.recovery?.mode
+														? "applied mode unverified" : `${instance.recovery.mode === "save_game" ? "Save game" : "Plugin history"} applied${instance.recovery.mode !== saved[field.name] ? " · restart required" : ""}${instance.recovery.state !== "ready" ? " · recovery not ready" : ""}`}</p>)}
+												</>}
 											</div>
-											<Form.Item name={field.name} rules={[{ required: true, message: "Enter a value." },
+											{field.name === "surface_export.platform_source_of_truth" ? <Form.Item name={field.name} rules={[{ required: true }]}>
+												<Select id={id} aria-describedby={`${id}-help ${id}-applies`} size="large" options={[
+													{ value: "save_game", label: "Save game" }, { value: "plugin_history", label: "Plugin history" },
+												]} disabled={busy || !canWrite || !config.canAccess(field.name, ConfigAccess.write)} />
+											</Form.Item> : <Form.Item name={field.name} rules={[{ required: true, message: "Enter a value." },
 												{ type: "integer" as const, min: field.min, max: field.max,
 													message: field.max ? `Enter a whole number from ${field.min} to ${field.max}.` : `Enter a whole number of ${field.min} or more.` }]}>
 												<InputNumber id={id} aria-describedby={`${id}-help ${id}-applies`} addonAfter={field.unit} size="large"
 													min={field.min} max={field.max} precision={0} disabled={busy || !canWrite || !config.canAccess(field.name, ConfigAccess.write)} />
-											</Form.Item>
+											</Form.Item>}
 										</div>;
 									})}
 								</section>;

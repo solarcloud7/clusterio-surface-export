@@ -24,6 +24,7 @@ local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -137,6 +138,7 @@ local function handle_pending_file_write(export_id)
 end
 
 function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name)
+	if storage.source_recovery_ready == false then return nil, "Startup recovery is not ready" end
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -150,7 +152,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 
 	local safe_name = platform.name:gsub("[^%w%-]", "-")
 
-	local job_id = string.format("%03d_%s", job_counter, safe_name)
+	local job_id = SourceRecovery.export_job_id(job_counter, safe_name)
 	Timing.begin(job_id, "source-lua", nil, job_id)
 	Timing.start(job_id, "preflight")
 
@@ -508,6 +510,7 @@ local function publish_completion(job)
 		PhaseProfiler.discard(job.job_id)
 	end
 
+	local notification_error
 	if clusterio_api and clusterio_api.send_json then
 		local event_payload = {
 			export_id = export_id,
@@ -543,14 +546,17 @@ local function publish_completion(job)
 		if send_success then
 			log("[send_json] Export notification sent successfully")
 		else
+			notification_error = "Export notification failed: " .. tostring(send_err)
 			log(string.format("[send_json ERROR] Failed to send notification: %s", tostring(send_err)))
 		end
 	else
+		notification_error = "Export notification failed: Clusterio API unavailable"
 		log("[WARN] clusterio_api not available, export notification not sent to plugin")
 	end
 
 	storage.async_job_results[job.job_id] = {
-		status = "complete",
+		status = notification_error and "failed" or "complete",
+		error = notification_error,
 		complete = true,
 		type = "export",
 		job_id = job.job_id,

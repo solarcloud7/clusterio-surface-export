@@ -86,3 +86,136 @@ for _, pending in ipairs({false, true}) do
     assert(finished == 0, "ordinary startup force-finished an unrelated cargo pod")
 end
 print("PASS startup leaves cargo pods and pending circuit work alone")
+
+platform.hub = {valid = true, unit_number = 16}
+env.storage.source_recovery_identities[3] = {surface_index = 8, hub_unit_number = 16, uid = "boot-b:16"}
+locks[3] = nil
+lock_api.accept_restored_source = function(index, old_id)
+    assert(index == 3 and old_id == "job-old")
+    locks[index] = nil; platform.hidden = false; return true
+end
+recovery.startup()
+assert(recovery.begin("boot-save", "journal-a", true, "save_game", true).success)
+local accepted = recovery.reconcile(3, "boot-b:16", "job-old")
+assert(accepted.accepted and not platform.hidden, "save-game policy did not accept the restored source")
+assert(recovery.finish().success)
+assert(not recovery.matches(platform, "boot-b:16"), "old identity can address an accepted restoration")
+assert(recovery.matches(platform, accepted.platformUid), "new identity was not retained")
+local first_id = recovery.export_job_id(1, "same-platform")
+recovery.startup()
+assert(recovery.begin("next-boot", "journal-a", true, "plugin_history", false).success)
+assert(recovery.reconcile(3, accepted.platformUid, nil).success)
+assert(recovery.finish().success)
+assert(recovery.matches(platform, accepted.platformUid), "restart changed the accepted platform identity")
+assert(recovery.export_job_id(1, "same-platform") ~= first_id, "old save reused an export operation ID")
+recovery.startup()
+assert(recovery.begin("blocked-boot", "journal-a", true, "save_game", false).success)
+assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined)
+assert(platform.hidden, "save-game mode released unresolved ownership")
+print("PASS save-game adoption, persistent fresh identity, new export IDs, and unresolved ownership protection")
+
+-- Exercise the real lock guard, not the reconciliation mock above.
+local unlock_force = {platforms = {}, set_surface_hidden = function() end}
+local unlock_platform = {valid = true, index = 3, surface = {valid = true, index = 8},
+    hub = {valid = true, unit_number = 16}}
+unlock_force.platforms[3] = unlock_platform
+local e = setmetatable({storage = {source_recovery_ready = true, locked_platforms = {},
+        source_recovery_identities = {[3] = {surface_index = 8, hub_unit_number = 16, uid = "current:16"}}},
+    game = {forces = {player = unlock_force}, print = function() end}, log = function() end}, {__index = _G})
+local real_recovery
+e.require = function(name)
+    if name == "modules/surface_export/core/source-recovery" then return real_recovery end
+    return {ACTIVATABLE_ENTITY_TYPES = {}}
+end
+local real_lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
+real_recovery = assert(loadfile(root .. "core/source-recovery.lua", "t", e))()
+local held = {kind = "transfer", phase = "committed", transfer_job_id = "old", platform_name = "fixture",
+    force_name = "player", platform_index = 3, surface_index = 8, frozen_states = {}}
+e.storage.locked_platforms[3] = held
+assert(not real_lock.unlock_platform(3), "normal unlock released a committed source")
+assert(not real_lock.accept_restored_source(3, "old"), "adoption outside startup was authorized")
+e.storage.source_recovery_ready = false
+e.storage.source_recovery_mode = "save_game"
+assert(not real_lock.accept_restored_source(3, "old"), "unresolved handoff was released")
+e.storage.source_recovery_allow_adoption = true
+assert(not real_lock.accept_restored_source(3, "foreign"), "another job bypassed the committed guard")
+e.storage.source_recovery_ready = true
+e.storage.source_recovery_notices = {[3] = {status = "accepted", platformUid = "current:16"}}
+held.phase = "pre_commit"; held.transfer_job_id = "new"
+assert(not real_lock.unlock_platform(3, nil, nil, nil, "old"), "delayed old unlock released the new transfer")
+assert(not real_lock.unlock_platform(3), "unidentified unlock released an accepted restoration")
+assert(e.storage.locked_platforms[3] == held, "rejected unlock mutated the lock")
+print("PASS real committed lock and delayed unlock guards")
+
+e.storage.source_recovery_notices[3].platformUid = nil
+assert(not real_lock.unlock_platform(3), "a notice without identity bypassed restoration protection")
+e.storage.source_recovery_notices[3].platformUid = "retired:15"
+assert(real_lock.unlock_platform(3), "a stale notice for another UID blocked an unrelated platform")
+assert(e.storage.locked_platforms[3] == nil)
+e.storage.locked_platforms[3] = held
+e.storage.source_recovery_identities = {}
+assert(not real_lock.unlock_platform(3), "an unverified current identity bypassed restoration protection")
+assert(e.storage.locked_platforms[3] == held)
+print("PASS restoration notices require the live platform identity")
+
+recovery.startup()
+assert(recovery.begin("pending-boot", "journal-a", true, "save_game", true).success)
+env.storage.async_jobs = {pending = {platform_index = 3}}
+assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined,
+    "controller history overrode a job still owned by the loaded save")
+assert(platform.hidden)
+print("PASS loaded Lua jobs retain ownership in Save game mode")
+
+-- A rejected schedule must leave the old identity's protection intact.
+do
+    local f = {platforms = {}, set_surface_hidden = function() error("released hidden surface before schedule validation") end}
+    local p = {valid = true, hidden = true, surface = {valid = true, index = 8}}
+    f.platforms[3] = p
+    local record = {kind = "transfer", phase = "committed", transfer_job_id = "old", force_name = "player",
+        platform_index = 3, surface_index = 8, original_schedule = {}, frozen_states = {}}
+    local state = {source_recovery_ready = false, source_recovery_mode = "save_game", source_recovery_allow_adoption = true,
+        locked_platforms = {[3] = record}}
+    local context = setmetatable({storage = state, game = {forces = {player = f}},
+        require = function(name)
+            if name:find("platform-schedule",1,true) then return {apply = function() return false,"injected schedule rejection" end} end
+            return {ACTIVATABLE_ENTITY_TYPES = {}}
+        end}, {__index = _G})
+    local locks_api = assert(loadfile(root .. "utils/surface-lock.lua", "t", context))()
+    local ok, err = locks_api.accept_restored_source(3,"old")
+    assert(not ok and err:find("injected schedule rejection",1,true))
+    assert(state.locked_platforms[3] == record and p.hidden, "failed restoration released the source")
+end
+print("PASS rejected schedule retains restoration protection")
+
+-- An older checkpoint can predate both the transfer lock and its retirement record.
+-- Controller ownership still forbids releasing that uncertain source.
+locks[3] = nil
+env.storage.async_jobs = {}
+recovery.startup()
+assert(recovery.begin("pre-retirement", "journal-a", false, "save_game", false).success)
+assert(not recovery.reconcile(3, accepted.platformUid, nil, true).success,
+    "startup released a source still owned by an unresolved controller handoff")
+assert(platform.hidden and locks[3].kind == "startup")
+assert(not recovery.finish().success)
+print("PASS pre-retirement checkpoint stays protected while ownership is unresolved")
+
+local live_notice = env.storage.source_recovery_notices[3]
+local live_identity = env.storage.source_recovery_identities[3]
+env.storage.source_recovery_notices[99] = {platformUid = "gone", status = "accepted"}
+env.storage.source_recovery_identities[99] = {uid = "gone"}
+local receipts = {source_delete = {records = {old = {platform_index = 99}}, order = {"old"}, next_slot = 2}}
+env.storage.surface_export_transfer_receipts = receipts
+local preserved_lock = locks[3]
+local hub = platform.hub
+platform.hub = {valid = false}
+assert(not recovery.begin("prune-failed", "journal-a", true).success)
+assert(env.storage.source_recovery_notices[99] and env.storage.source_recovery_identities[99],
+    "partial roster pruned metadata")
+platform.hub = hub
+assert(recovery.begin("prune-complete", "journal-a", true).success)
+assert(not env.storage.source_recovery_notices[99] and not env.storage.source_recovery_identities[99],
+    "absent platform metadata was retained")
+assert(env.storage.source_recovery_notices[3] == live_notice and env.storage.source_recovery_identities[3] == live_identity)
+assert(locks[3] == preserved_lock and env.storage.surface_export_transfer_receipts == receipts and receipts.source_delete.records.old,
+    "metadata pruning changed transfer authority")
+print("PASS complete roster prunes only absent platform metadata")

@@ -441,7 +441,13 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     return true, nil
 end
 
-function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_bootstrap)
+function SurfaceLock.accept_restored_source(platform_index, old_job_id)
+    if storage.source_recovery_ready ~= false or storage.source_recovery_mode ~= "save_game"
+        or storage.source_recovery_allow_adoption ~= true then return false, "Save restoration is not authorized" end
+    return SurfaceLock.unlock_platform(platform_index, nil, true, old_job_id)
+end
+
+function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
 	end
@@ -454,12 +460,18 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name
+    if expected_job_id and lock_data.transfer_job_id ~= expected_job_id then
+        return false, "Unlock refused: transfer identity changed"
+    end
     if expected_name ~= nil and platform_name ~= expected_name then -- lint-lua:allow compares STORED snapshots (lock_data name vs caller expectation), not the live platform.name — not rename-vulnerable; surface.index is the primary identity at the tripwire below. Collision-residual follow-up: pass expected_surface_index.
         return false, string.format("Unlock refused: index %s is locked for a DIFFERENT platform (expected '%s', locked '%s')",
             tostring(platform_index), tostring(expected_name), tostring(platform_name))
     end
 
-    if SurfaceLock.source_lock_is_committed(lock_data) then
+    local accepting_restoration = recovery_bootstrap and storage.source_recovery_ready == false
+        and storage.source_recovery_mode == "save_game" and storage.source_recovery_allow_adoption == true
+        and type(restored_job_id) == "string" and restored_job_id == lock_data.transfer_job_id
+    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration then
         return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
             tostring(platform_name), tostring(platform_index))
     end
@@ -483,6 +495,19 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return false, "Platform index reused since lock — stale lock dropped (not restored)"
     end
 
+    local restoration = (storage.source_recovery_notices or {})[platform_index]
+    if not recovery_bootstrap and restoration and restoration.status == "accepted" then
+        -- Resolve lazily: source-recovery also uses SurfaceLock during startup.
+        local uid = require("modules/surface_export/core/source-recovery").platform_uid(platform)
+        if not uid or type(restoration.platformUid) ~= "string" or restoration.platformUid == "" then
+            return false, "Unlock refused: restored platform identity is unavailable"
+        end
+        if restoration.platformUid == uid
+            and (type(expected_job_id) ~= "string" or lock_data.transfer_job_id ~= expected_job_id) then
+            return false, "Unlock refused: restored platform requires its current transfer identity"
+        end
+    end
+
     local destination_hold_active, destination_hold_transfer_id = SurfaceLock.destination_hold_owns_surface(surface, platform)
     if destination_hold_active then
         storage.locked_platforms[platform_index] = nil
@@ -492,17 +517,18 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return true, nil
     end
 
+    -- Validate/apply the saved schedule while the old lock still owns hidden, disabled state.
+    -- A failed restoration must not release a retired source before it has a fresh identity.
+    if lock_data.original_schedule then
+        local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
+        if not schedule_restore_ok then
+            return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
+        end
+    end
     local restored = unfreeze_entities(surface, lock_data.frozen_states)
     force.set_surface_hidden(surface, lock_data.original_hidden)
     if lock_data.original_platform_hidden ~= nil then
         platform.hidden = lock_data.original_platform_hidden
-    end
-    if lock_data.original_schedule then
-        local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
-        if not schedule_restore_ok then
-            storage.locked_platforms[platform_index] = nil
-            return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
-        end
     end
 
     storage.locked_platforms[platform_index] = nil
@@ -569,8 +595,12 @@ function SurfaceLock.scan_transfer_expiries()
     for platform_index, lock_data in pairs(storage.locked_platforms) do
         if type(lock_data) == "table" and EXPIRABLE_LOCK_KINDS[lock_data.kind] then
             checked = checked + 1
+            -- Transfer ownership is resolved by an explicit verdict/recovery action, never elapsed ticks.
+            -- An export job may be queued or interrupted for arbitrarily long periods.
             if SurfaceLock.source_lock_is_committed(lock_data) then
                 committed = committed + 1
+                skipped = skipped + 1
+            elseif lock_data.kind == "transfer" or (storage.async_jobs or {})[lock_data.transfer_job_id] then
                 skipped = skipped + 1
             else
                 local locked_tick = lock_data.locked_tick

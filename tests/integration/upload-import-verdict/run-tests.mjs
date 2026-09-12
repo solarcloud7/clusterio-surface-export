@@ -364,11 +364,14 @@ try {
 		describeRow(belts.row));
 	check(/predates captured source positions/.test(belts.row?.error ?? ""),
 		"missing captured belt positions are the actual rejection reason", describeRow(belts.row));
-	check(belts.summary !== undefined && belts.summary !== null
-		&& (belts.summary.validation ?? null) === null,
-		"NEGATIVE: a FAILED plain upload still carries no verdict — import-completion.lua builds a "
-		+ "belt-anomaly validation_result locally but attaches it to the event only under "
-		+ "job.transfer_id, so the drawer shows the composed error and no comparison tables",
+	const beltVerdict = belts.summary?.validation;
+	check(beltVerdict?.success === false && beltVerdict.failedStage === "belts"
+		&& /predates captured source positions/.test(beltVerdict.mismatchDetails ?? ""),
+		"a failed plain upload retains the destination's belt failure evidence in its detail record",
+		describeVerdict(belts.summary));
+	check(beltVerdict != null && ["expectedItemCounts", "actualItemCounts",
+		"expectedFluidCounts", "actualFluidCounts"].every(key => Object.keys(beltVerdict[key] ?? {}).length === 0),
+		"a structural failure without an exact cargo gate does not invent item or fluid comparisons",
 		describeVerdict(belts.summary));
 
 	say("\n=== GATE: a transfer-shaped upload whose exact gate FAILS and whose destination is DISCARDED ===");

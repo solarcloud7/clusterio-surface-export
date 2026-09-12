@@ -7,11 +7,13 @@ import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
+import { UploadUncertain } from "./lib/upload-session";
 import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
+import { recoveryMode, type InstanceRecoveryStatus } from "./shared/recovery";
 
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
@@ -30,6 +32,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private retirementJournal!: SourceRetirementJournal;
 	private retirementLoadError?: string;
 	private timingEpoch = randomUUID();
+	private recoveryStatus?: InstanceRecoveryStatus;
 	private async withTiming<T>(jobId: string, exportId: string | undefined, stage: string, fn: () => Promise<T>): Promise<T> {
 		const clock = new TimingClock(jobId, "instance", record => {
 			record.instanceId = this.i.id;
@@ -98,6 +101,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
+		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
+		this.i.handle(messages.ReadExportRequest, this.handleReadExportRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.DestinationTransferGateRequest, this.handleDestinationTransferGate.bind(this));
@@ -116,7 +121,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
 		// Lua's startup gate remains closed until reconciliation acknowledges finish.
 		void this.startRuntime(epoch).catch(error => {
-			if (this.timingEpoch === epoch) this.logger.error(`Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: ${getErrorMessage(error)}`);
+			if (this.timingEpoch === epoch) {
+				if (this.recoveryStatus) { this.recoveryStatus.state = "blocked"; this.recoveryStatus.error = getErrorMessage(error); }
+				this.logger.error(`Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: ${getErrorMessage(error)}`);
+			}
 		});
 	}
 
@@ -149,7 +157,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	private async reconcileSourceRetirements(epoch: string): Promise<void> {
+		this.recoveryStatus = { epoch, state: "reconciling", notices: [] };
 		if (this.retirementLoadError) throw new Error(this.retirementLoadError);
+		const policy = await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "begin" }));
+		this.assertRecoveryRuntime(epoch);
+		const mode = recoveryMode(policy.mode);
 		const journal = this.retirementJournal.snapshot();
 		const call = async (action: "begin" | "reconcile" | "finish", ...args: Array<string | number | boolean | null>) => {
 			this.assertRecoveryRuntime(epoch);
@@ -157,15 +169,25 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.assertRecoveryRuntime(epoch);
 			return response;
 		};
-		const begin = await call("begin", randomUUID(), journal.id, journal.retirements.length > 0);
+		const begin = await call("begin", epoch, journal.id, journal.retirements.length > 0, mode, policy.allowAdoption === true);
+		this.recoveryStatus.mode = mode;
 		const roster = Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {});
 		let quarantined = 0;
+		const protectedIndexes = policy.protectedSourceIndexes ?? (policy.allowAdoption ? [] : [-1]);
 		for (const platform of roster as Array<{ platformIndex: number; platformUid: string }>) {
 			const retired = journal.retirements.find(record => record.platformUid === platform.platformUid);
-			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null);
+			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null,
+				protectedIndexes.includes(-1) || protectedIndexes.includes(platform.platformIndex));
 			if (response.quarantined) quarantined++;
+			if (response.notice) this.recoveryStatus.notices.push(response.notice);
 		}
+		await this.lua.uploads.initialize(epoch);
+		this.assertRecoveryRuntime(epoch);
 		await call("finish");
+		await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "finish" }));
+		this.assertRecoveryRuntime(epoch);
+		this.recoveryStatus.state = "ready";
+		await this.handlePlatformStateChanged({ force_name: "player" });
 		if (quarantined) this.logger.warn(`${quarantined} retired source platform(s) restored from a save remain quarantined; matching pending transfers may retry deletion.`);
 	}
 
@@ -256,11 +278,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	override async onStop() {
+		this.lua.uploads.stop();
 		this.timingEpoch = randomUUID(); // Invalidate work awaiting an old RCON reply.
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 
 	override onExit() {
+		this.lua.uploads.stop();
 		// Clusterio also calls this on abrupt exit, without a preceding onStop.
 		this.timingEpoch = randomUUID();
 	}
@@ -351,7 +375,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		if (transferResponse.safeToUnlockSource === true) {
 			if (Number.isInteger(platformIndex)) {
-				const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
+				const unlockResult = String(await this.lua.unlockPlatform(platformIndex, undefined, exportId)).trim();
 				if (unlockResult.startsWith("SUCCESS")) {
 					this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
 				} else if (isBenignUnlockError(unlockResult)) {
@@ -464,24 +488,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async waitForExportData(exportId: string, timeoutMs = EXPORT_POLL_TIMEOUT_MS, intervalMs = EXPORT_POLL_INTERVAL_MS) {
-		const deadline = Date.now() + timeoutMs;
-		let lastAttempt: ExportData | null = null;
-		while (Date.now() < deadline) {
-			lastAttempt = await this.getExportData(exportId, { logOnMissing: false });
-			if (lastAttempt) {
-				return lastAttempt;
-			}
-			await wait(intervalMs);
-		}
-		this.logger.error(`Timed out waiting for export data for ${exportId} after ${timeoutMs}ms`);
-		try {
-			const availableExports = await this.listExports();
-			this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
-		} catch (listErr: unknown) {
-			this.logger.error(`Failed to list available exports: ${getErrorMessage(listErr)}`);
-		}
-		return null;
+	async handleReadExportRequest(request: messages.ReadExportRequest): Promise<ReturnType<typeof messages.ReadExportRequest.Response.fromJSON>> {
+		this.assertRecoveryRuntime(request.epoch);
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source runtime is not ready");
+		const exportData = await this.withTiming(request.exportId, request.exportId, "Retained export retrieval",
+			() => this.getExportData(request.exportId, {logOnMissing: false}));
+		this.assertRecoveryRuntime(request.epoch);
+		return exportData ? {success: true, exportId: request.exportId, epoch: request.epoch, exportData}
+			: {success: false, error: "Completed export payload is no longer available in the source cache"};
 	}
 
 	async getExportData(exportId: string, options: { logOnMissing?: boolean } = {}): Promise<ExportData | null> {
@@ -535,6 +549,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const parsed = await this.lua.listPlatformsJson(forceName || "player");
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
+				platformUid: platform.platform_uid ?? null,
 				platformName: platform.platform_name,
 				forceName: platform.force_name || forceName || "player",
 				surfaceIndex: platform.surface_index ?? null,
@@ -569,12 +584,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			await timed("RCON payload upload", "round-trip", () => this.lua.importPlatformChunked(platformName, forceName, exportData));
+			const receipt = await timed("RCON payload upload", "round-trip", () => this.lua.importPlatformChunked(platformName, forceName, exportData));
 
 			this.logger.info("All chunks sent, import queued for async processing");
-			return { success: true };
+			return { success: true, jobId: receipt.jobId, epoch: receipt.epoch, attemptId: receipt.attemptId };
 
 		} catch (err: unknown) {
+			if (err instanceof UploadUncertain) return {success: false, admissionUncertain: true,
+				error: err.message, jobId: err.jobId, epoch: err.epoch, attemptId: err.attemptId};
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Import failed: ${errMsg}`);
 			return { success: false, error: errMsg };
@@ -596,15 +613,21 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			const targetPlatformName = platformName || exportData.platform_name || `Imported_${Date.now()}`;
 
-			await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
+			exportData._operationId = `file-import:${randomUUID()}`;
+			exportData._standaloneImport = true;
+			delete exportData._transferId;
+			delete exportData._sourceInstanceId;
+			const receipt = await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
 
 			this.logger.info("Platform import chunks sent successfully");
 
-			return { success: true };
+			return { success: true, jobId: receipt.jobId, epoch: receipt.epoch, attemptId: receipt.attemptId };
 
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Import from file failed: ${errMsg}`);
+			if (err instanceof UploadUncertain) return {success: false, admissionUncertain: true,
+				error: err.message, jobId: err.jobId, epoch: err.epoch, attemptId: err.attemptId};
 			return { success: false, error: errMsg };
 		}
 	}
@@ -667,6 +690,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			instanceName: this.i.config.get("instance.name"),
 			forceName,
 			platforms,
+			recovery: this.recoveryStatus,
 		};
 	}
 
@@ -879,7 +903,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return this.withTiming(request.operationId || `unlock:${randomUUID()}`, undefined, "Source unlock handling", () => this.handleUnlockSourcePlatformMeasured(request));
 	}
 
-	async handleUnlockSourcePlatformMeasured(request: { platformIndex: number; platformName?: string }) {
+	async handleUnlockSourcePlatformMeasured(request: { platformIndex: number; platformName?: string; operationId?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
@@ -890,7 +914,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
+			const identity = request.operationId ? parseCanonicalTransferId(request.operationId) : null;
+			const sourceJobId = identity?.sourceInstanceId === this.i.id ? identity.sourceJobId : undefined;
+			const result = await this.lua.unlockPlatform(platformIndex, request.platformName, sourceJobId);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);

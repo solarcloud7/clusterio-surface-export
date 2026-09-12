@@ -1,12 +1,9 @@
-import { escapeString as libEscapeString } from "@clusterio/lib";
 import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages";
 
 export const PLUGIN_NAME = "surface_export";
 
 export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
-export const EXPORT_POLL_TIMEOUT_MS = 30_000;
-export const EXPORT_POLL_INTERVAL_MS = 500;
 export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
 export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
 export const MAX_VALIDATION_TIMEOUT_SECONDS = 120;
@@ -132,62 +129,6 @@ export function chunkify(chunkSize: number, data: string): string[] {
 		chunks.push(data.slice(i, i + chunkSize));
 	}
 	return chunks;
-}
-
-export async function sendChunkedJson(
-	instance: FactorioInstance,
-	luaTemplate: string,
-	data: unknown,
-	logger: { info(msg: string): void; verbose(msg: string): void },
-	chunkSize = 100000,
-): Promise<void> {
-	const json = JSON.stringify(data);
-	const needsEscaping = json.includes("]]");
-
-	logger.info(
-		`Sending ${json.length} bytes in ${chunkSize} byte chunks ` +
-		`(escaping: ${needsEscaping ? "yes" : "no"})`,
-	);
-
-	const chunks = chunkify(chunkSize, json);
-	const startTime = Date.now();
-
-	for (let i = 0; i < chunks.length; i++) {
-		const chunk = chunks[i];
-		const index = i + 1;
-		const total = chunks.length;
-
-		let chunkString: string;
-		if (needsEscaping) {
-			const escaped = libEscapeString(chunk);
-			chunkString = `'${escaped}'`;
-		} else {
-			chunkString = `[[${chunk}]]`;
-		}
-
-		const command = luaTemplate
-			.replace(/%CHUNK%/g, chunkString)
-			.replace(/%INDEX%/g, index.toString())
-			.replace(/%TOTAL%/g, total.toString());
-
-		const response = await instance.sendRcon(`/sc ${command}`);
-		const reply = typeof response === "string" ? response.trim() : "";
-		if (!reply.startsWith("CHUNK_OK:") && !reply.startsWith("JOB_QUEUED:")) {
-			throw new Error(`Chunked import failed at chunk ${index}/${total}: ${reply || "<empty reply>"}`);
-		}
-
-		if (i % 10 === 0 || index === total) {
-			const percent = ((index / total) * 100).toFixed(1);
-			logger.verbose(`Sent chunk ${index}/${total} (${percent}%)`);
-		}
-	}
-
-	const duration = Date.now() - startTime;
-	const throughput = (json.length / 1024 / (duration / 1000)).toFixed(2);
-	logger.info(
-		`All ${chunks.length} chunks sent successfully ` +
-		`(${duration}ms, ${throughput} KB/s)`,
-	);
 }
 
 export function buildPayloadMetrics(exportData: ExportData | Record<string, unknown> | null | undefined) {

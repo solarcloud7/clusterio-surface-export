@@ -18,11 +18,13 @@ function readProducer(...parts) {
 	return fs.readFileSync(file, "utf8");
 }
 
-test("the Lua producer still builds job ids as %03d_<sanitized name>", () => {
+test("the Lua producer namespaces new job ids with the startup epoch", () => {
 	const source = readProducer("module", "core", "export-pipeline.lua");
-	assert.match(source, /string\.format\("%03d_%s",\s*job_counter,\s*safe_name\)/,
-		"export-pipeline.lua no longer formats the job id as `%03d_%s` of (counter, safe_name). "
-		+ "makeExportJobId in batch-lifecycle.mjs mirrors this and must be updated with it.");
+	assert.match(source, /\.export_job_id\(job_counter, safe_name\)/);
+	assert.match(readProducer("module", "core", "source-recovery.lua"),
+		/string\.format\("%03d_%s_%s", counter, name, storage\.source_recovery_epoch\)/);
+	assert.equal(makeExportJobId(1, "test", "boot-a"), "001_test_boot-a");
+	assert.notEqual(makeExportJobId(1, "test", "boot-a"), makeExportJobId(1, "test", "boot-b"));
 	assert.match(source, /platform\.name:gsub\("\[\^%w%-\]",\s*"-"\)/,
 		"export-pipeline.lua no longer sanitizes the platform name with gsub(\"[^%w%-]\", \"-\"). "
 		+ "sanitizePlatformName in batch-lifecycle.mjs mirrors this character class exactly.");

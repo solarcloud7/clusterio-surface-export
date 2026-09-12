@@ -1,4 +1,5 @@
 local RemoteInterface = {}
+local Upload = require("modules/surface_export/interfaces/remote/upload-session")
 
 local Base = require("modules/surface_export/interfaces/remote/base")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
@@ -108,6 +109,8 @@ RemoteInterface.get_validation_result_json = Base.json_wrap(get_validation_resul
 
 function RemoteInterface.register()
   remote.add_interface("surface_export", {
+    upload_session_json = Base.json_wrap(Upload.call),
+    get_job_status_json = Base.json_wrap(Upload.jobs),
     source_recovery_begin = Base.json_wrap(SourceRecovery.begin),
     source_recovery_reconcile = Base.json_wrap(SourceRecovery.reconcile),
     source_recovery_finish = Base.json_wrap(SourceRecovery.finish),

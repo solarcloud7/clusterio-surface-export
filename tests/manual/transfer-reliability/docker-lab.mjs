@@ -27,11 +27,12 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null} = {}) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
     this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
+    this.exposeHttp = exposeHttp;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
       {...h, container: `${run}-host-${h.hostNumber}`} ]));
@@ -51,7 +52,8 @@ export class DockerLab {
     let last;
     while (Date.now() < end) {
       if(this.cancelled || Date.now()>this.deadline) throw new Error("Manual lab interrupted or deadline exceeded");
-      try { const value = read(); if (value) return value; } catch (error) { last = error.message; }
+      try { const value = read(); if (value) return value; }
+      catch (error) { if(error.retryable===false) throw error; last = error.message; }
       await sleep(1000);
     }
     throw new Error(`${label} timed out${last ? `: ${last}` : ""}`);
@@ -64,7 +66,15 @@ export class DockerLab {
   }
   mutateContainer(verb, name, extra = []) {
     this.assertOwned("container", name);
-    return this.docker([verb, ...extra, name], {timeout:60_000});
+    const result=this.docker([verb, ...extra, name], {timeout:60_000});
+    if(verb==="start" && name===this.controller) this.refreshBrowserAddress();
+    return result;
+  }
+  refreshBrowserAddress() {
+    if(!this.exposeHttp) return;
+    // Docker may allocate a different ephemeral published port after a restart.
+    const address=this.docker(["port",this.controller,"8080/tcp"]).trim();
+    assert.match(address,/^127\.0\.0\.1:\d+$/);this.url=`http://${address}`;
   }
   ctl(...args) {
     return this.docker(["exec", this.controller, "npx", "clusterioctl", "--log-level", "error",
@@ -143,12 +153,13 @@ export class DockerLab {
     this.docker(["cp",`${seed}/.`,`${helper}:/seed`],{timeout:90_000});
     this.docker(["cp",`${join(this.directory,"bundle")}/.`,`${helper}:/plugins`],{timeout:90_000});
     const common = name => ["run","-d","--name",name,"--label",`${LABEL}=${this.run}`,"--network",this.network];
-    this.docker([...common(this.controller),"--hostname","clusterio-controller","--network-alias","clusterio-controller",
+    this.docker([...common(this.controller),...(this.exposeHttp?["-p","127.0.0.1::8080"]:[]),"--hostname","clusterio-controller","--network-alias","clusterio-controller",
       "-e","HOST_COUNT=2","-e","EXPORT_HOST=0","-e","INIT_CLUSTERIO_ADMIN=manual-lab","-e","DEFAULT_MOD_PACK=Space Age 2.0",
       "-e","SE_SKIP_PREPARE=1","-v",`${data}:/clusterio/data`,"-v",`${staticData}:/clusterio/static`,
       "-v",`${tokens}:/clusterio/tokens`,"-v",`${seedVolume}:/clusterio/seed-data:ro`,
       "-v",`${join(ROOT,"docker/seed-data/mods")}:/clusterio/seed-data/mods:ro`,"-v",`${plugins}:/clusterio/external_plugins`,this.image]);
     this.containers.push(this.controller);
+    this.refreshBrowserAddress();
     await this.until(() => this.docker(["exec",this.controller,"curl","-sf","http://localhost:8080/"]).length > 0,"controller HTTP",180);
     for (const host of [1,2]) {
       const h=this.hosts[host];
@@ -176,16 +187,28 @@ export class DockerLab {
     return {controllerImage:this.image,hostImage:this.hostImage,ids:this.ids,preflight:this.preflight,stagedHashes:this.stagedHashes,
       images:JSON.parse(this.docker(["image","inspect",this.image,this.hostImage])).map(i=>({id:i.Id,digests:i.RepoDigests}))};
   }
-  async checkpoint(name) {
+  async checkpoint(name, hosts = [1,2]) {
     assert.match(name,/^manual-[a-z0-9-]+$/);
-    for (const host of [1,2]) this.lua(host,`game.server_save('${name}');return {success=true}`);
+    assert.ok(hosts.length>0 && new Set(hosts).size===hosts.length && hosts.every(host=>host===1||host===2),"invalid checkpoint hosts");
+    for (const host of hosts) this.lua(host,`game.server_save('${name}');return {success=true}`);
     const evidence={};
-    for (const host of [1,2]) {
-      const file=`/clusterio/data/instances/${this.hosts[host].instance}/saves/${name}.zip`;
-      evidence[host]=await this.until(() => this.docker(["exec",this.hosts[host].container,"node","-e",
-        'const fs=require("fs"),zip=require("jszip"),crypto=require("crypto");const b=fs.readFileSync(process.argv[1]);zip.loadAsync(b,{checkCRC32:true}).then(()=>console.log(crypto.createHash("sha256").update(b).digest("hex"))).catch(e=>{console.error(e.message);process.exitCode=1;})',file]).trim(),"verified checkpoint",60);
-    }
+    for (const host of hosts) evidence[host]=await this.until(()=>this.checkpointHash(host,name),"verified checkpoint",60);
     return evidence;
+  }
+  checkpointHash(host,name) {
+    assert.ok(host===1||host===2,"invalid checkpoint host");
+    assert.match(name,/^manual-[a-z0-9-]+$/);
+    const file=`/clusterio/data/instances/${this.hosts[host].instance}/saves/${name}.zip`;
+    const result=JSON.parse(this.docker(["exec",this.hosts[host].container,"node","-e",
+      'const fs=require("fs"),zip=require("jszip"),crypto=require("crypto"),bytes=fs.statSync(process.argv[1]).size;'
+      +'if(bytes>268435456)console.log(JSON.stringify({error:"CHECKPOINT_SIZE_LIMIT",bytes}));'
+      +'else{const b=fs.readFileSync(process.argv[1]);zip.loadAsync(b,{checkCRC32:true})'
+      +'.then(()=>console.log(JSON.stringify({sha256:crypto.createHash("sha256").update(b).digest("hex")})))'
+      +'.catch(e=>{console.error(e.message);process.exitCode=1;});}',file]));
+    if(result.error==="CHECKPOINT_SIZE_LIMIT") throw Object.assign(
+      new Error(`checkpoint exceeds 256 MiB (${result.bytes} bytes)`),{retryable:false});
+    assert.match(result.sha256,/^[a-f0-9]{64}$/,"invalid checkpoint digest");
+    return result.sha256;
   }
   async load(host,name,{crash=false}={}) {
     if (crash) { this.mutateContainer("kill",this.hosts[host].container,["--signal","KILL"]);

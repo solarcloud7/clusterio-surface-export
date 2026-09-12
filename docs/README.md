@@ -9,6 +9,7 @@ Start with the [project overview and production gates](../README.md). Keep imple
 | [Commands](commands-reference.md) | In-game, RCON, and remote interfaces |
 | [Export/import flow](EXPORT_IMPORT_FLOW.md) | Message routes and restoration boundaries |
 | [Batching and timing](async-processing.md) | Tick scheduling, synchronous limits, profiler measurements, and acceptance evidence |
+| [Upload sessions and job status](upload-job-status.md) | Buffer ownership, queue observation, protocol bounds, and disposable acceptance |
 | [Durability and commit protocol](TRANSFER_2PC.md) | Shipped recovery safeguards and the pending commit protocol |
 | [Engineering FAQ](ENGINEERING_FAQ.md) | Failure scenarios and unresolved decisions |
 | [Transfer logs](TRANSFER_LOGS.md) | Audit records and inspection |

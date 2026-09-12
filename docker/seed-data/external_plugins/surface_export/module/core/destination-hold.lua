@@ -100,7 +100,7 @@ local function find_hold_for_platform(holds, surface_index, platform_index, exce
 	return nil, nil
 end
 
-function DestinationHold.stage(transfer_id, platform, force, fail_closed)
+function DestinationHold.stage(transfer_id, platform, force, fail_closed, preparation_visibility)
 	if type(transfer_id) ~= "string" or transfer_id == "" then
 		return false, "transfer_id is required"
 	end
@@ -135,6 +135,10 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed)
 
 	local original_hidden = force.get_surface_hidden(surface)
 	local original_platform_hidden = platform.hidden
+	if preparation_visibility then
+		original_hidden = preparation_visibility.surface_hidden
+		original_platform_hidden = preparation_visibility.platform_hidden
+	end
 	local original_paused = platform.paused == true
 	local active_states = {}
 	local deactivated = 0

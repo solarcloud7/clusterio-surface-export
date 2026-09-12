@@ -18,7 +18,7 @@ test("destination hold primitive is registered for explicit proof runs", () => {
 
 test("destination hold primitive exposes stage, go_live, discard, and get", () => {
 	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed\)/);
+	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed, preparation_visibility\)/);
 	assert.match(hold, /function DestinationHold\.go_live\(transfer_id\)/);
 	assert.match(hold, /function DestinationHold\.discard\(transfer_id\)/);
 	assert.match(hold, /function DestinationHold\.get\(transfer_id\)/);

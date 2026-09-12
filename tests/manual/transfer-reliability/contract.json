@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "engine": "2.1.17",
   "invariants": [
     "At most one physically usable copy at each sampled boundary",
@@ -11,12 +11,22 @@
   "forbiddenAssists": ["manufactured successful reply", "editing cargo or validation evidence", "unlocking or deleting copies before observation", "changing recovery timers or receipt capacity"],
   "bounds": {"setupSeconds": 600, "caseSeconds": 600, "commandSeconds": 30, "replyBytes": 1048576, "profileRecordsPerInstance": 2000},
   "cases": [
+    {"id": "save-policy-game", "purpose": "Intentionally restore a mixed checkpoint in Save game mode, prove exact cargo, fresh identity, delayed-message refusal, mode switch and another transfer", "limits": ["Intentional restored duplicates are accepted with a warning", "Does not claim automatic crash recovery"]},
+    {"id": "save-policy-history", "purpose": "Restore the same mixed checkpoint in Plugin history mode; keep the transferred source protected and the unrelated restored platform usable"},
+    {"id": "snapshot-recovery", "purpose": "Reproduce destination-only rollback loss, explicitly import its retained snapshot as a fresh operation, reject duplicate submission and verify after save/restart", "limits": ["Original #315 failure stays recorded separately", "Manual import is not automatic recovery"]},
+    {"id": "save-policy-pending", "purpose": "Withhold a real source-deletion acknowledgement, reload its older save in Save game mode, require protection and normal recovery with exact cargo"},
     {"id": "coordinated-restore", "purpose": "Back up quiesced lab volumes with a completed transfer and an uncertain acknowledgement; erase, restore and require normal recovery plus exact cargo/history"},
     {"id": "lost-source-reply", "purpose": "Real source deletion succeeds; its host response is withheld, then controller disconnects and retries"},
     {"id": "lost-destination-reply", "purpose": "Real destination release succeeds; its host response is withheld, then controller disconnects and retries"},
     {"id": "aged-recovery-intent", "purpose": "Withhold a real source-deletion reply, stop the controller, age only the retained intent timestamp by one day, then restart and require completion"},
     {"id": "crash-source-before-save", "purpose": "SIGKILL source host after deletion but before a save containing its receipt; restart from the verified earlier checkpoint"},
     {"id": "restore-old-source", "purpose": "After acknowledged transfer completion, reload an earlier source save while retaining current controller/destination state"},
+    {"id": "restore-old-destination", "purpose": "Control-reload the completed destination, then load its pre-transfer checkpoint; independently observe physical cargo, normal recovery and retained history",
+      "targetHost": 2, "observationMs": 65000, "intervalMs": 5000, "maximumSamples": 16,
+      "invariants": ["Exact physical cargo in at least one running world at every sample", "At most one usable copy", "One import request for the canonical transfer", "One usable destination at the end of the observation window"],
+      "control": "Latest destination checkpoint reload preserves exact cargo and completed history before stale-save injection",
+      "forbiddenAssists": ["Restoring the source or controller", "Changing recovery timers, receipts, journals, cargo or verdicts", "Re-importing an artifact", "Pausing the simulation"],
+      "limits": ["Read-only observation continues after a violation to record normal recovery", "Missing physical platforms do not prove every backup or cached payload is lost", "History status records a past operation, not a current physical inventory", "Two planned live runs: injected cleanup and acceptance; at most one harness-repair repeat"]},
     {"id": "performance", "purpose": "Compare fixed small/large fixtures with operation timing disabled, normal timing, and batch timing; include scheduler and queue setup boundaries"}
   ]
 }

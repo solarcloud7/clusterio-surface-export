@@ -68,7 +68,7 @@ export type SurfaceExportPlugin = {
 	offUpdate(callback: () => void): void;
 	getStoredExport(exportId: string): Promise<JsonObject>;
 	exportPlatformForDownload(payload: JsonObject): Promise<JsonObject>;
-	importUploadedExport(payload: JsonObject): Promise<JsonObject>;
+	importUploadedExport(payload: import("../messages").ImportUploadedExportOptions): Promise<JsonObject>;
 	startTransfer(payload: JsonObject): Promise<JsonObject>;
 	loadTransactionLog(transferId: string): Promise<void>;
 	refreshSnapshots?(): Promise<void>;

@@ -16,6 +16,25 @@ const surfaceExportCommands = new CommandTree({
 });
 
 surfaceExportCommands.add(new Command({
+	definition: ["restore-snapshot <exportId> <targetInstanceId> <requestId> [platformName]",
+		"Explicitly create a new copy from a retained snapshot; reuse requestId when retrying the same request",
+		(yargs: YargsLike) => {
+			yargs.positional("exportId", { type: "string", describe: "Stored snapshot identifier" });
+			yargs.positional("targetInstanceId", { type: "number", describe: "Destination instance" });
+			yargs.positional("requestId", { type: "string", describe: "UUID for this restoration request" });
+			yargs.positional("platformName", { type: "string", describe: "Optional new platform name" });
+		}],
+	handler: async (args: { exportId: string; targetInstanceId: number; requestId: string; platformName?: string }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.ImportUploadedExportRequest({
+			targetInstanceId: args.targetInstanceId, exportData: {}, restoreExportId: args.exportId,
+			restoreRequestId: args.requestId, platformName: args.platformName,
+		})) as messages.SimpleResponse;
+		if (!response.success) throw new Error(response.error || "Snapshot restoration refused");
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];
