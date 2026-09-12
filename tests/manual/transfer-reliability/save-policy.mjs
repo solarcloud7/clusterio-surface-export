@@ -89,7 +89,7 @@ export async function snapshotRecoveryCase(lab,report,save) {
   report.rollback=sample(lab,name);report.originalHistory=summary(lab,report.transferId);save();
   assert.equal(report.rollback.source.present,false);assert.equal(report.rollback.destination.present,false);
   assert.equal(report.originalHistory.status,"completed","#315 reproduction must retain original history");
-  report.browser=await recoveryBrowser(lab,report);save();
+  report.browser=await recoveryBrowser(lab,report,{restoreFailure:true});save();
   const requestId=report.requestId=randomUUID();
   const submit=()=>JSON.parse(lab.ctl("surface-export","restore-snapshot",report.transferId,lab.ids[2],requestId).trim().split(/\r?\n/).at(-1));
   report.recovery=submit();assert.equal(report.recovery.success,true);

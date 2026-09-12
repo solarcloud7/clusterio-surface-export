@@ -79,7 +79,8 @@ with no automatic deletion or re-import.
 `surface_export.platform_source_of_truth` is controller configuration, defaulting
 to `plugin_history`. The instance fetches policy and current handoff authority
 before completing startup reconciliation. The Settings tab displays configured and
-applied modes and whether a restart is required.
+applied modes and whether a restart is required. Clusterio rejects other policy
+values when configuration is written.
 
 - **Plugin history:** a restored source recorded as transferred away remains protected.
 - **Save game:** when no unresolved handoff owns it, reconciliation restores the
@@ -98,7 +99,11 @@ dialog when retained bytes are importable. It replaces old routing metadata and
 does not replay source deletion. Missing/expired snapshots are disabled with a
 reason; supported failure black boxes supply only their importable replay payload.
 Original outcomes stay unchanged. Offline or uncertain identity matches remain
-unverified. See [the production runbook](../docker/production/README.md) for the
+unverified. If a restore response fails or cannot be confirmed, the dialog keeps
+that attempt's identity, disables resubmission, and links to its transfer history.
+Inspect that attempt before closing and reopening the dialog to start another restore;
+an acknowledgement failure does not prove that no platform was imported.
+See [the production runbook](../docker/production/README.md) for the
 CLI recovery command and [manual fixtures](../tests/manual/transfer-reliability/README.md#configurable-save-recovery)
 for the observed save-policy, duplicate-submission, and snapshot-recovery results.
 

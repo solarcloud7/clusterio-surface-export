@@ -126,6 +126,7 @@ export const plugin = {
 			title: "Platform source of truth",
 			description: "plugin_history protects restored source copies that already transferred away. save_game accepts restored copies with a warning. Applies when each instance restarts; active transfers remain protected.",
 			type: "string",
+			enum: ["plugin_history", "save_game"],
 			initialValue: "plugin_history",
 		},
 		[`${PLUGIN_NAME}.transaction_log_detail_entries`]: {

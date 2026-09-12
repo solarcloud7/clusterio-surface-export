@@ -44,7 +44,11 @@ test("save restoration requires available recovery authority and reserves startu
 	let mode = "plugin_history";
 	plugin.cfg = () => mode;
 	const begin = epoch => plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch, action: "begin"}, {id: 1});
+	await assert.rejects(plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "a", action: "begin"}), /identity mismatch/);
+	assert.equal(plugin.recoveryReservations.size, 0, "an unauthenticated request reserved startup admission");
 	assert.equal((await begin("a")).mode, "plugin_history");
+	await assert.rejects(plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "a", action: "finish"}), /identity mismatch/);
+	assert.equal(plugin.recoveryReservations.size, 1, "an unauthenticated request released startup admission");
 	assert.throws(() => plugin.requireRecoveryReady(1), /reconciling/);
 	mode = "save_game";
 	assert.equal((await begin("a")).mode, "plugin_history", "configuration changed an active startup session");

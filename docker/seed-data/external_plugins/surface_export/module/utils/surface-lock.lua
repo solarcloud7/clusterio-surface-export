@@ -460,11 +460,6 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name
-    local restoration = (storage.source_recovery_notices or {})[platform_index]
-    if not recovery_bootstrap and restoration and restoration.status == "accepted"
-        and (type(expected_job_id) ~= "string" or lock_data.transfer_job_id ~= expected_job_id) then
-        return false, "Unlock refused: restored platform requires its current transfer identity"
-    end
     if expected_job_id and lock_data.transfer_job_id ~= expected_job_id then
         return false, "Unlock refused: transfer identity changed"
     end
@@ -498,6 +493,19 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         log(string.format("[SurfaceLock] unlock: index %s now holds a different surface (locked %s, found %s) — dropping stale lock WITHOUT restoring",
             tostring(platform_index), tostring(lock_data.surface_index), tostring(surface and surface.index)))
         return false, "Platform index reused since lock — stale lock dropped (not restored)"
+    end
+
+    local restoration = (storage.source_recovery_notices or {})[platform_index]
+    if not recovery_bootstrap and restoration and restoration.status == "accepted" then
+        -- Resolve lazily: source-recovery also uses SurfaceLock during startup.
+        local uid = require("modules/surface_export/core/source-recovery").platform_uid(platform)
+        if not uid or type(restoration.platformUid) ~= "string" or restoration.platformUid == "" then
+            return false, "Unlock refused: restored platform identity is unavailable"
+        end
+        if restoration.platformUid == uid
+            and (type(expected_job_id) ~= "string" or lock_data.transfer_job_id ~= expected_job_id) then
+            return false, "Unlock refused: restored platform requires its current transfer identity"
+        end
     end
 
     local destination_hold_active, destination_hold_transfer_id = SurfaceLock.destination_hold_owns_surface(surface, platform)

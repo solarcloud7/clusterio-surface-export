@@ -76,3 +76,16 @@ test("snapshot retrieval and import keep their existing control permission bound
 	const request=messages.ImportUploadedExportRequest.fromJSON(input);
 	assert.equal(request.toJSON().restoreRequestId,input.restoreRequestId);
 });
+
+test("source unlock uses canonical identity without accepting foreign or empty jobs", async () => {
+	const {plugin} = harness();
+	const calls = [];
+	plugin.lua.unlockPlatform = async (...args) => { calls.push(args); return "SUCCESS"; };
+	for (const [operationId, expected] of [
+		["1:job:attempt", "job:attempt"], ["11:job", undefined],
+		["1:", undefined], ["bad:job", undefined], [undefined, undefined],
+	]) {
+		assert.equal((await plugin.handleUnlockSourcePlatformMeasured({platformIndex: 3, operationId})).success, true);
+		assert.deepEqual(calls.pop(), [3, undefined, expected]);
+	}
+});
