@@ -38,6 +38,8 @@ docker/server-settings.json
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/di-change/
+/.agents/skills/di-change/*
+!/.agents/skills/di-change/SKILL.md
 /.codex/
 
 # Mod packaging

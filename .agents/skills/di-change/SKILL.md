@@ -40,6 +40,10 @@ and Factorio API shapes in fixtures; a convenient mock is not runtime evidence.
    around an engine behavior, verify that assumption with the pinned API or a bounded
    runtime probe. An API shape alone cannot prove reconstruction behavior. Compare commensurate values;
    a redundant count with different semantics must not become a second validation gate.
+   Do not recreate `docs/factorio-2.0-api-notes.md` or mirror upstream API documentation.
+   The `[empirical, <pin>, <citation>]` convention is retired; `[API]` and `[hypothesis]`
+   evidence tiers are abolished. Tags grant no authority: cite the pinned upstream API
+   at the point of use or retain a probe that can be rerun.
 3. Verify phase boundaries against what can still move or change between ticks. A partially
    restored world cannot certify final cargo. Inactive belts are not assumed frozen.
 4. Trace first execution, repetition, late delivery, error/rejection, restart, and operator
@@ -54,6 +58,18 @@ State-mutating fault hooks must either fail safely before ownership changes or d
 guaranteed cleanup. The local cluster may have debug mode enabled; leaked flags must not
 silently damage the next transfer. Run the applicable executable lint guards and tests.
 
+Use the checked-in entrypoints from the repository root:
+
+- `./tools/clusterio/build-plugin.ps1 lint`
+- `./tools/clusterio/build-plugin.ps1 test -OutputDirectory ci-artifacts/di-check`
+- `./tools/clusterio/build-plugin.ps1 smoke -OutputDirectory ci-artifacts/di-smoke`
+
+The test and smoke targets compile Node code; keep their output isolated as shown.
+Use this wrapper for build/lint/test containers instead of hand-written Docker commands.
+`node tools/tests/run-integration-tests.mjs --list` lists integration suites; `--only`
+selects a suite on the configured cluster, not a disposable one. Use the checked-in
+`tests/manual/transfer-reliability/` harness for isolated recovery experiments.
+
 ## Independent review
 
 Review during authoring, before declaring these paths ready to merge. Prepare a bounded
@@ -62,8 +78,9 @@ packet containing base/head revisions, scoped diff, invariants, tests, and proof
 For a data-integrity change, use an independent reviewing agent when the current environment
 provides one. Give it read-only ownership of the scoped review, the canonical checkout, and
 the instruction not to revert others' work. Do not create a checkout, worktree, or clone.
-Use the current capable model unless the user requests another model; this checklist does
-not require Claude Code, Opus, or any particular provider.
+Use the most capable reviewing model available; do not downgrade merge-gating review for
+cost or speed. Honor an explicit user model choice. This checklist does not require
+Claude Code, Opus, or any particular provider.
 
 An external reviewer is also valid when authorized. Skill invocation does not authorize
 new source-code disclosure or publishing comments. If no independent reviewer can run,
