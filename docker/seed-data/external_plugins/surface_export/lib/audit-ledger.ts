@@ -21,6 +21,8 @@ type RowInput = {
 	eventCount: number;
 	lastEventAt: number | null;
 	info: {
+		timingPendingRecovery?: boolean | null;
+		sourceRestored?: boolean;
 		operationType?: string | null;
 		platformName?: string | null;
 		platformIndex?: number | null;
@@ -69,6 +71,8 @@ export function buildAuditRow(input: RowInput): AuditRow {
 		row.errorTruncated = true;
 	}
 	if (info.observedDurationMs !== undefined) row.observedDurationMs = info.observedDurationMs;
+	if (typeof info.timingPendingRecovery === "boolean") row.timingPendingRecovery = info.timingPendingRecovery;
+	if (typeof info.sourceRestored === "boolean") row.sourceRestored = info.sourceRestored;
 	return row;
 }
 

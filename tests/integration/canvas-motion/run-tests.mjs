@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { checkRecoveryPreview } from "./recovery.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "local credentials stay on localhost");
@@ -69,7 +70,8 @@ try {
 	await next(); // retry reverse departure
 	await settledAt(50);
 	await next(); // reverse validation
-	await moveTo(50, 0, "cleanup failure still arrives at its destination");
+	await next(); // cleanup is unresolved, not an arrival
+	await settledAt(50);
 	assert.match(await scene.locator(".surface-export-edge-status").getAttribute("class"), /ship-failure/);
 	await page.emulateMedia({ reducedMotion: "reduce" });
 	await next(); // next forward journey
@@ -79,6 +81,7 @@ try {
 	console.log("PASS reduced-motion preference");
 	await page.emulateMedia({ reducedMotion: "no-preference" });
 	await page.getByRole("button", { name: "Close", exact: true }).click();
+	await checkRecoveryPreview(page);
 	await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
 	await page.getByRole("button", { name: "Pause", exact: true }).click();
 	const interrupted = await ship.elementHandle();

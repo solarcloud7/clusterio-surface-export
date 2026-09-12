@@ -3,7 +3,8 @@ param(
     [switch]$Fresh,
     [switch]$RestartController,
     [switch]$RestartHosts,
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [string]$PackageDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,17 @@ $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugi
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
 $OutputMount = @()
+$PackageMount = @()
+if ($PackageDirectory) {
+    if (-not $OutputDirectory) { throw 'A staged package requires isolated build output.' }
+    $RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
+    $ArtifactRoot = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'ci-artifacts')) + [IO.Path]::DirectorySeparatorChar
+    $StagedPackage = (Resolve-Path -LiteralPath $PackageDirectory).Path
+    if (-not $StagedPackage.StartsWith($ArtifactRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Staged packages must be under ci-artifacts.'
+    }
+    $PluginPath = $StagedPackage
+}
 if ($OutputDirectory) {
     if ($RestartController -or $RestartHosts) { throw 'An isolated build cannot restart the development cluster.' }
     $RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
@@ -64,8 +76,12 @@ if ($Target -in @('lint', 'test', 'smoke')) {
 
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
 if ($OutputDirectory) { $OutputMount = @('--mount', "type=bind,src=$ResolvedOutput,dst=$WorkDir/dist") }
+if ($PackageDirectory -and $Target -in @('lint', 'test', 'smoke')) {
+    $PackageMount = @('--mount', "type=bind,src=$PluginPath,dst=$WorkDir")
+}
 docker run --rm `
     @OutputMount `
+    @PackageMount `
     --mount "type=bind,src=$MountSrc,dst=$MountDst" `
     --mount "type=bind,src=$lockPath,dst=$WorkDir/package-lock.json,readonly" `
     -v "${DepsVolume}:$WorkDir/node_modules" `

@@ -45,6 +45,14 @@ they do not imply that preparation had no side effects.
 | Bytes per chunk | 100,000 |
 | Closed receipts without an active job | 512 |
 
+`initialize` advertises `limits.chunkBytes`, `maxUploadBytes`, `maxBufferedBytes`,
+and `maxSessions` from the Lua receiver. Node validates these positive integer limits,
+uses the advertised chunk size and session cap, and rejects oversized encoded uploads
+before sending `begin`. Lua still enforces admission and byte bounds. Missing or malformed
+limits refuse initialization with a matching-deployment error. The handshake addition
+does not change version-1 receipt storage or discard accepted jobs. A stopped or replaced
+initialization cannot publish a late reply's limits or epoch.
+
 Reservations use the declared encoded size. These limits do not bound decoded platform
 memory. Capacity rejection never evicts a progressing upload. Pruned status is
 **unavailable**; it cannot authorize importing the same attempt again. A sequence high
@@ -150,6 +158,22 @@ The fixture creates labelled `se-manual-upload-*` resources and removes only tho
 resources. Its `ci-artifacts/<run>/result.json` records the candidate hash, pinned engine,
 case outcomes, physical observations, and cleanup result. `commands.jsonl` and the browser
 capture accompany the result. A nonzero exit is not a passing acceptance result.
+
+The upload, recovery, settings, pipeline and production-profile runners use
+`tests/manual/transfer-reliability/lifecycle.mjs` for cancellation, cleanup and final
+evidence. SIGINT/SIGTERM request cooperative cancellation; an in-flight command finishes
+or reaches its command deadline before cleanup runs. Browser-close and reporting failures
+do not skip Docker cleanup. Returned cleanup observations remain separate from reporting
+errors. PASS exits 0, STOP exits 2, and harness errors exit 1; the production oracle's
+existing FAIL verdict also exits 1. A forced process kill cannot run JavaScript cleanup;
+the labelled-resource cleanup command remains available for that case.
+
+Gateway recovery markers use the same compact summaries for live and persisted records.
+Pending recovery and cleanup failures remain at the route midpoint without terminal fade;
+that position denotes uncertainty, not the platform's physical location. A failure alone
+does not claim a timeout, return, or arrival. A return requires an acknowledged source
+rollback with no pending recovery; only completion is shown as arrival. These display
+fields do not authorize platform deletion, release, or another import.
 
 An optional second argument selects an extracted plugin package under `ci-artifacts`
 as the Lua/package source. Use it with that package's built `dist` to test committed

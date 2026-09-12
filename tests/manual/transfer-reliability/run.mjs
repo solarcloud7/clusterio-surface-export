@@ -1,3 +1,4 @@
+import { runLab } from './lifecycle.mjs';
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -58,9 +59,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
     report.hashes["physical-contract"]=hash(join(ROOT,"tests/integration/transfer-cleanup/oracle.mjs"));
     const file=join(directory,"result.json"),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+"\n");save();
     const lab=new DockerLab(run,directory,{sectionedCodec,exposeHttp:chosen.id.startsWith("save-policy-")||chosen.id==="snapshot-recovery"});
-    const interrupt=()=>{lab.cancelled=true;};
-    process.on("SIGINT",interrupt);process.on("SIGTERM",interrupt);
-    try {
+    process.exitCode=await runLab({lab,report,save,work:async()=>{
       console.log(`Starting disposable Docker run ${run}: ${chosen.id}`);
       report.environment=await lab.setup();save();console.log("Disposable instances ready; executing contract");
       if(failAfterSetup) throw new Error("Intentional harness failure after setup; verify cleanup.success");
@@ -72,15 +71,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
       else if(chosen.id==="coordinated-restore") await backupRestoreCase(lab,report,save,{failAfterBackup});
       else if(chosen.id==="restore-old-destination") await destinationRollbackCase(lab,report,save,{failAfterControl});
       else await recoveryCase(lab,report,save);
-    } catch(error) {report.error=error.stack;report.verdict="HARNESS_ERROR";}
-    finally {
-      report.cleanup=await lab.cleanup();report.finishedAt=new Date().toISOString();
-      process.removeListener("SIGINT",interrupt);process.removeListener("SIGTERM",interrupt);
-      if(!report.error) try {Object.assign(report,analyze(report));}catch(error){report.error=error.stack;report.verdict="HARNESS_ERROR";}
-      if(!report.cleanup.success) report.verdict="HARNESS_ERROR";
-      save();console.log(JSON.stringify({verdict:report.verdict,violations:report.violations,error:report.error,
-        cleanup:report.cleanup.success,artifact:file},null,2));
-      process.exitCode=report.verdict==="PASS"?0:report.verdict==="STOP"?2:1;
-    }
+    },analyze:()=>report.error?{}:analyze(report)});
+    console.log(JSON.stringify({verdict:report.verdict,violations:report.violations,error:report.error,cleanup:report.cleanup.success,artifact:file},null,2));
   });
 }

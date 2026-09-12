@@ -32,9 +32,9 @@ function harness(fault) {
  const client=new UploadSessions(async(action,q)=>{
   calls.push(action);
   const r=records.get(q.attemptId);
-  if(action==="initialize") return {version:1,success:true,epoch:q.epoch};
+  if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4}};
   if(action==="begin") {
-   const record={version:1,success:true,state:"receiving",attemptId:q.attemptId,epoch:q.epoch,chunks:[]};
+   const record={version:1,success:true,state:"receiving",attemptId:q.attemptId,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4},chunks:[]};
    records.set(q.attemptId,record); return record;
   }
   if(action==="chunk") {
@@ -85,7 +85,7 @@ test("concurrent delivery of the same operation shares one upload",async()=>{
 test("repeated startup handshake resumes the receiver's sequence checkpoint",async()=>{
  const sequences=[];
  const client=new UploadSessions(async(action,q)=>{
-  if(action==="initialize") return {version:1,success:true,epoch:q.epoch,highWater:40};
+  if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4},highWater:40};
   if(action==="begin") {sequences.push(q.sequence);return {version:1,success:true,state:"accepted",jobId:"retained"};}
   throw Error(action);
  });
@@ -98,7 +98,7 @@ test("unresolved cleanup retries receiving bytes but never aborts an accepted jo
   const calls=[],reports=[];let unreachable=true;
   const client=new UploadSessions(async(action,q)=>{
    calls.push(action);
-   if(action==="initialize") return {version:1,success:true,epoch:q.epoch};
+   if(action==="initialize") return {version:1,success:true,epoch:q.epoch,limits:{chunkBytes:100000,maxUploadBytes:536870912,maxBufferedBytes:1073741824,maxSessions:4}};
    if(action==="begin") return {version:1,success:true,state:"receiving",attemptId:q.attemptId};
    if(action==="chunk") throw Error("connection interrupted");
    if(action==="status"&&unreachable) throw Error("status unreachable");

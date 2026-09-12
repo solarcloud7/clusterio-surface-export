@@ -176,7 +176,7 @@ export function replayCandidates(summaries: readonly TransferSummary[] | null | 
 			summary.operationType === "transfer"
 			&& Number.isFinite(summary.sourceInstanceId)
 			&& Number.isFinite(summary.targetInstanceId)
-			&& shipPhaseFor(summary.status) !== null)
+			&& shipPhaseFor(summary) !== null)
 		.map(summary => ({
 			transferId: summary.transferId,
 			status: String(summary.status),
@@ -199,7 +199,7 @@ export function replayShips(
 		.filter(summary =>
 			Number.isFinite(summary.sourceInstanceId)
 			&& Number.isFinite(summary.targetInstanceId)
-			&& shipPhaseFor(summary.status) !== null) as ShipTransfer[];
+			&& shipPhaseFor(summary) !== null) as ShipTransfer[];
 }
 
 export type DebugScenario = {

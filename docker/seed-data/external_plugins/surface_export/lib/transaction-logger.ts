@@ -244,7 +244,18 @@ export class TransactionLogger {
 	}
 
 	buildTransferInfo(transfer: ActiveTransfer) {
+		const events = this.plugin.transactionLogs.get(transfer.transferId) || [];
+		let sourceRestored = false;
+		for (let i = events.length - 1; i >= 0; i--) {
+			if (["rollback_success", "rollback_failed", "rollback_attempt"].includes(events[i].eventType)) {
+				sourceRestored = events[i].eventType === "rollback_success";
+				break;
+			}
+		}
 		return {
+			timingPendingRecovery: transfer.timingPendingRecovery,
+			sourceRestored: !transfer.timingPendingRecovery && ["failed", "error"].includes(transfer.status)
+				&& sourceRestored,
 			queuedRequestId: transfer.queuedRequestId,
 			transferId: transfer.transferId,
 			operationType: transfer.operationType || "transfer",
@@ -290,6 +301,8 @@ export class TransactionLogger {
 		const downloadable = Boolean(storedExport?.exportData);
 		return {
 			queuedRequestId: info.queuedRequestId,
+			timingPendingRecovery: info.timingPendingRecovery,
+			sourceRestored: info.sourceRestored,
 			jobObservation: transfer.jobObservation,
 			transferId,
 			operationType: info.operationType,
@@ -424,6 +437,8 @@ export class TransactionLogger {
 					targetInstanceId: row.targetInstanceId ?? -1,
 					targetInstanceName: row.targetInstanceName ?? null,
 					status: row.status || "unknown",
+					timingPendingRecovery: row.timingPendingRecovery,
+					sourceRestored: row.sourceRestored,
 					...(row.observedDurationMs !== undefined ? { observedDurationMs: row.observedDurationMs } : {}),
 					startedAt: row.startedAt || row.savedAt || Date.now(),
 					completedAt: row.completedAt || null,
@@ -448,6 +463,14 @@ export class TransactionLogger {
 				&& transferInfo.startedAt === ledgerRow.startedAt
 				&& ["completed", "failed", "error", "cleanup_failed"].includes(transferInfo.status || "");
 			if (existing && !retainedVerdict) {
+				// Older ledger rows lack recovery evidence. Matching retained detail can
+				// supply it, but must never override a newer, explicit ledger observation.
+				if (existing.registrySource === "persisted" && ledgerRow
+					&& existing.startedAt === transferInfo.startedAt && existing.status === transferInfo.status
+					&& persistedLog.savedAt >= ledgerRow.savedAt) {
+					if (existing.timingPendingRecovery === undefined) existing.timingPendingRecovery = transferInfo.timingPendingRecovery;
+					if (existing.sourceRestored === undefined) existing.sourceRestored = transferInfo.sourceRestored;
+				}
 				continue;
 			}
 			const events = Array.isArray(persistedLog.events) ? persistedLog.events : [];
@@ -464,6 +487,8 @@ export class TransactionLogger {
 				targetInstanceId: transferInfo.targetInstanceId ?? -1,
 				targetInstanceName: transferInfo.targetInstanceName ?? null,
 				status: transferInfo.status || "unknown",
+				timingPendingRecovery: transferInfo.timingPendingRecovery,
+				sourceRestored: transferInfo.sourceRestored,
 				...(transferInfo.observedDurationMs !== undefined ? { observedDurationMs: transferInfo.observedDurationMs } : {}),
 				startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
 				completedAt: transferInfo.completedAt || null,

@@ -1,3 +1,4 @@
+import { runLab } from './lifecycle.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join} from 'node:path';
@@ -37,12 +38,10 @@ if(mode==='--analyze') {
   for(const file of ['settings-transfer.mjs','settings-observer.lua','settings-oracle.mjs','docker-lab.mjs'])report.hashes[file]=hash(new URL(file,import.meta.url));
   const file=join(directory,'result.json'),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
   const lab=new DockerLab(run,directory,{sameSourceSave:true,sectionedCodec});
-  const interrupt=()=>{lab.cancelled=true;};
-  process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
   const code=readFileSync(new URL('./settings-observer.lua',import.meta.url),'utf8');
   const capture=(host,index,fail=false)=>lab.lua(host,`return (function() ${code} end)()(${index},${fail})`).result;
   save();
-  try {
+  process.exitCode=await runLab({lab,report,save,work:async()=>{
     console.log(`Starting golden settings comparison ${run}`);
     report.environment=await lab.setup();lab.deadline=Date.now()+1200000;save();
     const list=host=>luaSequence(lab.lua(host,"local p={};for _,v in pairs(game.forces.player.platforms) do p[#p+1]={name=v.name,index=v.index} end;return {success=true,platforms=p}").result.platforms);
@@ -76,14 +75,8 @@ if(mode==='--analyze') {
       save();console.log(`${row.name}: ${row.outcome.status}, settings ${row.comparison.verdict}`);
       if(row.outcome.status!=='completed'||row.comparison.verdict!=='PASS')break;
     }
-  } catch(error) {report.error=error.stack;}
-  finally {
-    report.cleanup=await lab.cleanup();
-    process.removeListener('SIGINT',interrupt);process.removeListener('SIGTERM',interrupt);
-    if(mode==='--cleanup-proof')report.cleanupProofPassed=!!report.error?.includes('Intentional failure')&&report.cleanup.success;
-    if(!report.error) {report.results=analyze(report);report.verdict=report.results.every(r=>r.verdict==='PASS')?'PASS':'STOP';}
-    else report.verdict='HARNESS_ERROR';
-    save();console.log(JSON.stringify({artifact:file,verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,cleanupProofPassed:report.cleanupProofPassed},null,2));
-    process.exitCode=report.verdict==='PASS'||report.cleanupProofPassed?0:report.verdict==='STOP'?2:1;
-  }
+  },expectedFailure:mode==='--cleanup-proof'?/Intentional failure/:undefined,analyze:()=>{
+    if(report.error)return {};report.results=analyze(report);return {verdict:report.results.every(r=>r.verdict==='PASS')?'PASS':'STOP'};
+  }});
+  console.log(JSON.stringify({artifact:file,verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,cleanupProofPassed:report.cleanupProofPassed},null,2));
 });

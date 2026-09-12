@@ -41,7 +41,10 @@ function Sessions.initialize(epoch)
   old.epoch,old.high_water=epoch,0
  end
  Sessions.prune(true)
- return {version=Sessions.VERSION,success=true,epoch=epoch,highWater=storage.import_sessions.high_water}
+ -- Additive handshake metadata; keep version 1 receipts and accepted jobs intact.
+ return {version=Sessions.VERSION,success=true,epoch=epoch,highWater=storage.import_sessions.high_water,
+  limits={chunkBytes=Sessions.MAX_CHUNK_BYTES,maxUploadBytes=Sessions.MAX_BYTES,
+   maxBufferedBytes=Sessions.MAX_BUFFERED_BYTES,maxSessions=Sessions.MAX_SESSIONS}}
 end
 function Sessions.begin(q)
  local s=store()

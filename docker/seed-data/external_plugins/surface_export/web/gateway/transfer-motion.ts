@@ -39,7 +39,9 @@ function shipMemoryFor(transferId: string) {
 }
 
 export function noteLiveSeen(transferId: string): void {
-	shipMemoryFor(transferId).seenLive = true;
+	const entry = shipMemoryFor(transferId);
+	entry.seenLive = true;
+	entry.terminalSeenAt = undefined;
 }
 
 export function noteTerminalSeen(transferId: string, nowMs: number): void {
@@ -50,7 +52,7 @@ export function noteTerminalSeen(transferId: string, nowMs: number): void {
 }
 
 export function shipExpiryMs(summary: TransferSummary, nowMs: number): number | null {
-	const phase = shipPhaseFor(summary.status);
+	const phase = shipPhaseFor(summary);
 	if (!phase || !phase.terminal) {
 		return null;
 	}
@@ -71,7 +73,7 @@ export function shipsInFlight(summaries: readonly TransferSummary[] | null | und
 		if (!Number.isFinite(summary.sourceInstanceId) || !Number.isFinite(summary.targetInstanceId)) {
 			return false;
 		}
-		if (!shipPhaseFor(summary.status)) {
+		if (!shipPhaseFor(summary)) {
 			return false;
 		}
 		const expiry = shipExpiryMs(summary, nowMs);

@@ -39,7 +39,7 @@ export default function TransferShip({ path, phase, reversed, summary, hidden, o
 		return () => cancelAnimationFrame(frame);
 	}, [target, transferId, status, onSettled]);
 
-	const title = `${summary.platformName || "platform"} — ${summary.jobObservation?.message || phase.label}`
+	const title = `${summary.platformName || "platform"} — ${(!summary.timingPendingRecovery && !phase.terminal && status !== "cleanup_failed" && summary.jobObservation?.message) || phase.label}`
 		+ (summary.error ? `: ${summary.error}` : "");
 
 	return (

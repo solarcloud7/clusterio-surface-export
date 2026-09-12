@@ -31,24 +31,38 @@ const PHASES: Record<string, ShipPhase> = {
 		tone: "success", label: "arrived",
 	},
 	failed: {
-		distance: 0, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "failed — returned",
+		distance: 0.5, holding: false, opening: false, terminal: true,
+		tone: "failure", label: "transfer failed",
 	},
 	error: {
-		distance: 0, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "timed out — returned",
+		distance: 0.5, holding: false, opening: false, terminal: true,
+		tone: "failure", label: "transfer error",
 	},
 	cleanup_failed: {
-		distance: 1, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "arrived — cleanup failed",
+		distance: 0.5, holding: true, opening: false, terminal: false,
+		tone: "failure", label: "cleanup needs attention",
 	},
 };
 
-export function shipPhaseFor(status: string | null | undefined): ShipPhase | null {
+/** Presentation only: midpoint means unresolved location, never ownership authority. */
+export function shipPhaseFor(transfer: string | PositionedTransfer | null | undefined): ShipPhase | null {
+	const status = typeof transfer === "object" ? transfer?.status : transfer;
+	if (transfer && typeof transfer === "object") {
+		if (transfer.timingPendingRecovery) return {
+			distance: 0.5, holding: true, opening: false, terminal: false,
+			tone: "failure", label: "recovery needs attention",
+		};
+		if (transfer.sourceRestored && (status === "failed" || status === "error")) return {
+			distance: 0, holding: false, opening: false, terminal: true,
+			tone: "failure", label: "failed — returned",
+		};
+	}
 	return (status && PHASES[status]) || null;
 }
 
 export interface PositionedTransfer {
+	timingPendingRecovery?: boolean;
+	sourceRestored?: boolean;
 	jobObservation?: import("./job-status").JobObservation;
 	status?: string;
 	platformName?: string;
@@ -56,6 +70,7 @@ export interface PositionedTransfer {
 
 export interface EdgeStatusMarker {
 	key: string;
+	terminal: boolean;
 	tone: ShipTone;
 	distance: number;
 	count: number;
@@ -76,7 +91,7 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 	const transit: T[] = [];
 	const byPosition = new Map<string, EdgeStatusMarker>();
 	for (const ship of ships) {
-		const phase = shipPhaseFor(ship.status);
+		const phase = shipPhaseFor(ship);
 		if (!phase) {
 			continue;
 		}
@@ -85,7 +100,8 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 			continue;
 		}
 		const distance = isReversed(ship) ? 1 - phase.distance : phase.distance;
-		const label = ship.jobObservation ? `${ship.jobObservation.message}${ship.jobObservation.phase ? ` · ${ship.jobObservation.phase}` : ""}` : phase.label;
+		const label = !ship.timingPendingRecovery && !phase.terminal && ship.status !== "cleanup_failed" && ship.jobObservation
+			? `${ship.jobObservation.message}${ship.jobObservation.phase ? ` · ${ship.jobObservation.phase}` : ""}` : phase.label;
 		const key = `${ship.status}@${distance}@${label}`;
 		const marker = byPosition.get(key);
 		if (marker) {
@@ -94,6 +110,7 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 		} else {
 			byPosition.set(key, {
 				key,
+				terminal: phase.terminal,
 				tone: phase.tone,
 				distance,
 				count: 1,

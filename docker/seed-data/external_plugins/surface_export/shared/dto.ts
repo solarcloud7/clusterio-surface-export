@@ -70,6 +70,9 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	/** Display evidence, never an authorization to change platform ownership. */
+	timingPendingRecovery?: boolean;
+	sourceRestored?: boolean;
 	jobObservation?: import("./job-status").JobObservation;
 	queuedRequestId?: string;
 	observedDurationMs?: number | null;
@@ -154,6 +157,8 @@ export interface HostNodeModel {
 export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
+	timingPendingRecovery?: boolean;
+	sourceRestored?: boolean;
 	observedDurationMs?: number | null;
 	v: number;
 	transferId: string;

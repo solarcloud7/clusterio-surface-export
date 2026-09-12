@@ -1582,7 +1582,7 @@ export interface StoredExport {
 
 export interface PersistedTransactionLog {
 	transferId: string;
-	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string };
+	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string; sourceRestored?: boolean };
 	summary: Record<string, unknown>;
 	events: TransactionLogEntryModel[];
 	savedAt: number;
