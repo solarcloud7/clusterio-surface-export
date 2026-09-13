@@ -8,6 +8,7 @@ import { DockerLab, ROOT, PLUGIN, hash, hashTree } from "../transfer-reliability
 import { recoveryCase } from "../transfer-reliability/cases.mjs";
 import { analyzePackage } from "./oracle.mjs";
 import { verifyPackage } from "../../../tools/release/verify-package.mjs";
+import { stagePackage } from "../../../tools/release/stage-package.mjs";
 
 const arg=process.argv[2];
 if(arg==="--analyze") {
@@ -37,9 +38,11 @@ if(arg==="--analyze") {
   const interrupt=()=>{lab.cancelled=true;};process.on("SIGINT",interrupt);process.on("SIGTERM",interrupt);
   try {
     console.log(`Package install acceptance: ${run}`);
+    const packageStage=join(directory,"package-source");
+    stagePackage(PLUGIN,packageStage);
     const packName=`${run}-npm-pack`;
     const raw=lab.docker(["run","--name",packName,"--label",`surface-export.manual-run=${run}`,"--network","none",
-      "--mount",`type=bind,src=${PLUGIN},dst=/package,readonly`,"--mount",`type=bind,src=${directory},dst=/out`,
+      "--mount",`type=bind,src=${packageStage},dst=/package,readonly`,"--mount",`type=bind,src=${directory},dst=/out`,
       "-w","/package","node:24-bookworm-slim","npm","pack","--ignore-scripts","--json","--pack-destination","/out"],{timeout:60_000});
     const [packed]=JSON.parse(raw);assert.equal(packed.name,"@solarcloud7/plugin-surface-export");
     tarball=join(directory,packed.filename);

@@ -46,7 +46,7 @@ for (const kind of ["missing", "collision", "unsafe path", "unhashed", "missing 
 	});
 }
 
-test("publication retains the current and preceding manifest assets only", async t => {
+test("repeated publication preserves assets referenced by a controller awaiting restart", async t => {
 	const { staging, destination } = await fixture(t);
 	await writeFile(join(staging, "static/new.22222222.js"), "new bytes");
 	await writeFile(join(staging, "manifest.json"), JSON.stringify({ "surface_export.js": "static/new.22222222.js" }));
@@ -55,5 +55,5 @@ test("publication retains the current and preceding manifest assets only", async
 	await writeFile(join(staging, "static/third.33333333.js"), "third bytes");
 	await writeFile(join(staging, "manifest.json"), JSON.stringify({ "surface_export.js": "static/third.33333333.js" }));
 	await publishWebAssets(staging, destination);
-	assert.deepEqual((await readdir(join(destination, "static"))).sort(), ["new.22222222.js", "third.33333333.js"]);
+	assert.deepEqual((await readdir(join(destination, "static"))).sort(), ["new.22222222.js", "old.11111111.js", "third.33333333.js"]);
 });

@@ -36,11 +36,6 @@ export async function publishWebAssets(staging, destination) {
 		if (!files.includes(name)) throw new Error(`Missing emitted web asset: ${name}`);
 	}
 	const assets = files.filter(name => name !== "manifest.json");
-	let previous = [];
-	try {
-		previous = Object.values(JSON.parse(await readFile(join(destination, "manifest.json"), "utf8")));
-		for (const name of previous) assetPath(destination, name);
-	} catch (error) { if (error.code !== "ENOENT") throw error; }
 	for (const name of assets) {
 		assetPath(staging, name);
 		if (!/(?:^|\.)[a-f0-9]{8,}\./i.test(basename(name))) throw new Error(`Web asset needs an immutable hash: ${name}`);
@@ -71,12 +66,6 @@ export async function publishWebAssets(staging, destination) {
 		await rename(temporary, join(destination, "manifest.json"));
 	} finally {
 		await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
-	}
-	const retained = new Set([...assets, ...previous]);
-	for (const name of await filesIn(join(destination, "static"), "static/")) {
-		if (!retained.has(name) && /(?:^|\.)[a-f0-9]{8,}\./i.test(basename(name))) {
-			await unlink(assetPath(destination, name));
-		}
 	}
 	return manifest;
 }
