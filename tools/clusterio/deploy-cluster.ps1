@@ -19,18 +19,13 @@ if (-not $PluginPath) {
 
 $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
+. "$PSScriptRoot/../shared/version-utils.ps1"
 
 if (-not $SkipIncrement) {
     Write-Host "Reading version..." -ForegroundColor Cyan
     $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
 
-    $VerParts = $PluginJson.version.Split('.')
-    if ($VerParts.Count -ne 3) {
-        Write-Error "Version format $($PluginJson.version) not supported for auto-increment. Expected X.Y.Z"
-    }
-
-    $NewPatch = [int]$VerParts[2] + 1
-    $NewVersion = "{0}.{1}.{2}" -f $VerParts[0], $VerParts[1], $NewPatch
+    $NewVersion = Get-NextPluginVersion $PluginJson.version
 
     Write-Host "Bumping version: $($PluginJson.version) -> $NewVersion" -ForegroundColor Green
 
@@ -52,10 +47,10 @@ if (-not $SkipIncrement) {
     Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
 }
 
-. "$PSScriptRoot/../shared/version-utils.ps1"
 . "$PSScriptRoot/../shared/cluster-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
+$ModuleBuildId = Update-ModuleBuildStamp -ModuleDir (Join-Path $PluginPath "module")
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
@@ -274,22 +269,18 @@ if ($instancesDone) {
 
 Write-Host ""
 Write-Host "Verifying the save-patched module VERSION on every seeded instance..." -ForegroundColor Cyan
-$versionProbe = "/sc local i = remote.interfaces['surface_export'] " +
-    "if not i then rcon.print('plugin-missing') " +
-    "elseif not i['get_module_version'] then rcon.print('stale-module-no-version-oracle') " +
-    "else rcon.print(remote.call('surface_export','get_module_version')) end"
+$versionProbe = Get-ModuleDeploymentProbe
 foreach ($probeInstance in $expectedInstances) {
     $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
         --log-level error instance send-rcon $probeInstance $versionProbe 2>&1
     $probeText = ($probe | Out-String).Trim()
+    $reported = Get-ModuleDeploymentResponse $probeText
     if ($LASTEXITCODE -ne 0 -or $probeText -match 'plugin-missing' -or
-        -not ($probeText -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$')) {
+        -not $reported) {
         throw "surface_export interface is NOT loaded on ${probeInstance} (exit $LASTEXITCODE): $probeText"
     }
-    $reported = $Matches[1]
-    if ($reported -eq 'stale-module-no-version-oracle') { $reported = "a pre-oracle module (no version stamp)" }
-    if ($reported -eq $NewVersion) {
-        Write-Host "  OK - $probeInstance runs module version $reported" -ForegroundColor Green
+    if (Test-ModuleDeploymentResponse -Output $probeText -Version $NewVersion -BuildId $ModuleBuildId) {
+        Write-Host "  OK - $probeInstance runs module version $($reported.version), build $($reported.buildId)" -ForegroundColor Green
     } elseif ($KeepData) {
         Write-Host "  ~ $probeInstance runs $reported (deploy is $NewVersion) — EXPECTED with -KeepData: kept saves keep their old patched Lua" -ForegroundColor Yellow
     } else {

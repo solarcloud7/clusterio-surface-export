@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { analyzePackage } from "../../tests/manual/package-install/oracle.mjs";
+
+import versionFormat from "../../docker/seed-data/external_plugins/surface_export/scripts/release-version.cjs";
+export const releaseChannel = versionFormat.releaseChannel;
 
 // The report and tarball come from one immutable artifact in this workflow run.
 // Recheck native acceptance, not just the saved verdict, before npm sees the file.
@@ -23,7 +26,8 @@ export function verifyPackage(directory, { commit, version }) {
   const integrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
   assert.equal(sha256, report.package.sha256, "tarball SHA256 changed after acceptance");
   assert.equal(integrity, report.package.integrity, "tarball npm integrity changed after acceptance");
-  return { name: report.package.name, version, commit, sha256, integrity, acceptanceRun: report.run };
+  return { name: report.package.name, version, commit, sha256, integrity, acceptanceRun: report.run,
+    distTag: releaseChannel(version) };
 }
 
 export function verifyPublishPreview(preview, accepted) {
@@ -48,5 +52,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   assert.ok(process.argv[2], "usage: node tools/release/verify-package.mjs <artifact-directory> [npm-preview.json]");
   const accepted = verifyPackage(process.argv[2], { commit, version: manifest.version });
   if (process.argv[3]) verifyPublishPreview(JSON.parse(readFileSync(process.argv[3], "utf8")), accepted);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `dist-tag=${accepted.distTag}\n`);
   console.log(JSON.stringify(accepted, null, 2));
 }

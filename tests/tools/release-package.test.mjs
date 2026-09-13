@@ -6,11 +6,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { verifyPackage, verifyPublishPreview } from "../../tools/release/verify-package.mjs";
+import { releaseChannel, verifyPackage, verifyPublishPreview } from "../../tools/release/verify-package.mjs";
 
 const observed = JSON.parse(readFileSync(new URL("../manual/package-install/evidence/installed-0.10.281.json", import.meta.url)));
 const commit = "a".repeat(40);
 const expected = { commit, version: observed.package.version };
+
+test("prereleases use their own npm channel and cannot silently become latest", () => {
+  assert.equal(releaseChannel("0.11.0"), "latest");
+  for (const tag of ["alpha", "beta", "rc"]) {
+    assert.equal(releaseChannel(`0.11.0-${tag}.1`), tag);
+  }
+  for (const version of ["0.11.0-preview.1", "0.11.0-beta", "0.11.0-beta.01", "v0.11.0", "0.11.0-beta.1\nlatest", "0.11.0-beta.1\n", "", null]) {
+    assert.throws(() => releaseChannel(version), /unsupported release version/);
+  }
+});
 
 test("npm preview accepts the observed 11.6 and 11.19 shapes without relaxing identity checks", () => {
   const accepted = { name: observed.package.name, version: observed.package.version, integrity: observed.package.integrity };
@@ -79,13 +89,20 @@ test("release CLI checks the tag independently of matching tarball evidence", t 
   report.release.commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   save();
   const command = fileURLToPath(new URL("../../tools/release/verify-package.mjs", import.meta.url));
+  const outputs = join(directory, "github-output");
   for (const ref of [`refs/tags/v${version}`, "refs/heads/rehearsal"]) {
-    const result = spawnSync(process.execPath, [command, directory], { encoding: "utf8", env: { ...process.env, GITHUB_REF: ref } });
+    writeFileSync(outputs, "");
+    const result = spawnSync(process.execPath, [command, directory], {
+      encoding: "utf8", env: { ...process.env, GITHUB_REF: ref, GITHUB_OUTPUT: outputs },
+    });
     assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(outputs, "utf8"), `dist-tag=${releaseChannel(version)}\n`);
   }
+  writeFileSync(outputs, "");
   const result = spawnSync(process.execPath, [command, directory], {
-    encoding: "utf8", env: { ...process.env, GITHUB_REF: "refs/tags/v0.0.0" },
+    encoding: "utf8", env: { ...process.env, GITHUB_REF: "refs/tags/v0.0.0", GITHUB_OUTPUT: outputs },
   });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /tag\/package version mismatch/);
+  assert.equal(readFileSync(outputs, "utf8"), "");
 });

@@ -16,11 +16,14 @@ env.require = function(name)
     if key == "core/json" then return {encode = function(value) return "json:" .. tostring(value) end} end
     if key == "interfaces/remote/base" then return assert(loadfile(root .. key .. ".lua", "t", env))() end
     if key == "version" then return "fixture-version" end
+    if key == "build-id" then return "fixture-build" end
     if table_modules[key] then return setmetatable({}, {__index = function(_, method) return spy(key .. "." .. method) end}) end
     return spy(key)
 end
 local api = assert(loadfile(root .. "interfaces/remote-interface.lua", "t", env))()
 api.register() -- registration must work before storage initialization
+assert(registered.get_module_version() == "fixture-version")
+assert(registered.get_module_build_id() == "fixture-build")
 local test_commands = {
     "test_import_entity", "run_tests", "clone_platform", "version_selftest", "timing_selftest", "selection_lab_drive",
     "belt_side_restore_selftest", "inventory_import_guard_selftest", "gateway_selftest", "schedule_selftest",

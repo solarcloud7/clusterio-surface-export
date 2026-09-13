@@ -1,3 +1,53 @@
+function Get-NextPluginVersion {
+    param([Parameter(Mandatory)][string]$Version)
+    $match = [regex]::Match($Version, '\A(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<channel>alpha|beta|rc)\.(?<sequence>0|[1-9]\d*))?\z')
+    if (-not $match.Success) { throw "Unsupported plugin version: $Version" }
+    $base = '{0}.{1}' -f $match.Groups['major'].Value, $match.Groups['minor'].Value
+    if ($match.Groups['channel'].Success) {
+        throw "Automatic prerelease bumps are disabled for $Version. Choose release versions explicitly, or use -SkipIncrement with a deployment scope that supports it."
+    }
+    return '{0}.{1}' -f $base, (1 + [long]$match.Groups['patch'].Value)
+}
+
+function Get-ModuleVersionResponse {
+    param([AllowEmptyString()][string]$Output)
+    $match = [regex]::Match($Output, '(?m)^[\t ]*(?<version>\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?|stale-module-no-version-oracle)[\t ]*\r?$')
+    if ($match.Success) { return $match.Groups['version'].Value }
+    return $null
+}
+
+function Update-ModuleBuildStamp {
+    param([Parameter(Mandatory)][string]$ModuleDir)
+    $buildId = [guid]::NewGuid().ToString('N')
+    $path = Join-Path (Resolve-Path -LiteralPath $ModuleDir).Path 'build-id.lua'
+    [IO.File]::WriteAllText($path, "return `"$buildId`"`n", [Text.UTF8Encoding]::new($false, $true))
+    return $buildId
+}
+
+function Get-ModuleDeploymentProbe {
+    return "/sc local i=remote.interfaces['surface_export']; " +
+        "rcon.print(helpers.table_to_json({version=i and i.get_module_version and remote.call('surface_export','get_module_version'), " +
+        "buildId=i and i.get_module_build_id and remote.call('surface_export','get_module_build_id')}))"
+}
+
+function Get-ModuleDeploymentResponse {
+    param([AllowEmptyString()][string]$Output)
+    foreach ($line in ($Output -split "`r?`n")) {
+        if (-not $line.TrimStart().StartsWith('{')) { continue }
+        try { $record = ConvertFrom-Json -InputObject $line -ErrorAction Stop } catch { continue }
+        if ($record.version -is [string] -and (Get-ModuleVersionResponse $record.version)) { return $record }
+    }
+    return $null
+}
+
+function Test-ModuleDeploymentResponse {
+    param([AllowEmptyString()][string]$Output, [string]$Version, [string]$BuildId)
+    if ($BuildId -cnotmatch '\A[a-f0-9]{32}\z') { return $false }
+    $record = Get-ModuleDeploymentResponse $Output
+    return $null -ne $record -and $record.version -ceq $Version -and
+        $record.buildId -is [string] -and $record.buildId -ceq $BuildId
+}
+
 function Update-JsonVersion {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$NewVersion)
     $encoding = [Text.UTF8Encoding]::new($false, $true)
