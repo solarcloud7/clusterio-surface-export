@@ -33,8 +33,13 @@ docker/server-settings.json
 .claude/*
 !.claude/skills/
 !.claude/launch.json
-# Codex agent tooling (the .claude analogue for Codex) — local dev config, not tracked
-/.agents/
+# Track the shared data-integrity skill; other agent state remains local.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/di-change/
+/.agents/skills/di-change/*
+!/.agents/skills/di-change/SKILL.md
 /.codex/
 
 # Mod packaging
