@@ -252,6 +252,13 @@ do
         local ok, err = pcall(fn)
         if not ok then failures[#failures + 1] = label .. ": " .. tostring(err) end
     end
+    check("rename preserves verified deletion and source state", function()
+        unlock_platform.name="renamed-live-copy"
+        assert(real_lock.transfer_delete_identity_ok(held, unlock_platform.surface, "new"))
+        assert(real_lock.get_source_transfer_lock_state("new",3,"old-display-name","player").state=="pre_commit")
+        held.phase="committed"
+        assert(real_lock.get_source_transfer_lock_state("new",3,"old-display-name","player").state=="committed")
+    end)
     check("display text cannot veto the owning job", function()
         assert(real_lock.unlock_platform(3, "Platform #3", nil, nil, "new"))
     end)

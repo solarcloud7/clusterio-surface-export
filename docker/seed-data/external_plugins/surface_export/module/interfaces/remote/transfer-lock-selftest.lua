@@ -120,9 +120,9 @@ local function transfer_lock_selftest()
 	check("delete_identity_refuses_index_only",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7)) == false,
 		"an index alone cannot authorize deletion")
-	check("delete_identity_ignores_rename",
+	check("delete_identity_refuses_name_without_uid",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, platform_name = "OLD" }, fake_surface(7)) == false,
-		"a RENAMED source (same surface.index, different name) must STILL delete — closes the rename dup exploit")
+		"a saved display name cannot replace missing copy and job identity")
 	check("delete_identity_refuses_released",
 		SurfaceLock.transfer_delete_identity_ok(nil, fake_surface(7)) == false,
 		"a released/absent lock (TTL/admin unlocked) must REFUSE the delete — the source is live")
@@ -172,12 +172,12 @@ local function transfer_lock_selftest()
 		"phase-less legacy transfer locks must normalize to pre_commit")
 	storage.locked_platforms[10] = { kind = "transfer", platform_name = "lock-time-name", platform_index = 10, force_name = "player", transfer_job_id = "rename-pre" }
 	local renamed_pre = SurfaceLock.get_source_transfer_lock_state("rename-pre", 10, "live-renamed", "player")
-	check("source_query_pre_commit_ignores_rename",
+	check("source_query_pre_commit_requires_uid",
 		renamed_pre.state == "identity_mismatch",
 		"unverified synthetic platform cannot certify pre-commit ownership")
 	storage.locked_platforms[11] = { kind = "transfer", phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED, platform_name = "lock-time-name", platform_index = 11, force_name = "player", transfer_job_id = "rename-committed" }
 	local renamed_committed = SurfaceLock.get_source_transfer_lock_state("rename-committed", 11, "live-renamed", "player")
-	check("source_query_committed_ignores_rename",
+	check("source_query_committed_requires_uid",
 		renamed_committed.state == "identity_mismatch",
 		"unverified synthetic platform cannot certify committed ownership")
 	storage.committed_source_transfer_tombstones = {
