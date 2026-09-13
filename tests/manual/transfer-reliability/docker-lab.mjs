@@ -186,6 +186,15 @@ export class DockerLab {
     return {controllerImage:this.image,hostImage:this.hostImage,ids:this.ids,preflight:this.preflight,stagedHashes:this.stagedHashes,
       images:JSON.parse(this.docker(["image","inspect",this.image,this.hostImage])).map(i=>({id:i.Id,digests:i.RepoDigests}))};
   }
+  async persistedAssignments() {
+    return this.until(()=>{
+      const rows=JSON.parse(this.docker(["exec",this.controller,"node","-e",
+        'const fs=require("fs");const rows=JSON.parse(fs.readFileSync("/clusterio/data/database/instances.json","utf8"));'
+        +'console.log(JSON.stringify(rows.map(r=>({id:r.config["instance.id"],host:r.config["instance.assigned_host"]}))));']));
+      const assigned=[1,2].map(host=>rows.find(row=>row.id===this.ids[host]&&row.host===host));
+      return assigned.every(Boolean)&&assigned;
+    },"persisted instance assignments before controller restart",90);
+  }
   async checkpoint(name, hosts = [1,2]) {
     assert.match(name,/^manual-[a-z0-9-]+$/);
     assert.ok(hosts.length>0 && new Set(hosts).size===hosts.length && hosts.every(host=>host===1||host===2),"invalid checkpoint hosts");

@@ -10,6 +10,7 @@ Run from the canonical checkout with Docker Desktop running and the pinned image
 # Build the plugin artifacts if source changed; never npm install in the live plugin mount.
 ./tools/clusterio/build-plugin.ps1 -Target all
 node tests/manual/transfer-reliability/run.mjs --list
+node tests/manual/transfer-reliability/run.mjs --case lost-export-reply
 node tests/manual/transfer-reliability/run.mjs --case lost-source-reply
 node tests/manual/transfer-reliability/run.mjs --case lost-destination-reply
 node tests/manual/transfer-reliability/run.mjs --case crash-source-before-save
@@ -48,6 +49,27 @@ interception exists only in the disposable containers through `NODE_OPTIONS`.
 ## What each case proves
 
 ### Configurable save recovery
+
+`--package-dir ci-artifacts/<runtime>` uses an already built staged plugin for these
+cases without rebuilding the live mount. The package must contain its Node and web
+artifacts plus the Lua module. The runner records staged hashes.
+
+The restart arms wait for both instance-to-host assignments in the controller's
+persisted database before injecting a controller restart. This read-only preflight
+isolates transfer recovery from incomplete initial topology persistence. It does not
+establish crash safety during initial seeding or immediately after configuration changes.
+
+`lost-export-reply` withholds a real source export response, kills the controller,
+and requires the persisted job to be found by operation ID. Source-only cancellation
+must unlock the original cargo without importing a destination. A fresh transfer must
+then complete. `snapshot-recovery` first restarts the controller and refuses a second
+handoff from the retained export while its original destination still survives. Its
+separate manual recovery also checks pre-admission and uncertain browser responses.
+
+The accepted-copy unlock regression retains the original failed observations and the
+corrected Factorio 2.1.17 run in `evidence/save-policy-unlock-*-2.1.17.json.gz`. The
+corrected run covers manual unlock, standalone export cleanup, warning acknowledgement,
+old-message refusal, a fresh transfer, and save/reload with independent physical cargo.
 
 `save-policy-game` and `save-policy-history` use the same mixed checkpoint. One unrelated
 platform is deliberately destroyed and another is transferred away. Reloading the source

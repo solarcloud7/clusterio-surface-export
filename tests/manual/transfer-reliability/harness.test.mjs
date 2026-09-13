@@ -137,3 +137,14 @@ test("performance comparison rejects duplicate samples, invented zero readings, 
   measurements[0].records[0].ms=NaN;assert.throws(()=>analyze(report),/profiler/);measurements[0].records[0].ms=.75;
   measurements[0].after.destination.cargo=performanceCargo(512);assert.equal(analyze(report).verdict,"STOP");
 });
+
+
+test("restart preflight waits for both actual persisted host assignments",async()=>{
+  const lab=Object.create(DockerLab.prototype);lab.ids={1:41,2:42};lab.controller="owned-controller";
+  let read,calls=0;
+  lab.until=async(fn,label,seconds)=>{read=fn;assert.equal(seconds,90);return fn();};
+  lab.docker=()=>{calls++;return JSON.stringify([{id:41,host:1},{id:42,host:null}]);};
+  assert.equal(await lab.persistedAssignments(),false);
+  lab.docker=()=>{calls++;return JSON.stringify([{id:41,host:1},{id:42,host:2}]);};
+  assert.deepEqual(read(),[{id:41,host:1},{id:42,host:2}]);assert.equal(calls,2);
+});

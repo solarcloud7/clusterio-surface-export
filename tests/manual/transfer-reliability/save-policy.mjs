@@ -98,6 +98,7 @@ export async function snapshotRecoveryCase(lab,report,save) {
   report.checkpoint=await lab.checkpoint("manual-snapshot-before",[2]);
   report.transferId=start(lab,name);report.outcome=await terminal(lab,report.transferId);
   assert.equal(report.outcome.status,"completed");
+  report.assignmentCheckpoint=await lab.persistedAssignments();save();
   lab.mutateContainer("stop",lab.controller,["--time","30"]);lab.mutateContainer("start",lab.controller);
   await lab.ready();await recoveryReady(lab,1);await recoveryReady(lab,2);
   const survivor=`${name}-survivor`;
@@ -163,7 +164,7 @@ export async function pendingSavePolicyCase(lab,report,save) {
 
 export async function sourceAdmissionCase(lab,report,save) {
   await recoveryReady(lab,1);await recoveryReady(lab,2);
-  lab.mutateContainer("stop",lab.controller,["--time","30"]);lab.mutateContainer("start",lab.controller);await lab.ready();
+  report.assignmentCheckpoint=await lab.persistedAssignments();save();
   const name=report.name=`transfer-cleanup-${lab.run}-export-reply`;
   report.before=lab.probe(1,"build",name).state;assert.deepEqual(report.before.cargo,expectedCargo);
   lab.writeFault(1,{run:lab.run,enabled:true,name,action:"export"});
