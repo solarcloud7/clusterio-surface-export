@@ -1,0 +1,50 @@
+name: Gateway mod release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Gateway mod version in the reviewed ZIP
+        required: true
+        type: string
+      sha256:
+        description: SHA256 of the reviewed ZIP
+        required: true
+        type: string
+      publish:
+        description: Publish to the Factorio Mod Portal (otherwise validate only)
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-mod-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate reviewed ZIP
+        env:
+          MOD_VERSION: ${{ inputs.version }}
+          MOD_SHA256: ${{ inputs.sha256 }}
+        run: |
+          python tools/release/publish-gateway-mod.py "docker/seed-data/mods/surfexp_gateways_${MOD_VERSION}.zip" --version "$MOD_VERSION" --sha256 "$MOD_SHA256"
+      - name: Publish exact ZIP
+        if: ${{ inputs.publish }}
+        env:
+          MOD_VERSION: ${{ inputs.version }}
+          MOD_SHA256: ${{ inputs.sha256 }}
+          FACTORIO_MOD_PORTAL_API_KEY: ${{ secrets.FACTORIO_MOD_PORTAL_API_KEY }}
+        run: |
+          python tools/release/publish-gateway-mod.py "docker/seed-data/mods/surfexp_gateways_${MOD_VERSION}.zip" --version "$MOD_VERSION" --sha256 "$MOD_SHA256" --publish
