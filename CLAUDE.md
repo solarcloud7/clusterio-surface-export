@@ -423,7 +423,7 @@ remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data
 
 -- Platform locking (transfer workflow):
 remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
-remote.call("surface_export", "unlock_platform", platform_index, player_name, expected_job_id)
+remote.call("surface_export", "unlock_platform", platform_index, nil, expected_job_id)
 
 -- Validation:
 remote.call("surface_export", "get_validation_result", platform_name)
