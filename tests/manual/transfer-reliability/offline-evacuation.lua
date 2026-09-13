@@ -49,12 +49,35 @@ return function(action, name, remote_view)
   end
   assert(rec, "fixture missing")
   local player = assert(game.get_player(rec.player))
+  if action == "observe-deletion" then
+    return {success=true, tick=game.tick, physical=player.physical_surface.name,
+      platform_remaining=game.forces[rec.force].platforms[rec.platform] ~= nil,
+      surface_remaining=game.surfaces[rec.surface] ~= nil,
+      lock_remaining=storage.locked_platforms[rec.platform] ~= nil}
+  end
+  if action == "inventory-after" then
+    assert(player.physical_surface.name == "nauvis", "evacuation did not move the offline player")
+    local controller_before = player.controller_type
+    if controller_before == defines.controllers.remote then player.exit_remote_view() end
+    local inventory = player.get_main_inventory()
+    return {success=true, connected=player.connected, physical=player.physical_surface.name,
+      controller_before=controller_before, controller_after=player.controller_type,
+      inventory_available=inventory ~= nil, after=inventory and inventory.get_contents()}
+  end
+  if action == "finish" then
+    assert(not game.forces[rec.force].platforms[rec.platform] and not game.surfaces[rec.surface],
+      "platform deletion incomplete")
+    player.set_controller{type=defines.controllers.god}
+    storage.offline_evacuation_probe = nil
+    return {success=true}
+  end
   local p = assert(game.forces[rec.force].platforms[rec.platform])
   if action == "inspect" then
     return {success=true, connected=player.connected, physical=player.physical_surface_index,
       character_valid=rec.character.valid, current_character=player.character and player.character.valid,
       unit=player.character and player.character.valid and player.character.unit_number,
       health=rec.character.valid and rec.character.health, controller=player.controller_type,
+      in_hub=player.hub ~= nil,
       characters=p.surface.count_entities_filtered{type="character"}}
   end
   assert(not player.connected and player.physical_surface_index == rec.surface, "offline checkpoint changed")
@@ -62,6 +85,8 @@ return function(action, name, remote_view)
   assert(controller == (rec.remote_view and defines.controllers.remote or defines.controllers.character),
     "checkpoint did not preserve the requested controller")
   assert(player.character == nil, "offline character unexpectedly exposed")
+  local hub_before = player.hub ~= nil
+  assert(not hub_before, "fixture unexpectedly seated in a hub")
   local gateway = assert(package.loaded["__level__/modules/surface_export/core/gateway.lua"])
   local passengers, characters, complete = gateway.collect_passengers(p)
   assert(complete and #passengers == 1 and passengers[1].index == player.index and characters == 0,
@@ -74,16 +99,12 @@ return function(action, name, remote_view)
   assert(identity.success and identity.platformUid, identity.error)
   local result = remote.call("surface_export", "delete_platform_for_transfer", p.index, p.name, rec.force, rec.job, identity.platformUid)
   local report = {success=true, result=result, connected=player.connected,
-    remote_view=controller == defines.controllers.remote, controller_before=controller,
+    remote_view=controller == defines.controllers.remote, controller_before=controller, in_hub=hub_before,
     detected=#passengers, characters=characters, character_logged_off=player.character == nil,
-    physical_after=player.physical_surface.name,
-    before=rec.before, after=player.get_main_inventory().get_contents(),
+    physical_after=player.physical_surface.name, tick=game.tick,
+    before=rec.before,
     platform_remaining=game.forces[rec.force].platforms[rec.platform] ~= nil,
     surface_remaining=game.surfaces[rec.surface] ~= nil,
     lock_remaining=storage.locked_platforms[rec.platform] ~= nil}
-  if result == "SUCCESS" then
-    player.set_controller{type=defines.controllers.god}
-    storage.offline_evacuation_probe = nil
-  end
   return report
 end

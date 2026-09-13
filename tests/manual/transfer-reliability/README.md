@@ -30,6 +30,35 @@ manual cache protection and the debug-mode gate. Each run records staged hashes,
 commands, observations, and owned-resource cleanup under `ci-artifacts/se-manual-setup-*`.
 Pass `--package-dir ci-artifacts/<candidate>` to test an isolated built package.
 
+### Offline passenger evacuation
+
+```powershell
+node tests/manual/transfer-reliability/offline-evacuation.mjs --package-dir ci-artifacts/<candidate>
+node tests/manual/transfer-reliability/offline-evacuation.mjs --analyze ci-artifacts/<run>/result.json
+```
+
+The fixture reuses a saved, disconnected `LuaPlayer` in a disposable cluster. It places
+37 legendary iron plates and 19 normal copper plates in the player's inventory, then
+checks character and remote-view controllers across save/reload, source deletion and
+another save/reload. It observes physical position before any test-side controller
+change, and checks actual platform removal on a subsequent tick.
+
+On Factorio 2.1.17, the original remote-view case moved only the camera: deletion was
+refused and the source lock remained. Leaving the platform seat and remote view before
+teleporting fixes that reproduced case. The final physical passenger check still guards
+deletion. Offline characters are logged off by Factorio, so their `LuaEntity` reference
+is unavailable; the fixture reads the saved player's inventory instead.
+
+This does not simulate a network disconnect or client reconnect. An attempted hub-seat
+fixture was refused by `enter_space_platform` for the offline player; that case needs a
+checkpoint prepared by a connected client and remains unverified.
+
+Retained Factorio 2.1.17 observations: [original refusal](evidence/offline-evacuation-before-2.1.17.json.gz),
+[passing character/remote-view run](evidence/offline-evacuation-after-2.1.17.json.gz),
+and [refused hub setup](evidence/offline-hub-setup-refused-2.1.17.json.gz).
+Decompress the passing report before using `--analyze`. These reports contain fixture
+observations and staged runtime hashes; they do not establish a client reconnect result.
+
 If an older source checkpoint predates its transfer lock and retirement record, but the
 controller still owns that source, startup remains blocked for manual reconciliation.
 The regression exercises that missing-lock boundary; it does not claim automatic recovery

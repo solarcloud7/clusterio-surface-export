@@ -144,7 +144,14 @@ function Gateway.evacuate_passengers(platform)
 
 	for _, player in ipairs(aboard_players) do
 		local ref = (player.character and player.character.valid and player.character.name) or "character"
-		local ok, moved = pcall(function() return player.teleport(safe_pos(ref), dest) end)
+		local ok, moved = pcall(function()
+			if player.controller_type == defines.controllers.remote then
+				player.leave_space_platform()
+				player.exit_remote_view()
+				if player.controller_type == defines.controllers.remote then return false end
+			end
+			return player.teleport(safe_pos(ref), dest)
+		end)
 		if ok and moved then
 			result.players = result.players + 1
 			-- intentional probe; best-effort notify, a print failure must NOT abort evacuation.
