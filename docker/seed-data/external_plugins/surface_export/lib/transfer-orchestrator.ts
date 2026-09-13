@@ -5,6 +5,7 @@ import { wait } from "@clusterio/lib";
 import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue";
+import { hasRecordedOutcome, isAdmissionSettled, isSourceJobPending, isDestinationJobPending, isJobObservationPending } from "../shared/operation-lifecycle";
 import { JobObserver } from "./job-observer";
 import { isInstanceRouteRejection } from "./request-errors";
 import type { JobStatusBatch } from "../shared/job-status";
@@ -62,8 +63,7 @@ export class TransferOrchestrator {
 			run: entry => this.runQueuedRequest(entry),
 			interrupted: async entry => {
 				const retained = this.plugin.persistedTransactionLogs.find(log => log.transferId === entry.operation.transferId);
-				if (retained && !retained.transferInfo.timingPendingRecovery
-					&& ["completed", "failed", "error", "cleanup_failed"].includes(retained.transferInfo.status)) return;
+				if (retained && isAdmissionSettled(retained.transferInfo)) return;
 				const untouched = entry.operation.status === "queued";
 				if (!untouched) {
 					const operation = entry.operation;
@@ -94,13 +94,13 @@ export class TransferOrchestrator {
 			busyInstances: () => {
 				const owned = new Set([...this.requestQueue.entries.values()].map(entry => entry.operation));
 				const busy = [...this.plugin.activeTransfers.values()].filter(operation => operation.status !== "queued" && (!owned.has(operation) || operation.timingPendingRecovery)
-					&& (!["completed", "failed", "error", "cleanup_failed"].includes(operation.status) || operation.timingPendingRecovery))
+					&& !isAdmissionSettled(operation))
 					.flatMap(operation => [operation.sourceInstanceId, operation.targetInstanceId]);
 				for (const [id, pending] of this.plugin.pendingTransfers?.entries() || []) {
 					const operation = this.plugin.activeTransfers.get(id);
 					if (!operation || !owned.has(operation) || operation.timingPendingRecovery
 						|| pending.sourceInstanceId !== operation.sourceInstanceId || pending.targetInstanceId !== operation.targetInstanceId
-						|| ["completed", "failed", "error", "cleanup_failed"].includes(operation.status)) {
+						|| hasRecordedOutcome(operation.status)) {
 						busy.push(pending.sourceInstanceId, pending.targetInstanceId);
 					}
 				}
@@ -126,7 +126,7 @@ export class TransferOrchestrator {
 	restoreImportObservations() {
 		for (const record of this.plugin.persistedTransactionLogs) {
 			const info = record.transferInfo;
-			if (!["in_progress", "preparing", "transporting", "awaiting_validation", "awaiting_completion"].includes(info.status)
+			if ((!isJobObservationPending(info.status) && info.status !== "transporting")
 				|| this.plugin.activeTransfers.has(record.transferId)) continue;
 			const kind = info.operationType || "transfer";
 			const operation = createOperationRecord(kind, {operationId: record.transferId,
@@ -228,7 +228,7 @@ export class TransferOrchestrator {
 		let read = this.exportReads.get(transfer.transferId);
 		const current = () => !this.stopped && this.exportReads.get(transfer.transferId) === read
 			&& this.plugin.activeTransfers.get(transfer.transferId) === transfer
-			&& ["in_progress", "preparing"].includes(transfer.status)
+			&& isSourceJobPending(transfer.status)
 			&& this.plugin.isInstanceOnline(transfer.sourceInstanceId)
 			&& (!transfer.jobObservation?.epoch || transfer.jobObservation.epoch === epoch);
 		if (read?.epoch !== epoch) {
@@ -624,13 +624,13 @@ export class TransferOrchestrator {
 	async observeJobs(): Promise<void> {
 		for (const id of this.exportReads.keys()) {
 			const transfer = this.plugin.activeTransfers.get(id);
-			if (!transfer || !["in_progress", "preparing"].includes(transfer.status)) this.exportReads.delete(id);
+			if (!transfer || !isSourceJobPending(transfer.status)) this.exportReads.delete(id);
 		}
 		if (this.stopped) return;
 		const groups = new Map<number, ActiveTransfer[]>();
 		for (const transfer of this.plugin.activeTransfers.values()) {
 			if (this.restoredExports.has(transfer.transferId) && transfer.sourceExportId
-				&& ["in_progress", "preparing"].includes(transfer.status)) {
+				&& isSourceJobPending(transfer.status)) {
 				const id = makeCanonicalTransferId(transfer.sourceInstanceId, transfer.sourceExportId);
 				const stored = this.plugin.platformStorage.get(id);
 				if (stored?.exportId === id && stored.instanceId === transfer.sourceInstanceId
@@ -638,8 +638,8 @@ export class TransferOrchestrator {
 					await this.completeStoredExport(transfer, stored, true);
 				}
 			}
-			const observingSource = ["in_progress", "preparing"].includes(transfer.status);
-			if (!observingSource && !["awaiting_validation", "awaiting_completion"].includes(transfer.status)) {
+			const observingSource = isSourceJobPending(transfer.status);
+			if (!observingSource && !isDestinationJobPending(transfer.status)) {
 				this.observationDue.delete(transfer.transferId);
 				this.observer.forget(transfer.transferId);
 				continue;
@@ -655,7 +655,7 @@ export class TransferOrchestrator {
 			let batch: JobStatusBatch;
 			let requested: import("../shared/job-status").JobReference[] | undefined;
 			try {
-				const response = await this.observer.poll(instanceId, transfers.map(t => ["in_progress", "preparing"].includes(t.status)
+				const response = await this.observer.poll(instanceId, transfers.map(t => isSourceJobPending(t.status)
 					? (t.sourceExportId ? {jobId: t.sourceExportId} : {operationId: t.transferId})
 					: {operationId: t.transferId, jobId: t.destinationJobId}));
 				if (!response) return;
@@ -667,11 +667,11 @@ export class TransferOrchestrator {
 			for (const transfer of transfers) {
 				if (requested && !requested.some(ref => ref.operationId === transfer.transferId
 					|| (ref.jobId && ref.jobId === transfer.sourceExportId))) continue;
-				if (this.plugin.activeTransfers.get(transfer.transferId) !== transfer || !["in_progress", "preparing", "awaiting_validation", "awaiting_completion"].includes(transfer.status)) continue;
-				const status = batch.jobs.find(job => ["in_progress", "preparing"].includes(transfer.status)
+				if (this.plugin.activeTransfers.get(transfer.transferId) !== transfer || !isJobObservationPending(transfer.status)) continue;
+				const status = batch.jobs.find(job => isSourceJobPending(transfer.status)
 					? (transfer.sourceExportId ? job.jobId === transfer.sourceExportId : job.operationId === transfer.transferId)
 					: job.operationId === transfer.transferId) || {state: "unavailable" as const};
-				if (["in_progress", "preparing"].includes(transfer.status) && !transfer.sourceExportId
+				if (isSourceJobPending(transfer.status) && !transfer.sourceExportId
 					&& status.jobId && status.operationId === transfer.transferId && status.state !== "unavailable") {
 					transfer.sourceExportId = status.jobId;
 					await this.txLogger.persistTransactionLog(transfer.transferId);
@@ -687,7 +687,7 @@ export class TransferOrchestrator {
 					this.updateTransfer(transfer);
 				}
 				const result = status.completion;
-				if (["in_progress", "preparing"].includes(transfer.status) && transfer.sourceExportId && status.state === "completed") {
+				if (isSourceJobPending(transfer.status) && transfer.sourceExportId && status.state === "completed") {
 					await this.recoverExportArtifact(transfer, batch.epoch);
 				}
 				if (this.restoredExports.has(transfer.transferId) && status.state === "failed") {
@@ -1011,7 +1011,7 @@ export class TransferOrchestrator {
 		}
 		if ([...this.plugin.activeTransfers.values()].some(operation => operation.sourceInstanceId === source.id
 			&& operation.platformIndex === request.sourcePlatformIndex && operation.forceName === (request.forceName || "player")
-			&& !["completed", "failed", "error", "cleanup_failed"].includes(operation.status))) {
+			&& !hasRecordedOutcome(operation.status))) {
 			return reject("This platform already has an active transfer");
 		}
 		const observationId = `request:${randomUUID()}`;
@@ -1058,7 +1058,7 @@ export class TransferOrchestrator {
 		this.updateTransfer(entry.operation);
 		try {
 			const result = await timingContext.run(clock, () => this.handleStartPlatformTransferRequestMeasured(entry.request, entry.id));
-			if (!result.success && !["completed", "failed", "error", "cleanup_failed"].includes(entry.operation.status)) {
+			if (!result.success && !hasRecordedOutcome(entry.operation.status)) {
 				// A canonical operation with no terminal result may already have reached the destination.
 				// Keep its reservation until recovery is resolved; an exception is not a cleanup acknowledgement.
 				if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;

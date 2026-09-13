@@ -1,3 +1,5 @@
+import { hasUnresolvedPlatformOwnership } from "./operation-lifecycle";
+
 export type PlatformSourceOfTruth = "plugin_history" | "save_game";
 
 export type SourceRollback = "attempted" | "succeeded" | "failed";
@@ -47,7 +49,7 @@ export function hasUnresolvedOwnership(instanceId: number, pending: Iterable<{ s
 	const involves = (entry: { sourceInstanceId: number; targetInstanceId: number }) =>
 		entry.sourceInstanceId === instanceId || entry.targetInstanceId === instanceId;
 	return [...pending].some(involves) || [...active].some(entry => involves(entry)
-		&& (entry.timingPendingRecovery || !["completed", "failed", "error"].includes(entry.status)) && entry.status !== "queued");
+		&& hasUnresolvedPlatformOwnership(entry));
 }
 
 export function protectedSourceIndexes(instanceId: number,
@@ -55,8 +57,7 @@ export function protectedSourceIndexes(instanceId: number,
 	active: Iterable<{ sourceInstanceId: number; platformIndex?: number; status: string; timingPendingRecovery?: boolean }>) {
 	const indexes = [...pending].filter(entry => entry.sourceInstanceId === instanceId).map(entry => entry.sourcePlatformIndex);
 	for (const entry of active) {
-		if (entry.sourceInstanceId === instanceId && entry.status !== "queued"
-			&& (entry.timingPendingRecovery || !["completed", "failed", "error"].includes(entry.status))) indexes.push(entry.platformIndex);
+		if (entry.sourceInstanceId === instanceId && hasUnresolvedPlatformOwnership(entry)) indexes.push(entry.platformIndex);
 	}
 	return [...new Set(indexes.map(index => Number.isInteger(index) && Number(index) >= 0 ? Number(index) : -1))];
 }

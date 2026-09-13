@@ -72,6 +72,56 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+for (const [status, observedInstance, restored, settled, protectedSource] of [
+	["queued", null, false, false, false],
+	["preparing", 1, true, false, true],
+	["in_progress", 1, true, false, true],
+	["transporting", null, true, false, true],
+	["awaiting_validation", 2, true, false, true],
+	["awaiting_completion", 2, true, false, true],
+	["completed", null, false, true, false],
+	["failed", null, false, true, false],
+	["error", null, false, true, false],
+	["cleanup_failed", null, false, true, true],
+	["unknown", null, false, false, true],
+]) {
+	test(`${status}: observation, admission and source protection have distinct boundaries`, async t => {
+		const { hasUnresolvedOwnership, protectedSourceIndexes } = require("../dist/node/shared/recovery");
+		const h = makeHarness(() => { throw Error("observation must not import"); });
+		t.after(() => h.orch.stop());
+		const operation = {transferId: "lifecycle:1", operationType: "transfer", status,
+			sourceInstanceId: 1, targetInstanceId: 2, platformIndex: 3, forceName: "player"};
+		h.activeTransfers.set(operation.transferId, operation);
+		h.orch.observationDue.set(operation.transferId, 0);
+		const polls = [];
+		h.orch.observer.poll = async (instanceId, jobs) => {
+			polls.push({instanceId, jobs});
+			return {version: 1, epoch: "boot", jobs: []};
+		};
+		await h.orch.observeJobs();
+		assert.deepEqual(polls.map(poll => poll.instanceId), observedInstance === null ? [] : [observedInstance]);
+		assert.equal(operation.status, status);
+		assert.equal(operation.completedAt, undefined);
+		assert.equal(h.calls.importSends, 0);
+		assert.equal(h.calls.unlockRouteTaken, 0);
+		for (const timingPendingRecovery of [undefined, null, false, true]) {
+			operation.timingPendingRecovery = timingPendingRecovery;
+			const protectedNow = status !== "queued" && (protectedSource || Boolean(timingPendingRecovery));
+			assert.equal(hasUnresolvedOwnership(1, [], [operation]), protectedNow);
+			assert.equal(hasUnresolvedOwnership(2, [], [operation]), protectedNow);
+			assert.equal(hasUnresolvedOwnership(9, [], [operation]), false);
+			assert.deepEqual(protectedSourceIndexes(1, [], [operation]), protectedNow ? [3] : []);
+			assert.deepEqual(protectedSourceIndexes(2, [], [operation]), []);
+			assert.deepEqual(h.orch.requestQueue.hooks.busyInstances(),
+				status !== "queued" && (!settled || timingPendingRecovery) ? [1, 2] : []);
+		}
+		h.activeTransfers.clear();
+		h.plugin.persistedTransactionLogs = [{transferId: operation.transferId, transferInfo: {...operation}}];
+		h.orch.restoreImportObservations();
+		assert.equal(h.activeTransfers.has(operation.transferId), restored);
+	});
+}
+
 test("retained snapshots cannot repeat a handoff after active history is lost", async t => {
 	const h = makeHarness(() => ({success: true}));
 	t.after(() => h.orch.stop());
