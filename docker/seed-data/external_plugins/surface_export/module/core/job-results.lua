@@ -7,7 +7,7 @@ end
 function JobResults.prune(max_entries)
 	local keys = {}
 	for key in pairs(storage.async_job_results) do
-		table.insert(keys, key)
+		if not (storage.async_jobs or {})[key] then table.insert(keys, key) end
 	end
 	table.sort(keys, function(a, b)
 		local ca, cb = job_counter(a), job_counter(b)

@@ -13,6 +13,7 @@ for _, accepted in ipairs({false, true}) do
 end
 for _, committed in ipairs({false, true}) do
     for _, outcome in ipairs({"throw", "false", "success"}) do
+      for _, evacuation in ipairs({"success", "failed", "throw", "missing"}) do
         local lock = {committed = committed}
         local platform = {valid = true, surface = {valid = true, index = 9}}
         local cleared, deleted, deleteCalls = false, false, 0
@@ -21,7 +22,11 @@ for _, committed in ipairs({false, true}) do
         local modules = {
             ["core/source-recovery"] = {matches = function(_, uid) return uid == "uid" end},
             ["utils/operation-timing"] = {begin = noop, finish = noop, scope = function(_, _, fn, ...) return fn(...) end},
-            ["core/gateway"] = {evacuate_passengers = noop},
+            ["core/gateway"] = {evacuate_passengers = function()
+                if evacuation == "throw" then error("injected evacuation failure") end
+                if evacuation == "missing" then return nil end
+                return {success = evacuation == "success", failures = evacuation == "success" and 0 or 1}
+            end},
             ["utils/game-utils"] = {pcall_warn = function(_, fn) return fn() end, delete_platform = function()
                 deleteCalls = deleteCalls + 1
                 assert(env.storage.locked_platforms[3] == lock, "source unlocked before deletion")
@@ -58,6 +63,15 @@ for _, committed in ipairs({false, true}) do
         assert(remove(3, "fixture", "player", "job", "other-uid"):sub(1, 6) == "ERROR:")
         assert(deleteCalls == 0, "mismatched retirement identity reached the engine")
         local result = remove(3, "fixture", "player", "job", "uid")
+        if evacuation ~= "success" then
+            assert(result:sub(1, 6) == "ERROR:" and deleteCalls == 0,
+                "source deleted after " .. evacuation .. " evacuation")
+            assert(env.storage.locked_platforms[3] == lock and not cleared,
+                "evacuation failure lost source protections")
+            assert(not modules["utils/transfer-receipts"].get("source_deleted", "job"), "false deletion receipt")
+            evacuation = "success"
+            result = remove(3, "fixture", "player", "job", "uid")
+        end
         if outcome == "success" then
             assert(result == "SUCCESS" and not env.storage.locked_platforms[3])
             assert(cleared == committed)
@@ -71,6 +85,7 @@ for _, committed in ipairs({false, true}) do
         else
             assert(result:sub(1, 6) == "ERROR:" and env.storage.locked_platforms[3] == lock and not cleared)
         end
+      end
     end
 end
-print("PASS source lock survives refused/thrown deletion; committed tombstone follows accepted deletion")
+print("PASS source lock survives evacuation/deletion failure; retry and replay publish one confirmed deletion")

@@ -48,15 +48,15 @@ original parameters remained unchanged. Both wire readback and combinator regist
 agreed. Injected-failure cleanup and final independent cleanup passed. This confirms
 the documented arbitrary-count limitation, not the other audit failure hypotheses.
 
-## Candidate contract, before running
+## Candidate test mode
 
 The official `DeciderCombinatorOutput.constant` field can emit an explicit int32
-when `copy_count_from_input=false`. A candidate can temporarily emit each captured
-signal with its exact value, then restore original parameters. This is not a direct
-register setter. It must prove register continuity after restoration, isolation
-from live consumers, scheduling, power loss, and changing counters before production
-use. `signals_last_tick` remains read-only. No candidate run is authorized by a
-baseline HARNESS_ERROR or inconclusive result.
+when `copy_count_from_input=false`. The candidate mode temporarily emits captured
+signals with explicit values, then restores original parameters. This is not a
+direct register setter. `signals_last_tick` remains read-only. The isolated fixture
+does not establish live-consumer isolation, power-loss recovery, or behavior with
+changing counters. A baseline HARNESS_ERROR or inconclusive result is not a
+reproduced failure.
 
 Run with `--candidate` only after a retained baseline STOP. Use the same fixture,
 three independent destinations and three boolean controls. Temporarily replace

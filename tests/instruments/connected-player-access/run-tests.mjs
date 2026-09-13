@@ -2,6 +2,7 @@
 // requires: one consenting connected player on host 1; idle cluster; character or god controller
 // produces: hidden-surface API readings and connected-passenger evacuation results
 // does not: infer UI behavior from API calls or modify the original character's inventory
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -215,10 +216,7 @@ if not restored then cleanupErrors[#cleanupErrors+1]=tostring(restoreErr) end
 if restored then
  for _,p in ipairs(platforms) do if p.valid and not deleted[p.index] then
   local cleaned,why=pcall(function()
-   if storage.locked_platforms and storage.locked_platforms[p.index] then
-    local unlocked,reason=remote.call('surface_export','unlock_platform',p.index)
-    assert(unlocked~=false,reason)
-   end
+   ${fixtureUnlockLua("p")}
    assert(game.delete_surface(p.surface),'delete refused')
   end)
   if not cleaned then cleanupErrors[#cleanupErrors+1]=tostring(why) end

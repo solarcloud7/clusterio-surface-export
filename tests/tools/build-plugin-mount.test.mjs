@@ -17,7 +17,14 @@ function run(t, target, fail = false, options = {}) {
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	const calls = join(dir, "calls.jsonl");
 	writeFileSync(calls, "");
-	const command = `
+const command = `
+if ($env:BUILD_FAIL_CLEANUP -eq 'true') {
+ function global:Remove-Item {
+  param($LiteralPath, [switch]$Force, $ErrorAction)
+  if ([IO.Path]::GetFileName($LiteralPath) -like 'se-build-lock-*') { throw 'injected cleanup sharing violation' }
+  Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $LiteralPath -Force:$Force -ErrorAction Stop
+ }
+}
 function global:docker {
  $arguments = @($args)
  ConvertTo-Json -InputObject $arguments -Compress | Add-Content -LiteralPath $env:BUILD_CALLS
@@ -48,6 +55,7 @@ exit $LASTEXITCODE
 		{ encoding: "utf8", timeout: 15000, cwd: options.cwd, env: { ...process.env,
 			BUILD_SCRIPT: script, BUILD_TARGET: target, BUILD_PACKAGE: options.packageDirectory || "",
 			BUILD_MUTATE_LOCK: options.mutateLock || "",
+			BUILD_FAIL_CLEANUP: String(options.failCleanup || false),
 			BUILD_OUTPUT: options.outputDirectory || "", BUILD_CALLS: calls, BUILD_FAIL: String(fail) } });
 	return { ...result, snapshot: existsSync(`${calls}.snapshot`) ? readFileSync(`${calls}.snapshot`, "utf8").trim() : null,
 		calls: readFileSync(calls, "utf8").trim().split(/\r?\n/).filter(Boolean).map(JSON.parse) };
@@ -77,6 +85,15 @@ test("a failed test container fails the wrapper without restarting the cluster",
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /Plugin build failed/);
 	assert.deepEqual(result.calls.map(args => args[0]), ["version", "run"]);
+});
+
+test("cleanup failure warns without replacing a build failure or changing a successful exit", { skip }, t => {
+	for (const fail of [false, true]) {
+		const result = run(t, "test", fail, { failCleanup: true });
+		assert.equal(result.status === 0, !fail, result.stderr);
+		assert.match(result.stdout + result.stderr, /Could not remove build lock snapshot[^\n]*injected cleanup sharing violation/);
+		if (fail) assert.match(result.stderr, /Plugin build failed/);
+	}
 });
 
 const shell = process.platform === "win32"

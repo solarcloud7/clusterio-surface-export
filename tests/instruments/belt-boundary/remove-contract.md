@@ -56,7 +56,7 @@ Before mutation: pinned API shape/signatures, idle unpaused instances, no player
 jobs, locks, holds, tombstones or previous lab ownership. Then injected construction
 failure plus injected callback failure prove cleanup/handler restoration, followed by
 a tiny straight/corner/splitter/underground shape smoke. Raw evidence is saved before
-offline analysis. Preserve actual mods, engine and harness/fixture/contract hashes.
+offline analysis. Preserve actual mods, engine and harness/fixture/source hashes.
 PASS means only the declared fixture conserved cargo. STOP means a candidate invariant
 failed. HARNESS_ERROR means API/setup/runner/oracle/cleanup failure. No performance claim.
 
@@ -186,7 +186,7 @@ reads, 180 seconds, 40 KiB command, 1 MiB response and 8 MiB artifact. Only disp
 surfaces and the owned isolated bundle are mutated. Production remains unchanged
 until its corresponding acceptance rungs pass.
 
-### Dense same-lane follow-up
+### Dense same-lane mode
 
 Only after the sparse same-lane ladder passes, `--dense` adds two four-item stacks
 at positions 1/8 and 1/4 on each entity's two primary lanes. Extra left cargo is
@@ -220,7 +220,7 @@ helper bytes stay in the same owned buffer and are removed together. No fixture
 result is attributed to the failed launch. Re-run the cleanup/shape ladder for the
 corrected harness hash.
 
-### Junction routing follow-up
+### Junction routing mode
 
 After intact dense group imports pass, `--junctions` runs the dense side-loading
 junction and two-input/two-output splitter fixtures in both capture orders. The lane

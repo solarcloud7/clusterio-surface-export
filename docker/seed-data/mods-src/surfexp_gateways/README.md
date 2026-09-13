@@ -14,7 +14,7 @@ drift:
 It is a **pure data-stage mod** (no `control.lua`): it only adds surfaceless gateway
 `space-location`s + short `space-connection`s from the basic planets. All gateway *logic* (discovery, unlock,
 arrival detection, transfer trigger, hop-strip) lives in the save-patched `surface_export` module, not
-here. See `docs/GATEWAY_TRANSFER_PRD.md`.
+here. See [gateway behavior](../../../../docs/GATEWAYS.md).
 
 ## Graphics
 

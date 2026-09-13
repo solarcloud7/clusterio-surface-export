@@ -35,9 +35,14 @@ local function scenario(options)
     for _, name in ipairs({"utils/surface-lock", "core/import-session", "utils/export-cache",
         "core/export-pipeline", "import_phases/latch_rearm", "core/gateway-config-staging",
         "utils/util", "utils/platform-schedule", "utils/version-compat", "core/import-target",
-        "utils/phase-profiler", "utils/transaction-history", "core/job-results", "core/gateway",
+        "utils/phase-profiler", "utils/transaction-history",
         "export_scanners/inventory-scanner", "export_scanners/fluid-registry",
         "export_scanners/entity-scanner", "utils/debug-export"}) do cache[name] = stub end
+    cache["core/gateway"] = {evacuate_passengers = function()
+        if options.evacuation == "throw" then error("injected evacuation error") end
+        if options.evacuation == "missing" then return nil end
+        return {success = not options.evacuation, failures = options.evacuation and 1 or 0}
+    end}
     cache["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, ACTIVATABLE_ENTITY_TYPES = {inserter = true, beacon = true},
         delete_platform = function(platform) mark("discard"); platform.valid = false; return true end}
     cache["core/destination-hold"] = {
@@ -122,6 +127,26 @@ local function scenario(options)
             {entity_id = 2, name = "beacon", type = "beacon"}},
         platform_data = {_standaloneImport = options.snapshot, platform = {paused = true}, belt_side_groups = {{}, {}},
             verification = {item_counts = {}, fluid_counts = {}}}}
+    if options.evacuation then
+        cache["core/destination-hold"] = nil
+        cache["utils/platform-identity"] = function() return "destination-uid" end
+        cache["utils/surface-lock"] = {complete_cargo_pods = function()
+            if options.partialQuarantine then error("injected partial hold failure") end
+            return 0, 0, 0
+        end}
+        job.target_surface.index = 8
+        job.target_surface.find_entities_filtered = function(filter)
+            if filter.name then return {} end
+            return {job.entity_map[1]}
+        end
+        job.target_platform.index, job.target_platform.surface = 3, job.target_surface
+        env.game.forces.player = {valid=true, name="player", platforms={[3]=job.target_platform},
+            get_surface_hidden=function() return false end, set_surface_hidden=function()
+                if options.quarantineFailure then error("injected quarantine failure") end
+            end}
+        job.target_platform.force = env.game.forces.player
+        job.entity_map[1].unit_number, job.entity_map[1].active = 1, true
+    end
     if not options.standalone then job.transfer_id = "transfer" end
     if options.largeInventory then
         for _, ed in ipairs(job.entities_to_create) do
@@ -161,7 +186,31 @@ local function scenario(options)
             return
         end
         assert(ok, tostring(err))
-        assert(not job.completion_interrupted, job.completion_interrupted and job.completion_interrupted.error)
+        if (options.quarantineFailure or options.partialQuarantine) and job.completion_interrupted then
+            assert(env.storage.async_jobs.test == job, "failed quarantine lost exact job references")
+            assert(job.target_platform.hidden and job.target_platform.paused)
+            local count = #events
+            for _ = 1, 3 do env.game.tick = env.game.tick + 1; processor.process_tick() end
+            assert(#events == count, "failed quarantine replayed completion")
+            if options.partialQuarantine then
+                for newer = 1, 30 do env.storage.async_job_results["znewer_" .. newer] = {status = "completed"} end
+                env.require("modules/surface_export/core/job-results").prune(25)
+                assert(env.storage.async_job_results[job.job_id], "pruning removed evidence owned by interrupted job")
+                assert(size(env.storage.async_job_results) == 26, "completed result retention is not bounded")
+                local holds = cache["core/destination-hold"]
+                assert(holds.get("transfer").preparation_failed)
+                assert(not holds.discard("transfer", job.job_id), "refused evacuation cleared interrupted job")
+                assert(env.storage.async_jobs.test == job)
+                options.evacuation = nil
+                assert(holds.discard("transfer", job.job_id), "partial quarantine could not be discarded")
+                assert(not env.storage.async_jobs.test and not holds.get("transfer"))
+                assert(env.require("modules/surface_export/core/job-status").read("test").state == "failed")
+                assert(env.storage.async_job_results.test.validation.cleanup_failed, "cleanup erased original failure")
+            end
+            print("PASS failed quarantine retains job references and stops completion replay")
+            return
+        end
+        assert(not job.completion_interrupted or options.evacuation, job.completion_interrupted and job.completion_interrupted.error)
         for name, kind in pairs(open) do assert(kind == "wait", "execution spans ticks: " .. name) end
         if not env.storage.async_jobs.test then break end
         assert(job.entity_map[1].disabled_by_script, "entity active between phases")
@@ -202,7 +251,18 @@ local function scenario(options)
     if options.reject or options.beltFailure or options.holdFailure then
         assert(result.validation.success == false)
         if not options.holdFailure then assert(not spans.activation) end
-        assert(#eventTicks("discard") == 1 and not job.target_platform.valid)
+        if options.evacuation then
+            assert(#eventTicks("discard") == 0 and job.target_platform.valid)
+            assert(result.validation.cleanup_failed and result.validation.cleanup_error:find("evacuation"))
+            local holds = cache["core/destination-hold"]
+            local hold = holds.get("transfer")
+            assert(hold and hold.preparation_failed and hold.job_id == job.job_id and hold.platform_uid == "destination-uid")
+            assert(job.entity_map[1].disabled_by_script and job.target_platform.hidden and job.target_platform.paused)
+            assert(not holds.go_live("transfer", job.job_id), "failed validation authorized release")
+            options.evacuation = nil
+            assert(holds.discard("transfer", job.job_id), "confirmed evacuation could not retry cleanup")
+            assert(not holds.get("transfer") and not job.target_platform.valid)
+        else assert(#eventTicks("discard") == 1 and not job.target_platform.valid) end
     else
         assert(spans.activation.startTick == spans.fluids.endTick)
         if not options.standalone then
@@ -227,6 +287,11 @@ scenario({label = "validated standalone snapshot", snapshot = true})
 scenario({label = "rejected standalone snapshot", snapshot = true, reject = true})
 scenario({label = "standalone snapshot hold failure", snapshot = true, holdFailure = true})
 scenario({label = "validation rejection", reject = true})
+for _, mode in ipairs({"refused", "throw", "missing"}) do
+    scenario({label = "validation rejection with " .. mode .. " evacuation", reject = true, evacuation = mode})
+end
+scenario({label = "failed quarantine", reject = true, evacuation = "refused", quarantineFailure = true})
+scenario({label = "partial quarantine", reject = true, evacuation = "refused", partialQuarantine = true})
 scenario({label = "belt failure", beltFailure = true})
 scenario({label = "hold failure", holdFailure = true})
 scenario({label = "hold identity collision", holdFailure = true, foreignHold = true})

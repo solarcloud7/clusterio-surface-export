@@ -15,8 +15,8 @@ It uses the existing workflow lock and checks the native CLI before optional liv
   relies on it — restore a runner from the archive tag or author a fresh probe. The `labs-certified.json`
   certificate and its lint were deleted 2026-07-31 (owner ruling): a green certificate was permission to
   assume, and the last one asserted laws its own cited pads never exercised.
-- [`runner-inventory.md`](runner-inventory.md) records each executable's evidence-backed category and disposition;
-  absent rows are unclassified while SC-41 remains in progress.
+- `node tools/tests/run-integration-tests.mjs --list` lists the current integration runners.
+  The manual installation labs and performance instruments are listed below.
 - `docker/seed-data/external_plugins/surface_export/test/` contains Node unit and contract tests for the plugin.
 - `docker/seed-data/external_plugins/surface_export/scripts/` contains the static guards used by the plugin lint
   suite.

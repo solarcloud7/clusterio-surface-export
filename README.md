@@ -66,9 +66,9 @@ For a clean consumer install through `npm init @clusterio`, see the
 [consumer installation lab](tests/manual/consumer-install/README.md). It accepts a plugin tarball,
 gateway ZIP, and an existing licensed client volume; no development seed saves are used.
 
-## Before production
+## Verification and limits
 
-Readiness review updated after PRs #310 and #311. The exact candidate package passed
+The retained candidate package passed
 native install/recovery acceptance and a hosted publication rehearsal. A separate
 consumer install through Clusterio's initializer passed fresh saves, real locale/icons,
 authenticated browser checks and lost-reply recovery. Publication itself and historical
@@ -80,15 +80,14 @@ and persistent data from development source. Its [complete restoration acceptanc
 passed fresh worlds, all twelve volumes restored into new owned resources, explicit save
 selection, settings, authentication, exact cargo, history, assets and another transfer.
 Lost-reply recovery and controller recreation also passed. The [incident procedure](docker/README.md#incident-and-backup-procedure)
-still applies. This supports a supervised first deployment on the tested stack; broader
-rollout needs the following evidence.
+still applies. The evidence covers the recorded image pair, runtime, and fixtures.
 
-| Priority | Work | Why it matters / acceptance evidence | Effort |
-|---|---|---|---|
-| Before broader rollout | Recovery with inconsistent or missing authority | Both save policies, pending handoffs and explicit snapshot recovery pass [bounded fixtures](tests/manual/transfer-reliability/README.md#configurable-save-recovery). The original unassisted [destination rollback after release](tests/manual/transfer-reliability/README.md#destination-save-rollback) still leaves a missing platform; manual restoration creates a separate import and preserves that history. Missing journals and receipt eviction remain unproven. [Current protocol and limits](docs/TRANSFER_2PC.md). | Large |
-| Before broader rollout | Broader backup and restore acceptance | The [complete profile drill](tests/manual/production-profile/README.md) restores all twelve stores into fresh containers and volumes on the same machine and image pair. Mixed backup generations, rebuilding another host and off-host backup handling remain untested. Local pre-deploy saves alone do not establish these. | Medium |
-| Before broader rollout | Bound and measure expensive callbacks | Phase yields are verified, but individual phases remain synchronous. Test representative large platforms and publish measured limits for supported sizes/mods. | Medium |
-| Release gate | Define and test upgrades and compatible rollback | Exact-package fresh installation and the publishing handoff are exercised. A compatible historical baseline, saves/journal migration and code rollback still need acceptance. The old published package's peer range does not accept the pinned Clusterio prerelease; forced installation is not compatibility evidence. | Medium |
+| Area | Verified scope and limitations |
+|---|---|
+| Recovery | Both save policies, pending handoffs and explicit snapshot recovery pass [bounded fixtures](tests/manual/transfer-reliability/README.md#configurable-save-recovery). The original unassisted [destination rollback after release](tests/manual/transfer-reliability/README.md#destination-save-rollback) still leaves a missing platform. Manual restoration creates a separate import and preserves that history. Missing journals and receipt eviction remain unproven. |
+| Backup and restore | The [complete profile drill](tests/manual/production-profile/README.md) restores twelve stores into fresh containers and volumes on the same machine and image pair. Mixed backup generations, rebuilding another host and off-host backup handling remain untested. |
+| Callback cost | Phase yields and fixture measurements are recorded in [batching and timing](docs/async-processing.md). Indivisible native operations and large lane groups remain synchronous. There is no general platform-size or callback-time guarantee. |
+| Installation and upgrades | Exact-package fresh installation and the publishing handoff are exercised. Historical saves/journal migration and code rollback are unverified. Fresh-install evidence does not establish upgrade compatibility. |
 
 ## Repository map
 

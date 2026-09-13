@@ -2,6 +2,15 @@ local json = require("modules/surface_export/core/json")
 
 local Base = {}
 
+function Base.debug_wrap(name, fn)
+  return function(...)
+    if not (storage and storage.surface_export_config and storage.surface_export_config.debug_mode == true) then
+      error(name .. " requires debug_mode", 2)
+    end
+    return fn(...)
+  end
+end
+
 function Base.json_wrap(fn)
   return function(...)
     local result = fn(...)

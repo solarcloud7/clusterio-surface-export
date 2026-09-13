@@ -861,7 +861,7 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 
 Or use the **web UI** (§11) → the Gateways canvas: per-platform **Export JSON**, or the **Import** button.
 
-### 7. Gateway transfer (Phase 1a)
+### 7. Gateway transfer
 
 ```pwsh
 # Park a platform at a gateway, then:

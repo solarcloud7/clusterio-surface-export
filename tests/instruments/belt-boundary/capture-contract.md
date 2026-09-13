@@ -39,7 +39,7 @@ jobs, locks, holds or tombstones, and no existing surfaces/storage with this lab
 An API error, changed item identity/count, missing crossing, timeout or cleanup error
 is HARNESS_ERROR. A proven candidate omission is STOP. No scheduler change follows STOP.
 
-The runner hashes this contract, fixture, Lua observer/construction/cleanup and runner.
+The runner hashes the fixture, Lua observer/construction/cleanup and runner source.
 It saves raw observations before analysis and supports `--analyze` without cluster access.
 Cleanup runs inside the probe and independently in the runner's finally block; the
 runner verifies that no owned surface or storage remains and the simulation is unpaused.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
+import { fixtureSweepLua, assertFixtureCleanup } from "../../lab-gallery/fixture-cleanup.mjs";
 // ghost-tags — an entity-ghost's tags must survive a real host-1 -> host-2 transfer, and the entity
 // classes that measurably cannot hold tags are named by the same run
 //
@@ -315,11 +315,8 @@ async function main() {
 	} finally {
 		for (const host of [1, 2]) {
 			try {
-				const swept = lua(host, "local n=0 for _,q in pairs(game.forces.player.platforms) do "
-					+ `if q.valid and q.name=='${PROBE}' then `
-					+ fixtureUnlockLua("q")
-					+ "if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end "
-					+ "return {success=true, swept=n}");
+				const swept = assertFixtureCleanup(lua(host,
+					`return ${fixtureSweepLua(`q.name=='${PROBE}'`)}`));
 				console.log(`  cleanup host ${host}: swept ${swept.swept} probe platform(s)`);
 			} catch (sweepErr) {
 				failed++;
@@ -328,8 +325,8 @@ async function main() {
 			}
 		}
 		try {
-			lua(2, `remote.call('surface_export','configure',{debug_mode=${prevDebug.debug === true}}) `
-				+ "return {success=true}");
+			assertFixtureCleanup(lua(2, `remote.call('surface_export','configure',{debug_mode=${prevDebug.debug === true}}) `
+				+ "return {success=true}"));
 		} catch (cfgErr) {
 			failed++;
 			console.error(`  FAIL debug_mode restore threw: ${cfgErr && cfgErr.message ? cfgErr.message : cfgErr}`);

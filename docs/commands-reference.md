@@ -2,11 +2,32 @@
 
 Console commands for debugging and manual control of platform export/import functionality. These commands run in-game via the chat console or remotely via RCON. They are registered in [`module/interfaces/commands/`](../docker/seed-data/external_plugins/surface_export/module/interfaces/commands/).
 
-For the `clusterioctl surface-export` CLI subcommands (`list`, `get-export`, `upload-import`, `start-transfer`, `transfer`), see the Remote Interface and CLI sections of [README.md](README.md). For the Lua `remote.call("surface_export", ...)` API, see the Remote Interface section of [README.md](README.md).
+The Clusterio CLI is listed below. Lua `remote.call("surface_export", ...)` functions are registered in [remote-interface.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote-interface.lua); inspect that registry for exact names and argument handlers.
+
+## Clusterio CLI
+
+Use an authenticated Clusterio control configuration. These subcommands are
+registered by [control.ts](../docker/seed-data/external_plugins/surface_export/control.ts)
+under `clusterioctl surface-export`:
+
+| Subcommand | Purpose |
+|---|---|
+| `list` | List stored exports. |
+| `list-transfers [limit]` | List transfer records. |
+| `get-export <exportId> [outputFile]` | Retrieve a retained payload. |
+| `upload-import <file> <targetInstanceId> [forceName] [platformName]` | Upload a local file for import. |
+| `start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]` | Start the controller-orchestrated transfer of a live platform. |
+| `transfer <exportId> <instanceId>` | Submit a stored export to the target instance. |
+| `restore-snapshot <exportId> <targetInstanceId> <requestId> [platformName]` | Create an explicit recovery import with a UUID request identity. Reuse that UUID when retrying an uncertain response. |
+
+Request acceptance is distinct from the terminal operation result. Inspect
+Transaction Logs for validation, cleanup, and recovery. Snapshot restoration does
+not change the original operation's outcome; see [save recovery](TRANSFER_2PC.md#save-recovery-policy).
 
 ## Table of Contents
 
 - [Quick Reference](#quick-reference)
+- [Clusterio CLI](#clusterio-cli)
 - [Platform Listing Commands](#platform-listing-commands)
 - [Export Commands](#export-commands)
 - [Transfer Commands](#transfer-commands)
@@ -179,7 +200,8 @@ File will be written when export completes (check logs)
 ---
 
 ### `/export-sync-mode`
-Toggle synchronous export mode for debugging.
+Toggle the large entity-batch limit for debugging. Enabling requires `debug_mode=true`;
+disabling debug restores normal batching on the next scheduler batch-size read.
 
 **Usage:**
 ```
@@ -591,6 +613,6 @@ Commands work via RCON but some require explicit parameters:
 
 ## See Also
 
-- [README.md](README.md) — Remote Interface (Lua `remote.call` API) and `clusterioctl surface-export` CLI commands
-- [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) — Flow trace, module structure, and Factorio 2.0 constraints
+- [Documentation index](README.md) — Current references and runbooks
+- [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) — Flow trace and module boundaries
 - [async-processing.md](async-processing.md) — Tick-batched export/import and timing limitations

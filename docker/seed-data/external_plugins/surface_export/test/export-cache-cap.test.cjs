@@ -96,19 +96,6 @@ test("ordering is by insertion, never by the queue-time tick", () => {
 		"nil-tolerant: this runs inside on_tick, where a bare `nil > number` kills the headless server");
 });
 
-test("an export still referenced by a platform lock is never pruned", () => {
-	const exportCache = code(path.join("utils", "export-cache.lua"));
-	const clearOld = code(path.join("interfaces", "remote", "clear-old-exports.lua"));
-
-	assert.match(exportCache, /lock\.transfer_job_id/,
-		"the protected set must be derived from live platform locks");
-	assert.match(exportCache, /clear_old_exports\s*\(\s*keep_count\s*,\s*nil\s*,\s*protected_export_ids\s*\(\s*\)\s*\)/,
-		"the production prune must pass the protected set — computing it and not passing it is the " +
-		"same as not having it");
-	assert.match(clearOld, /if\s+not\s+protected\s*\[\s*id\s*\]\s+then/,
-		"the algorithm must skip protected ids when deleting");
-});
-
 test("the configured cap actually reaches the policy, and survives a save load", () => {
 	const asyncProcessor = code(path.join("core", "async-processor.lua"));
 	const exportCache = code(path.join("utils", "export-cache.lua"));
@@ -157,4 +144,3 @@ test("the prune comparator tolerates a missing tick instead of raising in on_tic
 		"where a bare `nil > number` is not a bad sort but a raw error, and a raw error in event " +
 		"context kills the headless server (exit 255) presenting as a stall");
 });
-

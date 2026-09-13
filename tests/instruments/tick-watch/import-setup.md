@@ -92,21 +92,13 @@ not Factorio's encoder output or a network-throughput result. Retained calculati
 `ci-artifacts/decode-budget-compression-estimate.json`. Incoming bandwidth and
 additional acknowledgements could increase end-to-end transfer duration.
 
-## Candidate and remaining proof
+## Measurement scope
 
-A candidate would use versioned, independently compressed/decoded sections, then
-schedule platform preparation separately. It must retain existing-format imports,
-canonical transfer identity, limits and ordering, duplicate/missing-section checks,
-reload/recovery behavior, and the exact cargo gate before activation. Merely reducing
-`RCON_CHUNK_SIZE` is insufficient. One oversized entity or metadata section still
-needs an explicit policy; the current experiment refuses it.
-
-The next acceptance test is the same full gateway transfer with server/client tick
-recording, exact physical cargo, and source/cleanup checks against that candidate.
-It must measure wire bytes, total transfer duration, memory/assembly cost, and
-worst update gaps together. Separating setup phases can still leave the atomic
-starter-pack work visible. No pooling or alternative platform creation is justified
-by this experiment alone.
+The decode experiment measures its supplied payload and codec callbacks. It does
+not establish a whole-transfer speedup, a worst client update gap, or crash
+recovery for a changed wire format. Smaller RCON chunks do not divide the cost of
+an indivisible JSON decode. Current sectional encoding and shared scheduling are
+described in [batching and timing](../../../docs/async-processing.md).
 
 ## External compression and 1x/2x/4x codec scaling
 
@@ -237,79 +229,4 @@ The Factorio gzip smoke check returned `nil` for a small externally generated gz
 payload. All independently zlib-deflated/base64 frames decoded successfully. The
 tested direction is therefore **JSONL or framed JSON for captured data, external
 compression, independent deflate/base64 batches for Factorio, and gzip for archives**.
-The actual platform/gateway/client acceptance described above is still required
-before deploying a new wire format.
-
-## Follow-up proposals, not implemented — 2026-09-09
-
-### Queue Lua work separately from transfer lifetime
-
-`lib/transfer-request-queue.ts` currently reserves both participating instances until
-terminal cleanup/recovery. Its orchestrator also treats active and pending transfers
-as instance-wide reservations. Independent routes can overlap; routes sharing either
-instance wait, including transfers in opposite directions.
-
-The proposed change is to separate that resource reservation from per-platform
-transaction ownership. External compression, storage and communication could overlap
-another platform's Lua work. An exported source would remain protected until its
-existing commit/recovery protocol permits release. Admission, canonical IDs, replay
-guards, destination validation, source deletion and terminal acknowledgements remain
-transaction requirements even when the instance work slot is free.
-
-Both import and export jobs already visit `AsyncProcessor.process_tick`, but it can
-process several oldest jobs in one tick. Its per-job batch count is not an aggregate
-per-instance work limit, and import setup currently executes before queue insertion.
-Simply admitting more transfers could increase the combined callback cost.
-
-A candidate therefore needs one deterministic, fair work budget shared by incoming
-and outgoing Lua stages, including setup and recovery, with bounded buffers for
-network work waiting to enter it. Profiler readings measure the result; they must
-not drive multiplayer simulation decisions. A large atomic API call remains a
-limitation. Avoid holding source and destination work slots while waiting to acquire
-each other; opposite-direction transfers need an explicit deadlock test.
-
-Acceptance must compare the same workload sequentially and with overlap: maximum
-per-instance callback time, tick gaps, buffer use, queue wait and complete transfer
-duration. Require exact physical cargo and side parity, no starvation, duplicate
-request/section protection, and failure/restart recovery while another transfer is
-active. This is a throughput proposal, not a measured constant-flow result.
-
-### Same-save differential transfer acceptance
-
-The existing gallery already has paired golden saves, pad-specific physical reads,
-and a production transfer runner. Its manifest deliberately states
-`fixtureIsOracle: false`: a baked platform is input; the independent reader and
-declared expected values are the oracle. The same-save proposal adds value when it
-extends those readers to settings and connections that current cargo checks omit.
-
-Use a fresh disposable two-host environment with matching engine, mods and save
-hashes. Never restore the reference save over the connected development cluster or
-clear retirement journals to make an old save load. Reuse the existing omnibus,
-transfer and one-of-each platforms as fixture inputs. Transfer each selected source
-platform through the real gateway path and report failures per platform and field.
-
-Read the expected state directly from the reference world at a defined checkpoint,
-independently of the production exporter/restorer/validator. Identify reference
-originals and incoming platforms separately; loading identical saves creates name
-and index collisions that must not select the wrong comparison target. Capture an
-immutable reference observation before allowing that world's simulation to drift.
-
-Compare entity type/quality, relative position/direction, recipe and filters, control
-behavior, schedule, equipment and wire endpoints where the API exposes them. Resolve
-connections through stable fixture-local identities rather than runtime unit numbers.
-Keep exact item/quality counts and belt-side quantities; belt offset within a segment
-is not an invariant under the owner's declared fidelity requirement. Fluid checks
-must retain the existing explicit quantity/temperature rules.
-
-Two running copies diverge: belt contents move, recipes consume items, fluids flow,
-and counters/timers advance. Configuration equality can be static; those dynamic
-fields need a stable fixture, a defined capture boundary or a behavioral probe with
-explicit drift rules. Pausing an instance is a test control, not evidence that the
-production transfer freezes belts. Unreadable state remains untested.
-
-Maintain a field coverage list with checked, intentionally excluded and unavailable
-properties for each applicable prototype. Every item type on a platform does not
-exercise every entity setting, quality, inventory location or dynamic state. Prove
-the comparison detects a deliberately wrong filter, missing wire, altered cargo
-count and swapped belt side before trusting a passing round trip. Keep the focused
-pads for exact failure diagnosis; the whole-save pass complements them.
+The codec result alone does not establish platform/gateway/client acceptance.

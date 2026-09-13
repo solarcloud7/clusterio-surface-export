@@ -65,8 +65,9 @@ separately by the [save-policy fixture](../transfer-reliability/README.md#config
 
 The exact accepted plugin was `0.10.281`, source `ae803548c0d871ea483909d4dfcf028eccb4c507`,
 SHA-256 `db272eac88c2449d1225e44bd0d7658966cf466a082633ec1096664f05008f9e`.
-The report records the pinned runtime image IDs and gateway ZIP digest. Later changes
-in this PR only refine fixtures, retained evidence and documentation. The regression
+The report records the pinned runtime image IDs and gateway ZIP digest. This acceptance
+covers that source revision and package digest; later runtime changes require their own
+acceptance and do not inherit this result. The regression
 suite reads these physical observations and rejects altered cargo, missing stores,
 wrong checkpoint generations, settings/authentication loss and failed cleanup.
 

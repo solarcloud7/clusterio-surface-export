@@ -6,20 +6,30 @@ local DEFAULT_CAP = 10
 local DEFAULT_CONCURRENCY = 3
 local concurrency = DEFAULT_CONCURRENCY
 
+local function valid_limit(value)
+	return type(value) == "number" and value >= 1 and value < math.huge and value % 1 == 0
+end
+
 function ExportCache.set_cap(value)
+	assert(valid_limit(value), "max_export_cache_size must be a positive finite integer")
 	storage.surface_export_config = storage.surface_export_config or {}
 	storage.surface_export_config.max_export_cache_size = value
 end
 
 function ExportCache.get_cap()
 	local configured = storage.surface_export_config and storage.surface_export_config.max_export_cache_size
-	if type(configured) ~= "number" or configured < 1 then
+	if not valid_limit(configured) then
+		if configured ~= nil then
+			log("[ExportCache] Invalid saved max_export_cache_size=" .. tostring(configured) .. "; using " .. DEFAULT_CAP)
+			ExportCache.set_cap(DEFAULT_CAP)
+		end
 		return DEFAULT_CAP
 	end
 	return configured
 end
 
 function ExportCache.set_concurrency(value)
+	assert(valid_limit(value), "max_concurrent_jobs must be a positive finite integer")
 	concurrency = value
 end
 
@@ -32,11 +42,11 @@ function ExportCache.resolve_keep_count()
 end
 
 function ExportCache.resolve_keep_count_for(configured, concurrency_limit)
-	if type(configured) ~= "number" or configured < 1 then
+	if not valid_limit(configured) then
 		configured = DEFAULT_CAP
 	end
 	local floor = concurrency_limit
-	if type(floor) ~= "number" or floor < 1 then
+	if not valid_limit(floor) then
 		floor = DEFAULT_CONCURRENCY
 	end
 	floor = floor + 1
@@ -54,22 +64,9 @@ function ExportCache.record(export_id, entry)
 	return entry
 end
 
-local function protected_export_ids()
-	local protected = {}
-	for _, lock in pairs(storage.locked_platforms or {}) do
-		if lock.transfer_job_id then
-			protected[lock.transfer_job_id] = true
-		end
-		if lock.committed_transfer_id then
-			protected[lock.committed_transfer_id] = true
-		end
-	end
-	return protected
-end
-
 function ExportCache.prune_to_configured_cap()
 	local keep_count, was_raised = ExportCache.resolve_keep_count()
-	local removed = clear_old_exports(keep_count, nil, protected_export_ids())
+	local removed = clear_old_exports(keep_count)
 	if was_raised then
 		log(string.format(
 			"[ExportCache] max_export_cache_size=%s is below the max_concurrent_jobs+1 sanity floor; keeping %d instead",

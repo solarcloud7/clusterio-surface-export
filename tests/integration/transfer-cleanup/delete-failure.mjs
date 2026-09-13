@@ -39,7 +39,7 @@ if (args[0] === "--analyze") {
     report.sourceHashes["callback-profile/probe.lua"] = createHash("sha256").update(profileCode).digest("hex");
   }
   report.fixture = args.includes("--large") ? "large" : args.includes("--empty-hub-control") ? "empty-hub" : "starter-hub";
-  for (const path of ["probe.lua", "oracle.mjs", "delete-failure.mjs", "README.md"]) {
+  for (const path of ["probe.lua", "oracle.mjs", "delete-failure.mjs"]) {
     report.sourceHashes[path] = createHash("sha256").update(readFileSync(new URL(path, import.meta.url))).digest("hex");
   }
   report.implementationHashes = {};

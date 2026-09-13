@@ -11,10 +11,14 @@ function resolveClusterioWebpackCommon() {
 	];
 
 	for (const candidate of candidates) {
+		let resolved;
 		try {
-			return require(candidate);
-		} catch (_err) {
+			resolved = require.resolve(candidate);
+		} catch (error) {
+			if (error.code !== "MODULE_NOT_FOUND") throw error;
+			continue;
 		}
+		return require(resolved);
 	}
 
 	throw new Error("Unable to resolve Clusterio webpack.common (tried package and local workspace fallback)");
@@ -30,7 +34,7 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 		extensions: [".tsx", ".ts", ".jsx", ".js"],
 	},
 	output: {
-		path: path.resolve(__dirname, "dist", "web"),
+		path: path.resolve(__dirname, "dist", "web-build"),
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",
 		clean: false,

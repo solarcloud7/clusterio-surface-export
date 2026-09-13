@@ -11,7 +11,7 @@ import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs"
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
 const browser = await launchChromiumOrSkip("canvas-navigation");
-const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
+const config = JSON.parse(execFileSync("docker", ["exec", process.env.SE_WEB_CONTROLLER || "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1683, height: 1282 } });
 page.on("pageerror", error => errors.push(error.message));

@@ -11,6 +11,17 @@ const { createOperationRecord } = require(path.join(distNode, "lib", "operation-
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
 
+test("invalid export cache limits are rejected before instance configuration reaches Lua", () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	plugin.instance = { config: { get: () => true } };
+	for (const limit of [0, -1, 10.5, NaN, Infinity, "10", Number.MAX_SAFE_INTEGER + 1]) {
+		plugin.cfg = () => limit;
+		assert.throws(() => plugin.validateInstanceConfiguration(), /positive safe integer/);
+	}
+	plugin.cfg = () => 10;
+	assert.doesNotThrow(() => plugin.validateInstanceConfiguration());
+});
+
 const GATE_VERDICT = Object.freeze({
 	success: false,
 	itemCountMatch: false,

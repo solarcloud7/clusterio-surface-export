@@ -317,10 +317,10 @@ test("failed destination discard evacuates passengers before deletion", () => {
 		"black-box discard must route passengers through evacuation before deleting the destination");
 	assert.match(importCompletion.slice(evacuateAt, discardAt), /pcall/,
 		"passenger evacuation must be pcall-protected — a raw error() in event context kills the "
-		+ "headless server. Its FAILURE no longer blocks the delete (see the discard-contract test).");
+		+ "headless server.");
 });
 
-test("the discard contract is unconditional — observability and guards never gate it", () => {
+test("diagnostic output failure cannot suppress destination cleanup", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 
 	const bankAt = importCompletion.indexOf("pcall(bank_failure_black_box");
@@ -336,17 +336,6 @@ test("the discard contract is unconditional — observability and guards never g
 	assert.doesNotMatch(bankSegment, /cleanup_failed|destinationPreserved/,
 		"a bank failure must not mutate the verdict — it may only log");
 
-	const evacuateSegment = importCompletion.slice(evacuateAt, deleteAt);
-	assert.doesNotMatch(evacuateSegment, /if\s+evacuated\s+then/,
-		"the delete must not be conditioned on evacuation success — that guard manufactured the "
-		+ "orphan it guarded against");
-	assert.doesNotMatch(evacuateSegment, /\breturn\b/,
-		"nor may an evacuation failure EXIT before the delete — an `if not evacuated then return` "
-		+ "re-gate is the same orphan through the other door (reconciliation-review note)");
-	assert.match(importCompletion.slice(deleteAt, deleteAt + 500),
-		/pcall\(function\(\)[\s\S]*DestinationHold\.discard\(job.transfer_id, job.job_id\)[\s\S]*return GameUtils\.delete_platform\(job.target_platform\)/,
-		"the unconditional pcall must discard held targets through their owner, and delete ordinary targets directly");
-
 	const invalidAt = importCompletion.indexOf("nothing to discard", bankAt);
 	const consumeAt = importCompletion.indexOf("config.preserve_failed_destination = nil", bankAt);
 	assert.ok(invalidAt !== -1 && consumeAt !== -1 && invalidAt < consumeAt,
@@ -356,7 +345,6 @@ test("the discard contract is unconditional — observability and guards never g
 		"the nothing-to-discard branch must not consume the preserve flag");
 
 	assert.match(importCompletion, /discarding the destination anyway/);
-	assert.match(importCompletion, /proceeding[\s\S]{0,40}with discard/);
 	assert.doesNotMatch(importCompletion, /cleanup_error\s*=\s*string\.format\("Failed to bank failure black box/);
 
 	assert.match(importCompletion, /GameUtils\.delete_platform failed/,

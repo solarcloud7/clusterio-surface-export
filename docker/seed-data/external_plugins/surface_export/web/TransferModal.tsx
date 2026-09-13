@@ -3,6 +3,7 @@ import { Alert, Modal, Select, message as antMessage } from "antd";
 import { ArrowRightOutlined, LoadingOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 
 import { usePlanetOptions } from "./icons";
+import { destinationOptions, canSelectDestination } from "../shared/destination-options";
 import { getErrorMessage, getProp } from "./utils";
 import type { PlatformActionSource } from "./platform-actions";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
@@ -32,26 +33,12 @@ export default function TransferModal({ source, presetTargetInstanceId = null, o
 		setTargetPlanet(null);
 	}, [source?.instanceId, source?.platformIndex, presetTargetInstanceId]);
 
-	const instanceOptions = useMemo(() => {
-		const tree = state.tree;
-		if (!tree || !source) {
-			return [];
-		}
-		const nodes = [
-			...(tree.hosts || []).flatMap(host => host.instances || []),
-			...(tree.unassignedInstances || []),
-		];
-		return nodes
-			.filter(inst => inst.instanceId !== source.instanceId)
-			.map(inst => ({
-				value: inst.instanceId,
-				label: inst.gamePort ? `${inst.instanceName} :${inst.gamePort}` : inst.instanceName,
-			}))
-			.sort((a, b) => a.label.localeCompare(b.label));
-	}, [state.tree, source]);
+	const instanceOptions = useMemo(() => source ? destinationOptions(state.tree, source.instanceId) : [],
+		[state.tree, source?.instanceId]);
+	const targetAvailable = canSelectDestination(instanceOptions, targetInstanceId);
 
 	async function handleSubmit() {
-		if (!source || targetInstanceId === null || pending.current.has(sourceKey)) {
+		if (!source || !targetAvailable || pending.current.has(sourceKey)) {
 			return;
 		}
 		pending.current.add(sourceKey);
@@ -89,7 +76,7 @@ export default function TransferModal({ source, presetTargetInstanceId = null, o
 			onCancel={onClose}
 			onOk={handleSubmit}
 			okText={submitting ? "Starting transfer…" : "Start Transfer"}
-			okButtonProps={{ loading: submitting, disabled: submitting || targetInstanceId === null, icon: submitting ? undefined : <ArrowRightOutlined /> }}
+			okButtonProps={{ loading: submitting, disabled: submitting || !targetAvailable, icon: submitting ? undefined : <ArrowRightOutlined /> }}
 			footer={(_, { OkBtn, CancelBtn }) => <div className="se-transfer-footer">
 				<p className="se-transfer-assurance"><SafetyCertificateOutlined aria-hidden="true" />
 					<span>Arrival is verified before the source is removed.</span></p>

@@ -78,8 +78,9 @@ end
 function Gateway.collect_passengers(platform)
 	local players = {}
 	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
-		return players, 0
+		return players, 0, false
 	end
+	local complete = true
 	local surf_idx = platform.surface.index
 	for _, player in pairs(game.players) do
 		-- intentional probe; reading physical_surface_index can fail for an odd/transient player state,
@@ -87,6 +88,7 @@ function Gateway.collect_passengers(platform)
 		if ok and psi == surf_idx then
 			players[#players + 1] = player
 		end
+		if not ok then complete = false end
 	end
 	local ok_c, char_count = pcall(function()
 		return platform.surface.count_entities_filtered{type = "character"}
@@ -95,7 +97,7 @@ function Gateway.collect_passengers(platform)
 		log(string.format("[Gateway] collect_passengers: count_entities_filtered{character} failed for platform '%s': %s",
 			tostring(platform.name), tostring(char_count)))
 	end
-	return players, (ok_c and char_count) or 0
+	return players, (ok_c and char_count) or 0, complete and ok_c
 end
 
 function Gateway.passenger_count(aboard_players, aboard_characters)
@@ -103,11 +105,20 @@ function Gateway.passenger_count(aboard_players, aboard_characters)
 end
 
 function Gateway.evacuate_passengers(platform)
-	local result = { players = 0, characters = 0, failures = 0 }
+	local result = { players = 0, characters = 0, failures = 0, success = false }
 	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
 		return result
 	end
 	local surface = platform.surface
+	local aboard_players, aboard_characters, observed = Gateway.collect_passengers(platform)
+	if not observed then
+		result.error = "passenger count unavailable"
+		return result
+	end
+	if #aboard_players == 0 and aboard_characters == 0 then
+		result.success = true
+		return result
+	end
 
 	local dest = game.surfaces["nauvis"]
 	if not (dest and dest.valid) then
@@ -116,7 +127,8 @@ function Gateway.evacuate_passengers(platform)
 		end
 	end
 	if not (dest and dest.valid) then
-		log(string.format("[Gateway] evacuate_passengers: no planetary surface to evacuate to for '%s' — deleting anyway (orphan risk)",
+		result.error = "no planetary surface available for evacuation"
+		log(string.format("[Gateway] evacuate_passengers: no planetary surface to evacuate to for '%s'",
 			tostring(platform.name)))
 		return result
 	end
@@ -130,26 +142,34 @@ function Gateway.evacuate_passengers(platform)
 		return pos or anchor
 	end
 
-	local aboard_players = Gateway.collect_passengers(platform)
 	for _, player in ipairs(aboard_players) do
 		local ref = (player.character and player.character.valid and player.character.name) or "character"
-		local ok, moved = pcall(function() return player.teleport(safe_pos(ref), dest) end)
-		if ok and moved then
+		local ok, moved = pcall(function()
+			if player.controller_type == defines.controllers.remote then
+				player.leave_space_platform()
+				player.exit_remote_view()
+				if player.controller_type == defines.controllers.remote then return false end
+			end
+			return player.teleport(safe_pos(ref), dest)
+		end)
+		if not ok or not moved then
+			result.failures = result.failures + 1
+			log(string.format("[Gateway] evacuate: teleport player '%s' off '%s' failed (ok=%s): %s",
+				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
+		else
 			result.players = result.players + 1
 			-- intentional probe; best-effort notify, a print failure must NOT abort evacuation.
 			pcall(function()
 				player.print({"", "🛟 '", platform.name, "' was transferred — you were returned to ", dest.name, "."})
 			end)
-		else
-			result.failures = result.failures + 1
-			log(string.format("[Gateway] evacuate: teleport player '%s' off '%s' failed (ok=%s): %s",
-				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
 		end
 	end
 
-	local chars = {}
-	-- intentional probe; surface is validated above, the find should succeed — empty list on failure is fine.
-	pcall(function() chars = surface.find_entities_filtered{ type = "character" } end)
+	local found, chars = pcall(function() return surface.find_entities_filtered{ type = "character" } end)
+	if not found then
+		result.error = "character enumeration failed: " .. tostring(chars)
+		return result
+	end
 	for _, char in ipairs(chars) do
 		if char and char.valid then
 			local ok, moved = pcall(function() return char.teleport(safe_pos(char.name), dest) end)
@@ -163,6 +183,11 @@ function Gateway.evacuate_passengers(platform)
 		end
 	end
 
+	local remaining_players, remaining_characters, verified = Gateway.collect_passengers(platform)
+	result.remaining_players = #remaining_players
+	result.remaining_characters = remaining_characters
+	result.success = verified and #remaining_players == 0 and remaining_characters == 0 and result.failures == 0
+	if not result.success then result.error = "passengers remain aboard or evacuation could not be verified" end
 	if result.players + result.characters + result.failures > 0 then
 		log(string.format("[Gateway] evacuated %d player(s) + %d character(s) from '%s' to '%s' (%d failure(s))",
 			result.players, result.characters, tostring(platform.name), dest.name, result.failures))
