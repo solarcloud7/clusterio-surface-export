@@ -2,6 +2,8 @@
 
 ## Workspace and scope
 
+- Shared project skills live in `.agents/skills/`. Maintain them there; `.claude/`
+  is ignored local configuration and state, not a second source of skill instructions.
 - Work on branches in the canonical checkout. Do not create worktrees, secondary
   clones or repositories, or replace mounted directories with junctions/symlinks.
 - This checkout is a live development bind-mount source. Check `git status` and

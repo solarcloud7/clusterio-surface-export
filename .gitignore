@@ -28,18 +28,11 @@ docker/server-settings.json
 !.vscode/settings.json
 !.vscode/extensions.json
 .vscode
-# Ignore local .claude state, but TRACK shared project skills and the dev-preview launch
-# config (committed dev-env helpers):
-.claude/*
-!.claude/skills/
-!.claude/launch.json
-# Track the shared data-integrity skill; other agent state remains local.
+# Claude configuration and state are local.
+/.claude/
+# Track maintained shared skills; other agent state remains local.
 /.agents/*
 !/.agents/skills/
-/.agents/skills/*
-!/.agents/skills/di-change/
-/.agents/skills/di-change/*
-!/.agents/skills/di-change/SKILL.md
 /.codex/
 
 # Mod packaging
