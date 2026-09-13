@@ -152,16 +152,16 @@ function Gateway.evacuate_passengers(platform)
 			end
 			return player.teleport(safe_pos(ref), dest)
 		end)
-		if ok and moved then
+		if not ok or not moved then
+			result.failures = result.failures + 1
+			log(string.format("[Gateway] evacuate: teleport player '%s' off '%s' failed (ok=%s): %s",
+				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
+		else
 			result.players = result.players + 1
 			-- intentional probe; best-effort notify, a print failure must NOT abort evacuation.
 			pcall(function()
 				player.print({"", "🛟 '", platform.name, "' was transferred — you were returned to ", dest.name, "."})
 			end)
-		else
-			result.failures = result.failures + 1
-			log(string.format("[Gateway] evacuate: teleport player '%s' off '%s' failed (ok=%s): %s",
-				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
 		end
 	end
 
