@@ -99,7 +99,7 @@ Use these settings explicitly and verify them after the required instance restar
 | Instance | `surface_export.debug_mode` | Review explicitly: plugin and seed defaults are `true`; do not assume a production diagnostic default |
 
 Controller Settings does not expose every experimental setting. Instance settings
-belong to the instance configuration. See [configuration ownership](../docs/config-survey.md).
+belong to the instance configuration. See [configuration ownership](../docs/CONFIGURATION.md).
 Changing a setting is separate from proving its behavior; this guide does not change
 the running cluster's configuration.
 

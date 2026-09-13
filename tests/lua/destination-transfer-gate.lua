@@ -13,12 +13,19 @@ local platform = {valid = true, name = "fixture", index = 3, surface = surface, 
 force.platforms = {[3] = platform}
 local uid = "destination:3"
 local deleteAccepted = false
+local evacuation = "success"
+local deleteCalls = 0
 local env = setmetatable({storage = {}, game = {tick = 1, forces = {player = force}}, log = noop}, {__index = _G})
 env.require = function(name)
+    if name:find("core/gateway", 1, true) then return {evacuate_passengers = function()
+        if evacuation == "throw" then error("injected evacuation failure") end
+        if evacuation == "missing" then return nil end
+        return {success = evacuation == "success", failures = evacuation == "success" and 0 or 1}
+    end} end
     if name:find("platform-identity", 1, true) then return function() return uid end end
     if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
     if name:find("game-utils", 1, true) then return {
-        ACTIVATABLE_ENTITY_TYPES = {inserter = true}, delete_platform = function() return deleteAccepted end,
+        ACTIVATABLE_ENTITY_TYPES = {inserter = true}, delete_platform = function() deleteCalls = deleteCalls + 1; return deleteAccepted end,
     } end
     if name:find("surface-lock", 1, true) then return {complete_cargo_pods = function() return 0, 0, 0 end} end
     error(name)
@@ -32,6 +39,13 @@ assert(not holds.go_live("transfer"), "partial preparation activated")
 assert(not holds.discard("transfer"), "refused deletion reported success")
 assert(holds.get("transfer"), "refused deletion released the hold")
 deleteAccepted = true
+for _, mode in ipairs({"refused", "throw", "missing"}) do
+    evacuation = mode
+    local before = deleteCalls
+    assert(not holds.discard("transfer"), "failed evacuation authorized destination deletion")
+    assert(deleteCalls == before and holds.get("transfer"), "failed evacuation lost the held destination")
+end
+evacuation = "success"
 assert(holds.discard("transfer") and not holds.get("transfer"))
 print("PASS partial staging and refused discard retain quarantine; incomplete preparation cannot activate")
 

@@ -37,9 +37,14 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
 
   -- Retain identity and the frozen source until deletion actually succeeds.
   -- A failed request must not unlock it or publish a source-deleted tombstone.
-  GameUtils.pcall_warn("[DeleteForTransfer] evacuate '" .. tostring(platform_name) .. "'", function()
-    Gateway.evacuate_passengers(platform)
-  end)
+  local evacuation_ok, evacuation = pcall(Gateway.evacuate_passengers, platform)
+  if not evacuation_ok then
+    return "ERROR:source evacuation failed: " .. tostring(evacuation)
+  end
+  if type(evacuation) ~= "table" or evacuation.success ~= true or evacuation.failures ~= 0 then
+    local reason = type(evacuation) == "table" and evacuation.error
+    return "ERROR:source evacuation not confirmed: " .. tostring(reason or "passengers may remain aboard")
+  end
 
   local ok, deleted = pcall(function() return GameUtils.delete_platform(platform) end)
   if not ok then

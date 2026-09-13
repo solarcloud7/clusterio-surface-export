@@ -8,7 +8,7 @@
     "test:manual:production": "node tests/manual/production-profile/run.mjs"
   },
   "devDependencies": {
-    "playwright": "^1.62.1",
+    "playwright": "^1.63.0",
     "rcon-client": "^4.2.5"
   }
 }

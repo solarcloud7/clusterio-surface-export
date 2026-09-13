@@ -1,4 +1,5 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local Gateway = require("modules/surface_export/core/gateway")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local platform_identity = require("modules/surface_export/utils/platform-identity")
@@ -293,6 +294,19 @@ function DestinationHold.go_live(transfer_id, job_id)
 	}
 end
 
+local function failed_cleanup_job(hold, platform)
+	local job = hold and (storage.async_jobs or {})[hold.job_id]
+	local result = hold and (storage.async_job_results or {})[hold.job_id]
+	if not (job and job.type == "import" and job.completion_interrupted and not job.setup_cleanup
+		and result and result.validation and result.validation.cleanup_failed
+		and (job.transfer_id or ("interrupted:" .. job.job_id)) == hold.transfer_id) then return nil end
+	if platform then
+		if job.target_platform ~= platform or job.target_surface ~= platform.surface then return nil end
+	elseif not (job.target_platform and not job.target_platform.valid
+		and job.target_surface and not job.target_surface.valid) then return nil end
+	return job.job_id
+end
+
 function DestinationHold.discard(transfer_id, job_id)
 	local holds = ensure_storage()
 	local held = holds[transfer_id]
@@ -300,6 +314,8 @@ function DestinationHold.discard(transfer_id, job_id)
 	local hold, _, platform, err = resolve_hold(transfer_id, job_id)
 	if err then
 		if err == "Held platform is missing" then
+			local completed_job = failed_cleanup_job(hold)
+			if completed_job then storage.async_jobs[completed_job] = nil end
 			holds[transfer_id] = nil
 			log(string.format("[DestinationHold] discard transfer %s: %s for platform '%s'; cleared hold",
 				transfer_id, err, hold and hold.platform_name or "?"))
@@ -314,8 +330,15 @@ function DestinationHold.discard(transfer_id, job_id)
 		end
 		return false, err
 	end
+	local evacuated, evacuation = pcall(Gateway.evacuate_passengers, platform)
+	if not evacuated then return false, "Destination evacuation failed: " .. tostring(evacuation) end
+	if type(evacuation) ~= "table" or evacuation.success ~= true or evacuation.failures ~= 0 then
+		return false, "Destination evacuation not confirmed: " .. tostring(type(evacuation) == "table" and evacuation.error or "passengers may remain aboard")
+	end
+	local completed_job = failed_cleanup_job(hold, platform)
 	local deleted = GameUtils.delete_platform(platform)
 	if not deleted then return false, "Held destination deletion was refused" end
+	if completed_job then storage.async_jobs[completed_job] = nil end
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] discarded transfer %s platform '%s' (deleted=%s)",
 		transfer_id, hold.platform_name, tostring(deleted)))

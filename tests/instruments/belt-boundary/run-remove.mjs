@@ -143,7 +143,7 @@ else {
  const compressed=deflateSync(modulesJson).toString("base64");
  const compressedProbe=deflateSync(source).toString("base64");
  const moduleHashes=Object.fromEntries(Object.entries(modules).map(([k,v])=>[k,createHash("sha256").update(v).digest("hex")]));
- const hash=createHash("sha256").update(source+fixtureText+read("remove-contract.md")+read("run-remove.mjs")+modulesJson).digest("hex");
+ const hash=createHash("sha256").update(source+fixtureText+read("run-remove.mjs")+modulesJson).digest("hex");
  if(process.argv.includes("--prepare")) console.log(JSON.stringify({hash,engine:fixture.engine,sourceBytes:Buffer.byteLength(source),moduleBytes:Buffer.byteLength(modulesJson),moduleHashes,manifest}));
  else await withWorkflowLock(async () => {
   fs.mkdirSync("ci-artifacts",{recursive:true});

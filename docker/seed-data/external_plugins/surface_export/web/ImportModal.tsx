@@ -1,4 +1,3 @@
-import type { ImportUploadedExportOptions } from "../messages";
 import { useMemo, useRef, useState } from "react";
 import {
 	Alert,
@@ -11,9 +10,11 @@ import {
 	message as antMessage,
 } from "antd";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
+import type { ImportUploadedExportOptions } from "../messages";
 import { UploadOutlined } from "@ant-design/icons";
 
 import { usePlanetOptions } from "./icons";
+import { destinationOptions, canSelectDestination } from "../shared/destination-options";
 import { importableSnapshot, newRestoreRequestId } from "../shared/snapshot";
 import { parseJsonFile, getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
@@ -42,22 +43,8 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 	const [targetPlanet, setTargetPlanet] = useState<string | null>(null);
 	const [importing, setImporting] = useState(false);
 
-	const instanceOptions = useMemo(() => {
-		const tree = state.tree;
-		if (!tree) return [];
-		const label = (inst: { instanceName: string; gamePort: number | null }) =>
-			(inst.gamePort ? `${inst.instanceName} :${inst.gamePort}` : inst.instanceName);
-		const nodes: Array<{ label: string; value: number; disabled: boolean }> = [];
-		for (const host of tree.hosts || []) {
-			for (const inst of host.instances || []) {
-				nodes.push({ label: label(inst), value: inst.instanceId, disabled: !inst.connected || inst.status !== "running" });
-			}
-		}
-		for (const inst of tree.unassignedInstances || []) {
-			nodes.push({ label: label(inst), value: inst.instanceId, disabled: !inst.connected || inst.status !== "running" });
-		}
-		return nodes.sort((a, b) => a.label.localeCompare(b.label));
-	}, [state.tree]);
+	const instanceOptions = useMemo(() => destinationOptions(state.tree), [state.tree]);
+	const targetAvailable = canSelectDestination(instanceOptions, targetInstanceId);
 
 	const planetOptions = usePlanetOptions();
 
@@ -103,7 +90,7 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 	}
 
 	async function handleSubmit() {
-		if (targetInstanceId === null || (!payload && !snapshot) || submitting.current || restoreError) return;
+		if (targetInstanceId === null || !targetAvailable || (!payload && !snapshot) || submitting.current || restoreError) return;
 		submitting.current = true;
 		setImporting(true);
 		try {
@@ -150,7 +137,7 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 			closable={!importing}
 			maskClosable={!importing}
 			cancelButtonProps={{ disabled: importing }}
-			okButtonProps={{ loading: importing, disabled: !!restoreError || (!payload && !snapshot) || targetInstanceId === null }}
+			okButtonProps={{ loading: importing, disabled: importing || !!restoreError || (!payload && !snapshot) || !targetAvailable }}
 		>
 			<Space direction="vertical" size="middle" style={{ width: "100%" }}>
 				{snapshot ? <Alert type="warning" showIcon message={snapshot.platformName}

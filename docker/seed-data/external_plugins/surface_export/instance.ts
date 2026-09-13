@@ -982,8 +982,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			throw new Error("Surface Export requires factorio.enable_script_commands to be enabled");
 		}
 		const cacheLimit = this.cfg("surface_export.max_export_cache_size");
-		if (typeof cacheLimit !== "number" || cacheLimit < 1) {
-			throw new Error("surface_export.max_export_cache_size must be >= 1");
+		if (typeof cacheLimit !== "number" || !Number.isSafeInteger(cacheLimit) || cacheLimit < 1) {
+			throw new Error("surface_export.max_export_cache_size must be a positive safe integer");
 		}
 	}
 }

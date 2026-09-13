@@ -1,7 +1,4 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
-const rootPath = () => new URL("../../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 function parseCountKey(key) {
 	const bar = key.indexOf("|");
@@ -26,36 +23,7 @@ function diffRows(diff, kind) {
 	}));
 }
 
-export function loadTriageTable(root = rootPath()) {
-	const text = readFileSync(join(root, "docs", "ENGINEERING_FAQ.md"), "utf8");
-	const anchor = text.indexOf("triage a failure black box");
-	if (anchor === -1) return { rows: [], unavailable: "triage question not found in docs/ENGINEERING_FAQ.md" };
-	const rows = [];
-	for (const line of text.slice(anchor).split(/\r?\n/)) {
-		const cells = line.split("|").map(c => c.trim());
-		if (cells.length >= 5 && cells[1] && !/^[-\s]+$/.test(cells[1]) && cells[1] !== "Failure signature") {
-			rows.push({ signature: cells[1], knownClass: cells[2], action: cells[3] });
-		}
-		if (rows.length > 0 && !line.trim().startsWith("|") && line.trim() !== "") break;
-	}
-	return rows.length > 0 ? { rows } : { rows: [], unavailable: "no signature rows parsed from the triage table" };
-}
-
-function rowMatches(signature, facts) {
-	const wants = [];
-	let hasStageToken = false;
-	if (signature.includes("`items`")) { hasStageToken = true; wants.push(facts.stage === "items"); }
-	if (signature.includes("`fluids`")) { hasStageToken = true; wants.push(facts.stage === "fluids"); }
-	if (/\bone\b/.test(signature)) wants.push(facts.rowCount === 1);
-	if (/\bmany\b/.test(signature)) wants.push(facts.rowCount > 1);
-	if (signature.includes("LOST")) wants.push(facts.allNegative);
-	if (signature.includes("GAINED")) wants.push(facts.allPositive);
-	if (!signature.includes("LOST") && !signature.includes("GAINED")) wants.push(facts.allNegative);
-	if (signature.includes("single-digit")) wants.push(facts.maxAbsDelta <= 9);
-	return hasStageToken && wants.every(Boolean);
-}
-
-export function explainBlackBox(bundle, { root } = {}) {
+export function explainBlackBox(bundle) {
 	const items = diffRows(bundle.diff?.items, "item");
 	const fluids = diffRows(bundle.diff?.fluids, "fluid");
 	const rows = [...items, ...fluids].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
@@ -63,35 +31,6 @@ export function explainBlackBox(bundle, { root } = {}) {
 	const stage = items.length > 0 && fluids.length > 0 ? "both"
 		: items.length > 0 ? "items"
 			: fluids.length > 0 ? "fluids" : "none";
-
-	const deltas = rows.map(r => r.delta);
-	const facts = {
-		stage,
-		rowCount: rows.length,
-		allNegative: rows.length > 0 && deltas.every(d => d < 0),
-		allPositive: rows.length > 0 && deltas.every(d => d > 0),
-		maxAbsDelta: deltas.reduce((m, d) => Math.max(m, Math.abs(d)), 0),
-	};
-
-	const triageTable = loadTriageTable(root);
-	let triage;
-	if (triageTable.unavailable) {
-		triage = { matched: false, unavailable: triageTable.unavailable };
-	} else if (rows.length === 0) {
-		triage = { matched: false, inexpressible: "the bundle records no count mismatch at all — " +
-			"the failure was not a count-diff failure; inspect the raw bundle and the transaction log" };
-	} else if (stage === "both") {
-		triage = { matched: false, inexpressible: "items AND fluids both mismatch — the FAQ signature " +
-			"vocabulary has no combined-stage row; triage each stage by hand against the table" };
-	} else {
-		const hit = triageTable.rows.find(row => rowMatches(row.signature, facts));
-		triage = hit
-			? { matched: true, signature: hit.signature, knownClass: hit.knownClass, action: hit.action,
-				caveat: "signature match is a triage HINT, not a root-cause determination — the self-test " +
-					"fixture's forced-loss hook produces the same signature as a known class" }
-			: { matched: false, note: "no known-class signature matched; per the FAQ this stays " +
-				"unexplained until measured — never loosen the gate to make it disappear" };
-	}
 
 	const replay = bundle.replay_payload || null;
 	return {
@@ -125,12 +64,11 @@ export function explainBlackBox(bundle, { root } = {}) {
 				tileCount: Array.isArray(replay.tiles) ? replay.tiles.length : null }
 			: { present: false },
 		forceStateForces: Object.keys(bundle.force_state || {}),
-		triage,
 	};
 }
 
-export function explainBlackBoxFile(path, options) {
-	return explainBlackBox(JSON.parse(readFileSync(path, "utf8")), options);
+export function explainBlackBoxFile(path) {
+	return explainBlackBox(JSON.parse(readFileSync(path, "utf8")));
 }
 
 export function formatExplanation(report) {
@@ -165,16 +103,5 @@ export function formatExplanation(report) {
 			`schema ${report.replay.schemaVersion}) — reimportable for a deterministic replay`
 		: "ABSENT"}`);
 	lines.push("");
-	if (report.triage.matched) {
-		lines.push(`triage (docs/ENGINEERING_FAQ.md): signature matches known class — ${report.triage.knownClass}`);
-		lines.push(`  action: ${report.triage.action}`);
-		lines.push(`  caveat: ${report.triage.caveat}`);
-	} else if (report.triage.unavailable) {
-		lines.push(`triage UNAVAILABLE: ${report.triage.unavailable}`);
-	} else if (report.triage.inexpressible) {
-		lines.push(`triage INEXPRESSIBLE for this bundle: ${report.triage.inexpressible}`);
-	} else {
-		lines.push(`triage: ${report.triage.note}`);
-	}
 	return lines.join("\n");
 }

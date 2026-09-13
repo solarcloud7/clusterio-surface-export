@@ -1,6 +1,6 @@
 # Transfer a platform
 
-Use a running cluster prepared through [Docker setup](../docker/README.md). Begin with a disposable test platform; see the [production gates](../README.md#before-production) before moving valuable saves into service.
+Use a running cluster prepared through [Docker setup](../docker/README.md). Begin with a disposable test platform; see the [verification limits](../README.md#verification-and-limits) before moving valuable saves into service.
 
 ## Through the web UI
 
@@ -9,7 +9,7 @@ Use a running cluster prepared through [Docker setup](../docker/README.md). Begi
 3. Follow its queued and active state on the map.
 4. Open **Transaction Logs** and select the operation. Check its outcome, validation evidence, and cleanup or recovery result.
 
-Completed means the controller received successful destination validation and source deletion acknowledgement. A validation failure follows recovery. **Cleanup failed** is unresolved; inspect the diagnostic report and both instances before retrying.
+Completed means the controller received successful destination validation, confirmed the hold, and received source deletion and destination release acknowledgements. A validation failure follows recovery. **Cleanup failed** is unresolved; inspect the diagnostic report and both instances before retrying.
 
 ## In game
 
@@ -27,4 +27,4 @@ An instance ID is not a host number. The [command reference](commands-reference.
 - **Timing:** measured milliseconds belong to their local Clusterio or Lua clock. Tick counts describe scheduling. A phase that uses zero elapsed ticks can still perform expensive work.
 - **Source and destination:** successful transfer removes the source; standalone export/import creates a copy and has a different lifecycle.
 
-No fixed transfer time or UPS impact is promised. The [batching reference](async-processing.md) records current measurements and remaining synchronous work. The [durability reference](TRANSFER_2PC.md) distinguishes the shipped behavior from the pending crash-safe commit protocol.
+No fixed transfer time or UPS impact is promised. The [batching reference](async-processing.md) records current measurements and remaining synchronous work. The [recovery reference](TRANSFER_2PC.md) describes the implemented handoff and the limits of its crash and save-reload evidence.

@@ -45,7 +45,7 @@ if (process.argv.includes("--analyze")) {
 	}
 	const detail = schema.concepts.find(c => c.name === "DetailedItemOnLine");
 	assert.deepEqual(detail.type.parameters.map(p => [p.name, p.type]).sort(), [["position", "float"], ["stack", "LuaItemStack"], ["unique_id", "uint32"]]);
-	const hash = createHash("sha256").update(source + fixtureText + read("capture-contract.md") + read("run-capture.mjs")).digest("hex");
+	const hash = createHash("sha256").update(source + fixtureText + read("run-capture.mjs")).digest("hex");
 	if (process.argv.includes("--prepare")) console.log(JSON.stringify({ hash, engine: fixture.engine, manifest, sourceBytes: Buffer.byteLength(source) }));
 	else await withWorkflowLock(async () => {
 		mkdirSync("ci-artifacts", { recursive: true });

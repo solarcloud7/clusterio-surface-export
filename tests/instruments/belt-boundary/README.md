@@ -243,7 +243,7 @@ node tests/instruments/belt-boundary/verify-remove-parity.mjs --self-test
 
 Evidence is retained locally in `ci-artifacts/belt-remove-{paired,fidelity,inverse}-result.json`
 and matching `-profiler.log` files. Each raw result includes actual mods, cleanup reads,
-the API manifest, and its harness/fixture/contract/source hash. Later offline analysis
+the API manifest, and its harness/fixture/source hash. Later offline analysis
 does not rewrite that evidence. Exact hashes for these runs:
 
 - Paired: `ea4687d924c62d73902a593f9c05a3c548b521354aecd67405aed80c86f68ef2`

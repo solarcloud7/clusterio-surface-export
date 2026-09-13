@@ -6,6 +6,12 @@ test("structured diagnostics select useful fields and discard request headers", 
 		headers: { "x-access-token": "fixture-secret" }, enormous: "x".repeat(100000) }));
 	assert.equal(text, "today upload operation failed");
 });
+
+test("forwarded Clusterio JSON also discards request headers", () => {
+	const text = diagnosticLine('[cluster-log] ' + JSON.stringify({ level: "http", message: "GET /static/icon.png",
+		meta: { headers: { referer: "http://localhost/surface-export", authorization: "secret" } } }));
+	assert.equal(text, "http GET /static/icon.png");
+});
 test("plain and embedded credentials are redacted before the final length cap", () => {
 	for (const secret of ['x-access-token: fixture-secret', 'Authorization: Bearer fixture-secret',
 		'"x-access-token":"fixture-secret"', "controller_token='fixture-secret'"]) {

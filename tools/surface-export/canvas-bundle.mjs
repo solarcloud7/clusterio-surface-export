@@ -11,8 +11,8 @@ const PLUGIN_DIR = path.resolve(
 	"../../docker/seed-data/external_plugins/surface_export",
 );
 
-export function bundleOnDisk() {
-	const manifestPath = path.join(PLUGIN_DIR, "dist/web/manifest.json");
+export function bundleOnDisk(pluginDirectory = process.env.SE_WEB_PLUGIN_DIR || PLUGIN_DIR) {
+	const manifestPath = path.join(pluginDirectory, "dist/web/manifest.json");
 	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 	const entry = manifest["surface_export.js"];
 	if (!entry) {

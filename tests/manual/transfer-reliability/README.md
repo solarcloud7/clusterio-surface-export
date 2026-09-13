@@ -20,7 +20,15 @@ node tests/manual/transfer-reliability/run.mjs --case save-policy-history
 node tests/manual/transfer-reliability/run.mjs --case save-policy-pending
 node tests/manual/transfer-reliability/run.mjs --case snapshot-recovery
 node tests/manual/transfer-reliability/run.mjs --case performance
+node tests/manual/transfer-reliability/setup-cleanup.mjs
 ```
+
+`setup-cleanup.mjs` injects preparation and deletion refusals in disposable instances.
+It checks quarantine, duplicate rejection, save/reload persistence, scheduler deletion
+retry, and the failed result against the physical platform and surface. It also exercises
+manual cache protection and the debug-mode gate. Each run records staged hashes, raw
+commands, observations, and owned-resource cleanup under `ci-artifacts/se-manual-setup-*`.
+Pass `--package-dir ci-artifacts/<candidate>` to test an isolated built package.
 
 If an older source checkpoint predates its transfer lock and retirement record, but the
 controller still owns that source, startup remains blocked for manual reconciliation.

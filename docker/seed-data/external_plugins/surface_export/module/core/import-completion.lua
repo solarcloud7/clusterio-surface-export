@@ -27,12 +27,8 @@ local ImportCompletion = {}
 
 -- An exception can follow a partial write or a published verdict. Never replay that
 -- callback. Retain the job for diagnosis and quarantine its destination for review.
-function ImportCompletion.interrupt(job, err)
+local function quarantine(job, err)
 	job.completion_interrupted = {error = tostring(err), tick = game.tick}
-	local result = (storage.async_job_results or {})[job.job_id]
-	if result then
-		result.status, result.complete, result.error = "interrupted", false, tostring(err)
-	end
 	local protected, protection_error = pcall(function()
 		local platform = job.target_platform
 		if not (platform and platform.valid) then return end
@@ -51,6 +47,15 @@ function ImportCompletion.interrupt(job, err)
 		assert(held, hold_error)
 	end)
 	if not protected then log("[Import] Interrupted destination protection failed: " .. tostring(protection_error)) end
+	return protected
+end
+
+function ImportCompletion.interrupt(job, err)
+	quarantine(job, err)
+	local result = (storage.async_job_results or {})[job.job_id]
+	if result then
+		result.status, result.complete, result.error = "interrupted", false, tostring(err)
+	end
 	Timing.finish(job.job_id, "interrupted")
 end
 
@@ -784,14 +789,15 @@ function ImportCompletion.run_phase2(job, batch_size)
 				Timing.start(job.job_id, "passenger_evacuation")
 				local evacuated, evacuation_err = pcall(Gateway.evacuate_passengers, job.target_platform)
 				Timing.stop(job.job_id, "passenger_evacuation")
-				if not evacuated then Timing.fail(job.job_id, "passenger_evacuation") end
-				if not evacuated then
-					log(string.format("[Validation] WARNING: passenger evacuation failed (%s) — proceeding "
-						.. "with discard; the engine returns players to a planet on hub loss natively",
-						tostring(evacuation_err)))
-				end
+				if not evacuated then log("[Validation] Destination evacuation failed: " .. tostring(evacuation_err)) end
+				local evacuation_confirmed = evacuated and type(evacuation_err) == "table"
+					and evacuation_err.success == true and evacuation_err.failures == 0
+				if not evacuation_confirmed then Timing.fail(job.job_id, "passenger_evacuation") end
 				Timing.start(job.job_id, "destination_recovery")
 				local delete_ok, delete_result = pcall(function()
+					if not evacuation_confirmed then
+						error("Destination evacuation not confirmed: " .. tostring(type(evacuation_err) == "table" and evacuation_err.error or evacuation_err))
+					end
 					local hold = DestinationHold.get(job.transfer_id)
 					if hold and hold.platform_index == job.target_platform.index
 						and hold.surface_index == job.target_surface.index then
@@ -956,6 +962,8 @@ function ImportCompletion.run_phase2(job, batch_size)
 		PhaseProfiler.discard(job.job_id)
 	end
 
+	if validation_result and validation_result.cleanup_failed
+		and not quarantine(job, validation_result.cleanup_error) then return end
 	JobResults.prune(25)
 
 	storage.async_jobs[job.job_id] = nil

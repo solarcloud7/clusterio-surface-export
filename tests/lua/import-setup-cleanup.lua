@@ -28,6 +28,7 @@ local function fixture(fault, deletion)
         platforms[created] = platform
         return platform
     end
+    modules['core/gateway'] = {evacuate_passengers = function() return {success=true,failures=0} end}
     modules['utils/game-utils'] = {ACTIVATABLE_ENTITY_TYPES = {}, delete_platform = function(target)
         deletes = deletes + 1
         if deletion == "throw" then error("injected deletion error") end

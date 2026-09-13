@@ -11,10 +11,15 @@ function resolveClusterioWebpackCommon() {
 	];
 
 	for (const candidate of candidates) {
+		let resolved;
 		try {
-			return require(candidate);
-		} catch (_err) {
+			resolved = require.resolve(candidate);
+		} catch (error) {
+			if (error.code !== "MODULE_NOT_FOUND") throw error;
+			continue;
 		}
+		// Once found, surface load errors instead of hiding a broken installation behind a fallback.
+		return require(resolved);
 	}
 
 	throw new Error("Unable to resolve Clusterio webpack.common (tried package and local workspace fallback)");
@@ -30,7 +35,8 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 		extensions: [".tsx", ".ts", ".jsx", ".js"],
 	},
 	output: {
-		path: path.resolve(__dirname, "dist", "web"),
+		// build-web.mjs supplies a unique staging directory and publishes only a complete build.
+		path: path.resolve(__dirname, "dist", "web-build"),
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",
 		clean: false,

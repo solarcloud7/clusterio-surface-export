@@ -23,7 +23,7 @@ export function redactDiagnostic(value) {
 }
 
 export function diagnosticLine(raw, maxChars = 800) {
-	let text = String(raw);
+	let text = String(raw).replace(/^\[cluster-log\]\s*/, "");
 	try {
 		const record = JSON.parse(text);
 		if (record && typeof record === "object" && !Array.isArray(record)) {

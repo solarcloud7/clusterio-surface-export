@@ -13,12 +13,21 @@ local function is_newer(a, b)
 end
 
 local function clear_old_exports(keep_count, exports_table, protected)
-  keep_count = keep_count or 10
+  if keep_count == nil then keep_count = 10 end
+  assert(type(keep_count) == "number" and keep_count >= 0 and keep_count < math.huge and keep_count % 1 == 0,
+    "keep_count must be a nonnegative finite integer")
   local target = exports_table or storage.platform_exports
   if type(target) ~= "table" then
     return 0
   end
-  protected = protected or {}
+  local protected_ids = {}
+  for id, keep in pairs(protected or {}) do protected_ids[id] = keep end
+  if target == storage.platform_exports then
+    for _, lock in pairs(storage.locked_platforms or {}) do
+      if lock.transfer_job_id then protected_ids[lock.transfer_job_id] = true end
+      if lock.committed_transfer_id then protected_ids[lock.committed_transfer_id] = true end
+    end
+  end
 
   local exports = {}
   for id, data in pairs(target) do
@@ -30,7 +39,7 @@ local function clear_old_exports(keep_count, exports_table, protected)
   local removed = 0
   for i = keep_count + 1, #exports do
     local id = exports[i].id
-    if not protected[id] then
+    if not protected_ids[id] then
       target[id] = nil
       removed = removed + 1
     end

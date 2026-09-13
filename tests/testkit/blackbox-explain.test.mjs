@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { copyFileSync, mkdtempSync, rmSync, rmdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
-	explainBlackBox, explainBlackBoxFile, formatExplanation, loadTriageTable,
+	explainBlackBox, explainBlackBoxFile, formatExplanation,
 } from "../../tools/tests/testkit/blackbox-explain.mjs";
 
 const FIXTURE = new URL("../../tools/tests/testkit/fixtures/failure-black-box-sample.json", import.meta.url)
@@ -33,19 +37,23 @@ test("explain keeps the measurement boundary: self-report and physical scan are 
 	assert.match(human, /NOT in the bundle/, "must say phase timings live elsewhere, not fabricate them");
 });
 
-test("triage hint reads the FAQ table and carries the not-root-cause caveat", () => {
-	assert.equal(report.triage.matched, true);
-	assert.match(report.triage.caveat, /HINT/);
-	assert.match(report.triage.action, /once/i);
+test("the explainer works outside the repository with only the recorded bundle", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "surface-export-blackbox-"));
+	const modulePath = join(directory, "blackbox-explain.mjs");
+	try {
+		copyFileSync(new URL("../../tools/tests/testkit/blackbox-explain.mjs", import.meta.url), modulePath);
+		const standalone = await import(pathToFileURL(modulePath).href);
+		assert.deepEqual(standalone.explainBlackBoxFile(FIXTURE), report);
+		assert.equal(standalone.formatExplanation(report), formatExplanation(report));
+	} finally {
+		rmSync(modulePath, { force: true });
+		rmdirSync(directory);
+	}
 });
 
-test("triage table parses from docs/ENGINEERING_FAQ.md (one truth — no classes restated in code)", () => {
-	const table = loadTriageTable();
-	assert.equal(table.unavailable, undefined);
-	assert.ok(table.rows.length >= 3, `expected the three known rows, got ${table.rows.length}`);
-	for (const row of table.rows) {
-		assert.ok(row.signature && row.knownClass && row.action);
-	}
+test("explanation reports evidence without inferred causes or retry advice", () => {
+	assert.equal(Object.hasOwn(report, "triage"), false);
+	assert.doesNotMatch(formatExplanation(report), /triage|known class|retry/i);
 });
 
 test("replay payload is present and reimportable-shaped", () => {
@@ -60,26 +68,30 @@ const bundleWith = (diff) => explainBlackBox({
 	diff, physical_entities: [], physical_fluid_segments: {},
 });
 
-test("triage: a fluids GAIN does not match the loss-class row", () => {
+test("fluid gains retain their measured direction and amount", () => {
 	const gained = bundleWith({ items: {}, fluids: { water: { expected: 100, actual: 9000, delta: 8900 } } });
-	assert.equal(gained.triage.matched, false);
-	assert.match(gained.triage.note, /unexplained until measured/);
+	assert.equal(gained.failureStage, "fluids");
+	assert.equal(gained.selfReport.diffRows[0].delta, 8900);
+	assert.match(formatExplanation(gained), /GAINED 8900/);
 });
 
-test("triage: a fluids LOSS matches the fluid-loss row", () => {
+test("fluid deficits retain their measured direction and amount", () => {
 	const lost = bundleWith({ items: {}, fluids: { "fusion-plasma": { expected: 1500, actual: 0, delta: -1500 } } });
-	assert.equal(lost.triage.matched, true);
-	assert.match(lost.triage.knownClass, /fluid loss/i);
+	assert.equal(lost.failureStage, "fluids");
+	assert.equal(lost.selfReport.diffRows[0].delta, -1500);
+	assert.match(formatExplanation(lost), /fusion-plasma.*LOST 1500/);
 });
 
-test("triage: vocabulary-inexpressible bundles are labeled as such, never claimed unexplained", () => {
+test("combined and empty diffs remain readable without classifying the cause", () => {
 	const both = bundleWith({
 		items: { "iron-plate": { expected: 2, actual: 1, delta: -1 } },
 		fluids: { water: { expected: 2, actual: 1, delta: -1 } },
 	});
 	assert.equal(both.failureStage, "both");
-	assert.match(both.triage.inexpressible, /no combined-stage row/);
+	assert.equal(both.selfReport.diffRows.length, 2);
+	assert.match(formatExplanation(both), /iron-plate/);
+	assert.match(formatExplanation(both), /water/);
 	const empty = bundleWith({ items: {}, fluids: {} });
-	assert.match(empty.triage.inexpressible, /no count mismatch/);
-	assert.match(formatExplanation(empty), /INEXPRESSIBLE/);
+	assert.equal(empty.failureStage, "none");
+	assert.match(formatExplanation(empty), /no count mismatch/);
 });

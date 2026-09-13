@@ -102,7 +102,7 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Plugin location: `docker/seed-data/external_plugins/surface_export/`
 - **Bind-mounted** into containers at `/clusterio/external_plugins` (not a named volume — the distinction the @clusterio-singleton hazard rests on); plugins are auto-installed by the base image
 - Contains TypeScript plugin code (`*.ts`), React web UI (`web/`), and Lua `module/` directory
-- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
+- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle). Webpack compiles into a temporary staging directory; the publisher validates emitted assets, retains previously published hashed files, and replaces the manifest last. A controller restart picks up the new manifest.
 
 **Plugin Changes** (TypeScript):
 - Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (rebuild + reload the hosts)
@@ -228,7 +228,7 @@ node tools/tests/testkit/cli.mjs log dump 2 'debug_import_result_*.json' --field
 #   ^ `summary.import` is snake_case (from Lua) inside an otherwise camelCase log — the oracle
 #     matches across that boundary, and reports BOTH candidates when a name is genuinely ambiguous
 #     (summary.phases.validationMs is the controller's wait; summary.import.validation_ms is the gate).
-#   ^ diff rows by |delta|, gate self-report vs physical dest scan (labeled), FAQ triage hint (+--json)
+#   ^ diff rows by |delta|, gate self-report vs physical dest scan (labeled), recorded evidence only (+--json)
 # Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
 # "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
 
@@ -459,7 +459,7 @@ character-body half of the branch is covered again since 2026-08-04 by
 `tests/integration/evacuation-coverage` — a body aboard a throwaway platform must ARRIVE on Nauvis
 through the real chokepoint (the engine measurably destroys un-evacuated bodies with the surface,
 so arrival proves the route ran). The connected-player half still awaits the L2 client session.
-Design in [docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
+Current behavior and limits: [docs/GATEWAYS.md](docs/GATEWAYS.md).
 
 ## Export/Import Workflow Notes (Current)
 

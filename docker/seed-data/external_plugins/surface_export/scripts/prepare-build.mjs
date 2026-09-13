@@ -33,7 +33,7 @@ if (stampArg !== -1) {
 }
 
 const SOURCE_DIRS = ["lib", "shared", "web"];
-const SOURCE_FILES = ["tsconfig.node.json", "tsconfig.browser.json", "webpack.config.js"];
+const SOURCE_FILES = ["tsconfig.node.json", "tsconfig.browser.json", "webpack.config.js", "scripts/build-web.mjs", "scripts/web-assets.mjs"];
 const SOURCE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".css", ".json"];
 
 const IGNORED_ROOT_FILES = new Set(["package-lock.json", "package.json"]);
