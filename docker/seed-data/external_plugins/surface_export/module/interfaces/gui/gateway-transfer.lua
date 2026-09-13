@@ -1,3 +1,4 @@
+local platform_identity = require("modules/surface_export/utils/platform-identity")
 local Gateway = require("modules/surface_export/core/gateway")
 local GatewayGuard = require("modules/surface_export/core/gateway-guard")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
@@ -21,7 +22,8 @@ local function resolve_platform(state)
 	local force = state and game.forces[state.force_name]
 	if not force then return nil end
 	local platform = force.platforms[state.platform_index]
-	if not (platform and platform.valid) then return nil end
+	if not (platform and platform.valid) or not state.platform_uid
+		or platform_identity(platform) ~= state.platform_uid then return nil end
 	return platform
 end
 
@@ -127,6 +129,7 @@ function GatewayTransferGui.open(player, platform, gateway_name)
 
 	local state = {
 		platform_index = platform.index,
+		platform_uid = platform_identity(platform),
 		force_name = platform.force.name,
 		gateway_name = gateway_name,
 		targets = targets,

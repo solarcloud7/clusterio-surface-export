@@ -1,3 +1,4 @@
+import { runLab } from './lifecycle.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join} from 'node:path';
@@ -59,9 +60,8 @@ else await withWorkflowLock(async()=>{
     controls:'Disposable instances only; fixed independent cargo oracle; normal production controller admission; no edited verdicts or unlock assists.'}};
   for(const name of ['pipeline-transfer.mjs','docker-lab.mjs','performance.lua','oracle.mjs','fault-hook.cjs'])report.hashes[name]=hash(new URL(name,import.meta.url));
   const file=join(directory,'result.json'),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
-  const interrupt=()=>{lab.cancelled=true;};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
   save();
-  try {
+  process.exitCode=await runLab({lab,report,save,work:async()=>{
     console.log(`Starting bounded transfer overlap ${run}`);
     report.environment=await lab.setup();lab.deadline=Date.now()+600000;
     lab.ctl('controller','config','set','surface_export.max_inflight_transfers_per_instance','2');
@@ -117,14 +117,8 @@ else await withWorkflowLock(async()=>{
       row.after={source:lab.probe(row.source,'read',row.name).state,destination:lab.probe(row.target,'read',row.name).state};save();
     }
     report.events={1:lab.events(1),2:lab.events(2)};
-  } catch(error) {report.error=error.stack;}
-  finally {
-    report.cleanup=await lab.cleanup();
-    process.removeListener('SIGINT',interrupt);process.removeListener('SIGTERM',interrupt);
-    if(mode==='--cleanup-proof')report.cleanupProofPassed=!!report.error?.includes('Intentional failure')&&report.cleanup.success;
-    if(!report.error)try {Object.assign(report,analyze(report));}catch(error){report.error=error.stack;report.verdict='STOP';}
-    else report.verdict='HARNESS_ERROR';
-    save();console.log(JSON.stringify({artifact:file,verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,cleanupProofPassed:report.cleanupProofPassed},null,2));
-    process.exitCode=report.verdict==='PASS'||report.cleanupProofPassed?0:1;
-  }
+  },expectedFailure:mode==='--cleanup-proof'?/Intentional failure/:undefined,analyze:()=>{
+    if(report.error)return {};return analyze(report);
+  }});
+  console.log(JSON.stringify({artifact:file,verdict:report.verdict,error:report.error,cleanup:report.cleanup.success,cleanupProofPassed:report.cleanupProofPassed},null,2));
 });

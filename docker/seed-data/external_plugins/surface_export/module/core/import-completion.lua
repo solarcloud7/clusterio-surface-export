@@ -36,10 +36,15 @@ function ImportCompletion.interrupt(job, err)
 	local protected, protection_error = pcall(function()
 		local platform = job.target_platform
 		if not (platform and platform.valid) then return end
+		platform.paused = true
+		platform.hidden = true
+		if job.target_surface and job.target_surface.valid and platform.surface == job.target_surface then
+			game.forces[job.force_name or "player"].set_surface_hidden(job.target_surface, true)
+		end
 		local id = job.transfer_id or ("interrupted:" .. job.job_id)
-		local held, hold_error = DestinationHold.stage(id, platform, game.forces[job.force_name or "player"], true)
+		local held, hold_error = DestinationHold.stage(id, platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id)
 		local hold = DestinationHold.get(id)
-		if hold and hold.platform_index == platform.index and hold.surface_index == job.target_surface.index then
+		if hold and hold.job_id == job.job_id and hold.platform_index == platform.index and hold.surface_index == job.target_surface.index then
 			-- This is not a validated hold: recovery must not delete the source for it.
 			hold.preparation_failed = true
 		end
@@ -730,10 +735,15 @@ function ImportCompletion.run_phase2(job, batch_size)
 							job.platform_name, tostring(captured_paused), tostring(err_captured)))
 					end
 				end
-				local held, hold_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true)
+				local held, hold_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id)
 				assert(held, hold_error)
 				result.destinationHeld = true
 				LatchRearm.schedule(job)
+				if job.platform_data._standaloneImport == true then
+					local released, release_error = DestinationHold.go_live(job.transfer_id, job.job_id)
+					assert(released, release_error)
+					result.destinationHeld = false
+				end
 			end)
 			if not prepared then
 				success = false
@@ -785,7 +795,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 					local hold = DestinationHold.get(job.transfer_id)
 					if hold and hold.platform_index == job.target_platform.index
 						and hold.surface_index == job.target_surface.index then
-						return DestinationHold.discard(job.transfer_id)
+						return DestinationHold.discard(job.transfer_id, job.job_id)
 					end
 					return GameUtils.delete_platform(job.target_platform)
 				end)
@@ -831,6 +841,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 		job_id = job.job_id,
 		platform_name = job.platform_name,
 		total_entities = job.total_entities,
+		operation_id = job.operation_id, transfer_id = job.transfer_id,
 		duration_ticks = duration_ticks,
 		progress = 100,
 		requester = job.requester,
@@ -884,6 +895,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 			}
 		}
 		event_payload.success = validation_result and validation_result.success == true
+		event_payload.validation = validation_result
 		if validation_result and validation_result.success ~= true then
 			event_payload.failed_stage = validation_result.failedStage
 			event_payload.error = validation_result.mismatchDetails
@@ -910,6 +922,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 			log(string.format("[send_json] Import complete with operation metadata: operation_id=%s",
 				tostring(job.operation_id)))
 		end
+		storage.async_job_results[job.job_id].completion = event_payload
 		clusterio_api.send_json("surface_export_import_complete", event_payload)
 	end
 

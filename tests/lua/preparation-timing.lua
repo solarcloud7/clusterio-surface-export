@@ -15,7 +15,8 @@ local function scenario(side, fault)
         timing.start(id, name); local result = table.pack(fn(...)); timing.stop(id, name)
         return table.unpack(result, 1, result.n)
     end
-    local force = {valid = true, name = "player", platforms = {}}
+    local force = {valid = true, name = "player", platforms = {}, get_surface_hidden = function() return false end,
+        set_surface_hidden = function(_, hidden) assert(hidden == true) end}
     local hub = {valid = true, name = "space-platform-hub", position = {x = 0, y = 0},
         get_inventory = function() return {clear = function() called("clear") end} end}
     local entities = {hub}
@@ -25,15 +26,16 @@ local function scenario(side, fault)
     force.create_space_platform = function(opts)
         called("create"); assert(opts.name == "destination" and opts.starter_pack == "space-platform-starter-pack")
         if fault == "platform_creation" then error("injected creation") end
-        return {valid = true, index = 4, name = opts.name, hub = hub, surface = surface,
+        return {valid = true, index = 4, name = opts.name, force = force, hub = hub, surface = surface, hidden = false,
             apply_starter_pack = function() called("starter"); if fault == "starter_pack" then error("injected starter") end end}
     end
     local schedule = {records = {}}
     local modules = {
         ["utils/operation-timing"] = timing,
+		["core/source-recovery"] = {platform_uid = function() return "fixture:3" end, export_job_id = function(counter, name) return string.format("%03d_%s_test-epoch", counter, name) end},
         ["utils/game-utils"] = {platform_has_hub = function() return true end,
-            delete_platform = function() called("delete"); deleted = true end},
-        ["utils/surface-lock"] = {DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,
+            delete_platform = function() called("delete"); deleted = true; return true end},
+        ["utils/surface-lock"] = {get_lock_data = function() return nil end,DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,
             lock_platform = function() called("lock"); return true end,
             unlock_platform = function() called("unlock"); return true end},
         ["utils/platform-schedule"] = {
@@ -52,14 +54,22 @@ local function scenario(side, fault)
         ["core/import-target"] = {resolve = function() return "nauvis" end},
     }
     local stub = setmetatable({}, {__index = function() return noop end})
-    local env = setmetatable({storage = {async_job_id_counter = 0, async_jobs = {}}, log = noop,
+    local env = setmetatable({storage = {source_recovery_ready = true, async_job_id_counter = 0, async_jobs = {}}, log = noop,
         game = {tick = 100, print = noop, forces = {player = force}}, script = {active_mods = {base = "2.1.17"}},
         defines = {inventory = {hub_main = 1}}, require = function(path)
             return modules[path:match("^modules/surface_export/(.*)$")] or stub
         end}, {__index = _G})
     local pipeline = assert(loadfile(root .. "core/" .. side .. "-pipeline.lua", "t", env))()
     local id, err
-    if side == "export" then id, err = pipeline.queue(3, "player", "test", 2)
+    if side == "export" then
+        platform.surface=nil
+        local unbuilt, unbuilt_reason=pipeline.queue(3,"player","test",2,nil,nil,nil,"fixture:3")
+        assert(not unbuilt and unbuilt_reason:find("surface",1,true) and #calls==0)
+        platform.surface=surface
+        local rejected, reason = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "stale-copy")
+        assert(not rejected and reason:find("identity",1,true) and #calls==0,
+            "stale selection reached source preparation")
+        id, err = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "fixture:3")
     else id, err = pipeline.queue({_transferId = "operation", platform = {schedule = schedule},
         verification = {item_counts = {}, fluid_counts = {}}, entities = {}}, "destination", "player", "test") end
     if fault then
@@ -69,6 +79,10 @@ local function scenario(side, fault)
         assert(deleted == (side == "import" and fault ~= "platform_creation"))
     else
         assert(id and env.storage.async_jobs[id])
+        if side == "import" then
+            assert(env.storage.async_jobs[id].target_platform.hidden == true, "queued destination exposed")
+            assert(env.storage.async_jobs[id].preparation_visibility.platform_hidden == false)
+        end
         local names = side == "export"
             and {"schedule_capture", "entity_collection", "entity_sorting", "tile_scan", "export_job_setup"}
             or {"platform_naming", "target_resolution", "platform_creation", "starter_pack", "starter_cleanup", "platform_parking", "schedule_restoration", "import_cargo_totals"}

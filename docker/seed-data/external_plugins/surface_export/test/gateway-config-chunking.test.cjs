@@ -255,12 +255,12 @@ test("startup hook returns while recovery waits; stop prevents stale finish and 
 	for (const stopHook of ["onStop", "onExit"]) {
 	const plugin = Object.create(InstancePlugin.prototype);
 	plugin.logger = noopLogger;
-	Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => {} } });
+	Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => ({ mode: "plugin_history", allowAdoption: true }) } });
 	plugin.ensureLuaConsoleUnlocked = async () => {};
 	plugin.retirementJournal = { snapshot: () => ({ id: "journal", retirements: [] }) };
 	const calls = [];
 	let release;
-	plugin.lua = { sourceRecovery: async action => {
+	plugin.lua = { uploads: {initialize: async () => {}, stop() {}}, sourceRecovery: async action => {
 		calls.push(action);
 		if (action === "begin") return new Promise(resolve => { release = resolve; });
 		return '{"success":true}';
@@ -295,10 +295,10 @@ test("background recovery visits all 500 identities before finish and reports a 
 		const plugin = Object.create(InstancePlugin.prototype);
 		const errors = [], calls = [];
 		plugin.logger = { ...noopLogger, error: message => errors.push(message) };
-		Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => {} } });
+		Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => ({ mode: "plugin_history", allowAdoption: true }) } });
 		plugin.ensureLuaConsoleUnlocked = async () => {};
 		plugin.retirementJournal = { snapshot: () => ({ id: "journal", retirements: [{ platformUid: "u499", exportId: "retired" }] }) };
-		plugin.lua = { sourceRecovery: async (action, ...args) => {
+		plugin.lua = { uploads: {initialize: async () => {}, stop() {}}, sourceRecovery: async (action, ...args) => {
 			calls.push([action, ...args]);
 			await new Promise(resolve => setImmediate(resolve));
 			if (action === "begin") return JSON.stringify(refuse ? { success: false, error: "wrong journal" }
@@ -317,7 +317,7 @@ test("background recovery visits all 500 identities before finish and reports a 
 		} else {
 			assert.equal(done, true);
 			assert.equal(calls.filter(call => call[0] === "reconcile").length, 500);
-			assert.deepEqual(calls[500], ["reconcile", 499, "u499", "retired"]);
+		assert.deepEqual(calls[500], ["reconcile", 499, "u499", "retired", false]);
 			assert.deepEqual(calls.slice(-2), [["finish"], ["config"]]);
 		}
 	}

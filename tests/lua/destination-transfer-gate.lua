@@ -11,9 +11,11 @@ local force = {valid = true, name = "player", get_surface_hidden = function() re
     set_surface_hidden = noop}
 local platform = {valid = true, name = "fixture", index = 3, surface = surface, hidden = false, paused = false, force = force}
 force.platforms = {[3] = platform}
+local uid = "destination:3"
 local deleteAccepted = false
 local env = setmetatable({storage = {}, game = {tick = 1, forces = {player = force}}, log = noop}, {__index = _G})
 env.require = function(name)
+    if name:find("platform-identity", 1, true) then return function() return uid end end
     if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
     if name:find("game-utils", 1, true) then return {
         ACTIVATABLE_ENTITY_TYPES = {inserter = true}, delete_platform = function() return deleteAccepted end,
@@ -45,6 +47,81 @@ platform.valid = true
 assert(not holds.stage("released", platform, force, true), "released ID created a new held copy")
 assert(not holds.go_live("unknown"), "missing receipt manufactured activation success")
 print("PASS activation receipt is idempotent and cannot stage another destination")
+
+platform.hidden = true
+assert(not holds.get("preparing"), "temporary hiding manufactured a validated hold")
+assert(not holds.go_live("preparing"), "temporary hiding authorized activation")
+assert(holds.stage("preparing", platform, force, true, {platform_hidden = false, surface_hidden = false}))
+assert(holds.go_live("preparing"))
+assert(platform.hidden == false, "completed import retained temporary preparation visibility")
+print("PASS early preparation visibility is restored only through a validated hold")
+
+assert(holds.stage("identity", platform, force, true, nil, "import-a"))
+platform.name = "renamed"
+assert(holds.verify("identity", "import-a"), "rename rejected the same copy")
+assert(not holds.go_live("identity", "import-b"), "another job released the hold")
+assert(not holds.discard("identity", "import-b"), "another job deleted the platform")
+uid = "replacement:3"
+assert(not holds.verify("identity"), "same indexes authorized a replacement UID")
+assert(not holds.go_live("identity"), "replacement was activated")
+assert(not holds.discard("identity"), "replacement was deleted")
+assert(holds.get("identity"), "mismatched hold lost its recovery evidence")
+uid = "destination:3"
+assert(holds.go_live("identity", "import-a"))
+uid = "replacement:3"
+assert(not holds.go_live("identity"), "stale release receipt acknowledged a replacement")
+uid = "destination:3"
+print("PASS destination UID and job bind verification, activation, discard, and release receipts")
+
+local function legacy(id)
+    env.storage.destination_holds[id] = {transfer_id=id, force_name="player", platform_index=3,
+        surface_index=8, original_hidden=false, original_platform_hidden=false, original_paused=false, active_states={}}
+    return env.storage.destination_holds[id]
+end
+local legacy_hold=legacy("legacy")
+env.storage.async_jobs={owner={type="import",job_id="owner",transfer_id="legacy",force_name="player",
+    target_platform=platform,target_surface=surface}}
+platform.hidden=true
+holds.reconcile_legacy()
+assert(legacy_hold.platform_uid==uid and legacy_hold.job_id=="owner")
+holds.reconcile_legacy()
+assert(holds.go_live("legacy","owner"),"verified saved job could not recover its legacy hold")
+local unverified=legacy("unknown-owner")
+holds.reconcile_legacy()
+assert(unverified.identity_unverified and not holds.go_live("unknown-owner"))
+assert(not holds.discard("unknown-owner"),"index-only legacy hold authorized deletion")
+env.storage.destination_holds["unknown-owner"]=nil
+local conflicting=legacy("legacy-conflict")
+conflicting.platform_uid="other-copy"
+env.storage.async_jobs.owner.transfer_id="legacy-conflict"
+holds.reconcile_legacy()
+assert(conflicting.identity_unverified and conflicting.platform_uid=="other-copy" and not conflicting.job_id)
+assert(not holds.discard("legacy-conflict"))
+env.storage.destination_holds["legacy-conflict"]=nil
+local receipts=env.storage.surface_export_transfer_receipts.destination_live.records
+receipts.old={force_name="player",platform_index=3,surface_index=8}
+holds.reconcile_legacy()
+assert(receipts.old.identity_unverified and not holds.go_live("old"),"old receipt invented current-copy authority")
+print("PASS legacy destination ownership migrates only from exact saved job references; unknown evidence remains protected")
+
+setmetatable(env.game.forces, {__index=function(_, key)
+    assert(type(key)=="string", "Factorio force lookup requires a string")
+end})
+for _, field in ipairs({"force_name", "platform_index"}) do
+    local incomplete=legacy("incomplete")
+    incomplete[field]=nil
+    holds.reconcile_legacy()
+    assert(incomplete.identity_unverified)
+    assert(not holds.verify("incomplete"))
+    assert(not holds.go_live("incomplete"))
+    assert(not holds.discard("incomplete"))
+    assert(env.storage.destination_holds.incomplete==incomplete, "incomplete metadata released ownership")
+    env.storage.destination_holds.incomplete=nil
+    receipts.incomplete=incomplete
+    assert(not holds.go_live("incomplete"))
+    receipts.incomplete=nil
+end
+print("PASS incomplete location metadata retains destination ownership without engine lookup errors")
 
 -- Deferred latch work must not execute or consume its job while the hold owns the surface.
 env.storage = {destination_holds = {transfer = {}}, latch_rearm_jobs = {

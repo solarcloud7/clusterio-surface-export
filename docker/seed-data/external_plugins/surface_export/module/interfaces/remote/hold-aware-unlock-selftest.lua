@@ -1,6 +1,8 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 
+local platform_identity = require("modules/surface_export/utils/platform-identity")
+
 local PREFIX = "hold-aware-unlock-selftest-"
 
 local function key(entity)
@@ -65,6 +67,7 @@ local function install_lock(force, platform, entity, opts)
 		platform_name = platform.name,
 		platform_index = platform.index,
 		surface_index = platform.surface.index,
+		platform_uid = platform_identity(platform),
 		force_name = force.name,
 		original_hidden = false,
 		original_platform_hidden = false,
@@ -116,7 +119,7 @@ end
 local function ttl_expiry_unlock_over_hold(details)
 	local force, platform, entity = make_platform("ttl")
 	local transfer_id = stage_hold("ttl", force, platform)
-	install_lock(force, platform, entity, { kind = "transfer", locked_tick = game.tick - 120, expires_tick = game.tick - 1 })
+	install_lock(force, platform, entity, { kind = "export", locked_tick = game.tick - 120, expires_tick = game.tick - 1 })
 	local summary = SurfaceLock.scan_transfer_expiries()
 	check(details, "ttl_expiry_unlock_over_hold", summary.expired == 1 and summary.failed == 0, "summary mismatch")
 	local state = read_state(force, platform, entity)

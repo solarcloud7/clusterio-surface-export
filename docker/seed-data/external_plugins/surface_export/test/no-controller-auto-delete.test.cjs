@@ -50,8 +50,8 @@ function pendingIntent(overrides = {}) {
 
 test("controller restart schedules the guarded recovery path without directly deleting or unlocking", async () => {
 	const { plugin, calls } = makeControllerHarness([pendingIntent()]);
-	let recoveries = 0;
-	plugin.orchestrator = { recoverPendingTransfers: async () => { recoveries++; } };
+	let recoveries = 0, observations = 0;
+	plugin.orchestrator = { recoverPendingTransfers: async () => { recoveries++; }, observeJobs: async () => { observations++; } };
 
 	const origSetInterval = global.setInterval;
 	const origSetTimeout = global.setTimeout;
@@ -69,11 +69,15 @@ test("controller restart schedules the guarded recovery path without directly de
 	assert.match(ControllerPlugin.prototype.init.toString(), /this\.startRecovery\(\)/,
 		"recovery must be wired into Clusterio's init hook, not an invented onStart hook");
 	assert.equal(timers[0][0], "interval");
-	assert.equal(timers[0][1][1], 30_000);
+	assert.equal(timers[0][1][1], 5_000);
 	assert.equal(calls.sends.length, 0, "onStart must not send delete/unlock/reconcile requests for boot-leftover intents");
 	timers[0][1][0]();
 	await new Promise((r) => origSetTimeout(r, 0));
 	assert.equal(recoveries, 1);
+	timers[0][1][0]();
+	await new Promise((r) => origSetTimeout(r, 0));
+	assert.equal(recoveries, 1, "status visits must not accelerate ownership recovery");
+	assert.equal(observations, 1, "status must not wait for another recovery interval");
 	assert.equal(calls.sends.length, 0, "no delete/unlock send may fire on a later macrotask either");
 	assert.match(calls.warns.join("\n"), /validated destination hold/);
 });

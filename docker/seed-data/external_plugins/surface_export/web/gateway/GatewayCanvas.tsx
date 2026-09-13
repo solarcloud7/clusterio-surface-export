@@ -341,7 +341,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	useEffect(() => {
 		const now = Date.now();
 		for (const ship of realShips) {
-			if (shipPhaseFor(ship.status)?.terminal) {
+			if (shipPhaseFor(ship)?.terminal) {
 				noteTerminalSeen(ship.transferId, now);
 			} else {
 				noteLiveSeen(ship.transferId);
@@ -525,6 +525,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				source: {
 					instanceId: dragged.instanceId,
 					instanceName: dragged.instanceName,
+					platformUid: dragged.platform.platformUid,
 					platformIndex: dragged.platform.platformIndex,
 					platformName: dragged.platform.platformName,
 					forceName: dragged.platform.forceName || "player",

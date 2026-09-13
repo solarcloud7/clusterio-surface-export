@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
+
 import {
 	lua, rcon, instanceIds, createBatchLifecycle,
 } from "../../lab-gallery/batch-lifecycle.mjs";
@@ -292,7 +294,7 @@ async function main() {
 				const swept = lua(host,
 					`local n=0 for _,q in pairs(game.forces.player.platforms) do `
 					+ `if q.valid and (q.name=='${PROBE}' or q.name=='${PROBE_FAIL}') then `
-					+ `pcall(remote.call,'surface_export','unlock_platform',q.index) `
+					+ fixtureUnlockLua("q")
 					+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end `
 					+ `local gok, gerr = pcall(function() `
 					+ `local doomed = {${groupLuaList}} local dset = {} `

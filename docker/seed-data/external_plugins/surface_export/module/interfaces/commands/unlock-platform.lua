@@ -41,7 +41,7 @@ Base.admin_command("unlock-platform",
       return
     end
 
-    local unlock_success, unlock_err = SurfaceLock.unlock_platform(lock_key)
+    local unlock_success, unlock_err = SurfaceLock.unlock_current_lock(lock_key, SurfaceLock.get_lock_data(lock_key))
     
     if unlock_success then
       ctx.print("Platform '" .. platform_name .. "' unlocked successfully")

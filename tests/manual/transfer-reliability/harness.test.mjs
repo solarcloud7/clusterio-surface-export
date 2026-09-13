@@ -107,6 +107,7 @@ test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,asyn
     async handleDeleteSourcePlatformMeasured(req){calls++;return {success:req.accepted};}
     async handleDestinationTransferGate(){return {success:true};}
     async handleImportPlatformRequestMeasured(){return {success:true};}
+    async handleExportPlatformRequestMeasured(){return {success:true,exportId:"unrelated"};}
   }
   const module={_load:()=>({InstancePlugin}),_resolveFilename:()=>runtimePath};
   const fs={existsSync:()=>true,readFileSync:()=>JSON.stringify(rule),appendFileSync:(_,s)=>events.push(JSON.parse(s))};
@@ -135,4 +136,15 @@ test("performance comparison rejects duplicate samples, invented zero readings, 
   const saved=measurements[1];measurements[1]=measurements[0];assert.throws(()=>analyze(report),/duplicate/);measurements[1]=saved;
   measurements[0].records[0].ms=NaN;assert.throws(()=>analyze(report),/profiler/);measurements[0].records[0].ms=.75;
   measurements[0].after.destination.cargo=performanceCargo(512);assert.equal(analyze(report).verdict,"STOP");
+});
+
+
+test("restart preflight waits for both actual persisted host assignments",async()=>{
+  const lab=Object.create(DockerLab.prototype);lab.ids={1:41,2:42};lab.controller="owned-controller";
+  let read,calls=0;
+  lab.until=async(fn,label,seconds)=>{read=fn;assert.equal(seconds,90);return fn();};
+  lab.docker=()=>{calls++;return JSON.stringify([{id:41,host:1},{id:42,host:null}]);};
+  assert.equal(await lab.persistedAssignments(),false);
+  lab.docker=()=>{calls++;return JSON.stringify([{id:41,host:1},{id:42,host:2}]);};
+  assert.deepEqual(read(),[{id:41,host:1},{id:42,host:2}]);assert.equal(calls,2);
 });

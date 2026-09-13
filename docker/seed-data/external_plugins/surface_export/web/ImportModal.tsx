@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import type { ImportUploadedExportOptions } from "../messages";
+import { useMemo, useRef, useState } from "react";
 import {
 	Alert,
 	Button,
@@ -13,17 +14,25 @@ import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { UploadOutlined } from "@ant-design/icons";
 
 import { usePlanetOptions } from "./icons";
+import { importableSnapshot, newRestoreRequestId } from "../shared/snapshot";
 import { parseJsonFile, getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+
+export type RestoreSnapshot = { exportId: string; timestamp: number | null; platformName: string };
 
 type ImportModalProps = {
 	open: boolean;
 	onClose: () => void;
 	plugin: SurfaceExportPlugin;
 	state: SurfaceExportState;
+	snapshot?: RestoreSnapshot;
 };
 
-export default function ImportModal({ open, onClose, plugin, state }: ImportModalProps) {
+export default function ImportModal({ open, onClose, plugin, state, snapshot }: ImportModalProps) {
+	const submitting = useRef(false);
+	const [restoreRequestId] = useState(newRestoreRequestId);
+	const [restoreError, setRestoreError] = useState<string | null>(null);
+	const [restoreOperationId, setRestoreOperationId] = useState<string | null>(null);
 	const [fileList, setFileList] = useState<UploadFile[]>([]);
 	const [payload, setPayload] = useState<JsonObject | null>(null);
 	const [parseError, setParseError] = useState<string | null>(null);
@@ -38,14 +47,14 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 		if (!tree) return [];
 		const label = (inst: { instanceName: string; gamePort: number | null }) =>
 			(inst.gamePort ? `${inst.instanceName} :${inst.gamePort}` : inst.instanceName);
-		const nodes: Array<{ label: string; value: number }> = [];
+		const nodes: Array<{ label: string; value: number; disabled: boolean }> = [];
 		for (const host of tree.hosts || []) {
 			for (const inst of host.instances || []) {
-				nodes.push({ label: label(inst), value: inst.instanceId });
+				nodes.push({ label: label(inst), value: inst.instanceId, disabled: !inst.connected || inst.status !== "running" });
 			}
 		}
 		for (const inst of tree.unassignedInstances || []) {
-			nodes.push({ label: label(inst), value: inst.instanceId });
+			nodes.push({ label: label(inst), value: inst.instanceId, disabled: !inst.connected || inst.status !== "running" });
 		}
 		return nodes.sort((a, b) => a.label.localeCompare(b.label));
 	}, [state.tree]);
@@ -85,10 +94,8 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 				throw new Error("JSON root must be an object");
 			}
+			importableSnapshot(parsed);
 			setPayload(parsed);
-			if (!parsed.platform_name) {
-				antMessage.warning("JSON file is missing platform_name. Set an override below before import.", 8);
-			}
 		} catch (err: unknown) {
 			console.error("Failed to parse selected import file", err);
 			setParseError(getErrorMessage(err, "Invalid JSON file"));
@@ -96,12 +103,15 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 	}
 
 	async function handleSubmit() {
-		if (targetInstanceId === null || !payload) return;
+		if (targetInstanceId === null || (!payload && !snapshot) || submitting.current || restoreError) return;
+		submitting.current = true;
 		setImporting(true);
 		try {
-			const request: JsonObject = {
+			const request: ImportUploadedExportOptions = {
 				targetInstanceId,
-				exportData: payload,
+				exportData: snapshot ? {} : payload!,
+				restoreExportId: snapshot?.exportId || null,
+				restoreRequestId: snapshot ? restoreRequestId : null,
 				forceName: forceName || "player",
 				platformName: platformName.trim() || null,
 			};
@@ -110,17 +120,22 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 			}
 			const response = await plugin.importUploadedExport(request) as JsonObject;
 			if (!getProp(response, "success", false)) {
-				throw new Error(String(getProp(response, "error", "Import failed")));
+				const error = String(getProp(response, "error", "Import failed"));
+				const operationId = getProp(response, "operationId", null);
+				if (snapshot && typeof operationId === "string") {
+					setRestoreOperationId(operationId);
+					setRestoreError(error);
+				} else setParseError(error);
+				antMessage.error(error, 10);
+				return;
 			}
-			const selectedInstance = instanceOptions.find(o => o.value === targetInstanceId);
-			antMessage.success(
-				`Import started on ${selectedInstance?.label || "instance"}: ${getProp(response, "platformName", "Unknown")}`,
-				8,
-			);
 			handleClose();
 		} catch (err: unknown) {
-			antMessage.error(getErrorMessage(err, "Failed to import JSON"), 10);
+			const error = getErrorMessage(err, "Failed to import JSON");
+			if (snapshot) setRestoreError(error);
+			antMessage.error(error, 10);
 		} finally {
+			submitting.current = false;
 			setImporting(false);
 		}
 	}
@@ -128,14 +143,18 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 	return (
 		<Modal
 			open={open}
-			title="Import JSON"
+			title={snapshot ? "Restore from snapshot" : "Import JSON"}
 			onCancel={handleClose}
 			onOk={handleSubmit}
-			okText="Import"
-			okButtonProps={{ loading: importing, disabled: !payload || targetInstanceId === null }}
+			okText={snapshot ? "Restore platform" : "Import"}
+			closable={!importing}
+			maskClosable={!importing}
+			cancelButtonProps={{ disabled: importing }}
+			okButtonProps={{ loading: importing, disabled: !!restoreError || (!payload && !snapshot) || targetInstanceId === null }}
 		>
 			<Space direction="vertical" size="middle" style={{ width: "100%" }}>
-				<Upload
+				{snapshot ? <Alert type="warning" showIcon message={snapshot.platformName}
+					description={`${snapshot.timestamp == null ? "Snapshot date unavailable" : `Snapshot saved ${new Date(snapshot.timestamp).toLocaleString()}`}. This creates a new platform on the selected destination. Another copy may already exist, including on offline instances. The original transfer history stays unchanged.`} /> : <Upload
 					accept=".json,application/json"
 					beforeUpload={() => false}
 					fileList={fileList}
@@ -143,10 +162,15 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 					onChange={handleFileChange}
 				>
 					<Button icon={<UploadOutlined />}>Choose JSON export file</Button>
-				</Upload>
+				</Upload>}
 
 				{parseError ? <Alert type="error" showIcon message={parseError} /> : null}
-				{payload ? (
+				{restoreError ? <Alert type="error" showIcon message="Restore was not confirmed"
+					description={<>{restoreError}. Check this attempt’s transfer history before starting another restoration. {" "}
+						{restoreOperationId && <a href={`/surface-export?tab=logs&transfer=${encodeURIComponent(restoreOperationId)}`}>
+							View this restoration attempt
+						</a>}</>} /> : null}
+				{payload && !snapshot ? (
 					<Alert
 						type="success"
 						showIcon
@@ -156,6 +180,7 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 				) : null}
 
 				<Select
+					aria-label="Destination instance"
 					placeholder="Select target instance"
 					options={instanceOptions}
 					value={targetInstanceId}
@@ -164,6 +189,7 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 				/>
 
 				<Select
+					aria-label="Destination planet"
 					placeholder="Select destination planet (optional)"
 					options={planetOptions}
 					value={targetPlanet}

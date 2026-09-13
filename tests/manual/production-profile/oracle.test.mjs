@@ -1,11 +1,42 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { analyzeProfile, profileVerdict } from "./oracle.mjs";
+import { PRODUCTION_VOLUME_SUFFIXES } from "../transfer-reliability/backup-storage.mjs";
 
 const fixture = () => JSON.parse(readFileSync(new URL("./evidence/accepted-0.10.281.json", import.meta.url)));
 test("retained production profile passes the independent recovery and deployment oracle", () => {
   assert.equal(analyzeProfile(fixture()).verdict, "PASS");
+});
+
+test("native complete-restore evidence requires exact cargo, every store and the selected save",()=>{
+  const fixture=()=>JSON.parse(gunzipSync(readFileSync(new URL("./evidence/complete-restore-0.10.281.json.gz",import.meta.url))));
+  assert.equal(analyzeProfile(fixture()).verdict,"PASS");
+  for(const mutate of [
+    r=>r.restoration.archives.pop(),
+    r=>r.restoration.loadedCheckpoints[1].checkpoint="world",
+    r=>r.restoration.instanceSettings={},
+    r=>r.restoration.authenticationAfter="0".repeat(64),
+    r=>r.restoration.settingsBrowser.success=false,
+    r=>r.cleanup.success=false,
+  ]) {const report=fixture();mutate(report);assert.equal(profileVerdict(report).verdict,"FAIL");}
+  const changedCargo=fixture();changedCargo.restoration.physical.destination.cargo.entities.pop();
+  assert.equal(profileVerdict(changedCargo).verdict,"STOP");
+});
+
+test("the client archive limit failure remains a failed, cleaned-up partial restore",()=>{
+  const report=JSON.parse(gunzipSync(readFileSync(new URL("./evidence/client-archive-bound-failure.json.gz",import.meta.url))));
+  assert.equal(report.restoration.archives.length,11);assert.equal(report.restoration.restored.length,11);
+  assert.equal(report.cleanup.success,true);assert.match(report.error,/archive exceeds 2 GiB bound/);
+  assert.equal(profileVerdict(report).verdict,"FAIL");
+});
+
+test("restored containers running does not prove the requested checkpoint was loaded",()=>{
+  const report=JSON.parse(gunzipSync(readFileSync(new URL("./evidence/restored-startup-failure.json.gz",import.meta.url))));
+  assert.equal(report.restoration.archives.length,12);assert.equal(report.restoration.restored.length,12);
+  assert.equal(report.cleanup.success,true);assert.match(report.error,/already running/);
+  assert.equal(profileVerdict(report).verdict,"FAIL");
 });
 test("missing settings, wrong images, extra plugins and missing persistent stores cannot pass", () => {
   for (const mutate of [
@@ -68,4 +99,42 @@ test("ordinary acceptance failures stay FAIL and observed cargo violations take 
   report.cleanup.success = false;
   report.recovery.samples.at(-1).destination.cargo.entities.pop();
   assert.equal(profileVerdict(report).verdict, "STOP");
+});
+
+function completeRestoreEvidence() {
+  const report=fixture();report.schemaVersion=3;
+  report.normal={before:report.recovery.before,samples:report.recovery.samples.slice(-2),
+    outcome:report.recovery.outcome,transferId:report.recovery.transferId};
+  for(const c of report.containers) {c.instrumented=false;c.mounts=c.mounts.filter(m=>m.destination!=="/lab");}
+  report.restoration={
+    archives:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,bytes:10240,sha256:"a".repeat(64)})),
+    restored:PRODUCTION_VOLUME_SUFFIXES.map(suffix=>({suffix,compared:true,sha256:"a".repeat(64)})),
+    sourceVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`source-${key}`])),
+    targetVolumes:Object.fromEntries(PRODUCTION_VOLUME_SUFFIXES.map(key=>[key,`target-${key}`])),
+    authenticationBefore:"b".repeat(64),authenticationAfter:"b".repeat(64),
+    physical:structuredClone(report.normal.samples.at(-1)),after:structuredClone(report.normal.samples.at(-1)),
+    history:report.normal.outcome,outcome:report.normal.outcome,transferId:report.normal.transferId,
+    browser:structuredClone(report.browser),localSettings:{controller:report.controllerLocalSettings,host1:report.hostSettings[1],host2:report.hostSettings[2]},
+    settingsBrowser:{success:true},initialSettingsBrowser:{success:true},policyBefore:"plugin_history",policyAfter:"plugin_history",
+    controllerSettings:structuredClone(report.controllerSettings),instanceSettings:structuredClone(report.settings),
+    marker:{run:report.run,checkpoint:"manual-production-backup"},checkpoint:{1:"c".repeat(64),2:"d".repeat(64)},
+    loadedCheckpoints:{1:{run:report.run,checkpoint:"manual-production-backup"},2:{run:report.run,checkpoint:"manual-production-backup"}},
+  };
+  return report;
+}
+test("complete deployment oracle rejects omitted stores, wrong generations, altered authentication and missing assets",()=>{
+  assert.equal(analyzeProfile(completeRestoreEvidence()).verdict,"PASS");
+  for(const mutate of [r=>delete r.restoration,r=>r.restoration.archives.pop(),r=>r.restoration.restored[0].sha256="c".repeat(64),
+    r=>r.restoration.targetVolumes.tokens=r.restoration.sourceVolumes.tokens,
+    r=>r.restoration.authenticationAfter="d".repeat(64),r=>r.restoration.history={status:"completed",transferId:"wrong"},
+    r=>r.restoration.browser.assets.pop(),r=>r.restoration.browser.pageErrors.push("missing module"),
+    r=>r.restoration.localSettings.host1={},r=>r.restoration.archives[0].bytes=9*1024**3,r=>r.restoration.settingsBrowser.success=false,
+    r=>r.restoration.loadedCheckpoints[2].checkpoint="world",r=>delete r.restoration.checkpoint[1],
+    r=>r.restoration.policyAfter="save_game",r=>r.restoration.instanceSettings={},r=>r.restoration.controllerSettings={}]) {
+    const report=completeRestoreEvidence();mutate(report);assert.notEqual(profileVerdict(report).verdict,"PASS");
+  }
+  for(const mutate of [r=>r.restoration.physical.destination.cargo.entities.pop(),
+    r=>r.restoration.physical.source=structuredClone(r.restoration.physical.destination)]) {
+    const report=completeRestoreEvidence();mutate(report);assert.equal(profileVerdict(report).verdict,"STOP");
+  }
 });

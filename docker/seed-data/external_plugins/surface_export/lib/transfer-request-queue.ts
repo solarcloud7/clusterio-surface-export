@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
+import { parseCanonicalTransferId } from "../shared/utils";
 import type { ActiveTransfer } from "../messages";
 
 export interface QueuedTransferRequest {
 	sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number;
-	forceName?: string; targetPlanet?: string | null; platformName?: string;
+	sourcePlatformUid?: string; forceName?: string; targetPlanet?: string | null; platformName?: string;
 }
 export interface QueueEntry {
 	id: string;
@@ -20,6 +21,7 @@ const instances = (entry: QueueEntry) => [entry.request.sourceInstanceId, entry.
 // overlap of external work; Factorio's shared scheduler still controls Lua job steps.
 export class TransferRequestQueue {
 	readonly entries = new Map<string, QueueEntry>();
+	readonly handoffs = new Map<string, {destination: number | null; cancelledBy?: string}>();
 	private running = new Set<string>();
 	private timer?: ReturnType<typeof setTimeout>;
 	private stopped = false;
@@ -36,25 +38,66 @@ export class TransferRequestQueue {
 		error(error: unknown): void;
 	}) {}
 
-	async init(path: string) {
+	async init(path: string, legacyIds: Iterable<string> = []) {
 		this.path = path;
-		try { await this.load(); }
+		try { await this.load(legacyIds); this.wake(); }
 		catch (error) {
 			this.unavailable = new Error(`Transfer queue unavailable; repair its journal and restart: ${String(error)}`);
 			this.hooks.error(this.unavailable);
 		}
 	}
 
-	private async load() {
-		let saved: QueueEntry[];
-		try { saved = JSON.parse(await fs.readFile(this.path!, "utf8")); }
-		catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+	private async load(legacyIds: Iterable<string>) {
+		let data;
+		try { data = JSON.parse(await fs.readFile(this.path!, "utf8")); }
+		catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; data = []; }
+		const legacy = Array.isArray(data);
+		if (!legacy && (data?.v !== 2 || !Array.isArray(data.handoffs))) throw new Error("Invalid transfer admission journal");
+		const saved: QueueEntry[] = legacy ? data : data.entries;
 		if (!Array.isArray(saved) || saved.length > 100 || saved.some(entry => !entry?.id || !entry.request || !entry.operation)) {
 			throw new Error("Invalid transfer queue journal; preserved for diagnosis");
+		}
+		for (const binding of legacy ? [] : data.handoffs) {
+			if (!Array.isArray(binding) || binding.length !== 2 || !parseCanonicalTransferId(binding[0])
+				|| !binding[1] || (binding[1].destination !== null && (!Number.isSafeInteger(binding[1].destination) || binding[1].destination < 0))
+				|| (binding[1].cancelledBy !== undefined && (typeof binding[1].cancelledBy !== "string" || !binding[1].cancelledBy))
+				|| this.handoffs.has(binding[0])) throw new Error("Invalid or duplicate transfer admission");
+			this.handoffs.set(binding[0], binding[1]);
+		}
+		if (legacy) {
+			for (const id of [...legacyIds, ...saved.map(entry => entry.operation.transferId)]) {
+				if (parseCanonicalTransferId(id)) this.handoffs.set(id, {destination: null});
+			}
 		}
 		// Never replay an export after a process restart: delivery may have happened before the crash.
 		for (const entry of saved) await this.hooks.interrupted(entry);
 		await this.persist();
+	}
+
+	async claimHandoff(id: string, destination: number, cancelledBy?: string): Promise<void> {
+		if (this.unavailable) throw this.unavailable;
+		if (this.handoffs.has(id)) throw new Error(`Export ${id} already belongs to a handoff; create a new export`);
+		this.handoffs.set(id, {destination, ...(cancelledBy ? {cancelledBy} : {})});
+		await this.persistAdmission();
+	}
+
+	async cancelHandoff(id: string, destination: number, cancelledBy: string): Promise<void> {
+		if (this.unavailable) throw this.unavailable;
+		const binding = this.handoffs.get(id);
+		if (!binding) return this.claimHandoff(id, destination, cancelledBy);
+		if (binding.destination !== destination || (binding.cancelledBy && binding.cancelledBy !== cancelledBy)) {
+			throw new Error(`Export ${id} belongs to another handoff`);
+		}
+		binding.cancelledBy = cancelledBy;
+		await this.persistAdmission();
+	}
+
+	private async persistAdmission() {
+		try { await this.persist(); }
+		catch (error) {
+			this.unavailable = new Error(`Transfer admission could not be persisted; restart after repairing the journal: ${String(error)}`);
+			throw this.unavailable;
+		}
 	}
 
 	find(request: QueuedTransferRequest) {
@@ -77,8 +120,8 @@ export class TransferRequestQueue {
 		if (this.unavailable) throw this.unavailable;
 		if (!this.path) return;
 		// Timers and profiler state are not durable queue state.
-		const value = JSON.stringify([...this.entries.values()].map(entry => ({ ...entry,
-			operation: { ...entry.operation, validationTimeout: undefined, timing: undefined } })));
+		const value = JSON.stringify({v: 2, handoffs: [...this.handoffs], entries: [...this.entries.values()].map(entry => ({ ...entry,
+			operation: { ...entry.operation, validationTimeout: undefined, timing: undefined } }))});
 		await enqueueWrite(this.path, () => safeOutputFile(this.path!, value));
 	}
 

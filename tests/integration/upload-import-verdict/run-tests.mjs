@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 // upload-import-verdict — the controller transaction row for a NON-TRANSFER upload import carries the
 // destination's own verdict: an import the destination REFUSED reads failed with its failure stage, an
 // import the destination completed still reads completed
@@ -364,11 +366,14 @@ try {
 		describeRow(belts.row));
 	check(/predates captured source positions/.test(belts.row?.error ?? ""),
 		"missing captured belt positions are the actual rejection reason", describeRow(belts.row));
-	check(belts.summary !== undefined && belts.summary !== null
-		&& (belts.summary.validation ?? null) === null,
-		"NEGATIVE: a FAILED plain upload still carries no verdict — import-completion.lua builds a "
-		+ "belt-anomaly validation_result locally but attaches it to the event only under "
-		+ "job.transfer_id, so the drawer shows the composed error and no comparison tables",
+	const beltVerdict = belts.summary?.validation;
+	check(beltVerdict?.success === false && beltVerdict.failedStage === "belts"
+		&& /predates captured source positions/.test(beltVerdict.mismatchDetails ?? ""),
+		"a failed plain upload retains the destination's belt failure evidence in its detail record",
+		describeVerdict(belts.summary));
+	check(beltVerdict != null && ["expectedItemCounts", "actualItemCounts",
+		"expectedFluidCounts", "actualFluidCounts"].every(key => Object.keys(beltVerdict[key] ?? {}).length === 0),
+		"a structural failure without an exact cargo gate does not invent item or fluid comparisons",
 		describeVerdict(belts.summary));
 
 	say("\n=== GATE: a transfer-shaped upload whose exact gate FAILS and whose destination is DISCARDED ===");
@@ -462,12 +467,6 @@ try {
 		docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
 			`rm -f ${instancePath(DEST_HOST, `script-output/failure_black_box_${PREFIX}*`)}`]);
 
-		if (probeIndex !== null) {
-			const unlocked = lua(SOURCE_HOST,
-				`local ok, err = pcall(remote.call, 'surface_export', 'unlock_platform', ${probeIndex})\n`
-				+ "return { success = true, called = ok, detail = tostring(err) }");
-			say(`  host ${SOURCE_HOST}: unlock_platform(${probeIndex}) called=${unlocked.called} (${unlocked.detail})`);
-		}
 		if (exportJobId) {
 			lua(SOURCE_HOST, "if storage.platform_exports then\n"
 				+ `  storage.platform_exports['${exportJobId}'] = nil\n`
@@ -483,6 +482,7 @@ try {
 			+ "for _, pl in pairs(game.forces.player.platforms) do\n"
 			+ `  if pl.valid and pl.name:sub(1, ${PREFIX.length}) == '${PREFIX}' and pl.surface and pl.surface.valid then\n`
 			+ "    removed[#removed + 1] = pl.name\n"
+			+ fixtureUnlockLua("pl")
 			+ "    game.delete_surface(pl.surface)\n"
 			+ "  end\n"
 			+ "end\n"

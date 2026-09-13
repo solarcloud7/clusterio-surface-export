@@ -2,7 +2,15 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 
+local platform_identity = require("modules/surface_export/utils/platform-identity")
+
 local SurfaceLock = {}
+
+local function has_location(record)
+    return type(record.force_name) == "string" and record.force_name ~= ""
+        and type(record.platform_index) == "number" and record.platform_index > 0
+        and record.platform_index % 1 == 0
+end
 
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000
@@ -264,6 +272,7 @@ local function record_committed_source_tombstone(lock, transfer_id)
     existing.platform_name = lock.platform_name
     existing.force_name = lock.force_name
     existing.surface_index = lock.surface_index
+    existing.platform_uid = lock.platform_uid
     existing.transfer_job_id = lock.transfer_job_id
     existing.committed_tick = existing.committed_tick or game.tick
     existing.source_deleted_tick = existing.source_deleted_tick
@@ -277,7 +286,7 @@ function SurfaceLock.commit_source_transfer_lock(platform_index, transfer_id)
     if not lock or lock.kind ~= "transfer" then
         return false, "source is not locked-for-transfer"
     end
-    if transfer_id and lock.transfer_job_id and lock.transfer_job_id ~= transfer_id then
+    if type(transfer_id) ~= "string" or transfer_id == "" or lock.transfer_job_id ~= transfer_id then
         return false, "lock belongs to a different transfer"
     end
     lock.phase = SOURCE_TRANSFER_PHASE_COMMITTED
@@ -312,7 +321,8 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     SurfaceLock.prune_committed_source_tombstones(game.tick)
     local tombstones = storage.committed_source_transfer_tombstones
     local tombstone = type(tombstones) == "table" and transfer_id and tombstones[transfer_id] or nil
-    if type(tombstone) == "table" and tombstone.source_deleted_tick then
+    if type(tombstone) == "table" and tombstone.source_deleted_tick
+        and tombstone.platform_index == platform_index and tombstone.force_name == force_name then
         return { state = "source_gone_matching_transfer", transferId = transfer_id, error = nil }
     end
 
@@ -321,8 +331,16 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
         if force_name and lock.force_name and lock.force_name ~= force_name then
             return { state = "identity_mismatch", transferId = transfer_id, error = "force mismatch" }
         end
-        if transfer_id and lock.transfer_job_id and lock.transfer_job_id ~= transfer_id and lock.committed_transfer_id ~= transfer_id then
+        if type(transfer_id) ~= "string" or transfer_id == "" or lock.transfer_job_id ~= transfer_id then
             return { state = "identity_mismatch", transferId = transfer_id, error = "transfer id mismatch" }
+        end
+        if not has_location(lock) then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "platform location unavailable" }
+        end
+        local force = game.forces[lock.force_name]
+        local platform = force and force.platforms[platform_index]
+        if not SurfaceLock.matches_platform(lock, platform) then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "platform identity mismatch" }
         end
         if SurfaceLock.source_lock_is_committed(lock) then
             return { state = "committed", transferId = transfer_id, error = nil }
@@ -339,6 +357,13 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     end
     return { state = "identity_mismatch", transferId = transfer_id, error = "no matching source lock or tombstone" }
 end
+function SurfaceLock.matches_platform(lock, platform)
+    return type(lock) == "table" and platform and platform.valid and platform.surface and platform.surface.valid
+        and platform.index == lock.platform_index and platform.surface.index == lock.surface_index
+        and type(lock.platform_uid) == "string" and lock.platform_uid ~= ""
+        and platform_identity(platform) == lock.platform_uid
+end
+
 function SurfaceLock.destination_hold_owns_surface(surface, platform)
     local holds = storage.destination_holds
     if type(holds) ~= "table" or not (surface and surface.valid and platform and platform.valid) then
@@ -377,7 +402,7 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     local existing_lock = storage.locked_platforms[platform.index]
     if existing_lock then
         if lock_opts and lock_opts.kind == "transfer" and existing_lock.kind == "transfer"
-            and existing_lock.surface_index == surface.index then
+            and SurfaceLock.matches_platform(existing_lock, platform) then
             if not SurfaceLock.is_same_transfer_upgrade(existing_lock.transfer_job_id, lock_opts.job_id) then
                 return false, "Platform already locked by a different in-flight transfer"
             end
@@ -394,6 +419,9 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
         end
         return false, "Platform already locked"
     end
+
+    local uid = platform_identity(platform)
+    if not startup and not uid then return false, "Platform identity is unavailable" end
 
     local original_hidden = force.get_surface_hidden(surface)
     local original_platform_hidden = platform.hidden
@@ -422,6 +450,7 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
         platform_name = platform.name,
         platform_index = platform.index,
         surface_index = surface.index,
+        platform_uid = uid,
         force_name = force.name,
         original_hidden = original_hidden,
         original_platform_hidden = original_platform_hidden,
@@ -441,7 +470,13 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     return true, nil
 end
 
-function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_bootstrap)
+function SurfaceLock.accept_restored_source(platform_index, old_job_id)
+    if storage.source_recovery_ready ~= false or storage.source_recovery_mode ~= "save_game"
+        or storage.source_recovery_allow_adoption ~= true then return false, "Save restoration is not authorized" end
+    return SurfaceLock.unlock_platform(platform_index, nil, true, old_job_id)
+end
+
+local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
 	end
@@ -454,14 +489,22 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name
-    if expected_name ~= nil and platform_name ~= expected_name then -- lint-lua:allow compares STORED snapshots (lock_data name vs caller expectation), not the live platform.name — not rename-vulnerable; surface.index is the primary identity at the tripwire below. Collision-residual follow-up: pass expected_surface_index.
-        return false, string.format("Unlock refused: index %s is locked for a DIFFERENT platform (expected '%s', locked '%s')",
-            tostring(platform_index), tostring(expected_name), tostring(platform_name))
+    if observed_lock and observed_lock ~= lock_data then
+        return false, "Unlock refused: local lock identity changed"
+    end
+    if expected_job_id and lock_data.transfer_job_id ~= expected_job_id then
+        return false, "Unlock refused: transfer identity changed"
     end
 
-    if SurfaceLock.source_lock_is_committed(lock_data) then
+    local accepting_restoration = recovery_bootstrap and storage.source_recovery_ready == false
+        and storage.source_recovery_mode == "save_game" and storage.source_recovery_allow_adoption == true
+        and type(restored_job_id) == "string" and restored_job_id == lock_data.transfer_job_id
+    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration then
         return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
             tostring(platform_name), tostring(platform_index))
+    end
+    if not has_location(lock_data) then
+        return false, "Unlock refused: platform location unavailable; protection retained"
     end
     local force = game.forces[lock_data.force_name]
     if not force then
@@ -477,10 +520,22 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
 
     local surface = platform.surface
     if not (surface and surface.valid and surface.index == lock_data.surface_index) then
-        storage.locked_platforms[platform_index] = nil
-        log(string.format("[SurfaceLock] unlock: index %s now holds a different surface (locked %s, found %s) — dropping stale lock WITHOUT restoring",
-            tostring(platform_index), tostring(lock_data.surface_index), tostring(surface and surface.index)))
-        return false, "Platform index reused since lock — stale lock dropped (not restored)"
+        return false, "Platform index reused since lock; protection retained"
+    end
+    if not recovery_bootstrap and not SurfaceLock.matches_platform(lock_data, platform) then
+        return false, "Unlock refused: platform identity changed or is unavailable"
+    end
+
+    local restoration = (storage.source_recovery_notices or {})[platform_index]
+    if not recovery_bootstrap and restoration and restoration.status == "accepted" then
+        local uid = platform_identity(platform)
+        if not uid or type(restoration.platformUid) ~= "string" or restoration.platformUid == "" then
+            return false, "Unlock refused: restored platform identity is unavailable"
+        end
+        if restoration.platformUid == uid and observed_lock ~= lock_data
+            and (type(expected_job_id) ~= "string" or lock_data.transfer_job_id ~= expected_job_id) then
+            return false, "Unlock refused: restored platform requires its current transfer identity"
+        end
     end
 
     local destination_hold_active, destination_hold_transfer_id = SurfaceLock.destination_hold_owns_surface(surface, platform)
@@ -492,17 +547,16 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
         return true, nil
     end
 
+    if lock_data.original_schedule then
+        local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
+        if not schedule_restore_ok then
+            return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
+        end
+    end
     local restored = unfreeze_entities(surface, lock_data.frozen_states)
     force.set_surface_hidden(surface, lock_data.original_hidden)
     if lock_data.original_platform_hidden ~= nil then
         platform.hidden = lock_data.original_platform_hidden
-    end
-    if lock_data.original_schedule then
-        local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
-        if not schedule_restore_ok then
-            storage.locked_platforms[platform_index] = nil
-            return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
-        end
     end
 
     storage.locked_platforms[platform_index] = nil
@@ -512,6 +566,15 @@ function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_boo
     game.print(string.format("[Lock] Platform '%s' unlocked and restored", tostring(platform_name)), {0.5, 1, 0.5})
 
     return true, nil
+end
+
+function SurfaceLock.unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id)
+    return unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id)
+end
+
+function SurfaceLock.unlock_current_lock(platform_index, observed_lock)
+    if type(observed_lock) ~= "table" then return false, "Local lock identity is required" end
+    return unlock_platform(platform_index, nil, nil, nil, nil, observed_lock)
 end
 
 function SurfaceLock.is_locked(platform_index)
@@ -532,12 +595,19 @@ function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected
     if not lock or lock.kind ~= "transfer" then
         return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
     end
-    if expected_job_id and lock.transfer_job_id and lock.transfer_job_id ~= expected_job_id then
+    if type(expected_job_id) ~= "string" or expected_job_id == "" or lock.transfer_job_id ~= expected_job_id then
         return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
             tostring(lock.transfer_job_id), tostring(expected_job_id))
     end
     if not (current_surface and current_surface.valid and current_surface.index == lock.surface_index) then
         return false, "surface identity mismatch (index reused since lock?)"
+    end
+    if not has_location(lock) then
+        return false, "platform location unavailable"
+    end
+    local force = game.forces[lock.force_name]
+    if not SurfaceLock.matches_platform(lock, force and force.platforms[lock.platform_index]) then
+        return false, "platform identity changed or is unavailable"
     end
     return true, nil
 end
@@ -572,6 +642,8 @@ function SurfaceLock.scan_transfer_expiries()
             if SurfaceLock.source_lock_is_committed(lock_data) then
                 committed = committed + 1
                 skipped = skipped + 1
+            elseif lock_data.kind == "transfer" or (storage.async_jobs or {})[lock_data.transfer_job_id] then
+                skipped = skipped + 1
             else
                 local locked_tick = lock_data.locked_tick
                 if not locked_tick then
@@ -581,7 +653,7 @@ function SurfaceLock.scan_transfer_expiries()
                     if game.tick >= expires_tick then
                         log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
                             tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
-                        local ok, err = SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                        local ok, err = SurfaceLock.unlock_current_lock(platform_index, lock_data)
                         if ok then
                             expired = expired + 1
                         else

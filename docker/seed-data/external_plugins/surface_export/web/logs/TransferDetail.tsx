@@ -9,11 +9,16 @@ import AuditTable, { auditLabel } from "./AuditTable";
 import TimingTable from "./TimingTable";
 import EntityAudit, { entityAuditLabel } from "./EntityAudit";
 import type { OperationTiming } from "../../shared/timing";
+import { useAccount } from "@clusterio/web_ui";
+import { PERMISSIONS } from "../../messages";
+import type { RestoreSnapshot } from "../ImportModal";
 
-export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false }: {
+export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false, onRestore }: {
 	row: TransferSummary; detail?: LogDetail; loading?: boolean; error?: string; onRetry?: () => void;
 	plugin?: SurfaceExportPlugin; preview?: boolean;
+	onRestore?: (snapshot: RestoreSnapshot) => void;
 }) {
+	const account = useAccount();
 	const [activeTab, setActiveTab] = useState("overview"), [downloading, setDownloading] = useState(false);
 	const [now, setNow] = useState(Date.now());
 	useEffect(() => {
@@ -40,6 +45,11 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 			downloadJson(response.exportData, `${String(row.platformName || "platform").replace(/[^\w-]+/g, "_")}.json`);
 		} catch (err) { antMessage.error(getErrorMessage(err, "Download failed")); }
 		finally { setDownloading(false); }
+	};
+	const canRestore = canDownload && row.restorable === true && !!onRestore && account.hasPermission(PERMISSIONS.TRANSFER_EXPORTS);
+	const restore = () => {
+		if (!canRestore || !plugin || !row.exportId || !onRestore) return;
+		onRestore({exportId: row.exportId, timestamp: row.snapshotTimestamp ?? null, platformName: row.platformName || "Unnamed platform"});
 	};
 	const overview = <>
 		<div className="se-audit-cards">
@@ -89,6 +99,11 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 			<Alert className="se-operation-outcome" data-testid="operation-outcome" showIcon
 				type={model.tone as "info" | "success" | "error"} message={failed ? failureTitle : model.outcome}
 				description={<>
+					{!terminal(row.status) && row.jobObservation && <div role="status" data-testid="job-observation">
+						<strong>{row.jobObservation.message}</strong>
+						{row.jobObservation.phase && <span> · {row.jobObservation.phase}</span>}
+						{row.jobObservation.observedTick != null && <div className="se-muted">Observed at simulation tick {row.jobObservation.observedTick}.</div>}
+					</div>}
 					{failure != null && <div className="se-outcome-stage">Failed stage: <strong>{String(failure)}</strong></div>}
 					{reason && <div>{String(reason)}</div>}
 					{model.entities.failure && <Button className="se-outcome-inspect" size="small" onClick={() => setActiveTab("entities")}>Inspect entity evidence</Button>}
@@ -102,6 +117,9 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 				<span>Started: {row.startedAt == null ? "Not recorded" : new Date(row.startedAt).toLocaleString()}</span>
 				{row.completedAt != null && <span>Completed: {new Date(row.completedAt).toLocaleString()}</span>}</div>
 			<Space wrap><Tooltip title={canDownload ? "Download the stored platform export" : unavailableReason}><span><Button icon={<DownloadOutlined />} disabled={!canDownload} loading={downloading} onClick={download}>Download platform</Button></span></Tooltip>
+				<Tooltip title={canRestore ? "Create a new import from this snapshot" : row.restoreUnavailableReason || (canDownload ? "Restoration requires permission to transfer exports." : unavailableReason)}><span>
+					<Button disabled={!canRestore} onClick={restore}>Restore from snapshot</Button>
+				</span></Tooltip>
 				<Button onClick={() => downloadJson(diagnosticReport(row, detail, preview), `transfer-${row.transferId.replace(/[^\w-]+/g, "_")}.json`)}>Download diagnostic report</Button></Space>
 		</header>
 		{loading && !detail ? <div className="se-loading" role="status"><Spin /><p>Loading recorded evidence…</p></div> : error ?

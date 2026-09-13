@@ -24,6 +24,7 @@ local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
+local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -136,7 +137,8 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid)
+	if storage.source_recovery_ready ~= true then return nil, "Startup recovery is not ready" end
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -147,10 +149,13 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	end
 
 	local platform = force.platforms[platform_index]
+	if not (platform.valid and platform.surface and platform.surface.valid) then return nil, "Platform surface not valid" end
+	local uid = SourceRecovery.platform_uid(platform)
+	if not uid or (expected_uid and expected_uid ~= uid) then return nil, "Source platform identity changed or is unavailable" end
 
 	local safe_name = platform.name:gsub("[^%w%-]", "-")
 
-	local job_id = string.format("%03d_%s", job_counter, safe_name)
+	local job_id = SourceRecovery.export_job_id(job_counter, safe_name)
 	Timing.begin(job_id, "source-lua", nil, job_id)
 	Timing.start(job_id, "preflight")
 
@@ -158,10 +163,6 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		job_id, tostring(platform_index), force_name, tostring(requester_name),
 		tostring(destination_instance_id), type(destination_instance_id)))
 	local surface = platform.surface
-	if not surface or not surface.valid then
-		Timing.finish(job_id, "failed")
-		return nil, "Platform surface not valid"
-	end
 
 	if not GameUtils.platform_has_hub(platform) then
 		Timing.finish(job_id, "failed")
@@ -198,7 +199,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	Timing.stop(job_id, "schedule_capture")
 	if not platform_schedule then
 		Timing.fail(job_id, "schedule_capture")
-		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index)
+		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index, nil, nil, nil, job_id)
 		Timing.finish(job_id, "failed")
 		return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
 	end
@@ -227,10 +228,12 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		type = "export",
 		job_id = job_id,
 		platform_index = platform_index,
+		platform_uid = uid,
 		platform_name = platform.name,
 		force_name = force_name,
 		requester = requester_name,
 		destination_instance_id = destination_instance_id,
+		operation_id = operation_id,
 		clone_dest_name = clone_dest_name,
 		started_tick = game.tick,
 		surface = surface,
@@ -245,6 +248,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
 			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
+			platform_uid = uid,
 			tick = game.tick,
 			timestamp = Util.format_timestamp(game.tick),
 			platform = {
@@ -436,7 +440,8 @@ local function publish_completion(job)
 	if job.compressed_sections then
 		ExportCache.record(export_id, {
 			section_codec = SectionCodec.VERSION, section_count = #job.compressed_sections, sections = job.compressed_sections,
-			platform_name = job.export_data.platform_name, tick = job.export_data.tick,
+			platform_name = job.export_data.platform_name,
+			platform_uid = job.export_data.platform_uid, force_name = job.force_name, tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp, stats = job.export_data.stats,
 			verification = job.export_data.verification,
 		})
@@ -446,6 +451,7 @@ local function publish_completion(job)
 			compression = "deflate",
 			payload = compressed,
 			platform_name = job.export_data.platform_name,
+			platform_uid = job.export_data.platform_uid, force_name = job.force_name,
 			tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp,
 			stats = job.export_data.stats,
@@ -508,8 +514,10 @@ local function publish_completion(job)
 		PhaseProfiler.discard(job.job_id)
 	end
 
+	local notification_error
 	if clusterio_api and clusterio_api.send_json then
 		local event_payload = {
+			operation_id = job.operation_id,
 			export_id = export_id,
 			platform_name = job.platform_name,
 			platform_index = job.platform_index,
@@ -543,14 +551,18 @@ local function publish_completion(job)
 		if send_success then
 			log("[send_json] Export notification sent successfully")
 		else
+			notification_error = "Export notification failed: " .. tostring(send_err)
 			log(string.format("[send_json ERROR] Failed to send notification: %s", tostring(send_err)))
 		end
 	else
+		notification_error = "Export notification failed: Clusterio API unavailable"
 		log("[WARN] clusterio_api not available, export notification not sent to plugin")
 	end
 
 	storage.async_job_results[job.job_id] = {
-		status = "complete",
+		operation_id = job.operation_id,
+		status = notification_error and "failed" or "complete",
+		error = notification_error,
 		complete = true,
 		type = "export",
 		job_id = job.job_id,
@@ -565,7 +577,7 @@ local function publish_completion(job)
 	handle_pending_file_write(export_id)
 
 	if not job.destination_instance_id then
-		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index)
+		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index, nil, nil, nil, job.job_id)
 		if unlock_success then
 			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
 			if clusterio_api and clusterio_api.send_json then
@@ -754,7 +766,7 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		job.platform_name), {1, 0.3, 0})
 
 	Timing.start(job.job_id, "source_unlock")
-	local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
+	local unlock_success = SurfaceLock.unlock_platform(job.platform_index, nil, nil, nil, job.job_id)
 	Timing.stop(job.job_id, "source_unlock")
 	if unlock_success and clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
@@ -784,6 +796,7 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	end
 
 	storage.async_job_results[job.job_id] = {
+		operation_id = job.operation_id,
 		status = "failed",
 		complete = true,
 		failed = true,

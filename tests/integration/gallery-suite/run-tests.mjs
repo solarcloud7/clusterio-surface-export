@@ -116,8 +116,8 @@ async function main() {
 
 		const collision = L.checkTransferIdCollisions({
 			candidates: [
-				...L.predictCanonicalIds({ instanceId: ids[1], counter: counters[1], platformName }),
-				...L.predictCanonicalIds({ instanceId: ids[2], counter: counters[2], platformName }),
+				...L.predictCanonicalIds({ instanceId: ids[1], counter: counters[1], platformName, epoch: L.recoveryEpoch(1) }),
+				...L.predictCanonicalIds({ instanceId: ids[2], counter: counters[2], platformName, epoch: L.recoveryEpoch(2) }),
 			],
 			summaries: L.fetchTransferSummaries({ limit: 200 }),
 		});

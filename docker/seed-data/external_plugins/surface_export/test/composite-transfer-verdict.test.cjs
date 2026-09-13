@@ -344,7 +344,7 @@ test("the discard contract is unconditional — observability and guards never g
 		"nor may an evacuation failure EXIT before the delete — an `if not evacuated then return` "
 		+ "re-gate is the same orphan through the other door (reconciliation-review note)");
 	assert.match(importCompletion.slice(deleteAt, deleteAt + 500),
-		/pcall\(function\(\)[\s\S]*DestinationHold\.discard\(job.transfer_id\)[\s\S]*return GameUtils\.delete_platform\(job.target_platform\)/,
+		/pcall\(function\(\)[\s\S]*DestinationHold\.discard\(job.transfer_id, job.job_id\)[\s\S]*return GameUtils\.delete_platform\(job.target_platform\)/,
 		"the unconditional pcall must discard held targets through their owner, and delete ordinary targets directly");
 
 	const invalidAt = importCompletion.indexOf("nothing to discard", bankAt);

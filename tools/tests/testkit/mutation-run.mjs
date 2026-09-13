@@ -15,6 +15,32 @@
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
+import { randomUUID } from "node:crypto";
+
+export async function importMutation(url, { find, replace }) {
+	const target = new URL(url);
+	assert.ok(target.protocol === "file:" && target.pathname.endsWith(".mjs"), "mutation requires a local .mjs module");
+	assert.ok(typeof find === "string" && find.length > 0 && typeof replace === "string" && find !== replace,
+		"mutation requires a nonempty find and a different string replacement");
+	target.searchParams.set("mutation", randomUUID());
+	let applied = false;
+	const hooks = registerHooks({ load(href, context, nextLoad) {
+		const result = nextLoad(href, context);
+		if (href !== target.href) return result;
+		assert.equal(result.format, "module", "mutation requires an ES module");
+		const source = typeof result.source === "string" ? result.source : Buffer.from(result.source).toString("utf8");
+		assert.equal(source.split(find).length, 2, "mutation must match exactly once");
+		applied = true;
+		return { ...result, source: source.replace(find, () => replace) };
+	} });
+	try {
+		const module = await import(target.href);
+		assert.ok(applied, "mutation was not loaded");
+		return module;
+	} finally { hooks.deregister(); }
+}
 
 const HOST_CONTAINER = "surface-export-host-1";
 const PLUGIN_SUITE = "plugin test/*.test.cjs (in surface-export-host-1)";

@@ -56,7 +56,7 @@ test("each phase gets its own marker at its own position", () => {
 	const { markers } = groupEdgeShips([
 		ship("a", "awaiting_validation", 1),
 		ship("b", "completed", 1),
-		ship("c", "failed", 1),
+		{...ship("c", "failed", 1), sourceRestored:true},
 	], forward);
 
 	const byTone = Object.fromEntries(markers.map(m => [m.tone, m]));
@@ -66,23 +66,23 @@ test("each phase gets its own marker at its own position", () => {
 	assert.equal(markers.length, 3);
 });
 
-test("cleanup_failed stays at the destination but counts as a failure", () => {
+test("cleanup_failed stays unresolved and counts as a failure", () => {
 	const { markers } = groupEdgeShips([ship("a", "cleanup_failed", 1)], forward);
 
 	assert.equal(markers.length, 1);
 	assert.equal(markers[0].tone, "failure", "a cleanup failure must not read as a clean arrival");
-	assert.equal(markers[0].distance, 1, "the platform really is at the destination");
+	assert.equal(markers[0].distance, 0.5, "cleanup failure does not prove destination release");
 });
 
-test("a failure that returned and one that arrived are separate markers, both red", () => {
+test("confirmed source recovery and unresolved cleanup are separate markers", () => {
 	const { markers } = groupEdgeShips([
-		ship("a", "failed", 1),
+		{...ship("a", "failed", 1),sourceRestored:true},
 		ship("b", "cleanup_failed", 1),
 	], forward);
 
 	assert.equal(markers.length, 2, "same tone, different positions — they cannot share a marker");
 	assert.deepEqual(markers.map(m => m.tone).sort(), ["failure", "failure"]);
-	assert.deepEqual(markers.map(m => m.distance).sort(), [0, 1]);
+	assert.deepEqual(markers.map(m => m.distance).sort(), [0, 0.5]);
 });
 
 test("two failure kinds at the same spot stay separate, each keeping its own words", () => {
@@ -94,7 +94,7 @@ test("two failure kinds at the same spot stay separate, each keeping its own wor
 	assert.equal(markers.length, 2,
 		"failed and error are both tone 'failure' at distance 0 — keying on tone+distance merged them");
 	const labels = markers.map(m => m.label).sort();
-	assert.deepEqual(labels, ["failed — returned", "timed out — returned"],
+	assert.deepEqual(labels, ["transfer error", "transfer failed"],
 		"a timeout must not be reported as a plain failure, or the reverse");
 	for (const marker of markers) {
 		assert.equal(marker.count, 1, "neither may absorb the other's transfer into its count");

@@ -95,6 +95,7 @@ export class ExportPlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			platformUid: { type: "string", minLength: 1 },
 			operationId: { type: "string" },
 			forceName: { type: "string", default: "player" },
 			targetInstanceId: { type: ["integer", "null"], default: null },
@@ -105,22 +106,24 @@ export class ExportPlatformRequest {
 
 	operationId?: string;
 	platformIndex: number;
+	platformUid?: string;
 	forceName: string;
 	targetInstanceId: number | null;
 
-	constructor(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	constructor(json: { platformUid?: string; operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		this.operationId = json.operationId;
 		this.platformIndex = json.platformIndex;
+		this.platformUid = json.platformUid;
 		this.forceName = json.forceName || "player";
 		this.targetInstanceId = json.targetInstanceId ?? null;
 	}
 
-	static fromJSON(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	static fromJSON(json: { platformUid?: string; operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		return new ExportPlatformRequest(json);
 	}
 
 	toJSON() {
-		return { operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
+		return { platformUid: this.platformUid, operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
 	}
 
 	static Response = {
@@ -129,11 +132,37 @@ export class ExportPlatformRequest {
 			properties: {
 				success: { type: "boolean" },
 				exportId: { type: "string" },
+				admissionUncertain: { type: "boolean" },
 				error: { type: "string" },
 			},
 			required: ["success"],
 		} as JsonSchema,
 		fromJSON(json: unknown) { return json as SimpleResponse & { exportId?: string }; },
+	};
+}
+
+export class RecoveryPolicyRequest {
+	declare ["constructor"]: typeof RecoveryPolicyRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: { instanceId: { type: "integer" }, epoch: { type: "string" }, action: { type: "string" } },
+		required: ["instanceId", "epoch", "action"], additionalProperties: false,
+	};
+	instanceId: number;
+	epoch: string;
+	action: string;
+	constructor(json: { instanceId: number; epoch: string; action: string }) {
+		this.instanceId = json.instanceId; this.epoch = json.epoch; this.action = json.action;
+	}
+	static fromJSON(json: { instanceId: number; epoch: string; action: string }) { return new RecoveryPolicyRequest(json); }
+	toJSON() { return { instanceId: this.instanceId, epoch: this.epoch, action: this.action }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { mode: { type: "string" }, allowAdoption: { type: "boolean" },
+			protectedSourceIndexes: {type: "array", items: {type: "integer"}} }, required: ["mode", "allowAdoption"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes?: number[] }; },
 	};
 }
 
@@ -184,6 +213,16 @@ export class GetStoredExportRequest {
 	};
 }
 
+export type ImportUploadedExportOptions = {
+	targetInstanceId: number;
+	exportData: Record<string, unknown>;
+	restoreExportId?: string | null;
+	restoreRequestId?: string | null;
+	forceName?: string;
+	platformName?: string | null;
+	targetPlanet?: string | null;
+};
+
 export class ImportUploadedExportRequest {
 	declare ["constructor"]: typeof ImportUploadedExportRequest;
 	static plugin = PLUGIN_NAME;
@@ -196,6 +235,8 @@ export class ImportUploadedExportRequest {
 		properties: {
 			targetInstanceId: { type: "integer" },
 			exportData: { type: "object" },
+			restoreExportId: { type: ["string", "null"], default: null },
+			restoreRequestId: { type: ["string", "null"], default: null },
 			forceName: { type: "string", default: "player" },
 			platformName: { type: ["string", "null"], default: null },
 			targetPlanet: { type: ["string", "null"], default: null },
@@ -206,24 +247,28 @@ export class ImportUploadedExportRequest {
 
 	targetInstanceId: number;
 	exportData: Record<string, unknown>;
+	restoreExportId: string | null;
+	restoreRequestId: string | null;
 	forceName: string;
 	platformName: string | null;
 	targetPlanet: string | null;
 
-	constructor(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	constructor(json: ImportUploadedExportOptions) {
 		this.targetInstanceId = json.targetInstanceId;
 		this.exportData = json.exportData;
+		this.restoreExportId = json.restoreExportId ?? null;
+		this.restoreRequestId = json.restoreRequestId ?? null;
 		this.forceName = json.forceName || "player";
 		this.platformName = json.platformName ?? null;
 		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+	static fromJSON(json: ImportUploadedExportOptions) {
 		return new ImportUploadedExportRequest(json);
 	}
 
 	toJSON() {
-		return { targetInstanceId: this.targetInstanceId, exportData: this.exportData, forceName: this.forceName, platformName: this.platformName, targetPlanet: this.targetPlanet };
+		return { targetInstanceId: this.targetInstanceId, exportData: this.exportData, restoreExportId: this.restoreExportId, restoreRequestId: this.restoreRequestId, forceName: this.forceName, platformName: this.platformName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {
@@ -253,6 +298,7 @@ export class ExportPlatformForDownloadRequest {
 		properties: {
 			sourceInstanceId: { type: "integer" },
 			sourcePlatformIndex: { type: "integer" },
+			sourcePlatformUid: { type: "string", minLength: 1 },
 			forceName: { type: "string", default: "player" },
 		},
 		required: ["sourceInstanceId", "sourcePlatformIndex"],
@@ -261,20 +307,22 @@ export class ExportPlatformForDownloadRequest {
 
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
+	sourcePlatformUid?: string;
 	forceName: string;
 
-	constructor(json: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	constructor(json: { sourcePlatformUid?: string; sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.sourcePlatformUid = json.sourcePlatformUid;
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	static fromJSON(json: { sourcePlatformUid?: string; sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		return new ExportPlatformForDownloadRequest(json);
 	}
 
 	toJSON() {
-		return { sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, forceName: this.forceName };
+		return { sourcePlatformUid: this.sourcePlatformUid, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, forceName: this.forceName };
 	}
 
 	static Response = {
@@ -620,8 +668,48 @@ export class ImportPlatformRequest {
 	toJSON() { return { exportId: this.exportId, exportData: this.exportData, forceName: this.forceName, targetPlanet: this.targetPlanet }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { platformName?: string }; },
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, jobId: {type: "string"}, epoch: {type: "string"}, attemptId: {type: "string"}, admissionUncertain: {type: "boolean"} }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as ImportResult & { platformName?: string }; },
+	};
+}
+
+export class ReadExportRequest {
+	declare ["constructor"]: typeof ReadExportRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: {exportId: {type: "string", minLength: 1}, epoch: {type: "string", minLength: 1}},
+		required: ["exportId", "epoch"], additionalProperties: false,
+	};
+	constructor(readonly exportId: string, readonly epoch: string) {}
+	static fromJSON(json: {exportId: string; epoch: string}) { return new ReadExportRequest(json.exportId, json.epoch); }
+	toJSON() { return {exportId: this.exportId, epoch: this.epoch}; }
+	static Response = {
+		jsonSchema: {type: "object", properties: {success: {type: "boolean"}, error: {type: "string"},
+			exportId: {type: "string"}, epoch: {type: "string"}, exportData: {type: "object"}}, required: ["success"]} as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & {exportId?: string; epoch?: string; exportData?: ExportData}; },
+	};
+}
+
+export class JobsStatusRequest {
+	declare ["constructor"]: typeof JobsStatusRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: {jobs: {type: "array", maxItems: 100, items: {
+			type: "object", properties: {jobId: {type: "string"}, operationId: {type: "string"}}, additionalProperties: false,
+		}}}, required: ["jobs"], additionalProperties: false,
+	};
+	constructor(readonly jobs: import("./shared/job-status").JobReference[]) {}
+	static fromJSON(json: {jobs: import("./shared/job-status").JobReference[]}) { return new JobsStatusRequest(json.jobs); }
+	toJSON() { return {jobs: this.jobs}; }
+	static Response = {
+		jsonSchema: {type: "object", properties: {version: {type: "number"}, epoch: {type: "string"}, observedTick: {type: "number"}, jobs: {type: "array", items: {type: "object"}}}, required: ["version", "epoch", "jobs"]} as JsonSchema,
+		fromJSON(json: unknown) { return json as import("./shared/job-status").JobStatusBatch; },
 	};
 }
 
@@ -697,6 +785,7 @@ export class StartPlatformTransferRequest {
 			platformName: { type: "string", maxLength: 500 },
 			sourceInstanceId: { type: "integer" },
 			sourcePlatformIndex: { type: "integer" },
+			sourcePlatformUid: { type: "string", minLength: 1 },
 			targetInstanceId: { type: "integer" },
 			forceName: { type: "string", default: "player" },
 			targetPlanet: { type: ["string", "null"], default: null },
@@ -708,25 +797,27 @@ export class StartPlatformTransferRequest {
 	platformName?: string;
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
+	sourcePlatformUid?: string;
 	targetInstanceId: number;
 	forceName: string;
 	targetPlanet: string | null;
 
-	constructor(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	constructor(json: { sourcePlatformUid?: string; platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		this.platformName = json.platformName;
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.sourcePlatformUid = json.sourcePlatformUid;
 		this.targetInstanceId = json.targetInstanceId;
 		this.forceName = json.forceName || "player";
 		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	static fromJSON(json: { sourcePlatformUid?: string; platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return new StartPlatformTransferRequest(json);
 	}
 
 	toJSON() {
-		return { platformName: this.platformName, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
+		return { sourcePlatformUid: this.sourcePlatformUid, platformName: this.platformName, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {
@@ -758,7 +849,7 @@ export class InstanceListPlatformsRequest {
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[] }; },
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
 	};
 }
 
@@ -1033,10 +1124,7 @@ export class ImportPlatformFromFileRequest {
 
 	toJSON() { return { filename: this.filename, platformName: this.platformName, forceName: this.forceName }; }
 
-	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse; },
-	};
+	static Response = ImportPlatformRequest.Response;
 }
 
 export class TransferValidationEvent {
@@ -1452,6 +1540,10 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	platformUid?: string;
+	sourceRollback?: import("./shared/recovery").SourceRollback;
+	lateDestinationCleanup?: boolean;
+ destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
 	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;
 	timingPendingRecovery?: boolean;
@@ -1503,7 +1595,7 @@ export interface StoredExport {
 
 export interface PersistedTransactionLog {
 	transferId: string;
-	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string };
+	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string; sourceRestored?: boolean };
 	summary: Record<string, unknown>;
 	events: TransactionLogEntryModel[];
 	savedAt: number;
@@ -1546,6 +1638,9 @@ export interface SourceCommitMarker {
 }
 
 export interface IControllerPlugin {
+	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
+	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
+	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
 	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
 	persistPendingTransfers(requiredTransferId?: string): Promise<void>;
@@ -1569,6 +1664,7 @@ export interface IControllerPlugin {
 	};
 	platformStorage: Map<string, StoredExport>;
 	platformTree: {
+		resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string>;
 		resolveInstanceName: (instanceId: number) => string | null;
 		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
 		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
@@ -1626,6 +1722,8 @@ export type ExportStats = {
 };
 
 export type ExportData = {
+	platform_uid?: string;
+	force_name?: string;
 	compressed?: boolean;
 	compression?: string;
 	payload?: string;
@@ -1640,6 +1738,7 @@ export type ExportData = {
 };
 
 export type OperationOptions = {
+	platformUid?: string;
 	operationId?: string;
 	exportId?: string | null;
 	sourceExportId?: string | null;
@@ -1664,9 +1763,9 @@ export type OperationOptions = {
 	sourceVerification?: { itemCounts?: Record<string, number>; fluidCounts?: Record<string, number> } | null;
 };
 
-export type ExportResult = { success: boolean; exportId?: string; error?: string };
+export type ExportResult = { success: boolean; exportId?: string; admissionUncertain?: boolean; error?: string };
 
-export type ImportResult = { success: boolean; error?: string };
+export type ImportResult = { success: boolean; error?: string; jobId?: string; epoch?: string; attemptId?: string; admissionUncertain?: boolean };
 
 export type PendingTransfer = {
 	platform_index?: number;

@@ -18,20 +18,15 @@ test("destination hold primitive is registered for explicit proof runs", () => {
 
 test("destination hold primitive exposes stage, go_live, discard, and get", () => {
 	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed\)/);
-	assert.match(hold, /function DestinationHold\.go_live\(transfer_id\)/);
-	assert.match(hold, /function DestinationHold\.discard\(transfer_id\)/);
+	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed, preparation_visibility, job_id\)/);
+	assert.match(hold, /function DestinationHold\.go_live\(transfer_id, job_id\)/);
+	assert.match(hold, /function DestinationHold\.discard\(transfer_id, job_id\)/);
 	assert.match(hold, /function DestinationHold\.get\(transfer_id\)/);
 	assert.match(hold, /storage\.destination_holds/);
 });
 
 
-test("discard treats missing or surface-changed held platforms as cleaned up", () => {
-	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /err == "Held platform is missing" or err == "Held platform surface changed or is missing"/);
-	assert.match(hold, /holds\[transfer_id\] = nil[\s\S]*deleted = false/);
-	assert.match(hold, /surface_changed = \(err == "Held platform surface changed or is missing"\)/);
-});
+
 
 test("stage first moves the platform toward not-live, then deactivates entities under pcall", () => {
 	const hold = read("module/core/destination-hold.lua");
@@ -119,7 +114,7 @@ test("surface lock cargo pod completion preserves descending overflow via recove
 });
 test("unlock_platform defers not-live ownership to an active destination hold", () => {
 	const lock = read("module/utils/surface-lock.lua");
-	const unlockAt = lock.indexOf("function SurfaceLock.unlock_platform(platform_index, expected_name,");
+	const unlockAt = lock.indexOf("local function unlock_platform(platform_index, expected_name,");
 	const identityAt = lock.indexOf("Platform index reused since lock", unlockAt);
 	const holdCheckAt = lock.indexOf("SurfaceLock.destination_hold_owns_surface", unlockAt);
 	const restoreAt = lock.indexOf("local restored = unfreeze_entities", unlockAt);

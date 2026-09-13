@@ -70,6 +70,11 @@ export interface ResolvedGateway {
 }
 
 export interface TransferSummaryModel {
+	lateDestinationCleanup?: boolean;
+	sourceRollback?: import("./recovery").SourceRollback;
+	timingPendingRecovery?: boolean;
+	sourceRestored?: boolean;
+	jobObservation?: import("./job-status").JobObservation;
 	queuedRequestId?: string;
 	observedDurationMs?: number | null;
 	transferId: string;
@@ -77,6 +82,9 @@ export interface TransferSummaryModel {
 	exportId: string | null;
 	artifactSizeBytes: number | null;
 	downloadable: boolean;
+	restorable?: boolean;
+	snapshotTimestamp?: number | null;
+	restoreUnavailableReason?: string | null;
 	platformName: string;
 	sourceInstanceId: number;
 	sourceInstanceName: string | null;
@@ -108,6 +116,7 @@ export interface TransactionLogEntryModel {
 	[key: string]: unknown;
 }
 export interface PlatformModel {
+	platformUid?: string | null;
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
@@ -127,6 +136,8 @@ export interface PlatformModel {
 	transferStatus?: string;
 }
 export interface InstanceNodeModel {
+	recovery?: import("./recovery").InstanceRecoveryStatus;
+	configuredRecoveryMode?: import("./recovery").PlatformSourceOfTruth;
 	instanceId: number;
 	instanceName: string;
 	hostId: number | null;
@@ -148,6 +159,10 @@ export interface HostNodeModel {
 export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
+	lateDestinationCleanup?: boolean;
+	sourceRollback?: import("./recovery").SourceRollback;
+	timingPendingRecovery?: boolean;
+	sourceRestored?: boolean;
 	observedDurationMs?: number | null;
 	v: number;
 	transferId: string;
@@ -156,6 +171,7 @@ export interface AuditRow {
 	operationType: string;
 	platformName: string;
 	platformIndex: number | null;
+	platformUid?: string | null;
 	sourceInstanceId: number;
 	sourceInstanceName: string | null;
 	targetInstanceId: number;

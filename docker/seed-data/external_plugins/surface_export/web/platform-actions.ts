@@ -7,6 +7,7 @@ export type PlatformActionSource = {
 	instanceId: number;
 	instanceName: string;
 	platformIndex: number;
+	platformUid?: string | null;
 	platformName: string;
 	forceName: string;
 };
@@ -50,9 +51,11 @@ export async function exportPlatformToDownload(
 	source: PlatformActionSource,
 ): Promise<void> {
 	try {
+		if (!source.platformUid) throw new Error("Platform identity is unavailable; refresh before exporting");
 		const response = await plugin.exportPlatformForDownload({
 			sourceInstanceId: source.instanceId,
 			sourcePlatformIndex: source.platformIndex,
+			sourcePlatformUid: source.platformUid,
 			forceName: source.forceName || "player",
 		}) as JsonObject;
 		if (!getProp(response, "success", false)) {

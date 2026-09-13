@@ -68,3 +68,30 @@ test("a running instance on a connected host is polled", async () => {
 	await tree.buildPlatformTree("player");
 	assert.deepEqual(polled, [20]);
 });
+
+test("tree status joins the selected copy rather than a matching name or index", () => {
+	const { tree } = makeTree([[20, "running"]]);
+	tree.plugin.activeTransfers.set("20:job", {transferId: "20:job", sourceInstanceId: 20,
+		platformIndex: 3, platformUid: "original", platformName: "same", forceName: "player", status: "preparing"});
+	const result = tree.applyActiveTransferState([
+		{platformIndex: 3, platformUid: "original", platformName: "renamed", forceName: "player"},
+		{platformIndex: 4, platformUid: "other", platformName: "same", forceName: "player"},
+		{platformIndex: 3, platformUid: "replacement", platformName: "same", forceName: "player"},
+		{platformIndex: 3, platformUid: "original", platformName: "same", forceName: "other-force"},
+	], 20);
+	assert.deepEqual(result.map(p => p.transferId), ["20:job", null, null, null]);
+});
+
+test("source UID survives request serialization and a delayed admission", async () => {
+	const messages = require(path.join(__dirname, "..", "dist", "node", "messages.js"));
+	for (const Message of [messages.StartPlatformTransferRequest, messages.ExportPlatformForDownloadRequest]) {
+		const encoded = new Message({sourceInstanceId: 20, sourcePlatformIndex: 3, sourcePlatformUid: "selected", targetInstanceId: 21}).toJSON();
+		assert.equal(Message.fromJSON(encoded).sourcePlatformUid, "selected");
+	}
+	const message = new messages.ExportPlatformRequest({platformIndex: 3, platformUid: "selected"});
+	assert.equal(messages.ExportPlatformRequest.fromJSON(message.toJSON()).platformUid, "selected");
+	const { tree, polled } = makeTree([[20, "running"]]);
+	assert.equal(await tree.resolvePlatformUid(20, 3, "player", "selected"), "selected");
+	assert.deepEqual(polled, [], "a stale selection must not silently adopt the latest UID");
+	await assert.rejects(tree.resolvePlatformUid(20, 3, "player"), /identity is unavailable/);
+});

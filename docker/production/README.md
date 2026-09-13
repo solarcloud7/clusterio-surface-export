@@ -96,12 +96,42 @@ retention policy. The profile retains the controller's native static-cache behav
 
 ## Recovery and upgrades
 
+The plugin Settings tab's **Transfer recovery → Platform source of truth** has two modes:
+
+- **Plugin history** (default) protects restored source copies already recorded as transferred
+  away. Use this when reloading an old instance save while keeping its arrived destination.
+- **Save game** accepts identified restored copies after startup reconciliation establishes
+  that no unresolved handoff owns them. Use this when deliberately reloading yesterday's save
+  to recover a destroyed platform. Another copy can remain elsewhere; the Gateways warning
+  identifies the restored source and its previous transfer for operator review.
+
+The controller stores the configured mode. Instances apply it on their next restart; Settings
+shows configured/applied modes and the restart requirement. An offline or unreconciled instance
+is unverified. Both modes retain protections for active and unresolved transfers. An accepted
+restoration receives a fresh saved identity and remains accepted after later policy changes.
+Neither policy recreates missing platforms or changes the outcome of an old transfer.
+
+Transaction details offer **Restore from snapshot** while an importable stored payload remains.
+Completed snapshots use the existing **Stored Payload Downloads** retention count; later exports
+can evict them. This is a bounded recovery cache, not a backup retention policy.
+Review its date, name and destination before confirming; offline instances do not establish
+that no other copy exists. Restoration creates a new import operation with normal validation,
+without replaying source deletion. Expired downloads and diagnostic-only reports cannot be
+restored. A black-box file is usable only when it contains an importable `replay_payload`.
+The equivalent CLI takes a request UUID; reuse that UUID after an uncertain response:
+
+```powershell
+npx clusterioctl --config <control-config.json> surface-export restore-snapshot <stored-export-id> <destination-instance-id> <request-uuid>
+```
+
 Named volumes retain controller data, static assets, tokens, both hosts' data, the
 controller mod store, host mod caches and logs. Never share a controller data volume between running controllers.
 Back up the complete stopped deployment volume set, the external client separately,
 the environment/configuration and recorded image/package/mod identities. Token and
-backup material must remain private. The seven-volume development restore drill
-does not certify this profile's larger volume set or off-host recovery.
+backup material must remain private. The production acceptance runner archives all twelve
+resolved volumes, including its private client copy, and restores them to fresh owned volumes.
+It refuses an unknown volume set. This remains a local, same-image drill; off-host recovery
+and mixed backup generations require separate acceptance.
 
 Restarting the same images is distinct from upgrading code. Before an upgrade,
 quiesce transfers, capture a coordinated backup and test the candidate against those
@@ -113,8 +143,11 @@ Run the [manual acceptance lab](../../tests/manual/production-profile/README.md)
 before adopting a new built image pair. No registry publication or live deployment is
 performed by the build or lab tools.
 
-The [retained 0.10.281 acceptance](../../tests/manual/production-profile/evidence/accepted-0.10.281.json)
-passed fresh saves, diagnostic/access settings, physical cargo and lost-reply recovery,
-controller recreation, retained history and six browser-loaded assets. Its image IDs
+The [complete 0.10.281 restoration acceptance](../../tests/manual/production-profile/evidence/complete-restore-0.10.281.json.gz)
+passed fresh saves, all twelve volume archives restored into new owned resources, selected
+checkpoint markers, settings, authentication, physical cargo, retained history and another
+transfer. Lost-reply recovery, controller recreation and six browser-loaded assets passed
+afterward. The [earlier acceptance](../../tests/manual/production-profile/evidence/accepted-0.10.281.json)
+remains separate and did not exercise this complete restore. The reports' image IDs
 are local build identities, not published registry references. The acceptance covers
 the recorded image pair and fixture; it does not certify a future rebuild or upgrade.

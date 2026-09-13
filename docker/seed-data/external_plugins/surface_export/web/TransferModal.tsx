@@ -58,10 +58,12 @@ export default function TransferModal({ source, presetTargetInstanceId = null, o
 		setPendingSources(new Set(pending.current));
 		onClose();
 		try {
+			if (!source.platformUid) throw new Error("Platform identity is unavailable; refresh before transferring");
 			const response = await plugin.startTransfer({
 				platformName: source.platformName,
 				sourceInstanceId: source.instanceId,
 				sourcePlatformIndex: source.platformIndex,
+				sourcePlatformUid: source.platformUid,
 				targetInstanceId: Number(targetInstanceId),
 				forceName: source.forceName || "player",
 				targetPlanet,

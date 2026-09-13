@@ -87,7 +87,7 @@ export class SubscriptionManager {
 		const event = new this.messages.SurfaceExportTransferUpdateEvent({
 			revision: this.plugin.transferRevision,
 			generatedAt: Date.now(),
-			transfer: transferSummary,
+			transfer: { ...transferSummary, registrySource: "active" },
 		});
 		recordOperationOutcome(transfer);
 		this.broadcastToSubscribers(subscription => subscription.transfers, event);
@@ -127,7 +127,9 @@ export class SubscriptionManager {
 				eventType: "info",
 				message: "No event details",
 			},
-			transferInfo: (transferInfo && typeof transferInfo === "object" ? transferInfo as Record<string, unknown> : null),
+			transferInfo: transferInfo && typeof transferInfo === "object" ? {
+				...transferInfo, registrySource: activeTransfer ? "active" : "persisted",
+			} : null,
 			summary: (summary && typeof summary === "object" ? summary as Record<string, unknown> : null),
 		});
 
@@ -186,11 +188,11 @@ export class SubscriptionManager {
 					link.send(new this.messages.SurfaceExportTransferUpdateEvent({
 						revision: this.plugin.transferRevision,
 						generatedAt: Date.now(),
-						transfer: this.plugin.txLogger.buildTransferSummary(
+						transfer: { ...this.plugin.txLogger.buildTransferSummary(
 							transfer.transferId,
 							transfer,
 							this.plugin.txLogger.getLastEventTimestamp(transfer.transferId),
-						),
+						), registrySource: "active" },
 					}));
 				} catch (err: unknown) {
 					this.plugin.logger.warn(`Failed to send initial transfer snapshot to subscriber: ${getErrorMessage(err)}`);

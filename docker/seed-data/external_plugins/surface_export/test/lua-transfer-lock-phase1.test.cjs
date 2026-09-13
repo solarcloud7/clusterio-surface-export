@@ -23,7 +23,6 @@ test("surface-lock exposes expiring transfer/export scanner with nil-safe TTL fa
 	assert.match(src, /EXPIRABLE_LOCK_KINDS\s*\[\s*lock_data\.kind\s*\]/, "scanner must key expiry off the expirable-kind set");
 	assert.match(src, /expires_tick\s+or\s+\(\s*locked_tick\s*\+\s*DEFAULT_TRANSFER_LOCK_TTL_TICKS\s*\)/, "scanner must fall back from expires_tick to locked_tick + TTL");
 	assert.match(src, /if\s+not\s+locked_tick\s+then[\s\S]*skip/, "scanner must skip old locks without locked_tick");
-	assert.match(src, /SurfaceLock\.unlock_platform\s*\(\s*platform_index\s*,\s*lock_data\.platform_name\s*\)/, "expiry unlock must use the stored name tripwire");
 });
 
 test("transfer exports stamp transfer lock metadata and refuse manual locks", () => {
@@ -66,7 +65,7 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(surfaceLock, /committed_source_transfer_tombstones/, "committed source tombstones must be keyed outside the mutable platform index registry");
 	assert.match(surfaceLock, /COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS/, "committed source tombstones must have bounded retention");
 	assert.match(surfaceLock, /function\s+SurfaceLock\.prune_committed_source_tombstones\s*\(/, "committed source tombstones must be age-pruned");
-	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
+	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+and not accepting_restoration then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
 	assert.match(surfaceLock, /source_lock_is_committed\s*\(\s*lock_data\s*\)[\s\S]*committed\s*=\s*committed\s*\+\s*1/, "TTL expiry scan must retain committed locks instead of unlocking them");
 	assert.doesNotMatch(surfaceLock, /platform name mismatch|live platform name mismatch/, "source state query must not use mutable platform.name as a state discriminator");
 	assert.match(deleteForTransfer, /SurfaceLock\.clear_committed_source_lock_after_delete\s*\(/, "delete is the sole path allowed to clear a committed source lock");
@@ -77,8 +76,8 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(selftest, /committed_unlock_refused/, "live selftest must go red if committed unlock refusal is removed");
 	assert.match(selftest, /committed_ttl_retained/, "live selftest must go red if TTL clears a committed lock");
 	assert.match(selftest, /legacy_phase_is_pre_commit/, "live selftest must prove old saves without phase fail closed as pre_commit");
-	assert.match(selftest, /source_query_pre_commit_ignores_rename/, "live selftest must prove pre_commit query is rename-robust");
-	assert.match(selftest, /source_query_committed_ignores_rename/, "live selftest must prove committed query is rename-robust");
+	assert.match(selftest, /source_query_pre_commit_requires_uid/, "live selftest must refuse unverified pre_commit ownership");
+	assert.match(selftest, /source_query_committed_requires_uid/, "live selftest must refuse unverified committed ownership");
 	assert.match(selftest, /committed_tombstone_pruned/, "live selftest must prove tombstone retention is bounded");
 });
 test("source deletion commits its lock only after matching the external retirement identity", () => {

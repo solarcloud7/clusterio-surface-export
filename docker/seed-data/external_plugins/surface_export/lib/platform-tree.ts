@@ -1,5 +1,6 @@
 import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
+import { recoveryMode } from "../shared/recovery";
 
 export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
@@ -69,6 +70,7 @@ export class PlatformTree {
 			);
 			return {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
+				recovery: response?.recovery,
 				error: null,
 			};
 		} catch (err: unknown) {
@@ -77,6 +79,18 @@ export class PlatformTree {
 				error: getErrorMessage(err),
 			};
 		}
+	}
+
+	async resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string> {
+		if (expectedUid !== undefined) {
+			if (typeof expectedUid !== "string" || !expectedUid) throw new Error("Source platform identity is unavailable");
+			return expectedUid;
+		}
+		const response = await this.requestInstancePlatforms(instanceId, forceName);
+		if (response.error) throw new Error(response.error);
+		const platform = response.platforms.find((p: PlatformModel) => p.platformIndex === platformIndex && (p.forceName || "player") === forceName);
+		if (!platform?.platformUid) throw new Error("Source platform identity is unavailable; refresh before exporting");
+		return platform.platformUid;
 	}
 
 	applyActiveTransferState(platforms: Array<PlatformModel>, instanceId: number) {
@@ -96,9 +110,9 @@ export class PlatformTree {
 			}
 
 			for (const platform of withState) {
-				const indexMatches = transfer.platformIndex && platform.platformIndex === transfer.platformIndex;
-				const nameMatches = platform.platformName === transfer.platformName;
-				if (indexMatches || nameMatches) {
+				if (platform.platformIndex === transfer.platformIndex
+					&& (platform.forceName || "player") === (transfer.forceName || "player")
+					&& transfer.platformUid && platform.platformUid === transfer.platformUid) {
 					platform.transferId = transfer.transferId;
 					platform.transferStatus = transfer.status;
 				}
@@ -148,6 +162,7 @@ export class PlatformTree {
 				connected: Boolean(host?.connected),
 				platforms: [],
 				platformError: null,
+				configuredRecoveryMode: recoveryMode(this.plugin.controller.config?.get("surface_export.platform_source_of_truth")),
 			};
 
 			if (hostId !== null && hostNodes.has(hostId)) {
@@ -161,7 +176,8 @@ export class PlatformTree {
 
 			if (host?.connected && node.status === "running") {
 				platformLoads.push((async () => {
-					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
+					const { platforms, error, recovery } = await this.requestInstancePlatforms(instanceId, forceName);
+					node.recovery = recovery;
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)
 						.sort((a, b) => a.platformName.localeCompare(b.platformName));
 					for (const platform of node.platforms) {
