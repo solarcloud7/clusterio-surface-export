@@ -27,11 +27,20 @@ return function(action, name, remote_view)
       before=inv.get_contents(), remote_view=remote_view, force=player.force.name, job=name}
     storage.offline_evacuation_probe = rec
     return {success=true, player=player.index, connected=player.connected,
-      physical=player.physical_surface_index, surface=rec.surface, inventory=rec.before}
+      physical=player.physical_surface_index, surface=rec.surface, inventory=rec.before,
+      tile=character.surface.get_tile(character.position).name, unit=character.unit_number,
+      health=character.health, controller=player.controller_type}
   end
   assert(rec, "fixture missing")
   local player = assert(game.get_player(rec.player))
   local p = assert(game.forces[rec.force].platforms[rec.platform])
+  if action == "inspect" then
+    return {success=true, connected=player.connected, physical=player.physical_surface_index,
+      character_valid=rec.character.valid, current_character=player.character and player.character.valid,
+      unit=player.character and player.character.valid and player.character.unit_number,
+      health=rec.character.valid and rec.character.health, controller=player.controller_type,
+      characters=p.surface.count_entities_filtered{type="character"}}
+  end
   assert(not player.connected and player.physical_surface_index == rec.surface, "offline checkpoint changed")
   local controller = player.controller_type
   assert(controller == (rec.remote_view and defines.controllers.remote or defines.controllers.character),

@@ -57,9 +57,11 @@ if (values.analyze) {
         const name = `${run}-${remoteView ? "remote" : "character"}`;
         report.prepared = probe("prepare", name, remoteView); save();
         assert.equal(report.prepared.connected, false);
+        report.beforeSave = probe("inspect", name, remoteView); save();
         const checkpoint = `manual-offline-${remoteView ? "remote" : "character"}`;
         report.checkpoint = await lab.checkpoint(checkpoint, [1]); save();
         await lab.load(1, checkpoint);
+        report.afterLoad = probe("inspect", name, remoteView); save();
         report.arms.push(probe("delete", name, remoteView)); save();
       }
     }});
