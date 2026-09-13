@@ -19,10 +19,9 @@ function analyze(report) {
     assert.equal(arm.result, "SUCCESS");
     assert.equal(arm.connected, false);
     assert.equal(arm.detected, 1);
-    assert.equal(arm.characters, 1);
-    assert.equal(arm.character_valid, true);
+    assert.equal(arm.characters, 0);
+    assert.equal(arm.character_logged_off, true);
     assert.equal(arm.physical_after, "nauvis");
-    assert.equal(arm.character_surface, "nauvis");
     assert.equal(arm.platform_remaining, false);
     assert.equal(arm.surface_remaining, false);
     assert.equal(arm.lock_remaining, false);
