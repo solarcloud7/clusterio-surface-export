@@ -18,4 +18,4 @@ Describe the problem, resulting behavior, verification and remaining limits in t
 
 Keep documentation factual. CI checks executable behavior; do not add tests that parse documentation. Required checks and reviews are shown on each PR. Resolve review findings before merging, and verify the merged revision's CI.
 
-Report vulnerabilities through the [security procedure](SECURITY.md).
+Report vulnerabilities through the [security procedure](../SECURITY.md).

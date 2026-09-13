@@ -61,24 +61,9 @@ does not mirror a changing upstream setup wizard.
 ## Test a Clusterio core change
 
 Use an existing canonical Clusterio source checkout and its own contribution
-instructions. This repository's optional `rebuild-clusterio.ps1` accepts
-`CLUSTERIO_SRC` and defaults to the sibling `../clusterio`. It runs `pnpm build`;
-without `-SkipUp`, it recreates the development controller and hosts using
-`docker-compose.clusterio-src.yml`.
-
-The override replaces selected package build outputs, not every dependency in the
-image. It requires an API-compatible fork and is not proof that an arbitrary core
-branch works with the plugin. Coordinate a maintenance window before using it.
-Do not create a worktree, secondary repository or junction-based Docker mount.
-Return to the pinned deployment and verify it after an experiment.
-
-Recreate services without the optional source overlay:
-
-```powershell
-docker compose up -d --force-recreate
-```
-
-Confirm the configured image revisions and plugin loading after restart. To retain
-a core fix, propose it upstream or bake it into the Clusterio Docker images, then
+instructions to build and test core changes. To use a tested core change with this
+plugin, include it in the Clusterio Docker images, then
 update `CLUSTERIO_IMAGE_TAG` to the tested immutable revision. Keep the plugin's
 Clusterio peer and development dependency pins aligned with that runtime.
+Follow the [development deployment procedure](workflow.md) and verify the loaded
+image revisions and plugin after restart.
