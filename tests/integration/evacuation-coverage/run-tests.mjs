@@ -29,6 +29,7 @@ const check = (ok, label, detail = "") => {
 console.log(`=== evacuation-coverage: a body aboard survives the source-delete chokepoint (${PROBE}) ===`);
 
 let probeIndex = null;
+let sourceIndex = null;
 let bodyUnit = null;
 try {
 	const debug = rconJson(
@@ -49,6 +50,7 @@ try {
 		+ `return {index=p.index, body_unit=body and body.unit_number, body_ok=(body~=nil and body.valid), chars_aboard=p.surface.count_entities_filtered{type='character'}} end)()`,
 	);
 	probeIndex = setup.index ?? null;
+	sourceIndex = probeIndex;
 	bodyUnit = setup.body_unit ?? null;
 	check(setup.body_ok === true && setup.chars_aboard === 1, "probe platform carries one character body");
 	if (process.env.SE_EVAC_FAIL_AFTER_SETUP === "1") throw new Error("Injected harness failure after setup");
@@ -138,8 +140,8 @@ try {
 			+ `local chars=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `
 			+ `if c.unit_number==${bodyUnit ?? "nil"} and c.player == nil then if c.destroy() then chars=chars+1 end end end `
 			+ `local lock_residue = false `
-			+ (probeIndex !== null
-				? `if storage.locked_platforms and storage.locked_platforms[${probeIndex}] ~= nil then lock_residue = true end `
+			+ (sourceIndex !== null
+				? `for _,index in ipairs({${sourceIndex},${probeIndex ?? sourceIndex}}) do if storage.locked_platforms and storage.locked_platforms[index] ~= nil then lock_residue = true end end `
 				: "")
 			+ `return {platforms=plats, characters=chars, refusals=refusals, lock_residue=lock_residue} end)()`,
 		);
@@ -149,7 +151,7 @@ try {
 			console.error(`  FAIL unlock refused during sweep: ${refusal} — a lock record may be orphaned`);
 		}
 		check(swept.lock_residue === false,
-			"zero leftovers: no storage.locked_platforms residue for the probe index",
+			"zero leftovers: no storage.locked_platforms residue for both source and destination indices",
 			"a lock record outlived its platform — persistent storage.* records are leftovers too");
 		const remaining = rconJson(
 			`(function() local remaining=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `

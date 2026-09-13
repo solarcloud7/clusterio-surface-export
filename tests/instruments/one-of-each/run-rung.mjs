@@ -30,6 +30,7 @@
 //           pipeline under test — a type the clone lost reports LOST_IN_CLONE, and a type culled by
 //           the engine before the fixture read is indistinguishable from one staging never placed
 
+import { fixtureSweepLua, assertFixtureCleanup } from "../../lab-gallery/fixture-cleanup.mjs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -529,16 +530,9 @@ async function main() {
 		say("\n=== SWEEP ===");
 		for (const host of [SOURCE_HOST, DEST_HOST]) {
 			try {
-				const swept = lua(host, "local deleted = 0\n"
-					+ "for _, pl in pairs(game.forces.player.platforms) do\n"
-					+ `  if pl.valid and pl.name == '${CLONE}' then\n`
-					+ "    pcall(remote.call, 'surface_export', 'unlock_platform', pl.index)\n"
-					+ "    if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end\n"
-					+ "    deleted = deleted + 1\n"
-					+ "  end\n"
-					+ "end\n"
-					+ "return { success = true, deleted = deleted }");
-				say(`  host ${host}: delete_surface issued for ${swept.deleted} platform(s)`);
+				const swept = assertFixtureCleanup(lua(host,
+					`return ${fixtureSweepLua(`q.name=='${CLONE}'`)}`));
+				say(`  host ${host}: delete_surface issued for ${swept.swept} platform(s)`);
 			} catch (error) {
 				console.error(error.stack || error.message);
 				infraFail(`sweep on host ${host} threw: ${error.message} — hand-clean with `

@@ -161,11 +161,8 @@ async function deliverOne(name, expectedEntities) {
 		outcome.transferSeconds = Math.round((Date.now() - outcome.startedMs) / 1000);
 		outcome.evidence = captureFailureEvidence(name);
 		if (outcome.index !== undefined) {
-			try {
-				const unlocked = lua(1, `remote.call('surface_export','unlock_platform', ${outcome.index}); ` +
-					`return {success=true}`);
-				outcome.unlockAttempted = unlocked.success !== false;
-			} catch (unlockError) { outcome.unlockError = unlockError.message; }
+			outcome.unlockAttempted = false;
+			outcome.unlockError = "Source protection retained; delivery failure does not confirm safe release. Inspect transfer recovery.";
 		}
 	}
 	return outcome;

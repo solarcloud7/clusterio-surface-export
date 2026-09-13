@@ -102,7 +102,7 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Plugin location: `docker/seed-data/external_plugins/surface_export/`
 - **Bind-mounted** into containers at `/clusterio/external_plugins` (not a named volume — the distinction the @clusterio-singleton hazard rests on); plugins are auto-installed by the base image
 - Contains TypeScript plugin code (`*.ts`), React web UI (`web/`), and Lua `module/` directory
-- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle). Webpack compiles into a temporary staging directory; the publisher validates emitted assets, retains previously published hashed files, and replaces the manifest last. A controller restart picks up the new manifest.
+- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle). Webpack compiles into a temporary staging directory; the publisher validates emitted assets, retains assets from the current and immediately preceding manifest, and replaces the manifest only after copying the candidate. Older browser sessions need a reload after multiple publications. Source maps may change without a JavaScript hash change. A controller restart picks up the new manifest.
 
 **Plugin Changes** (TypeScript):
 - Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (rebuild + reload the hosts)
@@ -423,7 +423,7 @@ remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data
 
 -- Platform locking (transfer workflow):
 remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
-remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- unique index preferred; name still accepted (resolved internally, fail-loud on ambiguity)
+remote.call("surface_export", "unlock_platform", platform_index, player_name, expected_job_id)
 
 -- Validation:
 remote.call("surface_export", "get_validation_result", platform_name)
@@ -440,6 +440,11 @@ remote.call("surface_export", "clone_platform", source_index, dest_name)
 remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
 remote.call("surface_export", "run_tests")
 ```
+
+Remote unlock requires a numeric platform index and the owning nonempty job ID. The legacy
+`lock_platform_for_transfer` helper creates no job ID and is not a matching unlock workflow.
+Fixture cleanup uses `tests/lab-gallery/fixture-cleanup.mjs` to check and pass the owning job.
+
 
 ### In-Game Commands
 

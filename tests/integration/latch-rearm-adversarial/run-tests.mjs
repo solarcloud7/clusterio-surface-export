@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
+import { fixtureSweepLua, assertFixtureCleanup } from "../../lab-gallery/fixture-cleanup.mjs";
 
 import {
 	lua, rcon, instanceIds, createBatchLifecycle,
@@ -221,15 +221,11 @@ async function main() {
 	} finally {
 		for (const host of [1, 2]) {
 			try {
-				const swept = lua(host,
-					`local n=0 for _,q in pairs(game.forces.player.platforms) do `
-					+ `if q.valid and q.name=='${PROBE}' then `
-					+ fixtureUnlockLua("q")
-					+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end `
+				const swept = assertFixtureCleanup(lua(host,
+					`local result=${fixtureSweepLua(`q.name=='${PROBE}'`)} `
 					+ `local r=0 for key, res in pairs(storage.latch_rearm_results or {}) do `
 					+ `if res.platform_name == '${PROBE}' then storage.latch_rearm_results[key]=nil r=r+1 end end `
-					+ `storage.__latch_adv=nil `
-					+ `return {success=true, swept=n, results_removed=r}`);
+					+ `storage.__latch_adv=nil result.results_removed=r return result`));
 				console.log(`  cleanup host ${host}: swept ${swept.swept} platform(s), `
 					+ `${swept.results_removed} result entr${swept.results_removed === 1 ? "y" : "ies"}`);
 			} catch (sweepErr) {

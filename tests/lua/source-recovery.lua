@@ -318,6 +318,19 @@ for _, fault in ipairs({"uid", "job", "location", "committed"}) do
 end
 print("PASS fixture cleanup uses the owning job and stops on source protection refusals")
 
+local deleted = {}
+local sweep_env={game={delete_surface=function(surface) deleted[#deleted+1]=surface.index; return true end}}
+setmetatable(sweep_env,{__index=_G})
+local sweep=assert(loadfile("tests/lab-gallery/fixture-sweep.lua","t",sweep_env))()
+local platforms={}
+for index=1,3 do platforms[index]={valid=true,index=index,surface={valid=true,index=index}} end
+local result=sweep(platforms,function(p) return p.index~=3 end,function(p)
+    assert(p.index~=1,"protected source"); return true
+end)
+assert(not result.success and result.swept==1 and #result.errors==1)
+assert(result.errors[1].index==1 and #deleted==1 and deleted[1]==2)
+print("PASS refused cleanup retains the protected source and continues other owned fixtures")
+
 local gui_uid, started = "copy-a", 0
 local gui_platform={valid=true,index=3,name="renamed",force={name="player"}}
 local gui_force={platforms={[3]=gui_platform}}

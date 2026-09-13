@@ -128,3 +128,24 @@ for _,receipt in ipairs(unresolved) do
   assert(sessions.commit(receipt.attemptId,function() error("must not replay") end).state=="accepted")
 end
 print("PASS: late job evidence resolves admitting receipts without another import")
+
+storage={source_recovery_epoch="interleaved",async_jobs={}}
+sessions.initialize("interleaved");sequence=0
+local width=sessions.MAX_CHUNK_BYTES
+local first=begin(width*2+1,"first")
+local second=begin(width*2+1,"second")
+local a_parts={string.rep("A",width),string.rep("B",width),"C"}
+local b_parts={string.rep("X",width),string.rep("Y",width),"Z"}
+sessions.chunk(first.attemptId,2,a_parts[2]); sessions.chunk(second.attemptId,3,b_parts[3])
+sessions.chunk(second.attemptId,1,b_parts[1]); sessions.chunk(first.attemptId,1,a_parts[1])
+sessions.chunk(first.attemptId,3,a_parts[3]); sessions.chunk(second.attemptId,2,b_parts[2])
+local received={}
+local function capture(json,name,force,transport,timing)
+  assert(name=="same name" and force=="player" and transport=="RCON_CHUNKED")
+  received[timing.operation_id]=json
+  return timing.import_job_id
+end
+assert(sessions.commit(second.attemptId,capture).state=="accepted")
+assert(sessions.commit(first.attemptId,capture).state=="accepted")
+assert(received.first==table.concat(a_parts) and received.second==table.concat(b_parts))
+print("PASS: interleaved same-name uploads deliver exact ordered bytes to their separate jobs")

@@ -18,7 +18,6 @@ function resolveClusterioWebpackCommon() {
 			if (error.code !== "MODULE_NOT_FOUND") throw error;
 			continue;
 		}
-		// Once found, surface load errors instead of hiding a broken installation behind a fallback.
 		return require(resolved);
 	}
 
@@ -35,7 +34,6 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 		extensions: [".tsx", ".ts", ".jsx", ".js"],
 	},
 	output: {
-		// build-web.mjs supplies a unique staging directory and publishes only a complete build.
 		path: path.resolve(__dirname, "dist", "web-build"),
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",

@@ -117,6 +117,10 @@ if ($RestartHosts) {
 
 Write-Host "Done: $Target build complete." -ForegroundColor Green
 } finally {
-    if (Test-Path -LiteralPath $LockSnapshot) { Remove-Item -LiteralPath $LockSnapshot -Force -ErrorAction Stop }
+    try {
+        if (Test-Path -LiteralPath $LockSnapshot) { Remove-Item -LiteralPath $LockSnapshot -Force -ErrorAction Stop }
+    } catch {
+        Write-Warning "Could not remove build lock snapshot ${LockSnapshot}: $($_.Exception.Message)" -WarningAction Continue
+    }
 }
 }

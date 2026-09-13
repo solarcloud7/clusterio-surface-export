@@ -28,7 +28,7 @@ test("real composed webpack builds cannot clean published assets, including on c
 	const entry = path.join(root, "entry.js"), destination = path.join(root, "published");
 	const inherited = configure({}, { mode: "production" });
 	const config = { ...inherited, context: root, cache: false, entry: { surface_export: entry },
-		module: { rules: [] }, optimization: { minimize: false },
+		module: { rules: [] }, optimization: { minimize: true },
 		plugins: inherited.plugins.filter(plugin => plugin.constructor.name !== "ModuleFederationPlugin") };
 	const baseline = path.join(root, "direct-build");
 	await fs.mkdir(path.join(baseline, "static"), { recursive: true });
@@ -41,6 +41,12 @@ test("real composed webpack builds cannot clean published assets, including on c
 	const first = await buildWeb({ config, destination });
 	const firstPath = path.join(destination, first["surface_export.js"]);
 	const firstBytes = await fs.readFile(firstPath);
+	const firstMap = await fs.readFile(firstPath + ".map");
+	await fs.writeFile(entry, '// comment-only edit\nconsole.log("first");');
+	const commentOnly = await buildWeb({ config, destination });
+	assert.equal(commentOnly["surface_export.js"], first["surface_export.js"]);
+	assert.deepEqual(await fs.readFile(firstPath), firstBytes);
+	assert.notDeepEqual(await fs.readFile(firstPath + ".map"), firstMap);
 	await fs.writeFile(entry, 'console.log("second");');
 	const second = await buildWeb({ config, destination });
 	assert.notEqual(second["surface_export.js"], first["surface_export.js"]);

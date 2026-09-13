@@ -45,3 +45,15 @@ for (const kind of ["missing", "collision", "unsafe path", "unhashed", "missing 
 		assert.equal(await readFile(join(destination, "static/old.11111111.js"), "utf8"), "old bytes");
 	});
 }
+
+test("publication retains the current and preceding manifest assets only", async t => {
+	const { staging, destination } = await fixture(t);
+	await writeFile(join(staging, "static/new.22222222.js"), "new bytes");
+	await writeFile(join(staging, "manifest.json"), JSON.stringify({ "surface_export.js": "static/new.22222222.js" }));
+	await publishWebAssets(staging, destination);
+	await rm(join(staging, "static/new.22222222.js"));
+	await writeFile(join(staging, "static/third.33333333.js"), "third bytes");
+	await writeFile(join(staging, "manifest.json"), JSON.stringify({ "surface_export.js": "static/third.33333333.js" }));
+	await publishWebAssets(staging, destination);
+	assert.deepEqual((await readdir(join(destination, "static"))).sort(), ["new.22222222.js", "third.33333333.js"]);
+});
