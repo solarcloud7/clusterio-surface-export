@@ -13,7 +13,6 @@ export interface UploadReceipt {
 }
 export type UploadCall = (action: string, request: Record<string, unknown>) => Promise<UploadReceipt>;
 
-/** An unknown commit outcome is not a failed import and cannot authorize source release. */
 export class UploadUncertain extends Error {
 	constructor(message: string, readonly attemptId: string, readonly epoch: string, readonly jobId?: string) {
 		super(message);
@@ -98,7 +97,6 @@ export class UploadSessions {
 		const epoch = this.epoch;
 		const limits = this.limits;
 		if (!epoch || !limits) throw new Error("Upload runtime is not ready");
-		// ASCII JSON makes string offsets exact encoded-byte offsets, including Unicode names.
 		const json = toAsciiJson(JSON.stringify(data));
 		if (json.length > limits.maxUploadBytes) throw new Error(`Upload exceeds receiver encoded-byte limit (${limits.maxUploadBytes} bytes)`);
 		const totalChunks = Math.ceil(json.length / limits.chunkBytes);
@@ -112,7 +110,6 @@ export class UploadSessions {
 			return reply;
 		};
 		try {
-			// Allocate sequences in actual begin order, not while concurrent encoders are working.
 			const begin = this.begins.catch(() => undefined).then(async () => {
 				const sequence = ++this.sequence;
 				attemptId = `${epoch}:${sequence}`;
@@ -188,7 +185,6 @@ export class UploadSessions {
 					if (this.epoch !== epoch) break;
 					this.checkIdentity(status, operationId, attemptId);
 					if (status.state === "receiving") this.check(await this.call("abort", request));
-					// Admitting/accepted/unavailable belong to job observation; never replay or release them.
 					this.cleanup.delete(attemptId);
 					this.cleanupErrors.delete(attemptId);
 				} catch (error) {

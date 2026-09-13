@@ -20,6 +20,7 @@ const setMode = (lab,mode) => {
 };
 
 export async function savePolicyCase(lab,report,save) {
+  report.ownershipReviewVersion=1;
   report.mode=report.case==="save-policy-game"?"save_game":"plugin_history";
   await recoveryReady(lab,1);await recoveryReady(lab,2);
   setMode(lab,report.mode);
@@ -28,7 +29,6 @@ export async function savePolicyCase(lab,report,save) {
   report.before=lab.probe(1,"build",name).state;
   report.unrelatedBefore=lab.probe(1,"build",other).state;
   assert.deepEqual(report.before.cargo,expectedCargo);assert.deepEqual(report.unrelatedBefore.cargo,expectedCargo);
-  // Save new platform identities through the normal restart reconciliation.
   await lab.checkpoint("manual-policy-created",[1]);await lab.load(1,"manual-policy-created");await recoveryReady(lab,1);
   report.identityBefore=identity(lab,name);
   report.checkpoint=await lab.checkpoint("manual-policy-before",[1]);save();
@@ -54,6 +54,18 @@ export async function savePolicyCase(lab,report,save) {
     report.browser=await recoveryBrowser(lab,report);save();return;
   }
   assert.notEqual(report.identityAfter.uid,report.identityBefore.uid);
+  lab.ctl("instance","send-rcon",lab.hosts[1].instance,`/lock-platform ${name}`);
+  report.manualLocked=sample(lab,name);save();assert.equal(report.manualLocked.source.usable,false);
+  report.manualUnlockResponse=lab.ctl("instance","send-rcon",lab.hosts[1].instance,`/unlock-platform ${name}`);
+  report.manualUnlocked=sample(lab,name);save();
+  assert.equal(report.manualUnlocked.source.usable,true,"accepted restoration cannot be manually unlocked");
+  assert.deepEqual(report.manualUnlocked.source.cargo,expectedCargo);
+  const standalone=lab.lua(1,find(name)+"local id=remote.call('surface_export','export_platform',p.index,'player',nil);assert(id);return {success=true,id=id}").result.id;
+  report.standalone=await lab.until(()=>{
+    const state=lab.lua(1,`return {success=true,result=storage.async_job_results[${JSON.stringify(standalone)}]}`).result.result;
+    return state && {result:state,physical:sample(lab,name)};
+  },"standalone export completion after accepted restore");save();
+  assert.equal(report.standalone.physical.source.usable,true);assert.deepEqual(report.standalone.physical.source.cargo,expectedCargo);
   setMode(lab,"plugin_history");
   report.beforeRestartMode=lab.lua(1,"return {success=true,mode=storage.source_recovery_mode}").result.mode;
   assert.equal(report.beforeRestartMode,"save_game");
@@ -79,12 +91,27 @@ export async function savePolicyCase(lab,report,save) {
 
 export async function snapshotRecoveryCase(lab,report,save) {
   report.snapshotRecoveryVersion=2;
+  report.ownershipReviewVersion=1;
   await recoveryReady(lab,1);await recoveryReady(lab,2);
   const name=report.name=`transfer-cleanup-${lab.run}-snapshot`;
   report.before=lab.probe(1,"build",name).state;assert.deepEqual(report.before.cargo,expectedCargo);
   report.checkpoint=await lab.checkpoint("manual-snapshot-before",[2]);
   report.transferId=start(lab,name);report.outcome=await terminal(lab,report.transferId);
   assert.equal(report.outcome.status,"completed");
+  lab.mutateContainer("stop",lab.controller,["--time","30"]);lab.mutateContainer("start",lab.controller);
+  await lab.ready();await recoveryReady(lab,1);await recoveryReady(lab,2);
+  const survivor=`${name}-survivor`;
+  lab.lua(2,find(name)+`p.name=${JSON.stringify(survivor)};return {success=true}`);
+  try {report.replay=lab.ctl("surface-export","transfer",report.transferId,String(lab.ids[2]));}
+  catch(error) {report.replay=error.evidence;}
+  if(typeof report.replay==="string") report.replayOutcome=await terminal(lab,report.transferId);
+  report.afterReplay=sample(lab,name);save();
+  assert.match(JSON.stringify(report.replay),/already|consumed|bound/i);
+  assert.equal(report.afterReplay.source.present,false,"retained snapshot created a second live copy");
+  assert.equal(report.afterReplay.destination.present,false,"retained snapshot was imported again");
+  report.survivor=lab.probe(2,"read",survivor).state;save();
+  assert.equal(report.survivor.usable,true);assert.deepEqual(report.survivor.cargo,expectedCargo);
+  lab.lua(2,find(survivor)+`p.name=${JSON.stringify(name)};return {success=true}`);
   await lab.load(2,"manual-snapshot-before");await recoveryReady(lab,2);
   report.rollback=sample(lab,name);report.originalHistory=summary(lab,report.transferId);save();
   assert.equal(report.rollback.source.present,false);assert.equal(report.rollback.destination.present,false);
@@ -131,5 +158,30 @@ export async function pendingSavePolicyCase(lab,report,save) {
   report.outcome=await terminal(lab,report.transferId);report.final=sample(lab,name);
   report.events={1:lab.events(1),2:lab.events(2)};save();
   assert.equal(report.outcome.status,"completed");assert.equal(report.final.source.present,false);
+  assert.equal(report.final.destination.usable,true);assert.deepEqual(report.final.destination.cargo,expectedCargo);
+}
+
+export async function sourceAdmissionCase(lab,report,save) {
+  await recoveryReady(lab,1);await recoveryReady(lab,2);
+  lab.mutateContainer("stop",lab.controller,["--time","30"]);lab.mutateContainer("start",lab.controller);await lab.ready();
+  const name=report.name=`transfer-cleanup-${lab.run}-export-reply`;
+  report.before=lab.probe(1,"build",name).state;assert.deepEqual(report.before.cargo,expectedCargo);
+  lab.writeFault(1,{run:lab.run,enabled:true,name,action:"export"});
+  const started=lab.ctl("surface-export","start-transfer",String(lab.ids[1]),String(report.before.index),String(lab.ids[2]));
+  const id=report.transferId=started.trim().split(/\r?\n/).at(-1).replace(/^Transfer queued: /,"");
+  assert.match(id,/^request:/);save();
+  report.held=await lab.until(()=>lab.events(1).find(e=>e.kind==="response-held"&&e.action==="export"),"real export reply withheld");save();
+  lab.mutateContainer("kill",lab.controller,["--signal","KILL"]);
+  lab.writeFault(1,{run:lab.run,enabled:false});
+  lab.mutateContainer("start",lab.controller);await lab.ready();
+  report.outcome=await terminal(lab,id,"failed");report.resolved=sample(lab,name);save();
+  assert.equal(report.outcome.status,"failed");assert.equal(report.resolved.source.usable,true);
+  assert.equal(report.resolved.destination.present,false);assert.deepEqual(report.resolved.source.cargo,expectedCargo);
+  report.eventsBeforeRetry=lab.events(2);assert.equal(report.eventsBeforeRetry.filter(e=>e.kind==="call"&&e.action==="import").length,0);
+  const again=`${name}-retry`;
+  lab.lua(1,find(name)+`p.name=${JSON.stringify(again)};return {success=true}`);
+  report.retryId=start(lab,again);report.retryOutcome=await terminal(lab,report.retryId);
+  report.final=sample(lab,again);save();
+  assert.equal(report.retryOutcome.status,"completed");assert.equal(report.final.source.present,false);
   assert.equal(report.final.destination.usable,true);assert.deepEqual(report.final.destination.cargo,expectedCargo);
 }

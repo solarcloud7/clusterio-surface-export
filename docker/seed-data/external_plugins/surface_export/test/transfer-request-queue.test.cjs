@@ -33,6 +33,44 @@ function entry(id, source = 1, target = 2) {
 		operation: { transferId: id, status: "queued", sourceInstanceId: source, targetInstanceId: target } };
 }
 
+test("handoff claims survive queue removal, migration, restart and failed persistence", async t => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-handoff-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const file = path.join(dir, "queue.json");
+	const create = () => {
+		const queue = new TransferRequestQueue({run: async () => {}, interrupted: async () => {}, busyInstances: () => [], error: () => {}});
+		t.after(() => queue.stop()); return queue;
+	};
+	await fs.writeFile(file, "[]");
+	const first = create(); await first.init(file, ["1:legacy-snapshot"]);
+	assert.equal(first.handoffs.get("1:legacy-snapshot").destination, null);
+	await first.claimHandoff("1:captured", 2);
+	await assert.rejects(first.claimHandoff("1:captured", 3), /already belongs/);
+	first.entries.clear(); await first.persist(); first.stop();
+	const second = create(); await second.init(file);
+	await assert.rejects(second.claimHandoff("1:captured", 3), /already belongs/);
+	await assert.rejects(second.claimHandoff("1:legacy-snapshot", 2), /already belongs/);
+	assert.equal(second.handoffs.size, 2);
+	second.persist = async () => {throw Error("disk refused");};
+	await assert.rejects(second.claimHandoff("1:unsent", 2), /could not be persisted/);
+	assert.ok(second.handoffs.has("1:unsent"));
+	await assert.rejects(second.claimHandoff("1:another", 2), /could not be persisted/);
+});
+
+test("malformed handoff metadata is preserved and blocks admission", async t => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-handoff-invalid-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const file = path.join(dir, "queue.json");
+	for (const handoffs of [[ ["1:a", {destination: -1}] ], [["bad", {destination: 2}]],
+		[["1:a", {destination: 2}], ["1:a", {destination: 3}]], [["1:a", {destination: 2, cancelledBy: 4}]]]) {
+		const raw = JSON.stringify({v: 2, entries: [], handoffs}); await fs.writeFile(file, raw);
+		const queue = new TransferRequestQueue({run: async () => {}, interrupted: async () => {}, busyInstances: () => [], error: () => {}});
+		t.after(() => queue.stop()); await queue.init(file);
+		await assert.rejects(queue.claimHandoff("1:fresh", 2), /repair its journal/);
+		assert.equal(await fs.readFile(file, "utf8"), raw);
+	}
+});
+
 test("bounded overlapping transfers retain ownership and stop admission during recovery", async t => {
 	const started = [];
 	const plugin = { controller: { config: { get: () => 2 } }, activeTransfers: new Map(), pendingTransfers: new Map() };
@@ -107,10 +145,10 @@ test("durable queued requests are reported interrupted after restart, never auto
 	const hooks = { run: async item => started.push(item.id), interrupted: async item => interrupted.push(item),
 		busyInstances: () => [1], error: error => { throw error; } };
 	const before = new TransferRequestQueue(hooks); await before.init(file); await before.add(entry("1")); before.stop();
-	assert.equal(JSON.parse(await fs.readFile(file, "utf8")).length, 1);
+	assert.equal(JSON.parse(await fs.readFile(file, "utf8")).entries.length, 1);
 	const after = new TransferRequestQueue(hooks); t.after(() => after.stop()); await after.init(file);
 	await after.pump(); assert.deepEqual(started, []); assert.equal(interrupted[0].operation.status, "queued");
-	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), []);
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")).entries, []);
 });
 test("queued markers stay at the source in both directions, without suggesting validation", () => {
 	const phase = shipPhaseFor("queued"); assert.equal(phase.distance, 0); assert.equal(phase.label, "queued");

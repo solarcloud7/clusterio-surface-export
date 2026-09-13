@@ -71,6 +71,29 @@ function onlyTransfer(activeTransfers) {
 	return all[0];
 }
 
+test("retained snapshots cannot repeat a handoff after active history is lost", async t => {
+	const h = makeHarness(() => ({success: true}));
+	t.after(() => h.orch.stop());
+	await h.orch.transferPlatform("1:retained", 2);
+	h.activeTransfers.clear();
+	const replay = await h.orch.transferPlatform("1:retained", 3);
+	assert.equal(replay.success, false);
+	assert.equal(replay.safeToUnlockSource, false);
+	assert.equal(h.calls.importSends, 1);
+});
+
+test("destination-only startup recovery rejects an untouched export with source cleanup authority", async t => {
+	const h = makeHarness(() => {throw Error("must not import during recovery");});
+	t.after(() => h.orch.stop());
+	h.plugin.recoveryReservations = new Map([[2, {}]]);
+	const result = await h.orch.transferPlatform("1:not-sent", 2);
+	assert.equal(result.success, false);
+	assert.equal(result.safeToUnlockSource, true);
+	assert.equal(h.calls.importSends, 0);
+	h.plugin.pendingTransfers = new Map([["1:not-sent", {sourceInstanceId: 1, targetInstanceId: 2}]]);
+	assert.equal((await h.orch.transferPlatform("1:not-sent", 2)).safeToUnlockSource, false);
+});
+
 test("import and validation failures expose the actual source rollback acknowledgement", async t => {
 	const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 	const { shipPhaseFor } = require(path.join(distNode, "shared", "transfer-status.js"));
@@ -103,7 +126,7 @@ test("import and validation failures expose the actual source rollback acknowled
 			assert.equal(view.sourceRollback, expected);
 			assert.equal(view.sourceRestored, !error);
 			assert.equal(shipPhaseFor(view).terminal, !error);
-			assert.equal(shipPhaseFor(view).distance, error ? 0.5 : 0);
+			assert.equal(shipPhaseFor(view).distance, error && handler === "validation" ? 0.5 : 0);
 			assert.equal(h.calls.importSends, 0);
 		}
 	}
@@ -151,6 +174,55 @@ test("source export waiting ignores unrelated standalone uploads with no source 
 	const stored={exportId:"1:source-job",instanceId:1,sourceExportId:"source-job"};
 	h.orch.observeJobs=async()=>h.plugin.platformStorage.set(stored.exportId,stored);
 	assert.equal(await h.orch.waitForStoredExport(stored.exportId),stored);
+});
+
+test("lost export reply is found after two restarts and source cleanup retries without importing", async t => {
+	const fs = require("node:fs/promises"), os = require("node:os");
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-source-admission-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const file = path.join(dir, "queue.json"), id = "request:lost-export";
+	const original = {id, request: {sourceInstanceId: 1, targetInstanceId: 2, sourcePlatformIndex: 3},
+		operation: {transferId: id, operationType: "transfer", sourceInstanceId: 1, targetInstanceId: 2,
+			platformIndex: 3, forceName: "player", platformName: "fixture", status: "preparing"}};
+	await fs.writeFile(file, JSON.stringify({v: 2, handoffs: [], entries: [original]}));
+	const create = async () => {
+		const h = makeHarness(() => {throw Error("must not import");}); t.after(() => h.orch.stop());
+		h.plugin.persistedTransactionLogs = []; h.plugin.platformStorage = new Map();
+		await h.orch.requestQueue.init(file); h.orch.requestQueue.stop();
+		h.orch.observationDue.set(id, 0);
+		h.orch.observer.poll = async (instanceId, jobs) => {
+			assert.equal(instanceId, 1); assert.ok(jobs[0].jobId === "lost-export" || jobs[0].operationId === id);
+			return {version: 1, epoch: "source-epoch", jobs: [{jobId: "lost-export", operationId: id, state: "completed"}]};
+		};
+		return h;
+	};
+	const first = await create(); first.orch.stop();
+	const second = await create(); assert.equal(second.activeTransfers.size, 1, "second restart lost unresolved queue entry");
+	let unlocks = 0;
+	delete second.orch.tryUnlockSource;
+	second.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); unlocks++; return "source disconnected";};
+	await second.orch.observeJobs();
+	assert.equal(unlocks, 1); assert.equal(second.activeTransfers.get(id).status, "preparing");
+	await second.orch.requestQueue.persist(); second.orch.stop();
+	const third = await create(); delete third.orch.tryUnlockSource;
+	third.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); unlocks++; return null;};
+	await third.orch.observeJobs();
+	assert.equal(unlocks, 2); assert.equal(third.activeTransfers.get(id).status, "failed");
+	assert.equal(third.activeTransfers.get(id).timingPendingRecovery, false);
+	assert.equal(third.calls.importSends, 0);
+	assert.deepEqual(third.orch.requestQueue.handoffs.get("1:lost-export"), {destination: 2, cancelledBy: id});
+});
+
+test("failed cancellation persistence cannot unlock on a subsequent poll", async t => {
+	const h = makeHarness(() => {throw Error("must not import");}); t.after(() => h.orch.stop());
+	const row = {transferId: "request:cancel", operationType: "transfer", sourceInstanceId: 1, targetInstanceId: 2,
+		platformIndex: 3, sourceExportId: "source", status: "preparing", timingPendingRecovery: true};
+	h.activeTransfers.set(row.transferId, row); h.orch.interruptedSources.add(row.transferId);
+	h.orch.requestQueue.persist = async () => {throw Error("disk full");};
+	await assert.rejects(h.orch.reconcileInterruptedSource(row), /could not be persisted/);
+	await h.orch.reconcileInterruptedSource(row);
+	assert.equal(h.calls.unlockRouteTaken, 0); assert.equal(h.calls.importSends, 0);
+	assert.equal(row.timingPendingRecovery, true);
 });
 
 test("completed Lua work can precede artifact delivery without failing or unlocking", async () => {
@@ -592,8 +664,8 @@ test("SessionLost on import send: source NOT unlocked, transfer enters awaiting_
 	clearTimeout(transfer.validationTimeout);
 });
 
-test("Non-session-loss throw on import send: source IS rolled back (unlock route runs)", async () => {
-	const { orch, activeTransfers, calls } = makeHarness(() => { throw new Error("malformed request"); });
+test("confirmed routing rejection before import dispatch permits source rollback", async () => {
+	const { orch, activeTransfers, calls } = makeHarness(() => { throw new (require("@clusterio/lib").RequestError)("Instance is not running."); });
 
 	const res = await orch.transferPlatform("export_1", 2);
 
@@ -605,6 +677,159 @@ test("Non-session-loss throw on import send: source IS rolled back (unlock route
 	assert.equal(res.success, false);
 
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+});
+
+test("unknown import dispatch error retains source ownership", async t => {
+	const h = makeHarness(() => {throw Error("socket send failed after buffering");});
+	t.after(() => h.orch.stop());
+	assert.equal((await h.orch.transferPlatform("1:unknown-send", 2)).success, true);
+	assert.equal(h.calls.unlockRouteTaken, 0);
+	assert.equal(onlyTransfer(h.activeTransfers).status, "awaiting_validation");
+});
+
+test("failed canonical queue promotion retains a same-process source observer", async t => {
+	const h = makeHarness(() => {throw Error("must not import");}, () => ({success: true, exportId: "promotion"}));
+	t.after(() => h.orch.stop());
+	h.plugin.controller.instances = new Map([[1, {id: 1}]]);
+	h.plugin.platformTree.resolveTargetInstance = id => ({id});
+	h.plugin.transactionLogs = new Map(); h.plugin.persistedTransactionLogs = [];
+	h.orch.waitForStoredExport = async () => ({});
+	const id = "request:promotion", request = {sourceInstanceId: 1, sourcePlatformIndex: 3, targetInstanceId: 2};
+	const operation = {transferId: id, operationType: "transfer", sourceInstanceId: 1, targetInstanceId: 2,
+		platformIndex: 3, status: "preparing", startedAt: Date.now()};
+	const entry = {id, request, operation};
+	h.activeTransfers.set(id, operation); h.orch.requestQueue.entries.set(id, entry);
+	let writes = 0;
+	h.orch.requestQueue.persist = async () => {if (++writes === 2) throw Error("injected promotion write failure");};
+	const {timingContext} = require(path.join(distNode, "lib/timing.js"));
+	await timingContext.run(h.plugin.txLogger.clock(id), () => h.orch.handleStartPlatformTransferRequestMeasured(request, id));
+	assert.equal(h.activeTransfers.get(id), operation); assert.equal(entry.operation, operation);
+	assert.equal(operation.status, "preparing");
+	h.orch.observationDue.set(id, 0);
+	h.orch.observer.poll = async () => ({version: 1, epoch: "runtime", jobs: [{jobId: "promotion", state: "completed"}]});
+	await h.orch.observeJobs();
+	assert.equal(operation.status, "failed"); assert.equal(operation.timingPendingRecovery, false);
+	assert.equal(h.calls.unlockRouteTaken, 1); assert.equal(h.calls.importSends, 0);
+});
+
+test("definite import rejection keeps source cleanup observable through restart", async t => {
+	const fs = require("node:fs/promises"), os = require("node:os");
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-rejected-cleanup-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	for (const routing of [false, true]) {
+		const h = makeHarness(() => {
+			if (routing) throw new (require("@clusterio/lib").RequestError)("Instance is not running.");
+			return {success: false, error: "rejected before admission"};
+		}, () => ({success: true, exportId: "rejected"})); t.after(() => h.orch.stop());
+		h.plugin.controller.instances = new Map([[1, {id: 1}]]);
+		h.plugin.platformTree.resolveTargetInstance = id => ({id});
+		h.plugin.transactionLogs = new Map(); h.plugin.persistedTransactionLogs = [];
+		h.orch.waitForStoredExport = async () => ({});
+		const file = path.join(dir, `${routing}.json`);
+		await h.orch.requestQueue.init(file);
+		const id = "request:rejected", request = {sourceInstanceId: 1, targetInstanceId: 2, sourcePlatformIndex: 3};
+		const entry = {id, request, operation: {transferId: id, operationType: "transfer", sourceInstanceId: 1,
+			targetInstanceId: 2, platformIndex: 3, status: "preparing", startedAt: Date.now()}};
+		h.activeTransfers.set(id, entry.operation); h.orch.requestQueue.entries.set(id, entry);
+		h.orch.tryUnlockSource = async () => "source offline";
+		await h.orch.runQueuedRequest(entry);
+		const operation = onlyTransfer(h.activeTransfers);
+		assert.equal(entry.operation, operation); assert.equal(operation.transferId, "1:rejected");
+		assert.equal(operation.status, "preparing"); assert.equal(operation.timingPendingRecovery, true);
+		h.orch.stop();
+		const restored = makeHarness(() => {throw Error("must not replay");}); t.after(() => restored.orch.stop());
+		restored.plugin.persistedTransactionLogs = [];
+		await restored.orch.requestQueue.init(file);
+		const pending = onlyTransfer(restored.activeTransfers);
+		assert.equal(pending.timingPendingRecovery, true);
+		restored.orch.observationDue.set(pending.transferId, 0);
+		restored.orch.observer.poll = async () => ({version: 1, epoch: "runtime", jobs: [{jobId: "rejected", state: "completed"}]});
+		await restored.orch.observeJobs();
+		assert.equal(pending.status, "failed"); assert.equal(pending.timingPendingRecovery, false);
+		assert.equal(restored.calls.unlockRouteTaken, 1); assert.equal(restored.calls.importSends, 0);
+	}
+});
+
+test("concurrent observation cannot unlock before cancellation persistence succeeds", async t => {
+	for (const fail of [false, true]) {
+		const h = makeHarness(() => {throw Error("must not import");}); t.after(() => h.orch.stop());
+		const id = "1:cancel-write", operation = {transferId: id, operationType: "transfer", sourceInstanceId: 1,
+			targetInstanceId: 2, platformIndex: 3, sourceExportId: "cancel-write", status: "transporting"};
+		h.activeTransfers.set(id, operation); h.orch.requestQueue.handoffs.set(id, {destination: 2});
+		let release;
+		h.orch.requestQueue.persist = () => new Promise((resolve, reject) => {release = () => fail ? reject(Error("disk full")) : resolve();});
+		const rejected = h.orch.handleImportFailure(id, "admission rejected", 1);
+		const handled = rejected.catch(error => error);
+		await new Promise(resolve => setImmediate(resolve));
+		h.orch.observationDue.set(id, 0);
+		h.orch.observer.poll = async () => ({version: 1, epoch: "runtime", jobs: [{jobId: "cancel-write", state: "completed"}]});
+		const observation = h.orch.observeJobs().catch(error => error);
+		await new Promise(resolve => setImmediate(resolve)); assert.equal(h.calls.unlockRouteTaken, 0);
+		release(); await handled; await observation;
+		assert.equal(h.calls.unlockRouteTaken, fail ? 0 : 1);
+		if (fail) {await h.orch.reconcileInterruptedSource(operation); assert.equal(h.calls.unlockRouteTaken, 0);}
+	}
+});
+
+test("a refused destination cannot race source cleanup with another handoff", async t => {
+	const h = makeHarness(() => ({success: true}), () => ({success: true, exportId: "refused"}));
+	t.after(() => h.orch.stop());
+	h.plugin.controller.instances = new Map([[1, {id: 1}]]);
+	h.plugin.platformTree.resolveTargetInstance = id => ({id});
+	h.plugin.recoveryReservations = new Map([[2, {}]]);
+	h.orch.waitForStoredExport = async () => ({});
+	let release;
+	h.orch.sendUnlockRequest = () => new Promise(resolve => {release = resolve;});
+	const request = h.orch.handleStartPlatformTransferRequestMeasured({sourceInstanceId: 1, sourcePlatformIndex: 3, targetInstanceId: 2}, "request:refused");
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(typeof release, "function");
+	assert.equal((await h.orch.transferPlatform("1:refused", 3)).success, false);
+	assert.equal(h.calls.importSends, 0);
+	release(null);
+	assert.equal((await request).success, false);
+});
+
+test("restart between canonical queue persistence and dispatch claim cleans only the source", async t => {
+	const fs = require("node:fs/promises"), os = require("node:os");
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "se-before-claim-"));
+	t.after(() => fs.rm(dir, {recursive: true, force: true}));
+	const file = path.join(dir, "queue.json");
+	const h = makeHarness(() => {throw Error("must not import");}); t.after(() => h.orch.stop());
+	h.plugin.persistedTransactionLogs = [];
+	const operation = {transferId: "1:before-claim", sourceExportId: "before-claim", operationType: "transfer",
+		sourceInstanceId: 1, targetInstanceId: 2, platformIndex: 3, status: "transporting"};
+	await fs.writeFile(file, JSON.stringify({v: 2, handoffs: [], entries: [{id: "request:1", request: {}, operation}]}));
+	await h.orch.requestQueue.init(file);
+	const restored = onlyTransfer(h.activeTransfers);
+	assert.equal(restored.status, "preparing");
+	h.orch.observationDue.set(restored.transferId, 0);
+	h.orch.observer.poll = async () => ({version: 1, epoch: "runtime", jobs: [{jobId: "before-claim", state: "completed"}]});
+	await h.orch.observeJobs();
+	assert.equal(restored.status, "failed");
+	assert.equal(restored.timingPendingRecovery, false);
+	assert.equal(h.calls.unlockRouteTaken, 1); assert.equal(h.calls.importSends, 0);
+});
+
+test("unconfirmed standalone export is found by operation identity without re-export", async t => {
+	const h = makeHarness(() => {throw Error("must not import");}); t.after(() => h.orch.stop());
+	h.plugin.platformStorage = new Map();
+	const operation = {transferId: "export:lost", operationType: "export", sourceInstanceId: 1,
+		targetInstanceId: -1, platformIndex: 3, status: "in_progress"};
+	h.activeTransfers.set(operation.transferId, operation);
+	await h.orch.observeUnconfirmedExport(operation, "Reply lost");
+	h.orch.observationDue.set(operation.transferId, 0);
+	h.orch.observer.poll = async (_instance, jobs) => {
+		assert.deepEqual(jobs, [{operationId: operation.transferId}]);
+		return {version: 1, epoch: "runtime", jobs: [{operationId: operation.transferId, jobId: "download", state: "completed"}]};
+	};
+	h.orch.recoverExportArtifact = async () => h.plugin.platformStorage.set("1:download", {
+		exportId: "1:download", sourceExportId: "download", instanceId: 1, exportData: {}, size: 12,
+	});
+	await h.orch.observeJobs();
+	assert.equal(operation.sourceExportId, "download"); assert.equal(operation.status, "in_progress");
+	await h.orch.observeJobs();
+	assert.equal(operation.status, "completed");
+	assert.equal(h.calls.importSends, 0); assert.equal(h.calls.unlockRouteTaken, 0);
 });
 
 test("#106: validation fails AND source unlock fails → status is plain 'failed', intent still KEPT", async () => {

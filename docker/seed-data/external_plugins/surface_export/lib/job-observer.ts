@@ -1,7 +1,6 @@
 import { performance } from "node:perf_hooks";
 import type { JobObservation, JobReference, JobStatus, JobStatusBatch } from "../shared/job-status";
 
-/** Read-only observation. No cancellation, retry of work, or ownership decisions live here. */
 export class JobObserver {
 	private instances = new Map<number, { next: number; cursor: number; pending?: Promise<JobStatusBatch> }>();
 	private progress = new Map<string, { signature: string; at: number; epoch: string | undefined }>();

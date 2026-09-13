@@ -320,6 +320,7 @@ export class TransactionLogger {
 			artifactSizeBytes,
 			downloadable,
 			...snapshotAvailability(storedExport?.exportData),
+			snapshotTimestamp: storedExport?.timestamp ?? null,
 			platformName: info.platformName,
 			sourceInstanceId: info.sourceInstanceId,
 			sourceInstanceName: info.sourceInstanceName,
@@ -528,6 +529,7 @@ export class TransactionLogger {
 					artifactSizeBytes: summary.artifactSizeBytes ?? storedExport?.size ?? null,
 					downloadable: Boolean(storedExport?.exportData),
 					...snapshotAvailability(storedExport?.exportData),
+					snapshotTimestamp: storedExport?.timestamp ?? null,
 				};
 			})
 			.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))

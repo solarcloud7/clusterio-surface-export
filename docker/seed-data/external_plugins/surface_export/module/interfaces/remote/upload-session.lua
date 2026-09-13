@@ -38,13 +38,22 @@ function Upload.jobs(request_json)
       for _, record in pairs((storage.import_sessions or {}).records or {}) do
         if record.operation_id == ref.operationId then job_id = record.job_id; attempt = record; break end
       end
+      if not job_id then
+        for id, job in pairs(storage.async_jobs or {}) do
+          if job.operation_id == ref.operationId then job_id = id; break end
+        end
+      end
+      if not job_id then
+        for id, result in pairs(storage.async_job_results or {}) do
+          if result.operation_id == ref.operationId then job_id = id; break end
+        end
+      end
     end
     local status = job_id and AsyncProcessor.get_job_status(job_id) or {state = "unavailable"}
     if status.state == "unavailable" and attempt then
       status.phase = "upload " .. attempt.state
       status.error = attempt.error or "Upload receipt retained; job status unavailable"
     end
-    -- Never return another operation's job as confirmation of the requested one.
     if ref.operationId and status.state ~= "unavailable" and ref.operationId ~= status.operationId then
       status = {state = "unavailable", error = "Job operation identity is missing or mismatched"}
     end

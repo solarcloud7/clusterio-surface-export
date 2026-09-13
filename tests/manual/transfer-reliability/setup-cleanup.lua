@@ -36,7 +36,6 @@ return function(action, name)
                 if candidate.name:sub(1,#name) == name then count=count+1 end
             end
             assert(count == 1 and deletes == 1, 'duplicate created a platform or repeated deletion')
-            -- Keep the recorded cleanup pending while the runner saves and reloads this world.
             job.setup_cleanup.next_tick = game.tick + 36000
             return {success=true,job=job_id,platform=p.index,surface=p.surface.index,
                 tick=game.tick,engine=script.active_mods.base,protected=true,starterCargo=cargo,

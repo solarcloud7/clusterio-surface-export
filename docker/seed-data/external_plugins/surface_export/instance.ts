@@ -326,7 +326,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.info(`Sent platform export ${exportId} to controller`);
 
 			if (data.destination_instance_id) {
-				if (this.controllerManagedTransferExports.has(exportId)) {
+				if (data.operation_id || this.controllerManagedTransferExports.has(exportId)) {
 					this.controllerManagedTransferExports.delete(exportId);
 					this.logger.info(`Skipping instance auto-transfer for controller-managed export ${exportId}`);
 					return;
@@ -453,20 +453,20 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null): Promise<ExportResult> {
+	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null, operationId?: string): Promise<ExportResult> {
 		const resolvedTargetId = Number(targetInstanceId);
 		const hasTargetInstance = Number.isInteger(resolvedTargetId) && resolvedTargetId > 0;
 		const targetArg = hasTargetInstance ? String(resolvedTargetId) : "nil";
 		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
 
 		try {
-			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg);
+			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg, operationId);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
 			const clock = timingContext.getStore();
 			if (clock) { clock.exportId = exportResult; clock.bind(clock.jobId); }
 			if (!exportResult || exportResult.toLowerCase() === "nil") {
-				return { success: false, error: "Export failed - no export_id returned" };
+				return { success: false, admissionUncertain: true, error: "Export admission unconfirmed - no export_id returned" };
 			}
 			if (exportResult.toUpperCase().startsWith("EXPORT_FAILED")) {
 				const parts = exportResult.split(":");
@@ -476,7 +476,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			const exportId = exportResult.trim();
 			if (this.isInvalidExportId(exportId)) {
-				return { success: false, error: "Export failed - invalid export_id returned" };
+				return { success: false, admissionUncertain: true, error: "Export admission unconfirmed - invalid export_id returned" };
 			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
 
@@ -484,7 +484,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Export failed: ${errMsg}`);
-			return { success: false, error: errMsg };
+			return { success: false, admissionUncertain: true, error: errMsg };
 		}
 	}
 
@@ -652,8 +652,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return this.withTiming(request.operationId || `export-request:${randomUUID()}`, undefined, "Export request handling", () => this.handleExportPlatformRequestMeasured(request));
 	}
 
-	async handleExportPlatformRequestMeasured(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
-		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null);
+	async handleExportPlatformRequestMeasured(request: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null, request.operationId);
 		const numericTargetInstanceId = Number(request.targetInstanceId);
 		if (result?.success && Number.isInteger(numericTargetInstanceId) && numericTargetInstanceId > 0) {
 			this.controllerManagedTransferExports.add(result.exportId as string);

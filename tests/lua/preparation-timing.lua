@@ -54,7 +54,7 @@ local function scenario(side, fault)
         ["core/import-target"] = {resolve = function() return "nauvis" end},
     }
     local stub = setmetatable({}, {__index = function() return noop end})
-    local env = setmetatable({storage = {async_job_id_counter = 0, async_jobs = {}}, log = noop,
+    local env = setmetatable({storage = {source_recovery_ready = true, async_job_id_counter = 0, async_jobs = {}}, log = noop,
         game = {tick = 100, print = noop, forces = {player = force}}, script = {active_mods = {base = "2.1.17"}},
         defines = {inventory = {hub_main = 1}}, require = function(path)
             return modules[path:match("^modules/surface_export/(.*)$")] or stub

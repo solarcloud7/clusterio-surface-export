@@ -137,8 +137,8 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name)
-	if storage.source_recovery_ready == false then return nil, "Startup recovery is not ready" end
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id)
+	if storage.source_recovery_ready ~= true then return nil, "Startup recovery is not ready" end
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -200,7 +200,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	Timing.stop(job_id, "schedule_capture")
 	if not platform_schedule then
 		Timing.fail(job_id, "schedule_capture")
-		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index)
+		Timing.scope(job_id, "source_unlock", SurfaceLock.unlock_platform, platform.index, nil, nil, nil, job_id)
 		Timing.finish(job_id, "failed")
 		return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
 	end
@@ -233,6 +233,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		force_name = force_name,
 		requester = requester_name,
 		destination_instance_id = destination_instance_id,
+		operation_id = operation_id,
 		clone_dest_name = clone_dest_name,
 		started_tick = game.tick,
 		surface = surface,
@@ -513,6 +514,7 @@ local function publish_completion(job)
 	local notification_error
 	if clusterio_api and clusterio_api.send_json then
 		local event_payload = {
+			operation_id = job.operation_id,
 			export_id = export_id,
 			platform_name = job.platform_name,
 			platform_index = job.platform_index,
@@ -555,6 +557,7 @@ local function publish_completion(job)
 	end
 
 	storage.async_job_results[job.job_id] = {
+		operation_id = job.operation_id,
 		status = notification_error and "failed" or "complete",
 		error = notification_error,
 		complete = true,
@@ -571,7 +574,7 @@ local function publish_completion(job)
 	handle_pending_file_write(export_id)
 
 	if not job.destination_instance_id then
-		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index)
+		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index, nil, nil, nil, job.job_id)
 		if unlock_success then
 			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
 			if clusterio_api and clusterio_api.send_json then
@@ -760,7 +763,7 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		job.platform_name), {1, 0.3, 0})
 
 	Timing.start(job.job_id, "source_unlock")
-	local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
+	local unlock_success = SurfaceLock.unlock_platform(job.platform_index, nil, nil, nil, job.job_id)
 	Timing.stop(job.job_id, "source_unlock")
 	if unlock_success and clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
@@ -790,6 +793,7 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	end
 
 	storage.async_job_results[job.job_id] = {
+		operation_id = job.operation_id,
 		status = "failed",
 		complete = true,
 		failed = true,

@@ -46,8 +46,6 @@ assert(not holds.stage("released", platform, force, true), "released ID created 
 assert(not holds.go_live("unknown"), "missing receipt manufactured activation success")
 print("PASS activation receipt is idempotent and cannot stage another destination")
 
--- Hiding an unfinished platform is not a validated hold. The eventual hold must
--- restore the visibility captured before import preparation, not its temporary hiding.
 platform.hidden = true
 assert(not holds.get("preparing"), "temporary hiding manufactured a validated hold")
 assert(not holds.go_live("preparing"), "temporary hiding authorized activation")

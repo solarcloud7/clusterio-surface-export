@@ -129,6 +129,7 @@ export class ExportPlatformRequest {
 			properties: {
 				success: { type: "boolean" },
 				exportId: { type: "string" },
+				admissionUncertain: { type: "boolean" },
 				error: { type: "string" },
 			},
 			required: ["success"],
@@ -1748,7 +1749,7 @@ export type OperationOptions = {
 	sourceVerification?: { itemCounts?: Record<string, number>; fluidCounts?: Record<string, number> } | null;
 };
 
-export type ExportResult = { success: boolean; exportId?: string; error?: string };
+export type ExportResult = { success: boolean; exportId?: string; admissionUncertain?: boolean; error?: string };
 
 export type ImportResult = { success: boolean; error?: string; jobId?: string; epoch?: string; attemptId?: string; admissionUncertain?: boolean };
 

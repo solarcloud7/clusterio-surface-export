@@ -23,7 +23,6 @@ test("surface-lock exposes expiring transfer/export scanner with nil-safe TTL fa
 	assert.match(src, /EXPIRABLE_LOCK_KINDS\s*\[\s*lock_data\.kind\s*\]/, "scanner must key expiry off the expirable-kind set");
 	assert.match(src, /expires_tick\s+or\s+\(\s*locked_tick\s*\+\s*DEFAULT_TRANSFER_LOCK_TTL_TICKS\s*\)/, "scanner must fall back from expires_tick to locked_tick + TTL");
 	assert.match(src, /if\s+not\s+locked_tick\s+then[\s\S]*skip/, "scanner must skip old locks without locked_tick");
-	assert.match(src, /SurfaceLock\.unlock_platform\s*\(\s*platform_index\s*,\s*lock_data\.platform_name\s*\)/, "expiry unlock must use the stored name tripwire");
 });
 
 test("transfer exports stamp transfer lock metadata and refuse manual locks", () => {

@@ -48,8 +48,6 @@ local rejected,reason=pipeline.queue({section_codec=1,section_count=2,sections={
 assert(not rejected and reason:find('missing section'),'accepted missing tail')
 print('PASS deferred frame decode, later preparation, routing identity and interrupted-frame replay guard')
 
--- Stop at the real mandatory cargo gate after decoding. Even routing metadata hidden
--- inside a compressed/sectional snapshot must lose its old source authority.
 local captured
 modules['utils/version-compat'] = nil -- pipeline retains its original stub; override that table below.
 stub.parse = function() return {bucket='test'} end

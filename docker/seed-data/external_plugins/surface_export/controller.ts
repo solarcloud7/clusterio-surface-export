@@ -16,6 +16,7 @@ import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } fro
 import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit";
 import type { AuditRow } from "./lib/audit-ledger";
 import { TransferOrchestrator, JobObservationStopped } from "./lib/transfer-orchestrator";
+import { isInstanceRouteRejection } from "./lib/request-errors";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
 import { recoveryMode, hasUnresolvedOwnership, protectedSourceIndexes, type PlatformSourceOfTruth } from "./shared/recovery";
 import { importableSnapshot } from "./shared/snapshot";
@@ -149,7 +150,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadGatewayConfig();
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
-		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"));
+		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
+			[...this.platformStorage.keys(), ...this.auditIndex.keys(), ...this.pendingTransfers.keys(),
+				...this.persistedTransactionLogs.map(log => log.transferId)]);
 		this.orchestrator.restoreImportObservations();
 
 		this.c.handle(messages.OperationTimingEvent, async (event: messages.OperationTimingEvent) => {
@@ -185,8 +188,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 		let nextRecovery = 0;
 		this.recoveryTimer = setInterval(() => {
-			// Status observation has its own cadence; a slow recovery request must not
-			// delay observations on other instances. The observer bounds outstanding requests.
 			const recover = performance.now() >= nextRecovery;
 			if (recover) nextRecovery = performance.now() + 30_000;
 			void (recover ? this.orchestrator.recoverPendingTransfers() : this.orchestrator.observeJobs()).catch(error => {
@@ -254,8 +255,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async handlePlatformExportMeasured(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		const sourceExportId = event.exportId;
 		const canonicalExportId = makeCanonicalTransferId(event.instanceId, sourceExportId);
-		// A recovery read can win a race with the original completion event.
-		// One immutable source job has one artifact; duplicate delivery cannot replace it.
 		if (this.platformStorage.has(canonicalExportId)) return;
 		this.logger.info(`Received platform export: ${canonicalExportId} (source ${sourceExportId}) from instance ${event.instanceId} (${event.platformName})`);
 
@@ -407,7 +406,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	async handleImportUploadedExportRequestMeasured(request: messages.ImportUploadedExportOptions) {
 		const { targetInstanceId, forceName, platformName, targetPlanet, restoreExportId } = request;
-		this.requireRecoveryReady(targetInstanceId);
+		try { this.requireRecoveryReady(targetInstanceId); }
+		catch (error) { return {success: false, error: getErrorMessage(error)}; }
 		const snapshot = restoreExportId ? this.platformStorage.get(restoreExportId) : undefined;
 		if (restoreExportId && !snapshot) return { success: false, error: "This snapshot is no longer available. No platform was imported." };
 		const suppliedData = snapshot ? snapshot.exportData : request.exportData;
@@ -446,28 +446,26 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			targetInstanceId: resolved.id,
 		});
 		(importData as Record<string, unknown>)._operationId = operation.transferId;
-		const payloadSizeBytes = timedSync("Payload serialization", () => Buffer.byteLength(JSON.stringify(importData), "utf8"));
-		operation.artifactSizeBytes = payloadSizeBytes;
-		this.txLogger.logTransactionEvent(operation.transferId, "import_requested",
-			`Upload import requested for ${operation.platformName}`, {
-				targetInstanceId: resolved.id,
-				payloadSizeBytes,
-				restoredFromExportId: restoreExportId || null,
-			});
-		this.subscriptions.emitTransferUpdate(operation);
 		const uploadExportId = generateOperationId("uploaded");
-		const completedReply = () => ["completed", "failed", "error"].includes(operation.status) ? {
+		const completedReply = () => ["completed", "failed", "error", "cleanup_failed"].includes(operation.status) ? {
 			success: operation.status === "completed", operationId: operation.transferId,
 			platformName: operation.platformName, targetInstanceId: resolved.id, error: operation.error || undefined,
 		} : null;
 
+		let dispatchAttempted = false;
 		try {
-			// Check immediately before dispatch, after record persistence may have yielded.
+			const payloadSizeBytes = timedSync("Payload serialization", () => Buffer.byteLength(JSON.stringify(importData), "utf8"));
+			operation.artifactSizeBytes = payloadSizeBytes;
+			this.txLogger.logTransactionEvent(operation.transferId, "import_requested",
+				`Upload import requested for ${operation.platformName}`, {targetInstanceId: resolved.id,
+					payloadSizeBytes, restoredFromExportId: restoreExportId || null});
+			this.subscriptions.emitTransferUpdate(operation);
 			if (!this.isInstanceOnline(resolved.id)) {
 				operation.error = `Destination instance ${resolved.id} is offline, unassigned, or unavailable`;
 				await this.failOperation(operation, "import_failed", operation.error);
 				return {success: false, operationId: operation.transferId, error: operation.error};
 			}
+			dispatchAttempted = true;
 			const response = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: resolved.id },
 				new messages.ImportPlatformRequest({
@@ -477,7 +475,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					targetPlanet: targetPlanet ?? null,
 				}),
 			)) as messages.ImportResult & { platformName?: string; targetInstanceId?: number };
-			// Completion can arrive before the queued-request acknowledgement, including a lost reply.
 			const terminalReply = completedReply();
 			if (terminalReply) return terminalReply;
 			if (!response?.success && !response?.admissionUncertain) {
@@ -486,6 +483,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				await this.failOperation(operation, "import_failed", `Import request failed: ${error}`, { error });
 				return {
 					success: false,
+					operationId: operation.transferId,
 					error,
 					targetInstanceId: resolved.id,
 				};
@@ -512,15 +510,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const terminalReply = completedReply();
 			if (terminalReply) return terminalReply;
 			const errMsg = getErrorMessage(err);
-			// The pinned controller rejects this request before calling connection.sendRequest.
-			// Other exceptions may follow admission, so they remain uncertain.
-			if (err instanceof lib.RequestError && errMsg === "Host containing instance is not connected") {
+			if (!dispatchAttempted || isInstanceRouteRejection(err)) {
 				operation.error = errMsg;
 				await this.failOperation(operation, "import_failed", `Import request rejected before dispatch: ${errMsg}`, {error: errMsg});
 				return {success: false, operationId: operation.transferId, error: errMsg};
 			}
-			// The handler may have accepted a job before the request reply was lost.
-			// Only an explicit rejection or the retained composite result is terminal.
 			operation.status = "awaiting_completion";
 			operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: errMsg};
 			this.subscriptions.emitTransferUpdate(operation);
@@ -571,18 +565,25 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			});
 		this.subscriptions.emitTransferUpdate(operation);
 
+		let exportReplyReceived = false;
 		try {
 			const exportRequestStartMs = performance.now();
 			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.c.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.ExportPlatformRequest({
-					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId,
+					operationId: operation.transferId,
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: null,
 				}),
-			)) as messages.SimpleResponse & { exportId?: string; error?: string };
+			)) as messages.SimpleResponse & { exportId?: string; error?: string; admissionUncertain?: boolean };
+			exportReplyReceived = true;
 			const exportRequestMs = performance.now() - exportRequestStartMs;
+			if (exportResponse?.admissionUncertain || !exportResponse || (exportResponse.success && !exportResponse.exportId)) {
+				const error = exportResponse?.error || "Export admission is unconfirmed";
+				await this.orchestrator.observeUnconfirmedExport(operation, error);
+				return {success: false, operationId: operation.transferId, error};
+			}
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				const error = exportResponse?.error || "Export failed";
 				operation.error = error;
@@ -615,9 +616,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			};
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
-			if (err instanceof JobObservationStopped) {
-				operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: errMsg};
-				this.subscriptions.emitTransferUpdate(operation);
+			if (err instanceof JobObservationStopped || (!exportReplyReceived && !isInstanceRouteRejection(err))) {
+				await this.orchestrator.observeUnconfirmedExport(operation, errMsg);
 				return {success: false, operationId: operation.transferId, error: errMsg};
 			}
 			operation.error = errMsg;
@@ -632,7 +632,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.importCompletions ??= new Map();
 		const inFlight = this.importCompletions.get(operationId);
 		if (inFlight) { await inFlight; return this.handleImportOperationCompleteEvent(event); }
-		// Defer execution until the guard is installed, including record creation's first await.
 		const settling = Promise.resolve().then(() => this.handleImportOperationCompleteMeasured(event, operationId));
 		this.importCompletions.set(operationId, settling);
 		try { await settling; } finally { this.importCompletions.delete(operationId); }

@@ -64,8 +64,6 @@ function Sessions.begin(q)
   return reply(r)
  end
  assert(q.sequence>s.high_water,"Upload attempt is no longer available")
- -- Begin calls are serialized by the sender. A closed sequence cannot be reused,
- -- even after the small result receipt has been pruned.
  s.high_water=q.sequence
  local count,bytes=0,0
  for _,other in pairs(s.records) do
@@ -128,7 +126,6 @@ function Sessions.commit(id,queue)
  storage.async_job_id_counter=(storage.async_job_id_counter or 0)+1
  r.job_id="import_"..storage.async_job_id_counter
  r.state="admitting"
- -- Persist ownership before anything that can allocate a platform or throw.
  local ok,job_id,err=pcall(function()
   local json=Timing.scope(r.timing_id,"chunk_assembly",table.concat,r.chunks,"")
   return queue(json,r.platform_name,r.force_name,"RCON_CHUNKED",{import_job_id=r.job_id,
@@ -141,7 +138,6 @@ function Sessions.commit(id,queue)
   release(r,"accepted",tostring(ok and err or job_id))
  elseif ok then release(r,"rejected",tostring(err or "Import rejected before job creation"))
  else
-  -- Missing job evidence after an exception does not prove there were no side effects.
   release(r,"admitting",tostring(job_id))
  end
  return reply(r)

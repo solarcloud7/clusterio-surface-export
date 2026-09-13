@@ -40,6 +40,17 @@ export function evaluateCopies(before, samples, minimumSamples=2) {
 export function analyze(report) {
   assert.equal(report.schemaVersion,1);
   assert.ok(!report.error,"report contains a harness failure");
+  if(report.case==="lost-export-reply") {
+    assert.equal(report.cleanup?.success,true);assert.deepEqual(report.before?.cargo,expectedCargo);
+    assert.equal(report.held?.action,"export");assert.equal(report.held?.success,true);
+    assert.equal(report.outcome?.status,"failed");assert.equal(report.resolved?.source.usable,true);
+    assert.equal(report.resolved?.destination.present,false);assert.deepEqual(report.resolved.source.cargo,expectedCargo);
+    assert.equal(report.eventsBeforeRetry?.filter(e=>e.kind==="call"&&e.action==="import").length,0);
+    assert.notEqual(report.retryId,report.transferId);assert.equal(report.retryOutcome?.status,"completed");
+    assert.equal(report.final?.source.present,false);assert.equal(report.final?.destination.usable,true);
+    assert.deepEqual(report.final.destination.cargo,expectedCargo);
+    return {verdict:"PASS",reason:"Interrupted source admission resolved without importing; a fresh transfer preserved physical cargo"};
+  }
   if(report.case==="save-policy-pending") {
     assert.equal(report.cleanup?.success,true);assert.deepEqual(report.before?.cargo,expectedCargo);
     assert.equal(report.beforeReload?.source.present,false);assert.equal(report.beforeReload?.destination.held,true);
@@ -138,6 +149,13 @@ export function analyzeSavePolicy(report) {
   assert.deepEqual(report.before?.cargo,expectedCargo,"invalid physical fixture");
   assert.equal(report.outcome?.status,"completed");
   if(report.case==="snapshot-recovery") {
+    if(report.ownershipReviewVersion>=1) {
+      assert.equal(report.afterReplay?.source.present,false);assert.equal(report.afterReplay?.destination.present,false);
+      assert.deepEqual(report.survivor?.cargo,expectedCargo);assert.equal(report.survivor?.usable,true);
+      assert.equal(report.browser.noSnapshotDownload,true);
+      assert.equal(report.browser.restoreFailures?.preAdmissionRetryEnabled,true);
+      assert.equal(report.browser.restoreFailures?.uncertainResubmissionDisabled,true);
+    }
     assert.equal(report.rollback?.source.present,false);assert.equal(report.rollback?.destination.present,false);
     assert.equal(report.originalHistory?.status,"completed");
     assert.equal(report.recovery?.success,true);
@@ -166,6 +184,13 @@ export function analyzeSavePolicy(report) {
   assert.equal(report.notices?.mode,accepted?"save_game":"plugin_history");
   assert.equal(report.notices?.notices[report.identityAfter?.index]?.status,accepted?"accepted":"protected");
   if(accepted) {
+    if(report.ownershipReviewVersion>=1) {
+      assert.equal(report.manualLocked?.source.usable,false);
+      for(const state of [report.manualUnlocked?.source,report.standalone?.physical.source]) {
+        assert.equal(state?.usable,true);assert.deepEqual(state.cargo,expectedCargo);
+      }
+      assert.equal(report.browser.acknowledgementPersisted,true);
+    }
     assert.equal(report.browser.restartRequired,true,"restart requirement unverified");
     assert.notEqual(report.identityAfter.uid,report.identityBefore.uid);
     assert.equal(report.beforeRestartMode,"save_game");

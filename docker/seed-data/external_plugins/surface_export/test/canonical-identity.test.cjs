@@ -390,7 +390,7 @@ test("a blocked transfer start does not serialize unrelated exports", async t =>
 	assert.equal(calls.imports.length, 2);
 });
 
-test("a refused import returns the same failure to replays and permits a later retry", async t => {
+test("a refused import returns the same failure to concurrent replays and requires a fresh export afterward", async t => {
 	const { orch, activeTransfers, calls } = makeTransferHarness();
 	const importing = deferred();
 	const entered = deferred();
@@ -418,8 +418,8 @@ test("a refused import returns the same failure to replays and permits a later r
 	assert.equal(calls.imports.length, 1);
 	assert.equal(activeTransfers.get("1:001_test").status, "failed");
 	orch.plugin.controller.sendTo = send;
-	assert.equal((await orch.transferPlatform("1:001_test", 2)).success, true);
-	assert.equal(calls.imports.length, 2);
+	assert.equal((await orch.transferPlatform("1:001_test", 2)).success, false);
+	assert.equal(calls.imports.length, 1);
 });
 
 test("transfer uses canonical id everywhere except raw source delete correlation", async () => {

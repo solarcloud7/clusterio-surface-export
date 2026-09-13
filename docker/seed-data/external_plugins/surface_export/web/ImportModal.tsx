@@ -18,7 +18,7 @@ import { importableSnapshot, newRestoreRequestId } from "../shared/snapshot";
 import { parseJsonFile, getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
-export type RestoreSnapshot = { exportId: string; timestamp: number; platformName: string; exportData: JsonObject };
+export type RestoreSnapshot = { exportId: string; timestamp: number | null; platformName: string };
 
 type ImportModalProps = {
 	open: boolean;
@@ -32,8 +32,9 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 	const submitting = useRef(false);
 	const [restoreRequestId] = useState(newRestoreRequestId);
 	const [restoreError, setRestoreError] = useState<string | null>(null);
+	const [restoreOperationId, setRestoreOperationId] = useState<string | null>(null);
 	const [fileList, setFileList] = useState<UploadFile[]>([]);
-	const [payload, setPayload] = useState<JsonObject | null>(snapshot?.exportData || null);
+	const [payload, setPayload] = useState<JsonObject | null>(null);
 	const [parseError, setParseError] = useState<string | null>(null);
 	const [forceName, setForceName] = useState("player");
 	const [platformName, setPlatformName] = useState("");
@@ -102,13 +103,13 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 	}
 
 	async function handleSubmit() {
-		if (targetInstanceId === null || !payload || submitting.current || restoreError) return;
+		if (targetInstanceId === null || (!payload && !snapshot) || submitting.current || restoreError) return;
 		submitting.current = true;
 		setImporting(true);
 		try {
 			const request: ImportUploadedExportOptions = {
 				targetInstanceId,
-				exportData: payload,
+				exportData: snapshot ? {} : payload!,
 				restoreExportId: snapshot?.exportId || null,
 				restoreRequestId: snapshot ? restoreRequestId : null,
 				forceName: forceName || "player",
@@ -119,13 +120,18 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 			}
 			const response = await plugin.importUploadedExport(request) as JsonObject;
 			if (!getProp(response, "success", false)) {
-				throw new Error(String(getProp(response, "error", "Import failed")));
+				const error = String(getProp(response, "error", "Import failed"));
+				const operationId = getProp(response, "operationId", null);
+				if (snapshot && typeof operationId === "string") {
+					setRestoreOperationId(operationId);
+					setRestoreError(error);
+				} else setParseError(error);
+				antMessage.error(error, 10);
+				return;
 			}
 			handleClose();
 		} catch (err: unknown) {
 			const error = getErrorMessage(err, "Failed to import JSON");
-			// A rejected reply can also mean the acknowledgement was lost. Keep this
-			// attempt's identity and require inspection before an explicit new restore.
 			if (snapshot) setRestoreError(error);
 			antMessage.error(error, 10);
 		} finally {
@@ -144,11 +150,11 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 			closable={!importing}
 			maskClosable={!importing}
 			cancelButtonProps={{ disabled: importing }}
-			okButtonProps={{ loading: importing, disabled: !!restoreError || !payload || targetInstanceId === null }}
+			okButtonProps={{ loading: importing, disabled: !!restoreError || (!payload && !snapshot) || targetInstanceId === null }}
 		>
 			<Space direction="vertical" size="middle" style={{ width: "100%" }}>
 				{snapshot ? <Alert type="warning" showIcon message={snapshot.platformName}
-					description={`Snapshot saved ${new Date(snapshot.timestamp).toLocaleString()}. This creates a new platform on the selected destination. Another copy may already exist, including on offline instances. The original transfer history stays unchanged.`} /> : <Upload
+					description={`${snapshot.timestamp == null ? "Snapshot date unavailable" : `Snapshot saved ${new Date(snapshot.timestamp).toLocaleString()}`}. This creates a new platform on the selected destination. Another copy may already exist, including on offline instances. The original transfer history stays unchanged.`} /> : <Upload
 					accept=".json,application/json"
 					beforeUpload={() => false}
 					fileList={fileList}
@@ -161,9 +167,9 @@ export default function ImportModal({ open, onClose, plugin, state, snapshot }: 
 				{parseError ? <Alert type="error" showIcon message={parseError} /> : null}
 				{restoreError ? <Alert type="error" showIcon message="Restore was not confirmed"
 					description={<>{restoreError}. Check this attempt’s transfer history before starting another restoration. {" "}
-						<a href={`/surface-export?tab=logs&transfer=${encodeURIComponent(`restore:${restoreRequestId}`)}`}>
+						{restoreOperationId && <a href={`/surface-export?tab=logs&transfer=${encodeURIComponent(restoreOperationId)}`}>
 							View this restoration attempt
-						</a></>} /> : null}
+						</a>}</>} /> : null}
 				{payload && !snapshot ? (
 					<Alert
 						type="success"

@@ -83,6 +83,7 @@ export interface TransferSummaryModel {
 	artifactSizeBytes: number | null;
 	downloadable: boolean;
 	restorable?: boolean;
+	snapshotTimestamp?: number | null;
 	restoreUnavailableReason?: string | null;
 	platformName: string;
 	sourceInstanceId: number;

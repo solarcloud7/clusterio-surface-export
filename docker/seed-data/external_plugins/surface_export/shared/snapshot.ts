@@ -9,7 +9,6 @@ export function newRestoreRequestId(): string {
 	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-// Shape detection only. Factorio still validates schema, compatibility and cargo.
 export function importableSnapshot(value: unknown): { payload: Record<string, unknown>; fromBlackBox: boolean } {
 	if (!object(value)) throw new Error("An importable platform snapshot must be a JSON object");
 	const fromBlackBox = Object.hasOwn(value, "replay_payload");

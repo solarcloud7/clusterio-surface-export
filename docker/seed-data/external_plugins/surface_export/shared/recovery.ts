@@ -58,6 +58,5 @@ export function protectedSourceIndexes(instanceId: number,
 		if (entry.sourceInstanceId === instanceId && entry.status !== "queued"
 			&& (entry.timingPendingRecovery || !["completed", "failed", "error"].includes(entry.status))) indexes.push(entry.platformIndex);
 	}
-	// Unknown historical indices cannot authorize releasing an arbitrary restored source.
 	return [...new Set(indexes.map(index => Number.isInteger(index) && Number(index) >= 0 ? Number(index) : -1))];
 }

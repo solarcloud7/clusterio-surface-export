@@ -17,14 +17,18 @@ Module._load = function(request, parent, isMain) {
   const proto=result.InstancePlugin.prototype;
   if(proto[patched]) return result;
   proto[patched]=true;
-  for (const [method,action] of [["handleDeleteSourcePlatformMeasured","source"],["handleDestinationTransferGate","destination"],["handleImportPlatformRequestMeasured","import"]]) {
+  for (const [method,action] of [["handleDeleteSourcePlatformMeasured","source"],["handleDestinationTransferGate","destination"],["handleImportPlatformRequestMeasured","import"],["handleExportPlatformRequestMeasured","export"]]) {
     const original=proto[method];
     if(typeof original!=="function") throw new Error(`Manual interception missing ${method}`);
     proto[method]=async function(req) {
-      const id=String(req.transferId || req.exportId || req.exportData?._transferId || "");
-      const scoped=id.includes(`transfer-cleanup-${run}-`);
+      let id=String(req.transferId || req.exportId || req.exportData?._transferId || "");
+      let scoped=id.includes(`transfer-cleanup-${run}-`);
       if(scoped) record({kind:"call",action,id,gate:req.action});
       const response=await original.call(this,req);
+      if(action==="export") {
+        id=String(response?.exportId || "");scoped=id.includes(`transfer-cleanup-${run}-`);
+        if(scoped) record({kind:"call",action,id,operationId:req.operationId});
+      }
       const rule=readRule();
       if(scoped && response?.success===true && rule.run===run && rule.enabled===true
         && rule.action===action && id.includes(rule.name) && !consumed.has(rule.name)

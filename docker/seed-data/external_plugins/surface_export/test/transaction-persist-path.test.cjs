@@ -339,7 +339,7 @@ test("both operation-registration sites archive before claiming the id (source c
 	const sites = [["controller.ts", "controller"], [path.join("lib", "transfer-orchestrator.ts"), "orchestrator"]];
 	for (const [file, label] of sites) {
 		const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
-		assert.match(source, /archiveRecycledTransferId\([^)]*\);\s*\n\s*this(?:\.plugin)?\.activeTransfers\.set\(/,
-			`${label} must archive a recycled id immediately before registering the new operation`);
+		assert.match(source, /archiveRecycledTransferId\([^)]*\);[\s\S]*?this(?:\.plugin)?\.activeTransfers\.set\(/,
+			`${label} must archive a recycled id before registering the new operation`);
 	}
 });

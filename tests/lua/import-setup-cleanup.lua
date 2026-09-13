@@ -20,7 +20,6 @@ local function fixture(fault, deletion)
         platform = {valid = true, index = created, name = options.name, force = force,
             hub = hub, hidden = false, paused = false, apply_starter_pack = function()
                 if fault == "before_surface" then error("injected failure before surface creation") end
-                -- Factorio 2.1.17 exposes no surface until the starter pack creates it.
                 platform.surface = surface
                 if fault == "starter" then error("injected starter failure") end
             end}
@@ -104,7 +103,6 @@ for _, fault in ipairs({'starter','scan','schedule','schedule_throw','totals'}) 
 end
 print('PASS failed setup retains quarantine, retries with backoff across reload, and never activates or replays creation')
 
--- A changed surface is not the owned destination, even if the platform index matches.
 local f=fixture('starter','false')
 f.load('core/import-pipeline').queue(payload('changed'),'fixture','player','RCON')
 local _,job=next(f.env.storage.async_jobs)
@@ -114,7 +112,6 @@ local _,attempts=f.stats()
 assert(attempts==1 and f.env.storage.async_jobs[job.job_id], 'cleanup deleted a changed surface')
 print('PASS cleanup refuses a changed platform surface')
 
--- Section decoding already owns a job ID before entering platform preparation.
 for _, deletion in ipairs({'false','success'}) do
     local pending_fixture=fixture('schedule',deletion)
     local pending={type='import',job_id='import_7',started_tick=1,platform_name='fixture',
@@ -168,7 +165,6 @@ assert(unbuilt_deletes==0 and unbuilt.env.storage.async_jobs[unbuilt_job.job_id]
     'cleanup invented a removable surface or lost the unresolved platform')
 print('PASS failure before surface creation retains an unresolved job without inventing a removable surface')
 
--- A force merge changes the force roster while the saved LuaPlatform remains valid.
 local merged=fixture('schedule','false')
 merged.load('core/import-pipeline').queue(payload('merge'),'fixture','player','RCON')
 local _,merge_job=next(merged.env.storage.async_jobs)

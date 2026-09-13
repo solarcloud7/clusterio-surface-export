@@ -21,7 +21,10 @@ for _, name in ipairs({"utils/surface-lock", "core/import-session", "core/import
 modules["utils/operation-timing"] = {start = noop, stop = noop, finish = noop,
     scope = function(_, stage, fn, ...) mark(stage); return fn(...) end}
 modules["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, pcall_warn = function(_, fn) return pcall(fn) end}
-modules["utils/surface-lock"] = {unlock_platform = function() mark("unlock"); return true end}
+modules["utils/surface-lock"] = {unlock_platform = function(index, _, _, _, job_id)
+    assert(index == 3 and job_id == "test", "export cleanup omitted its job identity")
+    mark("unlock"); return true
+end}
 modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap = function() mark("prune") end,
     record = function(_, data) mark("cache"); assert(data.payload == "compressed") end}
 modules["utils/platform-schedule"] = {summarize = function() return {} end}
@@ -53,6 +56,8 @@ env.require = function(path)
     return modules[name]
 end
 local pipeline = env.require("modules/surface_export/core/export-pipeline")
+local admitted, admission_error = pipeline.queue(3, "player")
+assert(admitted == nil and admission_error == "Startup recovery is not ready")
 pipeline.process_batch = function() return true end -- entity engine operations are covered separately
 local scheduler = env.require("modules/surface_export/core/async-processor")
 local job = {job_id = "test", type = "export", started_tick = 100, current_index = 1, total_entities = 1,

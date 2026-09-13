@@ -19,8 +19,6 @@ local JobResults = require("modules/surface_export/core/job-results")
 local SectionCodec = require("modules/surface_export/utils/section-codec")
 local ImportPipeline = {}
 
--- Failed setup never resumes restoration. Only removal of its own partial
--- platform may run again, under the same scheduler budget as other Lua jobs.
 function ImportPipeline.process_setup_cleanup(job)
 	local cleanup = job.setup_cleanup
 	cleanup.attempts = (cleanup.attempts or 0) + 1
@@ -36,7 +34,6 @@ function ImportPipeline.process_setup_cleanup(job)
 			if hold then return DestinationHold.discard(cleanup.hold_id) end
 			return true
 		end
-		-- A missing entry in the old force roster is not proof this live platform was deleted.
 		if not (platform.force and platform.force.valid and platform.force.name == job.force_name) then
 			error("Cleanup platform force changed or is unavailable")
 		end
@@ -202,8 +199,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		return nil, schema_err
 	end
 
-	-- A manual import is a new operation, even when its snapshot came from a
-	-- transfer. Never inherit authority to delete or unlock the original source.
 	if parsed_data._standaloneImport then
 		platform_data._standaloneImport = true
 		local validate_snapshot = parsed_data._restoreSnapshot or platform_data._transferId or parsed_data._transferId
@@ -334,7 +329,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	log(string.format("[Import Queue] Platform created: '%s' (index=%s, planet=%s)", final_name, tostring(new_platform.index), target_planet))
 
-	-- Keep the created platform reachable even if preparation fails before the normal job exists.
 	local created_platform_index = new_platform.index
 	local setup_job = pending_job or {type = "import", job_id = job_id, started_tick = game.tick}
 	setup_job.platform_name, setup_job.force_name = new_platform.name, force.name
@@ -345,8 +339,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		Timing.start(job_id, "starter_pack", "execution", "platform_preparation")
 		local ok, err = pcall(function()
 			new_platform.apply_starter_pack()
-			-- Starter cargo belongs to platform construction, not the imported payload.
-			-- Empty source inventories may be omitted, so restoration cannot clear it later.
 			local hub = new_platform.hub
 			assert(hub and hub.valid, "starter pack did not create a valid hub")
 			local inventory = hub.get_inventory(defines.inventory.hub_main)
@@ -370,8 +362,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			return nil, "Platform surface not valid after activation"
 		end
 		if is_transfer then
-			-- Admission is not validation. Hide the unfinished copy without creating a
-			-- releasable destination hold; only completion may establish that authority.
 			setup_job.preparation_visibility = {
 				surface_hidden = force.get_surface_hidden(new_platform.surface),
 				platform_hidden = new_platform.hidden,
@@ -566,15 +556,11 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	if prepared and result then return result end
 	local reason = tostring(prepared and preparation_error or result)
 	log("[Import] Platform preparation failed for " .. job_id .. ": " .. reason)
-	-- apply_starter_pack creates the surface. Capture its identity after the attempt,
-	-- including partial failures, before cleanup can cross a callback boundary.
 	if new_platform.valid then setup_job.target_surface = new_platform.surface end
 	setup_job.setup_cleanup = {error = reason, attempts = 0, next_tick = game.tick,
 		platform_index = created_platform_index,
 		surface_index = setup_job.target_surface and setup_job.target_surface.valid and setup_job.target_surface.index,
 		hold_id = transfer_id or ("interrupted:" .. job_id)}
-	-- process_setup() may have been called by the scheduler with this same job.
-	-- Do not throw after recording its cleanup state: that would replay setup or lose ownership.
 	storage.async_jobs[job_id] = setup_job
 	local removed = ImportPipeline.process_setup_cleanup(setup_job)
 	return nil, reason .. (removed and "" or ("; cleanup pending: " .. job_id))

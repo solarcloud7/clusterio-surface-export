@@ -106,6 +106,26 @@ function makeControllerHarness() {
 	return { plugin, operation, logged };
 }
 
+test("standalone export preserves uncertain admission but rejects confirmed routing failures", async () => {
+	for (const reply of [{success: false, admissionUncertain: true, error: "no RCON reply"},
+		new Error("socket failed after buffering"), new (require("@clusterio/lib").RequestError)("Instance is not running.")]) {
+		const {plugin, operation} = makeControllerHarness();
+		operation.operationType = "export"; operation.status = "in_progress";
+		plugin.requireRecoveryReady = () => {};
+		plugin.createOperationRecord = async () => operation;
+		plugin.controller = {instances: new Map([[1, {id: 1}]]), sendTo: async () => {
+			if (reply instanceof Error) throw reply; return reply;
+		}};
+		let observed = false;
+		plugin.orchestrator.observeUnconfirmedExport = async () => {observed = true;};
+		const result = await plugin.handleExportPlatformForDownloadRequestMeasured({sourceInstanceId: 1, sourcePlatformIndex: 3});
+		const rejected = reply instanceof require("@clusterio/lib").RequestError;
+		assert.equal(operation.status, rejected ? "failed" : "in_progress");
+		assert.equal(observed, !rejected);
+		if (!rejected) assert.equal(result.operationId, operation.transferId);
+	}
+});
+
 test("unassigned, stopped, disconnected and removed destinations cannot acknowledge an unsent import", async () => {
 	for (const state of ["unassigned", "stopped", "disconnected", "removed"]) {
 		const {plugin, operation} = makeControllerHarness();
@@ -140,6 +160,21 @@ test("a definite controller dispatch rejection cannot acknowledge an import", as
 	assert.equal(response.success,false);
 	assert.equal(operation.status,"failed");
 	assert.equal(operation.jobObservation,undefined);
+});
+
+test("synchronous pre-dispatch failures terminate without waiting for an absent Lua job", async () => {
+	for (const message of ["Instance is not assigned to a host", "Instance with ID 2 does not exist", "Instance is not running."] ) {
+		const {plugin, operation} = makeControllerHarness();
+		plugin.recoveryReservations = new Map();
+		plugin.platformTree.resolveTargetInstance = () => ({id: 2, instance: {}});
+		plugin.createOperationRecord = async () => operation;
+		plugin.controller = {sendTo() {throw new (require("@clusterio/lib").RequestError)(message);}};
+		const response = await plugin.handleImportUploadedExportRequestMeasured({targetInstanceId: 2,
+			exportData: {platform: {force: "player"}, entities: []}});
+		assert.equal(response.success, false, message);
+		assert.equal(operation.status, "failed", message);
+		assert.equal(operation.jobObservation, undefined, message);
+	}
 });
 
 test("concurrent recovered import completions create and settle one operation", async () => {

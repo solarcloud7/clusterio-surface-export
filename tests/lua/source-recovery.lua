@@ -22,7 +22,10 @@ local lock_api = {
         return lock and lock.kind == "transfer" and lock.transfer_job_id == id, "wrong transfer"
     end,
 }
-env.require = function() return lock_api end
+env.require = function(name)
+    if name:find("platform-identity", 1, true) then return assert(loadfile(root .. "utils/platform-identity.lua", "t", env))() end
+    return lock_api
+end
 local recovery = assert(loadfile(root .. "core/source-recovery.lua", "t", env))()
 recovery.startup()
 assert(platform.hidden and not env.storage.source_recovery_ready)
@@ -79,6 +82,7 @@ for _, pending in ipairs({false, true}) do
             if name:find("game-utils", 1, true) then return {ACTIVATABLE_ENTITY_TYPES = {}} end
             if name:find("platform-schedule", 1, true) then return {capture = function() return {} end} end
             if name:find("latch_rearm", 1, true) then return {pending_on_surface = function() return pending end} end
+            if name:find("platform-identity", 1, true) then return function() return nil end end
             error(name)
         end}, {__index = _G})
     local lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
@@ -114,7 +118,6 @@ assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined)
 assert(platform.hidden, "save-game mode released unresolved ownership")
 print("PASS save-game adoption, persistent fresh identity, new export IDs, and unresolved ownership protection")
 
--- Exercise the real lock guard, not the reconciliation mock above.
 local unlock_force = {platforms = {}, set_surface_hidden = function() end}
 local unlock_platform = {valid = true, index = 3, surface = {valid = true, index = 8},
     hub = {valid = true, unit_number = 16}}
@@ -124,11 +127,12 @@ local e = setmetatable({storage = {source_recovery_ready = true, locked_platform
     game = {forces = {player = unlock_force}, print = function() end}, log = function() end}, {__index = _G})
 local real_recovery
 e.require = function(name)
-    if name == "modules/surface_export/core/source-recovery" then return real_recovery end
+    if name:find("platform-identity", 1, true) then return assert(loadfile(root .. "utils/platform-identity.lua", "t", e))() end
     return {ACTIVATABLE_ENTITY_TYPES = {}}
 end
 local real_lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
 real_recovery = assert(loadfile(root .. "core/source-recovery.lua", "t", e))()
+e.require = function() error("Require cannot be used outside control.lua parsing") end
 local held = {kind = "transfer", phase = "committed", transfer_job_id = "old", platform_name = "fixture",
     force_name = "player", platform_index = 3, surface_index = 8, frozen_states = {}}
 e.storage.locked_platforms[3] = held
@@ -146,6 +150,23 @@ assert(not real_lock.unlock_platform(3, nil, nil, nil, "old"), "delayed old unlo
 assert(not real_lock.unlock_platform(3), "unidentified unlock released an accepted restoration")
 assert(e.storage.locked_platforms[3] == held, "rejected unlock mutated the lock")
 print("PASS real committed lock and delayed unlock guards")
+
+assert(real_lock.unlock_current_lock(3, held), "local cleanup could not release its observed lock")
+e.storage.locked_platforms[3] = held
+assert(not real_lock.unlock_current_lock(3, {}), "a replaced lock was released by stale local cleanup")
+held.phase = "committed"
+assert(not real_lock.unlock_current_lock(3, held), "local cleanup bypassed committed ownership")
+held.phase = "pre_commit"
+e.storage.source_recovery_ready = false
+assert(not real_lock.unlock_current_lock(3, held), "local cleanup bypassed startup recovery")
+e.storage.source_recovery_ready = true
+held.kind = "manual"; held.transfer_job_id = nil
+assert(real_lock.unlock_current_lock(3, held), "manual lock could not be released after save adoption")
+held.kind = "transfer"; held.transfer_job_id = "new"
+e.storage.locked_platforms[3] = held
+assert(real_lock.unlock_platform(3, nil, nil, nil, "new"), "current job could not release its own lock")
+e.storage.locked_platforms[3] = held
+print("PASS current local cleanup and current job unlock preserve ownership guards")
 
 e.storage.source_recovery_notices[3].platformUid = nil
 assert(not real_lock.unlock_platform(3), "a notice without identity bypassed restoration protection")
@@ -166,7 +187,6 @@ assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined,
 assert(platform.hidden)
 print("PASS loaded Lua jobs retain ownership in Save game mode")
 
--- A rejected schedule must leave the old identity's protection intact.
 do
     local f = {platforms = {}, set_surface_hidden = function() error("released hidden surface before schedule validation") end}
     local p = {valid = true, hidden = true, surface = {valid = true, index = 8}}
@@ -187,8 +207,6 @@ do
 end
 print("PASS rejected schedule retains restoration protection")
 
--- An older checkpoint can predate both the transfer lock and its retirement record.
--- Controller ownership still forbids releasing that uncertain source.
 locks[3] = nil
 env.storage.async_jobs = {}
 recovery.startup()

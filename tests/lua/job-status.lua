@@ -42,3 +42,15 @@ request={version=999,jobs={}}
 local ok,err=pcall(upload.jobs,"request")
 assert(ok and err.success==false and err.error:find("Unsupported",1,true),"version rejection needs an error envelope")
 print("PASS: status identity and protocol errors remain explicit")
+
+storage.async_jobs.export_lost_reply = {type = "export", job_id = "export_lost_reply", operation_id = "request:lost", started_tick = 2}
+request = {version = 1, jobs = {{operationId = "request:lost"}}}
+local exporting = upload.jobs("request").jobs[1]
+assert(exporting.jobId == "export_lost_reply" and exporting.state == "queued")
+storage.async_jobs.export_lost_reply = nil
+storage.async_job_results.export_lost_reply = {type = "export", status = "complete", operation_id = "request:lost"}
+local completed = upload.jobs("request").jobs[1]
+assert(completed.jobId == "export_lost_reply" and completed.state == "completed")
+storage.async_job_results.export_lost_reply = nil
+assert(upload.jobs("request").jobs[1].state == "unavailable", "pruned export result authorized a replay")
+print("PASS: lost export replies resolve through the persisted operation identity")

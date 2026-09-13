@@ -10,7 +10,6 @@ import { expectedCargo } from '../../integration/transfer-cleanup/oracle.mjs';
 import { withWorkflowLock } from '../../../tools/shared/workflow-lock.mjs';
 import { exportNotificationFailure, resolvedAdmissions, lostExportNotification, unresolvedAdmissionDiagnostics } from './upload-review-cases.mjs';
 
-// Explicit candidate output; never builds, deploys, or reads the development cluster's saves.
 const output=process.argv[2];
 assert.ok(output,'Usage: node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/<candidate-dist>');
 const candidate=resolve(ROOT,output);
@@ -81,7 +80,6 @@ await withWorkflowLock(async()=>{
 
     const name=`transfer-cleanup-${run}-queued`;
     const before=lab.probe(1,'build',name).state;assert.deepEqual(before.cargo,expectedCargo);
-    // A fault at the scheduler boundary, not a pause of Factorio or a configured zero batch size.
     lab.lua(2,`local a=${module('core/async-processor')};_G.manual_upload_budget=a.get_max_concurrent_jobs;a.get_max_concurrent_jobs=function() return 0 end;return {success=true}`);
     const admission=startQueued(before.index);
     assert.equal(admission.success,true);report.admission=admission;save();
@@ -114,7 +112,6 @@ await withWorkflowLock(async()=>{
     await checkRecoveryPreview(page);
     report.cases.push({name:'recovery marker stays unresolved and visible beyond terminal fade',status:'PASS'});save();
 
-    // Controller restart must observe the existing job, never replay admission or call failure cleanup.
     lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);
     await lab.ready();
     report.afterRestart=await lab.until(()=>{const row=summary(lab,transferId);return row?.jobObservation?.state==='queued'&&row;},'queued job reobserved after controller restart',65);
@@ -125,7 +122,6 @@ await withWorkflowLock(async()=>{
     const nextAdmission=startQueued(nextBefore.index);
     assert.equal(nextAdmission.success,true);
     assert.equal(summary(lab,nextAdmission.transferId).status,'queued','unresolved import did not reserve its endpoints');
-    // Visits without cursor changes are not progress. This bounded injection cannot mutate cargo.
     lab.lua(2,`local p=${module('core/import-pipeline')};_G.manual_upload_batch=p.process_batch;p.process_batch=function() return false end;local a=${module('core/async-processor')};a.get_max_concurrent_jobs=assert(_G.manual_upload_budget);return {success=true}`);
     report.stalled=await lab.until(()=>{const row=summary(lab,transferId);return row?.jobObservation?.message==='No progress observed'&&row;},'unchanged work reported without cancellation',65);
     assert.equal(report.stalled.status,'awaiting_validation');assert.equal(report.stalled.completedAt??null,null);
@@ -149,7 +145,6 @@ await withWorkflowLock(async()=>{
     report.cases.push({name:'completed attempt and physical cargo survive save/reload',status:'PASS'});save();
     await browser.close();browser=undefined;
 
-    // Standalone recovery imports use the same observer, including after a controller restart.
     const restoredName=`transfer-cleanup-${run}-snapshot`;
     lab.lua(2,`local a=${module('core/async-processor')};_G.manual_upload_budget=a.get_max_concurrent_jobs;a.get_max_concurrent_jobs=function() return 0 end;return {success=true}`);
     const requestId=randomUUID();
@@ -160,7 +155,6 @@ await withWorkflowLock(async()=>{
     lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);await lab.ready();
     report.standaloneRestart=await lab.until(()=>{const row=summary(lab,restored.operationId);return row?.jobObservation?.state==='queued'&&row;},'standalone observation after restart',65);
     assert.equal(report.standaloneRestart.status,'awaiting_completion');
-    // The accepted receipt and job are both saved. Reload resumes that job, not a new upload.
     report.acceptedCheckpoint=await lab.checkpoint('manual-upload-accepted',[2]);
     await lab.load(2,'manual-upload-accepted',{crash:true});
     report.standaloneOutcome=await terminal(lab,restored.operationId);assert.equal(report.standaloneOutcome.status,'completed');
@@ -168,7 +162,6 @@ await withWorkflowLock(async()=>{
     assert.deepEqual(report.restoredCargo.cargo,expectedCargo);assert.equal(report.restoredCargo.usable,true);
     report.cases.push({name:'standalone queued import, controller restart and accepted-job save/reload',status:'PASS'});save();
 
-    // Exercise the actual browser download request, whose awaiting handler disappears at restart.
     const exportName=`transfer-cleanup-${run}-download`;
     report.exportBefore=lab.probe(1,'build',exportName).state;
     assert.deepEqual(report.exportBefore.cargo,expectedCargo);
@@ -195,7 +188,6 @@ await withWorkflowLock(async()=>{
     report.cases.push({name:'browser export resumes observation after controller restart and confirms stored artifact',status:'PASS'});save();
     await browser.close();browser=undefined;
 
-    // Reuse the existing failed-preparation probe and its independent physical assertions.
     const cleanupLua=readFileSync(join(ROOT,'tests/manual/transfer-reliability/setup-cleanup.lua'),'utf8');
     const cleanupProbe=(action,id)=>lab.lua(1,`return (function() ${cleanupLua} end)()('${action}','${id}')`).result;
     report.cleanupPending=cleanupProbe('fail',run);

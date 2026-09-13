@@ -99,13 +99,39 @@ dialog when retained bytes are importable. It replaces old routing metadata and
 does not replay source deletion. Missing/expired snapshots are disabled with a
 reason; supported failure black boxes supply only their importable replay payload.
 Original outcomes stay unchanged. Offline or uncertain identity matches remain
-unverified. If a restore response fails or cannot be confirmed, the dialog keeps
-that attempt's identity, disables resubmission, and links to its transfer history.
-Inspect that attempt before closing and reopening the dialog to start another restore;
-an acknowledgement failure does not prove that no platform was imported.
+unverified. Snapshot confirmation uses metadata; the controller retrieves the stored
+payload without sending it through the browser. A rejection before admission leaves
+the form usable. A confirmed operation links to its history; an unconfirmed response
+disables resubmission without inventing a history entry. An acknowledgement failure
+does not prove that no platform was imported.
+
+Accepted-copy warnings can be acknowledged in the browser. This does not remove
+retirement records or change platform ownership. Protected copies cannot be
+acknowledged away, and offline instances share one unverified-state notice.
 See [the production runbook](../docker/production/README.md) for the
 CLI recovery command and [manual fixtures](../tests/manual/transfer-reliability/README.md#configurable-save-recovery)
 for the observed save-policy, duplicate-submission, and snapshot-recovery results.
+
+## Retained payloads and interrupted admission
+
+The transfer-request journal stores a versioned handoff binding before destination
+import dispatch. This binding survives history, detail and payload pruning. A retained
+snapshot cannot start another transfer under its old canonical ID; explicit snapshot
+recovery creates a new import operation instead. Journal write errors block admission.
+Legacy migration seeds bindings from the retained controller records. It cannot recover
+an identity already absent from every retained store before migration.
+
+Source jobs retain the request operation ID alongside their existing job ID. After a
+lost export reply or controller restart, observation can discover that job without
+replaying the export. Confirmed source-only cancellation is persisted before unlock.
+Failed unlock acknowledgements keep the operation and instance reservations pending.
+Missing or pruned job status remains unavailable and requires reconciliation.
+
+A definite Clusterio routing rejection before destination dispatch may cancel source
+admission. Other communication errors retain uncertain ownership. Standalone exports
+and imports follow the same distinction rather than treating every send error as proof
+that no job exists. Local cleanup uses the observed lock; delayed remote unlocks still
+require the matching job identity for an accepted restoration.
 
 ## Startup and operator recovery
 

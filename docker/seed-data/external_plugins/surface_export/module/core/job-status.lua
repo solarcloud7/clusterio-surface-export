@@ -1,4 +1,3 @@
--- Read persisted work cursors; scheduler visits and profiler/log activity are not progress.
 local Status = {VERSION = 1}
 
 function Status.snapshot(job)

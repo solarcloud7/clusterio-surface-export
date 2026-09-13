@@ -13,14 +13,15 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
     page=await browser.newPage({viewport:{width:1600,height:1100}});page.setDefaultTimeout(30000);
     page.on("pageerror",error=>evidence.errors.push(error.message));
     const restoreRequests=[];
-    if(restoreFailure) await page.routeWebSocket(/api\/socket/,socket=>{
+    let payloadReads=0;
+    await page.routeWebSocket(/api\/socket/,socket=>{
       const server=socket.connectToServer(),pending=new Set();
       socket.onMessage(raw=>{
         const frame=JSON.parse(String(raw));
-        if(frame.type==="request"&&frame.name==="surface_export:ImportUploadedExportRequest") {
+        if(frame.type==="request"&&frame.name==="surface_export:GetStoredExportRequest") payloadReads++;
+        if(restoreFailure&&frame.type==="request"&&frame.name==="surface_export:ImportUploadedExportRequest") {
+          assert.deepEqual(frame.data.exportData,{},"snapshot payload must stay on the controller");
           restoreRequests.push(frame.data.restoreRequestId);pending.add(frame.src[2]);
-          // Only a harmless read reaches this disposable controller. The UI sees
-          // a failed response, then a transport error on the explicitly reopened attempt.
           frame.name="surface_export:GetGatewaysRequest";frame.data={};
         }
         server.send(JSON.stringify(frame));
@@ -37,7 +38,7 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
     await page.goto(lab.url);await page.evaluate(value=>localStorage.setItem("controller_token",value),token);
     if(offlineInstance) {
       await page.goto(`${lab.url}/surface-export?tab=gateways`);
-      const warning=page.getByTestId("recovery-unverified").filter({hasText:offlineInstance});
+      const warning=page.getByTestId("recovery-unverified");
       await warning.waitFor();assert.ok((await warning.innerText()).includes("does not establish that a copy is missing"));
       evidence.offlineUnverified=true;
     }
@@ -48,13 +49,23 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
       const wording=report.mode==="save_game"?"accepted this restored copy":"remains protected";
       assert.ok((await warning.innerText()).includes(wording));evidence.warnings=true;
       await page.screenshot({path:join(lab.directory,"save-recovery-warning.png"),fullPage:true});
-      await warning.getByRole("link",{name:"View transfer"}).click();
+      const transferUrl=await warning.getByRole("link",{name:"View transfer"}).getAttribute("href");
+      if(report.mode==="save_game") {
+        await warning.getByRole("button",{name:"Acknowledge",exact:true}).click();
+        await warning.waitFor({state:"hidden"});await page.reload();
+        await page.getByRole("tab",{name:"Gateways",exact:true}).waitFor();
+        assert.equal(await warning.count(),0);evidence.acknowledgementPersisted=true;
+      } else assert.equal(await warning.getByRole("button",{name:"Acknowledge",exact:true}).count(),0);
+      await page.goto(`${lab.url}${transferUrl}`);
     } else await page.goto(`${lab.url}/surface-export?tab=logs&transfer=${encodeURIComponent(report.transferId)}`);
     const detail=page.getByTestId("transfer-detail");
     await detail.getByRole("heading",{name:report.name,exact:true}).waitFor();
+    const readsBeforeRestore=payloadReads;
     await detail.getByRole("button",{name:"Restore from snapshot",exact:true}).click();
     const modal=page.getByRole("dialog");await modal.getByText("Restore from snapshot",{exact:true}).waitFor();
     assert.ok((await modal.innerText()).includes("Another copy may already exist"));
+    assert.equal(payloadReads,readsBeforeRestore,"opening Restore downloaded the snapshot payload");
+    evidence.noSnapshotDownload=true;
     assert.equal(await modal.getByRole("button",{name:"Restore platform",exact:true}).isDisabled(),true,"destination must be chosen");
     if(offlineInstance) {
       await modal.getByRole("combobox",{name:"Destination instance",exact:true}).click();
@@ -69,17 +80,17 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
         await modal.getByRole("combobox",{name:"Destination instance",exact:true}).click();
         await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option:not(.ant-select-item-option-disabled)").first().click();
         await modal.getByRole("button",{name:"Restore platform",exact:true}).click();
-        await modal.getByText("Restore was not confirmed",{exact:true}).waitFor();
-        assert.equal(await modal.getByRole("button",{name:"Restore platform",exact:true}).isDisabled(),true);
+        await modal.getByText(attempt ? "Restore was not confirmed" : "Injected restore refusal",{exact:true}).waitFor();
+        assert.equal(await modal.getByRole("button",{name:"Restore platform",exact:true}).isDisabled(),Boolean(attempt));
         assert.equal(restoreRequests.length,attempt+1,"failed dialog resubmitted a snapshot");
         const link=modal.getByRole("link",{name:"View this restoration attempt",exact:true});
-        assert.equal(await link.getAttribute("href"),`/surface-export?tab=logs&transfer=${encodeURIComponent(`restore:${restoreRequests[attempt]}`)}`);
+        assert.equal(await link.count(),0,"unrecorded admission must not link to an invented operation");
         await modal.screenshot({path:join(lab.directory,`restore-unconfirmed-${attempt}.png`)});
         await modal.getByRole("button",{name:"Cancel",exact:true}).click();
         await modal.waitFor({state:"hidden"});
       }
       assert.notEqual(restoreRequests[0],restoreRequests[1],"explicit reopening did not create a fresh attempt");
-      evidence.restoreFailures={requestIds:restoreRequests,intercepted:true,resubmissionDisabled:true};
+      evidence.restoreFailures={requestIds:restoreRequests,intercepted:true,preAdmissionRetryEnabled:true,uncertainResubmissionDisabled:true};
       await detail.locator("button").filter({hasText:/^Restore from snapshot$/}).click();
     }
     await modal.getByRole("button",{name:"Cancel",exact:true}).click();evidence.dialog=true;

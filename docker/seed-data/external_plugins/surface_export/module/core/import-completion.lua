@@ -917,7 +917,6 @@ function ImportCompletion.run_phase2(job, batch_size)
 			log(string.format("[send_json] Import complete with operation metadata: operation_id=%s",
 				tostring(job.operation_id)))
 		end
-		-- Preserve the exact emitted verdict, not a new validation from a status read.
 		storage.async_job_results[job.job_id].completion = event_payload
 		clusterio_api.send_json("surface_export_import_complete", event_payload)
 	end

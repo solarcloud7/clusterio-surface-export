@@ -6,6 +6,7 @@ import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUn
 import { createOperationRecord } from "./operation-record";
 import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue";
 import { JobObserver } from "./job-observer";
+import { isInstanceRouteRejection } from "./request-errors";
 import type { JobStatusBatch } from "../shared/job-status";
 import type { TimingRecord } from "../shared/timing";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport } from "../messages";
@@ -37,6 +38,7 @@ export class TransferOrchestrator {
 	private readonly observer: JobObserver;
 	private observationDue = new Map<string, number>();
 	private restoredExports = new Set<string>();
+	private interruptedSources = new Set<string>();
 	private exportReads = new Map<string, {epoch: string; error?: string}>();
 	private stopped = false;
 
@@ -60,24 +62,25 @@ export class TransferOrchestrator {
 			run: entry => this.runQueuedRequest(entry),
 			interrupted: async entry => {
 				const retained = this.plugin.persistedTransactionLogs.find(log => log.transferId === entry.operation.transferId);
-				if (retained && ["completed", "failed", "error", "cleanup_failed"].includes(retained.transferInfo.status)) return;
+				if (retained && !retained.transferInfo.timingPendingRecovery
+					&& ["completed", "failed", "error", "cleanup_failed"].includes(retained.transferInfo.status)) return;
 				const untouched = entry.operation.status === "queued";
 				if (!untouched) {
-					// An interrupted admission may already own a Lua job. Preserve that
-					// observation and its endpoint reservation instead of manufacturing failure.
 					const operation = entry.operation;
-					if (operation.status === "transporting") operation.status = "awaiting_validation";
+					this.requestQueue.entries.set(entry.id, entry);
+					if (operation.transferId === entry.id && operation.status === "cleanup_failed" && operation.timingPendingRecovery) operation.status = "preparing";
+					if (operation.status === "transporting") operation.status = this.requestQueue.handoffs.has(operation.transferId) ? "awaiting_validation" : "preparing";
 					operation.awaitingLateVerdict = !operation.validationResult;
 					operation.timingPendingRecovery = true;
 					operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: "Controller restarted during admission; work will not be replayed"};
 					delete operation.completedAt;
 					delete operation.observedDurationMs;
 					this.plugin.activeTransfers.set(operation.transferId, operation);
+					if (operation.status === "preparing") this.interruptedSources.add(operation.transferId);
 					await this.txLogger.persistTransactionLog(operation.transferId);
 					return;
 				}
-				entry.operation.error = untouched ? "Queue interrupted by controller restart; no export was started. Submit again to transfer."
-					: "Controller restarted during transfer admission; outcome unknown. Inspect source and destination before retrying.";
+				entry.operation.error = "Queue interrupted by controller restart; no export was started. Submit again to transfer.";
 				entry.operation.status = "error";
 				entry.operation.failedAt = Date.now();
 				this.plugin.activeTransfers.set(entry.operation.transferId, entry.operation);
@@ -112,9 +115,15 @@ export class TransferOrchestrator {
 	get txLogger() { return this.plugin.txLogger; }
 	get subscriptions() { return this.plugin.subscriptions; }
 
+	async observeUnconfirmedExport(operation: ActiveTransfer, reason: string) {
+		if (operation.status !== "in_progress") return;
+		this.restoredExports.add(operation.transferId);
+		operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason};
+		this.updateTransfer(operation);
+		await this.txLogger.persistTransactionLog(operation.transferId);
+	}
+
 	restoreImportObservations() {
-		// Startup only: resume observation of retained nonterminal operations.
-		// This never resubmits their payload or reconstructs an elapsed-time origin.
 		for (const record of this.plugin.persistedTransactionLogs) {
 			const info = record.transferInfo;
 			if (!["in_progress", "preparing", "transporting", "awaiting_validation", "awaiting_completion"].includes(info.status)
@@ -134,6 +143,7 @@ export class TransferOrchestrator {
 			operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: "Controller restarted; awaiting current job status"};
 			this.plugin.activeTransfers.set(record.transferId, operation);
 			if (kind === "export") this.restoredExports.add(record.transferId);
+			if (kind === "transfer" && info.status === "preparing") this.interruptedSources.add(record.transferId);
 		}
 	}
 
@@ -150,7 +160,7 @@ export class TransferOrchestrator {
 		delete operation.jobObservation;
 		if (recovered) delete operation.observedDurationMs;
 		this.txLogger.logTransactionEvent(operation.transferId, "export_completed",
-			recovered ? `Stored export confirmed after controller restart: ${stored.exportId}` : `Export ready for download: ${stored.exportId}`, {
+			recovered ? `Stored export confirmed after interrupted observation: ${stored.exportId}` : `Export ready for download: ${stored.exportId}`, {
 				exportId: stored.exportId, durationMs: recovered ? null : this.txLogger.getObservedDuration(operation),
 				exportMetrics: operation.exportMetrics, payloadMetrics: operation.payloadMetrics,
 			});
@@ -222,7 +232,6 @@ export class TransferOrchestrator {
 			&& (!transfer.jobObservation?.epoch || transfer.jobObservation.epoch === epoch);
 		if (read?.epoch !== epoch) {
 			read = {epoch};
-			// Reserve before awaiting: concurrent observation cannot duplicate a large read.
 			this.exportReads.set(transfer.transferId, read);
 			try {
 				const response = await timed("Retained export retrieval round trip", "round-trip", () =>
@@ -252,8 +261,6 @@ export class TransferOrchestrator {
 	}
 
 	async waitForStoredExport(exportId: string) {
-		// Storage delivery and the source Lua queue can outlast any observation threshold.
-		// Only explicit failure evidence can end this wait; elapsed time cannot release the source.
 		const identity = parseCanonicalTransferId(exportId);
 		for (;;) {
 			if (this.stopped) throw new JobObservationStopped("Controller stopped observing; source ownership remains unresolved");
@@ -294,6 +301,7 @@ export class TransferOrchestrator {
 		try {
 			err = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(
 				transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName,
+				transfer.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId,
 			));
 		} catch (error) {
 			transfer.sourceRollback = "failed";
@@ -343,9 +351,6 @@ export class TransferOrchestrator {
 		}
 
 		const transferId = exportData.exportId || exportId;
-		if ([exportData.instanceId, targetInstanceId].some(id => this.plugin.recoveryReservations?.has(id))) {
-			return { success: false, error: "Instance is reconciling its loaded save; retry after recovery completes", safeToUnlockSource: false };
-		}
 		const sourceExportId = exportData.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId || transferId;
 		const existingTransfer = this.plugin.activeTransfers.get(transferId);
 		if (existingTransfer) {
@@ -354,26 +359,23 @@ export class TransferOrchestrator {
 				|| existingTransfer.status === "awaiting_completion"
 				|| existingTransfer.status === "in_progress";
 			if (live) {
-				if (existingTransfer.targetInstanceId !== targetInstanceId) {
+				if (existingTransfer.targetInstanceId !== targetInstanceId
+					|| (this.requestQueue.handoffs.has(transferId) && this.requestQueue.handoffs.get(transferId)?.destination !== targetInstanceId)) {
 					return { success: false, safeToUnlockSource: false,
 						error: `Transfer ${transferId} is already active for destination ${existingTransfer.targetInstanceId}` };
 				}
 				return { success: true, transferId, message: `Transfer already active: ${transferId}` };
 			}
-			if (existingTransfer.status !== "failed") {
-				return { success: false, safeToUnlockSource: true, error:
-					`Refusing retry of settled transfer ${transferId} (status=${existingTransfer.status}): `
-					+ "the destination may hold a committed copy; create a NEW export to transfer again" };
-			}
-			if (existingTransfer.validationResult?.destinationPreserved === true) {
-				return { success: false, safeToUnlockSource: true, error:
-					`Refusing retry of failed transfer ${transferId}: its destination was deliberately `
-					+ "PRESERVED by the debug preserve_failed_destination flag, so a re-run would "
-					+ "duplicate beside it. Remove the preserved platform (or restart the controller "
-					+ "to clear the record), then create a NEW export." };
-			}
-			this.plugin.logger.info(
-				`Replacing failed (destination-discarded) transfer record for retried export ${transferId}`);
+		}
+		if (existingTransfer || this.requestQueue.handoffs.has(transferId) || this.plugin.pendingTransfers?.has(transferId)
+			|| this.plugin.auditIndex?.has(transferId)
+			|| this.plugin.persistedTransactionLogs?.some(log => log.transferId === transferId)) {
+			return {success: false, safeToUnlockSource: false,
+				error: `Export ${transferId} already belongs to a handoff.${existingTransfer?.validationResult?.destinationPreserved ? " Its destination was PRESERVED." : ""} Create a NEW export, or use Restore from snapshot for deliberate recovery.`};
+		}
+		if ([exportData.instanceId, targetInstanceId].some(id => this.plugin.recoveryReservations?.has(id))) {
+			return { success: false, error: "Instance is reconciling its loaded save; retry after recovery completes",
+				safeToUnlockSource: !this.plugin.recoveryReservations?.has(exportData.instanceId) };
 		}
 		if (!this.plugin.isInstanceOnline(targetInstanceId)) {
 			const name = this.plugin.platformTree.resolveInstanceName(targetInstanceId);
@@ -433,19 +435,21 @@ export class TransferOrchestrator {
 		const queuedRequestId = timingContext.getStore()?.jobId;
 		const queued = queuedRequestId ? this.requestQueue.entries.get(queuedRequestId) : undefined;
 		const queuedEvents = queued ? this.plugin.transactionLogs.get(queued.id) : undefined;
+		await this.txLogger.archiveRecycledTransferId(transferId, operation.startedAt);
 		if (queued) {
 			operation.queuedRequestId = queued.id;
 			operation.startedAt = queued.operation.startedAt;
 			if (queued.operation.timing) operation.timing = { v: 1, records: queued.operation.timing.records.map(record => ({
 				...record, operationId: record.operationId === queued.id ? transferId : record.operationId,
 			})) };
+			const previous = queued.operation;
+			queued.operation = operation;
+			try { await this.requestQueue.persist(); }
+			catch (error) { queued.operation = previous; throw error; }
 			this.plugin.activeTransfers.delete(queued.id);
 			this.plugin.transactionLogs.delete(queued.id);
 			this.plugin.persistedTransactionLogs = this.plugin.persistedTransactionLogs.filter(log => log.transferId !== queued.id);
-			queued.operation = operation;
-			await this.requestQueue.persist();
 		}
-		await this.txLogger.archiveRecycledTransferId(transferId, operation.startedAt);
 		this.plugin.activeTransfers.set(transferId, operation);
 		if (queuedEvents) this.plugin.transactionLogs.set(transferId, queuedEvents);
 
@@ -473,8 +477,11 @@ export class TransferOrchestrator {
 		this.updateTransfer(transfer);
 
 		let importAccepted = false;
+		let dispatchAttempted = false;
 		try {
+			await this.requestQueue.claimHandoff(transferId, targetInstanceId);
 			this.txLogger.startPhase(transferId, "transmission");
+			dispatchAttempted = true;
 			const response = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: targetInstanceId },
 				new this.messages.ImportPlatformRequest({
@@ -505,41 +512,44 @@ export class TransferOrchestrator {
 			if (importAccepted) {
 				return { success: false, safeToUnlockSource: false, error: errMsg };
 			}
-			if (isSessionLostError(err)) {
+			if (this.requestQueue.admissionError) {
+				transfer.timingPendingRecovery = true;
+				return {success: false, safeToUnlockSource: false, error: this.requestQueue.admissionError};
+			}
+			if (dispatchAttempted && !isInstanceRouteRejection(err)) {
 				const transmissionMs = this.txLogger.endPhase(transferId, "transmission");
 				this.enterAwaitingValidation(transfer, transferId);
 				this.txLogger.logTransactionEvent(transferId, "import_delivery_uncertain",
-					`Import send interrupted by session loss (${errMsg}); NOT unlocking source — awaiting validation`,
+					`Import delivery unconfirmed (${errMsg}); source protection retained pending validation`,
 					{ error: errMsg, transmissionMs });
-				return { success: true, transferId, message: `Transfer initiated (delivery unconfirmed after a session interruption; awaiting validation): ${transferId}` };
+				return { success: true, transferId, message: `Transfer initiated (delivery unconfirmed; awaiting validation): ${transferId}` };
 			}
-			const rollbackError = await this.tryUnlockSource(transferId, transfer);
-			if (rollbackError) {
-				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
-			}
-			return { success: false, error: errMsg };
+			return this.handleImportFailure(transferId, errMsg, this.txLogger.endPhase(transferId, "transmission"));
 		}
 	}
 
 	async handleImportFailure(transferId: string, error: string, transmissionMs: number) {
+		const pending = this.settlingTransfers.get(transferId);
+		if (pending) { await pending; return {success: false, error}; }
+		const work = Promise.resolve().then(() => this.handleImportFailureMeasured(transferId, error, transmissionMs));
+		this.settlingTransfers.set(transferId, work);
+		try { await work; } finally { this.settlingTransfers.delete(transferId); }
+		return {success: false, error};
+	}
+
+	private async handleImportFailureMeasured(transferId: string, error: string, transmissionMs: number) {
 		const transfer = this.plugin.activeTransfers.get(transferId);
-		if (!transfer) return { success: false, error };
+		if (!transfer) return;
 
 		transfer.timingPendingRecovery = true;
-		transfer.status = "failed";
+		transfer.status = "preparing";
 		transfer.error = error || "Import failed";
-		transfer.failedAt = Date.now();
+		transfer.sourceExportId ||= parseCanonicalTransferId(transferId)?.sourceJobId || transferId;
+		this.interruptedSources.add(transferId);
 		this.txLogger.logTransactionEvent(transferId, "import_failed",
 			`Import failed: ${error}`, { error, transmissionMs });
-
-		let rollbackError: string | null;
-		try { rollbackError = await this.tryUnlockSource(transferId, transfer); }
-		finally { transfer.timingPendingRecovery = false; }
-		if (rollbackError) transfer.error = `${transfer.error}; rollback failed: ${rollbackError}`;
-
-		this.updateTransfer(transfer);
-		await this.txLogger.persistTransactionLog(transferId);
-		return { success: false, error };
+		await this.requestQueue.cancelHandoff(makeCanonicalTransferId(transfer.sourceInstanceId, transfer.sourceExportId), transfer.targetInstanceId, transferId);
+		await this.reconcileInterruptedSourceMeasured(transfer);
 	}
 
 	enterAwaitingValidation(transfer: ActiveTransfer, transferId: string) {
@@ -608,7 +618,6 @@ export class TransferOrchestrator {
 		transfer.validationTimeout.unref?.();
 	}
 
-	/** Shared with the existing recovery heartbeat; never starts or cancels a Lua job. */
 	async observeJobs(): Promise<void> {
 		for (const id of this.exportReads.keys()) {
 			const transfer = this.plugin.activeTransfers.get(id);
@@ -626,7 +635,7 @@ export class TransferOrchestrator {
 					await this.completeStoredExport(transfer, stored, true);
 				}
 			}
-			const observingSource = Boolean(transfer.sourceExportId) && ["in_progress", "preparing"].includes(transfer.status);
+			const observingSource = ["in_progress", "preparing"].includes(transfer.status);
 			if (!observingSource && !["awaiting_validation", "awaiting_completion"].includes(transfer.status)) {
 				this.observationDue.delete(transfer.transferId);
 				this.observer.forget(transfer.transferId);
@@ -644,7 +653,8 @@ export class TransferOrchestrator {
 			let requested: import("../shared/job-status").JobReference[] | undefined;
 			try {
 				const response = await this.observer.poll(instanceId, transfers.map(t => ["in_progress", "preparing"].includes(t.status)
-					? {jobId: t.sourceExportId!} : {operationId: t.transferId, jobId: t.destinationJobId}));
+					? (t.sourceExportId ? {jobId: t.sourceExportId} : {operationId: t.transferId})
+					: {operationId: t.transferId, jobId: t.destinationJobId}));
 				if (!response) return;
 				batch = response;
 				requested = response.requested;
@@ -656,13 +666,23 @@ export class TransferOrchestrator {
 					|| (ref.jobId && ref.jobId === transfer.sourceExportId))) continue;
 				if (this.plugin.activeTransfers.get(transfer.transferId) !== transfer || !["in_progress", "preparing", "awaiting_validation", "awaiting_completion"].includes(transfer.status)) continue;
 				const status = batch.jobs.find(job => ["in_progress", "preparing"].includes(transfer.status)
-					? job.jobId === transfer.sourceExportId : job.operationId === transfer.transferId) || {state: "unavailable" as const};
+					? (transfer.sourceExportId ? job.jobId === transfer.sourceExportId : job.operationId === transfer.transferId)
+					: job.operationId === transfer.transferId) || {state: "unavailable" as const};
+				if (["in_progress", "preparing"].includes(transfer.status) && !transfer.sourceExportId
+					&& status.jobId && status.operationId === transfer.transferId && status.state !== "unavailable") {
+					transfer.sourceExportId = status.jobId;
+					await this.txLogger.persistTransactionLog(transfer.transferId);
+				}
+				if (this.interruptedSources.has(transfer.transferId) && transfer.sourceExportId
+					&& ["completed", "failed"].includes(status.state)) {
+					await this.reconcileInterruptedSource(transfer);
+					continue;
+				}
 				const observation = this.observer.observe(transfer.transferId, {...status, epoch: batch.epoch}, this.getValidationTimeoutMs());
 				if (JSON.stringify(transfer.jobObservation) !== JSON.stringify(observation)) {
 					transfer.jobObservation = observation;
 					this.updateTransfer(transfer);
 				}
-				// Only the original composite verdict can enter the existing transfer success/failure path.
 				const result = status.completion;
 				if (["in_progress", "preparing"].includes(transfer.status) && transfer.sourceExportId && status.state === "completed") {
 					await this.recoverExportArtifact(transfer, batch.epoch);
@@ -693,6 +713,45 @@ export class TransferOrchestrator {
 				}
 			}
 		}));
+	}
+
+	private async reconcileInterruptedSource(transfer: ActiveTransfer): Promise<void> {
+		const pending = this.settlingTransfers.get(transfer.transferId);
+		if (pending) return pending;
+		const work = this.reconcileInterruptedSourceMeasured(transfer);
+		this.settlingTransfers.set(transfer.transferId, work);
+		try { await work; } finally { this.settlingTransfers.delete(transfer.transferId); }
+	}
+
+	private async reconcileInterruptedSourceMeasured(transfer: ActiveTransfer) {
+		if (this.requestQueue.admissionError) return;
+		const canonical = makeCanonicalTransferId(transfer.sourceInstanceId, transfer.sourceExportId!);
+		const binding = this.requestQueue.handoffs.get(canonical);
+		if (this.startingTransfers.has(canonical) && binding?.cancelledBy !== transfer.transferId) return;
+		if (binding && binding.cancelledBy !== transfer.transferId) {
+			const tracked = this.plugin.activeTransfers.get(canonical);
+			if (!tracked || tracked === transfer) return;
+			transfer.error = `Admission continued as ${canonical}; inspect that transfer for its outcome`;
+		} else {
+			if (!binding) await this.requestQueue.claimHandoff(canonical, transfer.targetInstanceId, transfer.transferId);
+			const error = await this.tryUnlockSource(transfer.transferId, transfer);
+			if (error) {
+				transfer.jobObservation = {state: "unavailable", message: "Source cleanup needs attention", reason: error};
+				this.updateTransfer(transfer);
+				await this.txLogger.persistTransactionLog(transfer.transferId);
+				return;
+			}
+			transfer.error = "Transfer stopped before import admission. Source export resolved and unlocked; submit a new transfer.";
+		}
+		transfer.status = "failed";
+		transfer.failedAt = Date.now();
+		transfer.timingPendingRecovery = false;
+		transfer.awaitingLateVerdict = false;
+		delete transfer.jobObservation;
+		this.interruptedSources.delete(transfer.transferId);
+		this.txLogger.logTransactionEvent(transfer.transferId, "admission_reconciled", transfer.error, {canonicalTransferId: canonical});
+		this.updateTransfer(transfer);
+		await this.txLogger.persistTransactionLog(transfer.transferId);
 	}
 
 
@@ -821,8 +880,6 @@ export class TransferOrchestrator {
 			const held = await gate("verify");
 			if (!held.success && transfer.awaitingLateVerdict) {
 				this.txLogger.endPhase(transferId, "cleanup");
-				// A restart can precede import admission or queued Lua work. Missing hold evidence
-				// cannot manufacture a terminal result; the job observer supplies its current state.
 				return {sourceResolved: false};
 			}
 			if (!held.success) return failed(`Destination hold not confirmed: ${held.error}`);
@@ -857,8 +914,6 @@ export class TransferOrchestrator {
 				this.updateTransfer(transfer);
 				await this.broadcastTransferStatus(transfer, "Transfer complete! ✓", "green");
 				await this.txLogger.persistTransactionLog(transferId);
-				// Retain the snapshot under max_storage_size for explicit recovery imports.
-				// Terminal transfer identity still rejects replay; retaining bytes is not deletion authority.
 				await this.plugin.persistStorage();
 				this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
 				return { sourceResolved: true };
@@ -910,7 +965,6 @@ export class TransferOrchestrator {
 
 	pruneOldTransfers() {
 		if (this.plugin.activeTransfers.size <= 100) return;
-		// Retention may discard resolved history, never live work or a retry/ownership guard.
 		const sorted = [...this.plugin.activeTransfers.entries()].filter(([id, transfer]) =>
 			["completed", "failed", "error"].includes(transfer.status) && !transfer.timingPendingRecovery
 			&& !transfer.awaitingLateVerdict && !this.plugin.pendingTransfers?.has(id)
@@ -995,16 +1049,19 @@ export class TransferOrchestrator {
 				// A canonical operation with no terminal result may already have reached the destination.
 				// Keep its reservation until recovery is resolved; an exception is not a cleanup acknowledgement.
 				if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;
-				entry.operation.status = entry.operation.timingPendingRecovery ? "cleanup_failed" : "failed";
+				entry.operation.status = entry.operation.timingPendingRecovery
+					? (this.interruptedSources.has(entry.operation.transferId) ? "preparing" : "cleanup_failed") : "failed";
 				entry.operation.error = result.error || "Transfer request failed";
-				entry.operation.failedAt = Date.now();
+				if (!entry.operation.timingPendingRecovery) entry.operation.failedAt = Date.now();
 				this.txLogger.logTransactionEvent(entry.operation.transferId, "transfer_failed", entry.operation.error, {});
 				this.updateTransfer(entry.operation);
 				await this.txLogger.persistTransactionLog(entry.operation.transferId);
 			}
 		} catch (error) {
 			if (entry.operation.transferId !== entry.id) entry.operation.timingPendingRecovery = true;
-			entry.operation.status = "error"; entry.operation.error = getErrorMessage(error); entry.operation.failedAt = Date.now();
+			entry.operation.status = this.interruptedSources.has(entry.operation.transferId) ? "preparing" : "error";
+			entry.operation.error = getErrorMessage(error);
+			if (!entry.operation.timingPendingRecovery) entry.operation.failedAt = Date.now();
 			this.txLogger.logTransactionEvent(entry.operation.transferId, "queue_error", entry.operation.error, {});
 			this.updateTransfer(entry.operation);
 			await this.txLogger.persistTransactionLog(entry.operation.transferId);
@@ -1042,27 +1099,45 @@ export class TransferOrchestrator {
 				+ "destination is running." };
 		}
 
+		let sourceJobId: string | undefined;
+		let exportReplyReceived = false;
 		try {
 			const t0 = Date.now();
 			const exportStart = performance.now();
 			const exportResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				new this.messages.ExportPlatformRequest({
-					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId,
+					operationId: observationId,
 					platformIndex: sourcePlatformIndex,
 					forceName,
 					targetInstanceId: resolvedTarget.id,
 				}),
-			)) as SimpleResponse & { exportId?: string };
+			)) as SimpleResponse & { exportId?: string; admissionUncertain?: boolean };
+			exportReplyReceived = true;
 			const exportRequestMs = performance.now() - exportStart;
+			if (!exportResponse || exportResponse.admissionUncertain || (exportResponse.success && !exportResponse.exportId)) {
+				this.interruptedSources.add(observationId);
+				const operation = this.plugin.activeTransfers.get(observationId);
+				if (operation) {
+					operation.timingPendingRecovery = true;
+					operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: exportResponse?.error};
+					await this.txLogger.persistTransactionLog(observationId);
+				}
+				return {success: true, message: "Source admission is unconfirmed; awaiting job status"};
+			}
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				return { success: false, error: exportResponse?.error || "Export failed" };
 			}
 
 			const t1 = performance.now();
+			sourceJobId = exportResponse.exportId;
 			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
 			const queued = this.plugin.activeTransfers.get(observationId);
-			if (queued) queued.sourceExportId = exportResponse.exportId;
+			if (queued) {
+				queued.sourceExportId = exportResponse.exportId;
+				await this.txLogger.persistTransactionLog(observationId);
+				await this.requestQueue.persist();
+			}
 			this.txLogger.bindObservation(observationId, canonicalExportId);
 			await timed("Await artifact storage", "wait", () => this.waitForStoredExport(canonicalExportId));
 			const waitForStoredMs = performance.now() - t1;
@@ -1073,8 +1148,10 @@ export class TransferOrchestrator {
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			}, t0, request.targetPlanet ?? null);
 			if (!result.success && result.safeToUnlockSource) {
-				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName));
+				await this.requestQueue.claimHandoff(canonicalExportId, resolvedTarget.id, observationId);
+				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName, undefined, sourceJobId));
 				if (rollbackError) {
+					if (queued) { queued.timingPendingRecovery = true; this.interruptedSources.add(observationId); }
 					this.logger.error(`Unlock after refused transfer of #${sourcePlatformIndex} failed: ${rollbackError}`);
 					return { ...result, error: `${result.error}; rollback failed: ${rollbackError}`,
 						exportId: canonicalExportId, sourceExportId: exportResponse.exportId };
@@ -1084,31 +1161,33 @@ export class TransferOrchestrator {
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Error starting transfer (source instance ${sourceInstanceId}, platform #${sourcePlatformIndex}): ${errMsg}`);
-			if (err instanceof JobObservationStopped || isSessionLostError(err)) {
-				const operation = this.plugin.activeTransfers.get(observationId);
+			if (sourceJobId || err instanceof JobObservationStopped || isSessionLostError(err) || (!exportReplyReceived && !isInstanceRouteRejection(err))) {
+				const operation = this.plugin.activeTransfers.get(observationId)
+					|| (sourceJobId ? this.plugin.activeTransfers.get(makeCanonicalTransferId(sourceInstanceId, sourceJobId)) : undefined);
 				if (operation) {
+					if (operation.transferId === observationId || !sourceJobId || !this.requestQueue.handoffs.has(makeCanonicalTransferId(sourceInstanceId, sourceJobId))) {
+						operation.status = "preparing";
+						this.interruptedSources.add(operation.transferId);
+					}
 					operation.jobObservation = {state: "unavailable", message: "Status unavailable", reason: errMsg};
 					operation.timingPendingRecovery = true;
 					this.updateTransfer(operation);
+					await this.txLogger.persistTransactionLog(operation.transferId);
 				}
 				return {success: true, message: "Source status unavailable; protections retained"};
-			}
-			const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName));
-			if (rollbackError) {
-				this.logger.error(`Rollback unlock of source #${sourcePlatformIndex} failed: ${rollbackError}`);
-				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
 			}
 			return { success: false, error: errMsg };
 		}
 	}
 
-	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName?: string): Promise<string | null> {
+	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName?: string, sourceJobId?: string): Promise<string | null> {
 		if (coercePlatformIndex(platformIndex) === null) return `invalid platformIndex: ${String(platformIndex)}`;
 		try {
 			const resp = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName: platformName ?? null, forceName,
-					operationId: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId }),
+					operationId: sourceJobId ? makeCanonicalTransferId(sourceInstanceId, sourceJobId)
+						: timingContext.getStore()?.operationId ?? timingContext.getStore()?.jobId }),
 			));
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";
@@ -1140,7 +1219,8 @@ export class TransferOrchestrator {
 			const stored = this.plugin.platformStorage.get(request.exportId) || this.plugin.platformStorage.get(fallbackExportId);
 			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
 			if (stored && Number.isInteger(stored.platformIndex)) {
-				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force));
+				const rollbackError = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force, undefined,
+					stored.sourceExportId || parseCanonicalTransferId(stored.exportId)?.sourceJobId));
 				if (rollbackError) {
 					this.logger.error(`Rollback unlock of source #${stored.platformIndex} ('${stored.platformName}') failed: ${rollbackError}`);
 				}

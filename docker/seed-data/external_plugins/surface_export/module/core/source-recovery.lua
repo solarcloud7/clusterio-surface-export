@@ -2,16 +2,7 @@ local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local Recovery = {}
 
-local function identity(platform)
-	local record = (storage.source_recovery_identities or {})[platform.index]
-	if record and record.surface_index == platform.surface.index
-		and platform.hub and platform.hub.valid and record.hub_unit_number == platform.hub.unit_number then return record.uid end
-	local epoch = (storage.source_recovery_surface_epochs or {})[platform.surface.index]
-	if epoch and platform.hub and platform.hub.valid and platform.hub.unit_number then
-		return epoch .. ":" .. tostring(platform.hub.unit_number)
-	end
-	return nil
-end
+local identity = require("modules/surface_export/utils/platform-identity")
 
 local function assign(platform)
 	local existing = identity(platform)
@@ -85,8 +76,6 @@ function Recovery.begin(epoch, journal_id, has_retirements, mode, allow_adoption
 	end
 	-- Bound the bootstrap reply; larger worlds remain protected instead of truncating authority.
 	if #roster > 500 then return {success = false, error = "Recovery roster exceeds 500 platforms"} end
-	-- Only a complete roster can retire absent-world metadata. Transfer authority
-	-- (locks, jobs, receipts and retirement journals) has its own recovery lifecycle.
 	for index in pairs(storage.source_recovery_notices) do
 		if not present[index] then storage.source_recovery_notices[index] = nil end
 	end

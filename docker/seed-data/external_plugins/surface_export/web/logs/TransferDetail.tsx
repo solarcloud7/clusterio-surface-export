@@ -12,7 +12,6 @@ import type { OperationTiming } from "../../shared/timing";
 import { useAccount } from "@clusterio/web_ui";
 import { PERMISSIONS } from "../../messages";
 import type { RestoreSnapshot } from "../ImportModal";
-import { importableSnapshot } from "../../shared/snapshot";
 
 export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false, onRestore }: {
 	row: TransferSummary; detail?: LogDetail; loading?: boolean; error?: string; onRetry?: () => void;
@@ -20,7 +19,6 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 	onRestore?: (snapshot: RestoreSnapshot) => void;
 }) {
 	const account = useAccount();
-	const [restoring, setRestoring] = useState(false);
 	const [activeTab, setActiveTab] = useState("overview"), [downloading, setDownloading] = useState(false);
 	const [now, setNow] = useState(Date.now());
 	useEffect(() => {
@@ -48,21 +46,10 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 		} catch (err) { antMessage.error(getErrorMessage(err, "Download failed")); }
 		finally { setDownloading(false); }
 	};
-	const canRestore = canDownload && row.restorable !== false && !!onRestore && account.hasPermission(PERMISSIONS.TRANSFER_EXPORTS)
-		&& account.hasPermission(PERMISSIONS.LIST_EXPORTS);
-	const restore = async () => {
+	const canRestore = canDownload && row.restorable === true && !!onRestore && account.hasPermission(PERMISSIONS.TRANSFER_EXPORTS);
+	const restore = () => {
 		if (!canRestore || !plugin || !row.exportId || !onRestore) return;
-		setRestoring(true);
-		try {
-			const response = await plugin.getStoredExport(row.exportId);
-			if (!response.success || !response.exportData || !Number.isFinite(response.timestamp)) {
-				throw new Error(String(response.error || "An importable snapshot is unavailable."));
-			}
-			importableSnapshot(response.exportData);
-			onRestore({ exportId: row.exportId, timestamp: Number(response.timestamp),
-				platformName: String(response.platformName || row.platformName), exportData: response.exportData as JsonObject });
-		} catch (err) { antMessage.error(getErrorMessage(err, "Snapshot unavailable")); }
-		finally { setRestoring(false); }
+		onRestore({exportId: row.exportId, timestamp: row.snapshotTimestamp ?? null, platformName: row.platformName || "Unnamed platform"});
 	};
 	const overview = <>
 		<div className="se-audit-cards">
@@ -130,8 +117,8 @@ export default function TransferDetail({ row, detail, loading, error, onRetry, p
 				<span>Started: {row.startedAt == null ? "Not recorded" : new Date(row.startedAt).toLocaleString()}</span>
 				{row.completedAt != null && <span>Completed: {new Date(row.completedAt).toLocaleString()}</span>}</div>
 			<Space wrap><Tooltip title={canDownload ? "Download the stored platform export" : unavailableReason}><span><Button icon={<DownloadOutlined />} disabled={!canDownload} loading={downloading} onClick={download}>Download platform</Button></span></Tooltip>
-				<Tooltip title={canRestore ? "Create a new import from this snapshot" : row.restoreUnavailableReason || (canDownload ? "Restoration requires permission to list and transfer exports." : unavailableReason)}><span>
-					<Button disabled={!canRestore} loading={restoring} onClick={restore}>Restore from snapshot</Button>
+				<Tooltip title={canRestore ? "Create a new import from this snapshot" : row.restoreUnavailableReason || (canDownload ? "Restoration requires permission to transfer exports." : unavailableReason)}><span>
+					<Button disabled={!canRestore} onClick={restore}>Restore from snapshot</Button>
 				</span></Tooltip>
 				<Button onClick={() => downloadJson(diagnosticReport(row, detail, preview), `transfer-${row.transferId.replace(/[^\w-]+/g, "_")}.json`)}>Download diagnostic report</Button></Space>
 		</header>

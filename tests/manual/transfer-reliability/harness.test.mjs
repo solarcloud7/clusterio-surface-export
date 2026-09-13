@@ -107,6 +107,7 @@ test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,asyn
     async handleDeleteSourcePlatformMeasured(req){calls++;return {success:req.accepted};}
     async handleDestinationTransferGate(){return {success:true};}
     async handleImportPlatformRequestMeasured(){return {success:true};}
+    async handleExportPlatformRequestMeasured(){return {success:true,exportId:"unrelated"};}
   }
   const module={_load:()=>({InstancePlugin}),_resolveFilename:()=>runtimePath};
   const fs={existsSync:()=>true,readFileSync:()=>JSON.stringify(rule),appendFileSync:(_,s)=>events.push(JSON.parse(s))};

@@ -72,7 +72,6 @@ export class DockerLab {
   }
   refreshBrowserAddress() {
     if(!this.exposeHttp) return;
-    // Docker may allocate a different ephemeral published port after a restart.
     const address=this.docker(["port",this.controller,"8080/tcp"]).trim();
     assert.match(address,/^127\.0\.0\.1:\d+$/);this.url=`http://${address}`;
   }

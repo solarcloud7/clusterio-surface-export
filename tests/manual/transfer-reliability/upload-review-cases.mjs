@@ -45,7 +45,6 @@ export async function resolvedAdmissions(lab, report, save) {
   result.senderReconciled=true;result.status='PASS';save();
 }
 
-// Faults run only inside DockerLab's owned cluster. Teardown removes all its resources.
 export async function exportNotificationFailure(lab, report, save, startQueued) {
   const name=`transfer-cleanup-${lab.run}-notification`;
   const result={name:'explicit export notification failure releases admission without importing',status:'RUNNING'};
@@ -78,7 +77,6 @@ export async function lostExportNotification(lab, report, save, startQueued) {
   result.before=lab.probe(1,'build',name).state;
   assert.deepEqual(result.before.cargo,expectedCargo);
   const api="assert(package.loaded['__level__/modules/clusterio/api.lua'])";
-  // Simulate the delivery gap, not a host crash: Lua succeeds but this one notification is dropped.
   lab.lua(1,`local api=${api};_G.manual_lost_export_send=api.send_json;api.send_json=function(channel,data) if channel=='surface_export_complete' then _G.manual_lost_export_payload=data;return end return _G.manual_lost_export_send(channel,data) end;return {success=true}`);
   try {
     result.operationId=startQueued(result.before.index).transferId;save();
@@ -105,7 +103,6 @@ export async function lostExportNotification(lab, report, save, startQueued) {
     assert.equal(result.after.destination.canary.active,true);
     result.imports=lab.lua(2,`local count=0;for _,r in pairs(storage.import_sessions.records) do if r.platform_name=='${name}' then count=count+1 end end;return {success=true,count=count}`).result.count;
     assert.equal(result.imports,1);
-    // Deliver the original push after recovery and settlement. It must not dispatch a second import.
     lab.lua(1,`local api=${api};api.send_json=assert(_G.manual_lost_export_send);api.send_json('surface_export_complete',assert(_G.manual_lost_export_payload));return {success=true}`);
     result.latePush=await lab.until(()=>{
       const needle='Sent platform export '+sourceJob+' to controller';

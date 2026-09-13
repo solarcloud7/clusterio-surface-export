@@ -47,9 +47,10 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 		return nil, "Lock failed: " .. tostring(lock_err or "unknown")
 	end
 
+	local observed_lock = SurfaceLock.get_lock_data(platform.index)
 	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id, gateway_target)
 	if not job_id then
-		SurfaceLock.unlock_platform(platform.index)
+		SurfaceLock.unlock_current_lock(platform.index, observed_lock)
 		return nil, "Export failed: " .. tostring(export_err or "unknown")
 	end
 

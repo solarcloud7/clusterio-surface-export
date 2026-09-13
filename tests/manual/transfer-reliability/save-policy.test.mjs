@@ -73,3 +73,49 @@ test("offline recovery evidence cannot claim an absent copy or an available dest
     const changed=structuredClone(report);mutate(changed);assert.throws(()=>analyze(changed));
   }
 });
+
+
+test("ownership review acceptance rejects missing unlock, replay and browser proof",()=>{
+  const restored=policy();Object.assign(restored,{ownershipReviewVersion:1,manualLocked:{source:{...copy(),usable:false}},
+    manualUnlocked:{source:copy()},standalone:{physical:{source:copy()}}});
+  restored.browser.acknowledgementPersisted=true;
+  assert.equal(analyze(restored).verdict,"PASS");
+  for(const mutate of [r=>r.manualUnlocked.source.usable=false,r=>r.standalone.physical.source.cargo.entities.pop(),
+    r=>r.browser.acknowledgementPersisted=false,r=>delete r.manualLocked]) {
+    const changed=structuredClone(restored);mutate(changed);assert.throws(()=>analyze(changed));
+  }
+  const recovered=snapshot();Object.assign(recovered,{ownershipReviewVersion:1,
+    afterReplay:{source:{present:false},destination:{present:false}},survivor:copy()});
+  Object.assign(recovered.browser,{noSnapshotDownload:true,
+    restoreFailures:{preAdmissionRetryEnabled:true,uncertainResubmissionDisabled:true}});
+  assert.equal(analyze(recovered).verdict,"PASS");
+  for(const mutate of [r=>r.afterReplay.source.present=true,r=>r.afterReplay.destination.present=true,
+    r=>r.survivor.cargo.entities.pop(),r=>r.browser.noSnapshotDownload=false,
+    r=>r.browser.restoreFailures.preAdmissionRetryEnabled=false,r=>r.browser.restoreFailures.uncertainResubmissionDisabled=false]) {
+    const changed=structuredClone(recovered);mutate(changed);assert.throws(()=>analyze(changed));
+  }
+});
+
+
+test("lost export reply oracle requires source cleanup and no initial destination import",()=>{
+  const report={schemaVersion:1,case:"lost-export-reply",cleanup:{success:true},before:copy(),
+    held:{action:"export",success:true},outcome:{status:"failed"},resolved:{source:copy(),destination:{present:false}},
+    eventsBeforeRetry:[],transferId:"request:old",retryId:"1:new",retryOutcome:{status:"completed"},final:pair()};
+  assert.equal(analyze(report).verdict,"PASS");
+  for(const mutate of [r=>r.resolved.source.usable=false,r=>r.resolved.destination.present=true,
+    r=>r.eventsBeforeRetry.push({kind:"call",action:"import"}),r=>r.retryId=r.transferId,
+    r=>r.final.destination.cargo.entities.pop(),r=>r.cleanup.success=false]) {
+    const changed=structuredClone(report);mutate(changed);assert.throws(()=>analyze(changed));
+  }
+});
+
+
+test("native accepted-copy unlock failures stay failed and the corrected run passes",()=>{
+  const read=name=>JSON.parse(gunzipSync(readFileSync(new URL(`./evidence/${name}-2.1.17.json.gz`,import.meta.url))));
+  for(const name of ["save-policy-unlock-before","save-policy-unlock-require"]) {
+    const report=read(name);assert.equal(report.manualUnlocked.source.usable,false);
+    assert.equal(report.cleanup.success,true);assert.throws(()=>analyze(report));
+  }
+  const report=read("save-policy-unlock-fixed");assert.equal(analyze(report).verdict,"PASS");
+  report.manualUnlocked.source.usable=false;assert.throws(()=>analyze(report));
+});
