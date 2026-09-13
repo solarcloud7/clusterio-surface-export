@@ -31,6 +31,42 @@ and [setup](docs/developers/setup.md). Human readers do not need this file.
 - Respect `ci-artifacts/workflow.lock`. After a crash, verify the owner process
   has stopped before removing that specific lock.
 - Use `tools/clusterio/rcon.ps1`; personal shell aliases are not prerequisites.
+- The development containers are `surface-export-*`; `atlas-*` is an unrelated
+  cluster (controller port 8090, game port 34300). Resolve container names and
+  volume ownership before acting. Hostnames are not Docker container names.
+- The development `external_plugins` mount must be writable: the base entrypoint
+  installs dependencies there. Pin an immutable image revision (`.rN` in current
+  images), not `latest` or a bare version that can move on rebuild.
+- Prefer PowerShell for Docker commands. Git Bash/MSYS can rewrite Linux paths;
+  use a quoted `sh -c` command when that shell is unavoidable.
+- Web publication preserves old hashed assets for cached controller manifests.
+  Package acceptance uses `tools/release/stage-package.mjs` to include only the
+  current manifest's assets. Do not prune the live asset directory during builds.
+
+## Browser credentials and guarded tools
+
+For automated login, run `node tools/clusterio/serve-admin-token.mjs`. It prints
+a single-use, expiring loopback URL, not the token. Use the supported browser
+automation workflow to consume it directly into the login state; never return
+the response body, credentials or localStorage contents to a tool transcript.
+Verify authenticated state or token length only. Do not bypass browser tool
+restrictions. `get-admin-token.ps1` prints the token and is for a human pasting
+into the login form, not an agent's captured shell output.
+
+| Tool | Requires | Produces | Does not |
+|---|---|---|---|
+| `node tools/surface-export/probe-transfer.mjs --fixture 21 [--lua "<preparation>"] [--keep]` | Running test cluster and named fixture | Clone transfer, validation and cleanup observations | Authorize modifying the original fixture or prove every platform |
+| `node tools/tests/testkit/cli.mjs mutation --file <path> --find "<text>" --replace "<text>" [--baseline]` | Committed clean canonical source; eligible non-Lua file | Test verdict and restored source | Authorize mutating a live guard; use isolated execution or test doubles for those |
+| `pwsh -File tools/tests/measure-rig.ps1 -Action run -PluginPath <isolated-package>` | Built package outside the live plugin mount, Docker | Disposable `sx-measure-*` observations and teardown | Measure the deployed development cluster |
+| `node tools/clusterio/tick-liveness.mjs` | Reachable configured cluster | External tick samples and liveness classification | Measure client FPS or isolate a stall's cause |
+| `pwsh -File tools/tests/cleanup-test-surfaces.ps1 -DryRun` | Resolved test-cluster scope | Planned test-surface cleanup | Authorize bypassing transfer protections; inspect before a mutating run |
+| `pwsh -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha> [-Push]` | Clean canonical branch and known former base tip | Rebased stack and optional push | Resolve conflicts or authorize a merge |
+| `node tools/tests/testkit/cli.mjs inspect`, `log`, `check --live` | Arguments shown by the selected subcommand; cluster for live queries | Payload/query-path evidence | Prove restoration from a field's presence; an invalid query is not an absent field. Live checks can export fixtures |
+
+Use `git config core.hooksPath .githooks` when setting up this checkout's hooks.
+The post-commit hook incrementally updates an existing graph; inspect
+`graphify-out/update.log` if it fails. The graph is a navigation aid, not evidence
+of current runtime behavior. Never use `|| fallback` for branch operations.
 
 ## Evidence and data integrity
 
@@ -62,6 +98,17 @@ Ordinary prose and unrelated UI/tooling changes do not require its full live lad
   Do not clear protections to force cleanup.
 - Never mutate production guards in a live mounted runtime. Commit the actual fix
   before mutation checks and use isolated execution or in-memory test doubles.
+- Read hub schedules and interrupts from `hub_entity.platform` through
+  `module/utils/platform-schedule.lua`. The hub entity is not the schedule owner.
+- Preserve beacon pre-placement and beacon inventory restoration before crafters.
+  Import completion orders hub, belts, state, inventories and held items before
+  fluids. Fluids, the final cargo gate and activation share one callback.
+- An unexpected import exception is not permission to replay or release the source
+  guard. Match recovery actions to their operation and saved platform identity.
+- `remote_unlock_platform(index, player, expected_job_id)` requires the owning job
+  for a transfer lock. The legacy jobless lock helper is not a matching test setup.
+  Use `tests/lab-gallery/fixture-cleanup.mjs` for guarded fixture cleanup; refused
+  unlocks must remain visible as cleanup failures.
 
 ## Documentation and style
 
@@ -80,6 +127,13 @@ Ordinary prose and unrelated UI/tooling changes do not require its full live lad
   its manifest entry, reason and approver. Do not self-approve exceptions.
 - Keep Clusterio Link methods bound and avoid a second installed `@clusterio/lib`
   within the same runtime process.
+- No causal claim without a measurement that isolates the variable, an authoritative
+  citation, or the words "cause not isolated". Run a control arm before claiming an
+  improvement. Unverifiable closed-source explanations are expert analysis, never
+  "Confirmed by" evidence.
+- Give tools `requires:`, `produces:` and `does not:` metadata. Explain findings to
+  the owner in chat, not commit-message essays. New or expanded documentation is
+  by request only; otherwise suggest it and wait for the owner's decision.
 
 ## Review and delivery
 

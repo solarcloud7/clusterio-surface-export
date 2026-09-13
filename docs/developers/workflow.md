@@ -48,6 +48,12 @@ Lua/plugin deployment without `-KeepSaves` resets saves. Cluster deployment with
 `-KeepData` destroys volumes. These reset paths are for deliberately disposable
 worlds, not routine updates. `docker compose down -v` is also destructive.
 
+Public alpha, beta and release-candidate versions are selected explicitly. The
+deployment scripts refuse to increment them automatically. A save-preserving
+update does not change the version. For an intentional fixture reset at the same
+version, use `-Scope lua -SkipIncrement` or `-Scope plugin -SkipIncrement`;
+these commands still reset saves. Do not combine `-SkipIncrement` with `-KeepSaves`.
+
 Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`.
 If it reports an owner, let that operation finish. After a crash, verify that the
 owner process has stopped before removing that specific lock.
@@ -72,6 +78,44 @@ uses the [disposable production fixture](../../tests/manual/production-profile/R
 Reports retain source/candidate identity, command outcomes and bounded redacted
 output. Review evidence before sharing; filtering cannot recognize every secret.
 An old report does not certify changed code or a different image recipe.
+
+To build a runtime as part of verification, pass `--build-config build.json`
+instead of `--runtime`. The JSON object requires these string fields:
+
+```json
+{
+  "artifact": "ci-artifacts/accepted-package",
+  "commit": "<40-character source commit SHA>",
+  "version": "<accepted package version>",
+  "gateway": "docker/seed-data/mods/surfexp_gateways_0.6.5.zip",
+  "gatewaySha256": "<64-character SHA-256 of that archive>",
+  "output": "ci-artifacts/new-runtime"
+}
+```
+
+Replace the placeholders with the accepted artifact's actual values. The config
+file path resolves from the calling directory; build inputs and output resolve
+from the repository root. `artifact` is the accepted package directory, not an
+unbuilt source checkout. Use a new output directory.
+
+Private review dispositions can be supplied to
+`node tools/verification-status.mjs --findings findings.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "findings": [
+    { "id": "R1", "summary": "Repeated request handling", "status": "fixed", "evidence": [] }
+  ]
+}
+```
+
+IDs must be unique. Status is `open`, `reproduced`, `fixed`, `verified` or
+`not reproduced`; the last two require at least one evidence file. Evidence paths
+resolve relative to the findings file. The status command reports file availability
+and the declared disposition; it does not independently verify the claim. Unavailable
+status exits with code 2. In PowerShell, use the direct `node` commands when passing
+options to avoid npm wrapper argument handling.
 
 ## Review and delivery
 

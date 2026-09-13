@@ -71,3 +71,14 @@ image. It requires an API-compatible fork and is not proof that an arbitrary cor
 branch works with the plugin. Coordinate a maintenance window before using it.
 Do not create a worktree, secondary repository or junction-based Docker mount.
 Return to the pinned deployment and verify it after an experiment.
+
+Recreate services without the optional source overlay:
+
+```powershell
+docker compose up -d --force-recreate
+```
+
+Confirm the configured image revisions and plugin loading after restart. To retain
+a core fix, propose it upstream or bake it into the Clusterio Docker images, then
+update `CLUSTERIO_IMAGE_TAG` to the tested immutable revision. Keep the plugin's
+Clusterio peer and development dependency pins aligned with that runtime.
