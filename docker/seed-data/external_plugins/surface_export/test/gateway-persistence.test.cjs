@@ -19,7 +19,7 @@ Module._load = function(request, parent, isMain) {
 	if (request === "@clusterio/controller") return { BaseControllerPlugin: class {} };
 	return originalLoad.call(this, request, parent, isMain);
 };
-const { ControllerPlugin } = require("../dist/node/controller");
+const { GatewayConfig } = require("../dist/node/lib/gateway-config");
 const { ONE_GATE_NAME, MULTI_GATEWAY_NAMES } = require("../dist/node/messages");
 Module._load = originalLoad;
 
@@ -31,15 +31,15 @@ const request = (id, targets, gatewayName = ONE_GATE_NAME) => ({
 async function fixture(t, mode = "one_gate") {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-persistence-"));
 	t.after(() => fs.rm(directory, { recursive: true, force: true }));
-	const plugin = Object.create(ControllerPlugin.prototype);
 	const logs = [];
 	const pushes = [];
-	plugin.logger = Object.fromEntries(["info", "warn", "error", "verbose"].map(level =>
+	const logger = Object.fromEntries(["info", "warn", "error", "verbose"].map(level =>
 		[level, message => logs.push({ level, message })]));
-	plugin.controller = { instances: new Map([1, 2, 3].map(id => [id, { id }])) };
-	plugin.gatewayMode = () => mode;
-	plugin.gatewayLinks = new Map();
-	plugin.gatewayConfigPath = path.join(directory, "gateways.json");
+	const controller = {
+		instances: new Map([1, 2, 3].map(id => [id, { id }])),
+		config: {get: key => key === "controller.database_directory" ? directory : mode},
+	};
+	const plugin = new GatewayConfig(controller, logger, {isInstanceOnline: () => true, resolveInstanceName: () => null});
 	plugin.pushGatewayConfigToInstance = async id => {
 		pushes.push({ id, links: structuredClone(plugin.gatewayLinks) });
 		return null;

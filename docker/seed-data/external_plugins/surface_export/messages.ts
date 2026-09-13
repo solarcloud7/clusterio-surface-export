@@ -1628,15 +1628,6 @@ export interface PendingTransferIntent {
 	exportId: string | null;
 }
 
-export interface SourceCommitMarker {
-	transferId: string;
-	sourceInstanceId?: number;
-	sourcePlatformIndex?: number;
-	sourcePlatformName?: string;
-	forceName?: string;
-	committedAt: number;
-}
-
 export interface IControllerPlugin {
 	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
 	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;

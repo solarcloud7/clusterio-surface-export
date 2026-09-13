@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
+import { isAdmissionSettled } from "../shared/operation-lifecycle";
 import { parseCanonicalTransferId } from "../shared/utils";
 import type { ActiveTransfer } from "../messages";
 
@@ -13,8 +14,6 @@ export interface QueueEntry {
 	request: QueuedTransferRequest;
 	operation: ActiveTransfer;
 }
-const terminal = (operation: ActiveTransfer) => ["completed", "failed", "error", "cleanup_failed"].includes(operation.status)
-	&& !operation.timingPendingRecovery;
 const instances = (entry: QueueEntry) => [entry.request.sourceInstanceId, entry.request.targetInstanceId];
 
 // Admission retains each operation through cleanup/recovery. Capacity permits bounded
@@ -140,7 +139,7 @@ export class TransferRequestQueue {
 		try {
 			let removed = false;
 			for (const [id, entry] of this.entries) {
-				if (!this.running.has(id) && terminal(entry.operation)) { this.entries.delete(id); removed = true; }
+				if (!this.running.has(id) && isAdmissionSettled(entry.operation)) { this.entries.delete(id); removed = true; }
 			}
 			if (removed) await this.persist();
 			const configured = this.hooks.capacity?.() ?? 1;

@@ -38,7 +38,6 @@ test("the registered timing handler returns a Promise and persists evidence with
 		assert.equal(plugin.activeTransfers.get("op"), active);
 		assert.equal(active.status, "transporting");
 		assert.equal(plugin.pendingTransfers.size, 0);
-		assert.equal(plugin.sourceCommitMarkers.size, 0);
 	} finally {
 		plugin.subscriptions?.treeBroadcastLimiter.cancel();
 		await fs.rm(dir, { recursive: true, force: true });
