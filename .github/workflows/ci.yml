@@ -162,7 +162,7 @@ jobs:
           echo "Pinned Factorio version (host-1 == host-2): $v — Clusterio downloads it at runtime"
 
       # No Factorio bake: Clusterio downloads the headless version at runtime. Measured 2026-07-25,
-      # the download costs ~14s while the bake cost 86s per run with the cache warm. See docs/CI_CD.md.
+      # the download costs ~14s while the bake cost 86s per run with the cache warm. See docs/developers/ci.md.
 
       - name: Create external factorio-client volume
         run: |

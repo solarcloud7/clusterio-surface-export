@@ -621,6 +621,7 @@ Follow-up matrix `se-manual-mtt3yb2o-a3a8c621`, maximum callback milliseconds:
 | 518 entities: destination setup | 55.39 | 53.34 | 52.51 |
 | 518 entities: destination scheduler | 63.27 | 60.50 | 62.12 |
 
-Large source setup, JSON encoding and destination tile work remain synchronous. The
+In that recorded revision, large source setup, JSON encoding and destination tile
+work were synchronous. Current boundaries are in [batching](../../../docs/technical/batching.md). The
 small-fixture normal-mode spike and setup variation also remain visible; these three
 repetitions do not isolate instrumentation overhead from host scheduling noise.

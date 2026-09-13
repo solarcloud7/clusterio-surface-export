@@ -417,7 +417,7 @@ Each phase also recorded seven distinct work ticks. Debug batch records confirm
 same-tick work has nonzero measured execution, and phase envelopes include waits.
 Source deletion was checked for successful legs; rejection preserved the source and
 removed the destination. All jobs, locks, holds, tombstones and test clones were clear.
-The earlier 115–126 ms single-callback measurements included success tracing; these
+The earlier 115â€“126 ms single-callback measurements included success tracing; these
 are observations from different runs, not a controlled estimate of batching's speedup.
 Other synchronous phases and large networks can still cause lag.
 
@@ -512,8 +512,8 @@ The runner also requires the retained `ci-artifacts/recurrent-failure-blackbox.j
 This supports replacing the placement search and merge fallback. It does not establish full
 transfer acceptance: controller routing, export/import scheduling, activation, rollback, loaders,
 other engine versions, negative inputs and other item-state types remain untested here. No
-performance improvement is claimed. The next rung is the candidate integrated into the normal
-pipeline and exercised on disposable full-platform transfers, retaining the structural gate.
+performance improvement is claimed. Full-platform acceptance is separate from this
+helper experiment; later results in this notebook identify their own pipeline scope.
 
 ## Real-helper experiment contract (2026-09-07)
 
@@ -560,7 +560,7 @@ requires exact final entity/line/position/item/quality/stack-count equality for 
 stacks as well as correct per-write group deltas. No source stack has non-default item state, so
 passing this fixture cannot certify blueprint, spoilage, durability or other item-state fidelity.
 Outputs are saved separately in `ci-artifacts/belt-boundary-force-result.json`; use `--candidate
---analyze` to inspect them without RCON. Production restoration is unchanged.
+--analyze` to inspect them without RCON. This runner does not deploy restoration changes.
 
 ## Candidate result, 2026-09-07
 
@@ -585,9 +585,9 @@ prototype inheritance.
 
 Scope of proof: three failing baseline runs and one exact candidate pass for this small straight-
 belt junction fixture. Production restoration, non-default item state, splitters, underground
-belts, loaders and the full transfer/rollback path are NOT TESTED by the candidate. The next rung
-is integration through the real restoration helper and a disposable full-payload replay while
-retaining the existing structural gate.
+belts, loaders and the full transfer/rollback path were not tested by this candidate run.
+The real-helper and pipeline results elsewhere in this notebook have separate evidence;
+they do not expand the scope of this earlier observation.
 
 Contract: on Factorio 2.1.17, observe whether each successful insertion adds its four rockets to
 the captured side group. Preserve item identity/count and group membership; exact spacing is

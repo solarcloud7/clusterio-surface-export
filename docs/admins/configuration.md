@@ -1,13 +1,13 @@
 # Configuration
 
-[index.ts](../docker/seed-data/external_plugins/surface_export/index.ts) registers
+[index.ts](../../docker/seed-data/external_plugins/surface_export/index.ts) registers
 the plugin's controller and instance fields. The tables below use the
 `surface_export.` prefix. They describe registered defaults, not the values
 currently applied to an existing cluster.
 
 ## Controller settings
 
-The [Settings tab](../docker/seed-data/external_plugins/surface_export/web/SettingsTab.tsx)
+The [Settings tab](../../docker/seed-data/external_plugins/surface_export/web/SettingsTab.tsx)
 reads and writes Clusterio controller configuration. Reading requires
 `core.controller.get_config`; saving requires `core.controller.update_config`.
 It submits changed, writable fields together and reads the configuration back.
@@ -24,12 +24,12 @@ There is no separate plugin settings store.
 
 The Settings tab shows configured and applied recovery modes and restart
 requirements. Both modes retain active-transfer protections and existing outcomes.
-See [save recovery](TRANSFER_2PC.md#save-recovery-policy).
+See [save recovery](../technical/transfers.md).
 
 ## Instance settings
 
-[InstancePlugin.sendConfigurationToLua](../docker/seed-data/external_plugins/surface_export/instance.ts)
-sends these settings at instance startup. [configure.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/configure.lua)
+[InstancePlugin.sendConfigurationToLua](../../docker/seed-data/external_plugins/surface_export/instance.ts)
+sends these settings at instance startup. [configure.lua](../../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/configure.lua)
 applies them to Lua storage. Changing the configuration requires restarting the
 instance before its Lua behavior changes.
 
@@ -46,7 +46,7 @@ instance before its Lua behavior changes.
 | `debug_mode` | `true` | Diagnostic JSON output and development instruments, including selection-lab tools. Normal transfer logs and validation do not depend on this flag. |
 | `debug_destination_snapshot` | `false` | Additional full destination scan after successful validation; also requires debug mode. |
 
-The [production profile](../docker/production/settings.json) explicitly disables
+The [production profile](../../docker/production/settings.json) explicitly disables
 `debug_mode`, `debug_destination_snapshot`, `belt_trace`, and `profile_batches`.
 The plugin default for debug mode is still `true`; installations outside that
 profile do not inherit its overrides automatically.
@@ -57,14 +57,14 @@ Read-only roster summaries and leftover checks remain available when it is off.
 
 ## Mod startup setting
 
-[surfexp-gateway-layout](../docker/seed-data/mods-src/surfexp_gateways/settings.lua)
+[surfexp-gateway-layout](../../docker/seed-data/mods-src/surfexp_gateways/settings.lua)
 belongs to the gateway mod and accepts `one_gate` or `multi`, defaulting to
 `one_gate`. Restart affected instances and clients to load changed prototypes.
 Changing layouts can remove routes, so return platforms to planets first.
 
 ## Verification
 
-[The settings browser test](../tests/integration/settings/run-tests.mjs) exercises
+[The settings browser test](../../tests/integration/settings/run-tests.mjs) exercises
 reads, intercepted writes, permissions, save errors, tab return, and layout without
 changing live configuration. Native recovery-policy and restart checks are in
-[the manual Docker lab](../tests/manual/transfer-reliability/README.md#configurable-save-recovery).
+[the manual Docker lab](../../tests/manual/transfer-reliability/README.md#configurable-save-recovery).

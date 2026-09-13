@@ -1,11 +1,12 @@
-# Upload sessions and Lua job status
+# Upload protocol and job observation
 
 Temporary upload bytes, Lua scheduling, and platform ownership have different owners.
-An upload acknowledgement confirms admission to a job. It does not confirm validation,
+Begin and chunk acknowledgements report staging progress. A successful commit
+acknowledgement identifies the accepted job; it does not confirm validation,
 arrival, source deletion, or destination release.
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Controller admission queue] --> B[Source Lua export]
     B --> C[Controller payload storage]
     C --> D[Destination host / RCON]
@@ -91,7 +92,7 @@ there is no continuous historical scan. Responses distinguish queued, running, w
 completed, failed, interrupted, cleanup-pending, and unavailable state.
 
 The existing `surface_export.transfer_validation_timeout_seconds` setting (default 30, range 5–120)
-now controls when delayed work is checked. It is not an upload timeout or a cancellation
+controls when delayed work is checked. It is not an upload timeout or a cancellation
 deadline. Controller observation runs every five seconds, with at most one outstanding
 status request per instance and 100 job references per request. Larger groups rotate.
 Ownership recovery keeps its separate 30-second cadence.
@@ -150,66 +151,14 @@ Clusterio 2.0.0-alpha.27 supplies connection resume and buffered message resend.
 RCON command timeout is 200 seconds. This protocol adds neither a competing upload timeout
 nor automatic import replay after session loss.
 
-## Verification tooling
+## Verify a protocol change
 
-Build a candidate outside the development runtime, then invoke the disposable fixture:
+The [upload-status fixture](../../tests/manual/transfer-reliability/README.md)
+uses disposable Docker resources. It exercises duplicate/conflicting chunks,
+uncertain admission, queue waits, missing notifications and process restarts.
+The runner's selected cases and raw results determine the scope of a pass.
+Capacity tests reserve declared sizes; they do not allocate a full 1 GiB payload.
+Transport fault injection is distinct from actual engine and save observations.
 
-```powershell
-./tools/clusterio/build-plugin.ps1 all -OutputDirectory ci-artifacts/upload-status-dist
-./tools/clusterio/build-plugin.ps1 test -OutputDirectory ci-artifacts/upload-status-dist
-node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/upload-status-dist
-```
-
-The fixture creates labelled `se-manual-upload-*` resources and removes only those
-resources. Its `ci-artifacts/<run>/result.json` records the candidate hash, pinned engine,
-case outcomes, physical observations, and cleanup result. `commands.jsonl` and the browser
-capture accompany the result. A nonzero exit is not a passing acceptance result.
-
-The upload, recovery, settings, pipeline and production-profile runners use
-`tests/manual/transfer-reliability/lifecycle.mjs` for cancellation, cleanup and final
-evidence. SIGINT/SIGTERM request cooperative cancellation; an in-flight command finishes
-or reaches its command deadline before cleanup runs. Browser-close and reporting failures
-do not skip Docker cleanup. Returned cleanup observations remain separate from reporting
-errors. PASS exits 0, STOP exits 2, and harness errors exit 1; the production oracle's
-existing FAIL verdict also exits 1. A forced process kill cannot run JavaScript cleanup;
-the labelled-resource cleanup command remains available for that case.
-
-Gateway recovery markers use the same compact summaries for live and persisted records.
-Pending recovery and cleanup failures remain at the route midpoint without terminal fade;
-that position denotes uncertainty, not the platform's physical location. A failure alone
-does not claim a timeout, return, or arrival. A return requires an acknowledged source
-rollback with no pending recovery; only completion is shown as arrival. These display
-fields do not authorize platform deletion, release, or another import.
-
-An optional second argument selects an extracted plugin package under `ci-artifacts`
-as the Lua/package source. Use it with that package's built `dist` to test committed
-artifacts without including unrelated working-file changes:
-
-```powershell
-node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/upload-pr-runtime/dist ci-artifacts/upload-pr-runtime
-```
-
-A fourth argument, `notification`, `admitting`, `lost-notification`, or `diagnostics`,
-runs only the corresponding review regression in the same disposable lab. The default
-includes lost-notification recovery with the original fixture. The diagnostics case runs
-separately because it intentionally leaves all four admission slots unresolved until lab
-teardown. Results record the selection so a focused pass cannot be confused with full
-acceptance.
-
-The fixture checks host process crashes after receiving and accepted-job checkpoints,
-controller restart during queued work, and a queued successor proceeding only after
-the first transfer resolves. Accepted work resumes from its checkpoint rather than
-being uploaded again. It also saves and reloads failed-preparation cleanup obligations.
-The browser export case queues a source job, restarts the controller, and checks that
-its original download operation completes after the artifact arrives.
-
-Scheduler pauses and lost replies are injected at module/transport boundaries. Cargo,
-Factorio execution, saves, and process restarts are real. Capacity cases reserve
-declared sizes without allocating a 1 GiB test payload. Unit tests separately exercise
-receipt pruning and malformed protocol calls. None of these tests establishes a universal
-memory, throughput, or crash-safety guarantee.
-
-The lost-notification fixture suppresses one completion message while Lua reports success,
-then follows the canonical transfer ID through cache retrieval, normal validation, delayed
-duplicate delivery, and a destination save/reload. It compares physical cargo independently.
-This simulates a missing message; it does not establish survival of an unsaved host crash.
+Read [testing](testing.md) before invoking a live fixture and
+[timing](../technical/timing.md) before interpreting its elapsed values.

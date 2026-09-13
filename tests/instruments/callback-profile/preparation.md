@@ -72,7 +72,6 @@ cleanup. All 51 lifecycle smoke tests and the export/import phase-yield regressi
 passed. The deployed change adds measurements only. No latency reduction, large-world
 limit, or continuous observation of all intervening engine updates is claimed.
 
-Next experiment: compare the exact exported tile set from the current full query and
-Lua exclusion pass against a narrower engine query. Preserve positions and tile names,
-not just the tile count, before selecting an optimization. Starter-pack work needs a
-separate call-level comparison; adding a tick before it cannot shorten that call.
+The subsequent [tile-query comparison](tile-query.md) checked complete tile-name and
+position sets before changing the production query. Starter-pack work remains a
+separate measurement boundary; adding a tick before it cannot shorten that call.

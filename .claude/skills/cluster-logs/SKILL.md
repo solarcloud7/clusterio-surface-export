@@ -1,45 +1,28 @@
 ---
 name: cluster-logs
-description: Find what actually happened in the local Clusterio cluster — plugin errors, transfer traces, validation results, instance crashes. Use whenever debugging the surface_export plugin or a Factorio instance locally, BEFORE looking at CI. Defeats the #1 gotcha that `docker logs` does NOT show plugin (this.logger) output.
+description: Inspect bounded Clusterio plugin and Factorio logs for errors, transfer results and recovery state.
 ---
 
-# cluster-logs — read the cluster's logs from where they actually live
+# Read cluster logs
 
-**The trap this skill exists to defeat:** a plugin's `this.logger.info/error(...)` output (controller AND instance/host plugins) does **NOT** reliably appear in `docker logs`. `docker logs surface-export-host-1 | grep surface_export` returns **nothing**. The logs are JSON files on disk. Always look in the files; never conclude "no logs / no error" from `docker logs` alone.
-
-## Do this first
+Use checked-in readers before constructing shell pipelines:
 
 ```powershell
-# One command dumps everything from the right places (plugin JSON logs + factorio + status):
-./tools/clusterio/check-cluster-logs.ps1
-# Hunting a specific failure? Filter the aggregated plugin log:
-./tools/clusterio/check-cluster-logs.ps1 -Grep "sendRequest|handleRequest|undefined|error|fail"
+./tools/clusterio/check-cluster-logs.ps1 -Grep 'error|transfer|validation'
+node tools/clusterio/read-cluster-logs.mjs 'error|transfer|validation' 20 2000
 ```
 
-If that surfaces the answer, you're done. The sections below are for targeted follow-up.
+The Node arguments are a pattern, displayed matches per source and raw lines
+searched. No matches describes only that bounded window. Read failures remain
+unavailable, not evidence of no error.
 
-## Where each log actually lives
+Aggregated JSON logs live on the controller under `/clusterio/logs/cluster/`.
+Host logs live under `/clusterio/logs/host/`; engine/Lua output is in each instance's
+`factorio-current.log`. Container stdout need not include every plugin record.
+Restart and recreation have different retention effects; do not claim a restart
+universally erases `docker logs`.
 
-| Want | Location (in container) | Command |
-|---|---|---|
-| **Everything, aggregated** (controller + every host + every instance plugin `this.logger`). Best single source to trace a cross-instance transfer end-to-end. | controller: `/clusterio/logs/cluster/cluster-*.log` (JSON, date-rotated UTC) | `docker exec surface-export-controller sh -c "cat /clusterio/logs/cluster/cluster-*.log" \| grep -aoE '"message":"[^"]*"'` |
-| **One host's plugin logs** | host: `/clusterio/logs/host/host-*.log` (JSON) | `docker exec surface-export-host-1 sh -c "cat /clusterio/logs/host/host-*.log" \| grep -aoE '"message":"[^"]*"'` |
-| **Controller-origin only** | `docker logs surface-export-controller` (controller `this.logger` DOES appear; host/instance do NOT) | `docker logs --tail 300 surface-export-controller 2>&1 \| grep surface_export` |
-| **Factorio engine + Lua `log()`/`[Script]`** | host: `/clusterio/data/instances/<instance>/factorio-current.log` | `docker exec surface-export-host-1 sh -c "tail -200 /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log"` |
-
-Notes:
-- Container clock is **UTC** — don't compute the date filename host-side; glob `*-*.log`.
-- The on-disk files **persist across container restarts** (until date-rotation); `docker logs` loses pre-restart output. Prefer the files after any restart.
-- JSON shape: `{"instance_id":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":…}`. `level":"server"` lines are mirrored Factorio output.
-
-## RCON from a non-interactive shell
-
-The `rc11`/`rc21`/`rclist` profile aliases are **not** available to an agent. Use:
-```powershell
-./tools/clusterio/rcon.ps1 11 "/list-platforms"      # host-1/instance-1
-./tools/clusterio/rcon.ps1 21 "/list-surfaces"       # host-2/instance-1
-```
-
-## Reference
-- CLAUDE.md → "Observability — WHERE EACH LOG ACTUALLY LIVES" and never extract a Clusterio Link method — call it bound.
-- Prometheus metrics are live at `http://localhost:8080/metrics` (controller).
+Use `tools/clusterio/rcon.ps1` instead of personal aliases. Resolve the intended
+deployment's container names, which differ from Clusterio hostnames. Keep tokens
+out of reports. [Diagnostics](../../../docs/developers/diagnostics.md) maintains
+the human log map.

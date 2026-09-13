@@ -3,7 +3,7 @@
 This manually invoked Docker experiment uses the existing pinned 2.1.17 lab and
 physical cargo fixture. It does not target the running development cluster.
 
-Before implementation, the acceptance boundary is fixed as follows:
+The implemented fixture checks the following boundary:
 
 - Complete one transfer, then withhold the real successful source-deletion reply
   for a second transfer. Keep its destination held and its controller intent pending.
@@ -33,7 +33,7 @@ begins before erasure and ends when recovery and observations complete. Report t
 separately from each operation's clocks. Fixed saves, fixture, scripts, staged runtime
 and image hashes identify the run. No new Factorio API surface is introduced.
 
-Limits: planned, quiesced backup; same container definitions and same image/runtime;
+Limits: coordinated, quiesced backup; same container definitions and same image/runtime;
 loss of all owned volume contents, not loss of Docker service definitions or the host.
 No crash during backup, stale mixed backup generations, destination-only rollback,
 off-host archive transport, released-package compatibility or continuous tick-level

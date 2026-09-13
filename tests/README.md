@@ -1,77 +1,44 @@
-# Tests
+# Tests and retained evidence
 
-The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and promotion policy are in
-[`docs/testing.md`](../docs/testing.md).
+Use [test selection](../docs/developers/testing.md) for commands, prerequisites and
+independent comparisons, [fixtures](../docs/developers/fixtures.md) for gallery
+maintenance, and [CI](../docs/developers/ci.md) for the automated workflow.
 
-## Repository layout
+| Directory or runner | Scope |
+|---|---|
+| `tests/integration/` | Live regressions on the configured cluster; discover with `node tools/tests/run-integration-tests.mjs --list`. |
+| `tests/lua/` | Standalone Lua regressions with simulated engine objects. |
+| [Gallery](lab-gallery/) | Baked save manifests, pads and physical observations. |
+| [Transfer cleanup](integration/transfer-cleanup/README.md) | Original source-deletion failure and independent cargo/ownership checks. |
+| [Manual reliability lab](manual/transfer-reliability/README.md) | Disposable crash, lost-reply, save-policy and recovery cases. |
+| [Package install](manual/package-install/README.md) | Exact tarball installation and native acceptance. |
+| [Consumer install](manual/consumer-install/README.md) | Clusterio initializer, fresh worlds and real exported assets. |
+| [Production profile](manual/production-profile/README.md) | Packaged startup, complete checkpoint restore and another transfer. |
+| [Belt experiments](instruments/belt-boundary/README.md) | Failed candidates, side-group restoration and physical parity. |
+| [Circuit restoration](instruments/circuit-latch-rearm/README.md) | Stable memory reproduction and bounded restoration checks. |
+| [Callback profiling](instruments/callback-profile/README.md) | Whole scheduler callbacks and separate preparation studies. |
+| [Tick recording](instruments/tick-watch/README.md) | Local server/client simulation cadence, not rendered FPS. |
+| [Codec study](instruments/tick-watch/import-setup.md) | Captured data, full/sectional codec comparisons and archived raw readings. |
+| [RCON comparison](instruments/rcon-throughput/README.md) | Transport-only chunk-size study. |
+| [Post-activation study](instruments/post-activation/README.md) | Declared comparison boundaries after activation. |
 
-For a serial agent/developer verification run, see [the verification command](../tools/tests/verification.md).
-It uses the existing workflow lock and checks the native CLI before optional live acceptance.
+Plugin Node regressions live under
+`docker/seed-data/external_plugins/surface_export/test/`.
 
-- `tests/integration/` contains live regressions for established production contracts. Discover and run them with
-  `node tools/tests/run-integration-tests.mjs --list` and `node tools/tests/run-integration-tests.mjs` from the repository root.
-- The standing lab suite was removed 2026-07-19 (owner ruling); its runners and notebooks are archived at git tag
-  `labs-archive-2026-07-19`. At an engine bump, re-measure the law you are about to rely on in the PR that
-  relies on it — restore a runner from the archive tag or author a fresh probe. The `labs-certified.json`
-  certificate and its lint were deleted 2026-07-31 (owner ruling): a green certificate was permission to
-  assume, and the last one asserted laws its own cited pads never exercised.
-- `node tools/tests/run-integration-tests.mjs --list` lists the current integration runners.
-  The manual installation labs and performance instruments are listed below.
-- `docker/seed-data/external_plugins/surface_export/test/` contains Node unit and contract tests for the plugin.
-- `docker/seed-data/external_plugins/surface_export/scripts/` contains the static guards used by the plugin lint
-  suite.
+For local Lua checks, `./tools/tests/run-lua-tests.ps1 -List` lists the existing
+CI selection; `-Test tests/lua/chunk-operation-isolation.lua` runs one check in
+Lua 5.2 inside an isolated Docker container. Its elapsed time includes startup and
+is not Factorio profiling. Host-only test loaders are not evidence of availability
+inside Factorio's sandbox.
 
-A test is not a lab merely because it lives under the top-level `tests/` directory. Choose its category from the
-question it answers and the oracle it requires.
+These notebooks distinguish current runner usage from versioned observations.
+Paths under `ci-artifacts/` refer to ignored local evidence and may be absent in a
+fresh checkout. Committed `evidence/` files remain available for offline analysis.
+A missing artifact is unavailable evidence, not a passed test. For example,
+`node tests/instruments/tick-watch/codec-scaling.mjs --recorded` verifies and
+reanalyzes its committed archive without running the game.
 
-## Local Lua checks
-
-`./tools/tests/run-lua-tests.ps1` runs the Lua test list from CI with Lua 5.2 in a
-locally built Docker image. Use `-List` to inspect the list, or
-`-Test tests/lua/chunk-operation-isolation.lua` for a focused regression. Each test
-runs without network access with only its source dependencies mounted read-only.
-The runner stops at the first failure, returns a nonzero exit code, and retains
-output and command elapsed time under `ci-artifacts/lua-tests-*/`. This elapsed time
-includes Docker startup; it is not Factorio callback profiling. Tests not reached
-after a failure are listed as requested but have no result.
-
-This is standalone Lua, not Factorio's sandbox. Tests may use host-only loaders such
-as `loadfile` and stub engine APIs; their success does not prove those facilities are
-available to shipped mod code. Follow the [dependency compatibility check](../docs/testing.md#factorio-dependency-compatibility)
-before adding a library, and prove engine-dependent behavior in the pinned game.
-
-## Manual installation acceptance
-
-The [consumer installation lab](manual/consumer-install/README.md) runs the published Clusterio
-installer, installs a plugin tarball, creates fresh saves, exports real game assets, and checks
-browser loading and transfer recovery in disposable containers. Run `npm run test:manual:consumer`
-for its explicit inputs. It needs a locally installed licensed Factorio client; it is manually
-triggered and does not run the game in ordinary CI.
-
-The [packaged production-profile lab](manual/production-profile/README.md) boots the
-actual Compose profile from baked image IDs, checks its settings, and repeats physical
-cargo/restart and browser acceptance. It is also manual and uses disposable resources.
-
-## Manual performance instruments
-
-- [Simulation timing and full-transfer baseline](instruments/tick-watch/README.md):
-  server/client tick cadence, with separate callback profiling and physical cargo checks.
-- [Codec experiments and recorded results](instruments/tick-watch/import-setup.md):
-  full versus sectional JSON decoding, external compression, and 1x/2x/4x workloads.
-  Run `node tests/instruments/tick-watch/codec-scaling.mjs --recorded` to verify and
-  re-analyze the retained evidence without Docker or a running game.
-- [RCON throughput](instruments/rcon-throughput/README.md): transport-only comparison.
-
-These are manually invoked instruments, not additional default CI suites.
-
-## Baked physical batches
-
-A baked batch consumes each certified fixture once, invokes the real production path, and reloads the paired
-golden saves in an unconditional batch finalizer. It does not clone, construct, clean, or reset fixtures between
-runs. A runner must own or exclusively lease both instances, refuse in-flight transient state, and verify the
-certified baseline again before releasing them. The first fixture that leaves the per-fixture preflight
-unsatisfiable aborts the batch; unconsumed fixtures report BLOCKED, distinct from FAILED. Operational drift uses
-the production transaction analytics plus fixture/save identity metadata. Correctness tests add an independent
-physical oracle only when the production serializer, restorer, validator, gate, or analytics meter is under test.
-Golden saves are committed under `docker/seed-data/lab-saves/`; engine pin bumps load them through native save
-migration by owner ruling (see the standard).
+Live suites can mutate or reload worlds. Read their individual setup and cleanup;
+do not run them blindly against valuable saves. The older standing labs are
+available in Git history at `labs-archive-2026-07-19`; their historical assertions
+must be checked before reuse on a new engine.

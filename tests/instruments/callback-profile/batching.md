@@ -121,7 +121,7 @@ subsequent root cause and repeat; it does not erase this failure evidence.
 The strict cargo gate remains unchanged.
 
 
-## Beacon capacity correction — 2026-09-09
+## Beacon capacity correction â€” 2026-09-09
 
 The isolated unchanged-deserializer clamp above did **not** establish a pre-existing
 production defect: that fixture omitted the original beacon effects. A read of the

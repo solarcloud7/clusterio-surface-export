@@ -1,758 +1,103 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the clusterio-surface-export project.
-
-## clusterio-surface-export Project Overview
-
-This project provides tools for exporting and importing Factorio Space Age platforms between Clusterio instances. It consists of:
-
-1. **Lua Module** (`docker/seed-data/external_plugins/surface_export/module/`): Save-patched Lua code that serializes/deserializes platform entities, inventories, fluids, and tiles
-2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): TypeScript plugin for cross-instance platform transfer
-3. **PowerShell Tools** (`tools/`): Helper scripts for deployment, import, export, and validation
-
-**Key Features**:
-- Complete platform state export/import (entities, inventories, fluids, tiles)
-- Tick-batched entity processing; synchronous phases can still cause hitches (see docs/async-processing.md)
-- Refuse transfers with missing entities or cargo mismatches; preserve the source
-- Factorio 2.0 compatibility (handles read-only properties)
-- Chunked RCON protocol for large payloads (100 KB chunks — `RCON_CHUNK_SIZE` in `helpers.ts`)
-- In-game transaction dashboard with persistent profiler snapshots
-- Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
-- Ghost entities, tile ghosts, and item request proxies preserved
-- Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist)
-
-**Current Cluster Configuration:**
-- Uses pre-built images from `ghcr.io/solarcloud7/clusterio-docker-controller` and `ghcr.io/solarcloud7/clusterio-docker-host`
-- **`docker exec` takes the CONTAINER name (`surface-export-*`), NOT the hostname.** The `clusterio-*` names are `hostname:` values — how services find each other on the Docker network and how Clusterio derives host IDs. `docker exec clusterio-host-1 …` fails with "No such container".
-- Controller: container `surface-export-controller`, hostname `clusterio-controller` (Web UI: http://localhost:8080)
-- Host 1: container `surface-export-host-1`, hostname `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
-- Host 2: container `surface-export-host-2`, hostname `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
-- Runtime data in Docker volumes (not bind-mounted directories)
-- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2117` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
-- Host-2 uses `SKIP_CLIENT=true` (no game client needed)
-- Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
-- **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.
-
-**Base image behavior** (Factorio download hardening, game-client paths, port auto-derivation, mod
-seeding, plugin-mount rules) is the base image's to document, not restated here — see
-`docs/consumer-integration.md` in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
-and its "Key Constraints" table. This section used to carry a curated copy of those facts; the copy
-drifted (it named the wrong client volume and recommended sharing it), so it was deleted rather than
-re-curated. The constraints worth repeating here are the ones that fail SILENTLY:
-- the controller's hostname must stay `clusterio-controller` — hosts default `CONTROLLER_URL` to it
-- the `external_plugins` mount must NOT be `:ro` — the entrypoint runs `npm install` inside it
-- pin the immutable rN image tag (`-rN` through r4, `.rN` from r6); `:latest` and the bare `:<version>` MOVE on rebuild
-
-## RCON Commands (PowerShell Profile Aliases)
-
-**CRITICAL (interactive humans)**: These aliases are defined in the user's PowerShell profile. Always use them instead of raw docker commands.
-
-**CRITICAL (AI agents / non-interactive shells)**: `rc11`/`rc21`/`rclist` are **interactive-profile-only** and are **NOT available** in the non-interactive shell an agent runs in — calling them errors with `rc11: The term 'rc11' is not recognized`. Use the raw form instead (PowerShell does not MSYS-mangle the path, so prefer it over Git Bash):
-```powershell
-# rc11 "<cmd>"  ≡
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "<cmd>"'
-# rc21 "<cmd>" → swap to "clusterio-host-2-instance-1"
-```
-A reusable wrapper lives in `tools/clusterio/rcon.ps1` (see "Development Tools"). When you see `rc11 "X"` below, mentally expand it to the raw form above.
-
-### Core RCON Aliases
-```powershell
-rc <host> <instance> "<command>"   # Send RCON command to any instance
-rc11 "<command>"                   # Shortcut: Host 1, Instance 1
-rc21 "<command>"                   # Shortcut: Host 2, Instance 1
-rclist                             # List all instances + validate mod loaded
-```
-
-### Raw Docker RCON (avoid when aliases available)
-```powershell
-docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"
-```
-
-## Development Tools
-
-### Deploying — ONE entry point, pick a scope
-
-`tools/clusterio/deploy.ps1` is the only deploy command. `-Scope` is REQUIRED (no default: every
-sensible default is someone else's accident), and the scopes are a ladder from cheapest to most
-destructive. A switch that does not belong to the chosen scope is REFUSED, not ignored.
-
-```powershell
-./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts   # TS change: build + reload hosts
-./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController  # web change: build + reload controller
-./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves                         # Lua change: verify artifacts, patch existing saves
-./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves                      # Lua + TS/web: build, back up, patch existing saves
-./tools/clusterio/deploy.ps1 -Scope cluster                                # full rebuild (DESTROYS volumes)
-./tools/clusterio/deploy.ps1 -Scope cluster -KeepData -SkipIncrement       # restart without wiping or bumping
-```
-
-| Scope | Builds | Resets saves | Destroys volumes |
-|---|---|---|---|
-| `artifacts` | yes | no | no |
-| `lua` | no (refuses if dist is stale) | YES unless `-KeepSaves` | no |
-| `plugin` | yes | YES unless `-KeepSaves` | no |
-| `cluster` | yes | n/a (fresh) | YES unless `-KeepData` |
-
-Resetting saves disconnects anyone in-game; `predeploy-*.zip` rescue saves are taken first. The
-per-scope implementations (`build-plugin.ps1`, `patch-and-reset.ps1`, `deploy-cluster.ps1`) still
-exist and still work, but they are implementation detail — deploy.ps1 is the documented path.
-
-### Hot Reload Development (Recommended)
-
-The plugin uses **TypeScript** with bind-mounted source and **save patching** for Lua:
-- Plugin location: `docker/seed-data/external_plugins/surface_export/`
-- **Bind-mounted** into containers at `/clusterio/external_plugins` (not a named volume — the distinction the @clusterio-singleton hazard rests on); plugins are auto-installed by the base image
-- Contains TypeScript plugin code (`*.ts`), React web UI (`web/`), and Lua `module/` directory
-- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle). Webpack compiles into a temporary staging directory; the publisher validates emitted assets, retains previous published assets for the running controller and cached browsers, and replaces the manifest only after copying the candidate. Release packaging includes only the current manifest assets. Source maps may change without a JavaScript hash change. A controller restart picks up the new manifest.
-
-**Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (rebuild + reload the hosts)
-- Build generates `dist/node/*.js` from TypeScript sources
-- Deploy script automatically rebuilds before Docker startup
-- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/clusterio/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
-- **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
-
-**Web UI Changes** (React):
-- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
-- Build generates `dist/web/` bundle via Webpack Module Federation
-- Deploy script automatically rebuilds before Docker startup
-
-**Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves` (builds artifacts, confirms backups, patches existing saves on restart, checks Lua version and world/player preservation)
-- Clusterio automatically injects Lua code into saves at startup
-- No compile step for Lua itself. The pinned Clusterio host patches the selected existing save before starting Factorio when `factorio.enable_save_patching` is enabled. Use `-KeepSaves` to back up, reload and verify the existing world; resetting is an explicit fixture-reset operation.
-
-**Development Workflow**:
-1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts`
-3. Edit web (`*.tsx`) files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves`. Use `-Scope plugin -KeepSaves` when TS/web changed too. Both instances must be running with save patching and auto-start enabled. The reload compares surfaces, platform names, player roster and positions; do not move players during this maintenance check.
-5. **Or full rebuild**: `./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement`
-
-### Verification order
-
-Run `./tools/clusterio/build-plugin.ps1 smoke` first for timing or transfer lifecycle changes.
-It exercises the registered timing handler, pre-job rejection, canonical replay, late/duplicate
-measurements, retry clocks, standalone export association, rollback boundaries and import verdicts.
-Then run the relevant bounded live fixtures, browser/diagnostic reconciliation, local review, and
-full CI. Track each agreed acceptance case as pending, passed, failed or unverified before calling
-work ready to merge. A new code change invalidates the affected evidence.
-
-Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`. A conflicting
-command refuses with the owning PID. After a crash, confirm the owner is stopped before removing
-that specific lock. Do not build or install dependencies in the live plugin directory. The isolated
-build wrapper installs dependencies without the root prepare rebuild and mounts the lockfile read-only.
-The plugin's `.npmrc` sets `save=false` so runtime installation also leaves dependency metadata
-unchanged. Intentional dependency changes must explicitly pass `--save` in an isolated build environment.
-Browser startup verifies the controller's advertised bundle before checking page details.
-
-Version helpers preserve UTF-8 text and existing line endings. Use targeted patches for other edits;
-avoid implicit-encoding whole-file rewrites. `check-cluster-logs.ps1` selects bounded diagnostic
-fields, redacts credentials, and applies user filters outside shell commands.
-
-### Cluster / transfer / RCON tools (`tools/`)
-
-> Tools are organized by domain: `tools/clusterio/` (build, deploy, cluster ops), `tools/surface-export/`
-> (plugin-domain: transfers, platforms, transaction logs), `tools/tests/` (integration runner, testkit,
-> surface sweeper), `tools/shared/` (dot-sourced libraries — `cluster-utils.ps1`, `version-utils.ps1`);
-> `check-pr-scope.ps1` stays at the root. This list is the agent-relevant subset. The `rc11`/`rc21`
-> profile aliases do NOT work in a non-interactive (agent/CI) shell; use `tools/clusterio/rcon.ps1` instead.
-
-```powershell
-# RCON (agent-friendly; replaces the rc11/rc21 profile aliases):
-./tools/clusterio/rcon.ps1 11 "/list-platforms"            # host-1/instance-1   (21 = host-2)
-
-# Find what happened (plugin errors, transfer traces) — reads the JSON logs docker logs hides:
-./tools/clusterio/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
-# Is each instance's MAIN THREAD alive? The container healthcheck and the stall metric live on the
-# thread being asked about, so a wedge reports healthy — this samples game.tick from outside:
-node tools/clusterio/tick-liveness.mjs                     # ADVANCING / PAUSED / FROZEN / STALLED / STOPPED
-
-# Log an automated browser session into the web UI WITHOUT the token passing through a transcript.
-# The web UI is token-only (localStorage["controller_token"]; no cookie, no anonymous mode, no
-# ?token= path). This serves the token once, to the page, over loopback — so the automation writes
-# only the fetch URL and verifies success by LENGTH, never by value. Single-use, expires on its own.
-node tools/clusterio/serve-admin-token.mjs                 # prints ONE line: the URL to fetch
-#   then, in the page:  localStorage.setItem("controller_token", await (await fetch("<url>")).text())
-# For a HUMAN pasting into the login form, use ./tools/clusterio/get-admin-token.ps1 instead.
-
-# Transfer a platform between instances (then prints post-transfer state):
-./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
-
-# The clone -> transfer -> verify -> sweep probe loop as ONE command (transfers a CLONE, never the
-# fixture; sweeps unconditionally unless --keep; exit 0 only on gate SUCCESS + zero leftovers):
-node tools/surface-export/probe-transfer.mjs --fixture 21 [--lua "<prep snippet>"] [--keep]
-
-# The mutate -> build -> test -> restore ritual with a restore that CANNOT be skipped (sidecar
-# backup; a killed run makes the next invocation refuse). Runs BOTH unit packages CI runs — the
-# plugin's test/*.test.cjs in the container AND the repo root's tests/**/*.test.mjs — so exit 0 =
-# KILLED >=1 test in EITHER; exit 1 = SURVIVED in both (the integration suite and the lint guards
-# are outside that verdict). Refuses unless run from the MAIN working tree (the one bind-mounted
-# into host-1: a mutation in a linked worktree is never the code under test) and that tree is
-# committed-clean. module/ Lua is refused — use the package.loaded rebind:
-node tools/tests/testkit/cli.mjs mutation --file <path> --find "<exact>" --replace "<mutant>" [--baseline]
-
-# Re-park a stacked branch after its base squash-merged; ends with the CI-orphaning reminder:
-pwsh -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha-of-squashed-tip> [-Push]
-
-# Run the WHOLE integration suite (auto-discovers tests/integration/*/run-tests.{ps1,mjs}; cluster must be
-# UP). One source of truth — also the single CI step. Node spawns pwsh per .ps1 test (macOS: brew install
-# powershell). Filter with --only <regex>; dry-run with --list.
-node tools/tests/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
-
-# DISPOSABLE MEASUREMENT RIG — a throwaway second cluster (sx-measure-*, controller :8070, isolated
-# network, no game ports unless -PublishGamePorts) on the SAME pinned images + seed-data convention,
-# mounting YOUR checkout's plugin source: an engine question answered on your branch, not on the live
-# cluster and not through CI. Refuses an unbuilt dist/, a plugin source another cluster mounts, and (for
-# `run`, which ends in a teardown) a rig that is RUNNING — someone may be mid-measurement. `down` always
-# destroys the rig's OWN volumes (a rig left up is a defect — `-Action status` finds it).
-pwsh -File tools/tests/measure-rig.ps1 -Action run -Command "/sc rcon.print(game.tick)"   # up, probe, down
-pwsh -File tools/tests/measure-rig.ps1 -Action up          # keep it for repeated probes, then -Action down
-
-# testkit — ask what the export payload ACTUALLY carries, and check cross-references resolve.
-# A property survives a transfer only if a handler put it in the payload, so `inspect --field` is
-# the cheapest screen for silent serializer omission (the class that dropped the infinity-pipe
-# filter on every transfer). Read-only: no lock, no source delete.
-node tools/tests/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
-node tools/tests/testkit/cli.mjs api LuaEntity.driver_is_gunner   # does this member EXIST at the pin?
-#   A miss exits 2 and names the near-misses AND the classes that DO have it — cheaper than guessing,
-#   which is how game.create_profiler (it is on LuaHelpers) killed an instance.
-node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
-node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
-node tools/tests/testkit/cli.mjs probe <platform> '<entity>@<x>,<y>:<path>'   # live property from the running cluster
-node tools/tests/testkit/cli.mjs blackbox explain <bundle.json>   # offline forensics on a banked failure
-# QUERY-PATH ORACLE — a wrong path exits 2 and NAMES THE REAL PATH, instead of returning an empty
-# value that reads as "the field is absent" and then as "the feature is broken". `log` never exits 1.
-node tools/tests/testkit/cli.mjs log latest --field summary.import.total_ticks
-node tools/tests/testkit/cli.mjs log <transferId> --list          # what records exist
-node tools/tests/testkit/cli.mjs log dump 2 'debug_import_result_*.json' --field validation_result.itemCountMatch --newest
-#   ^ `summary.import` is snake_case (from Lua) inside an otherwise camelCase log — the oracle
-#     matches across that boundary, and reports BOTH candidates when a name is genuinely ambiguous
-#     (summary.phases.validationMs is the controller's wait; summary.import.validation_ms is the gate).
-#   ^ diff rows by |delta|, gate self-report vs physical dest scan (labeled), recorded evidence only (+--json)
-# Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
-# "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
-
-# Status / listing:
-./tools/clusterio/show-cluster-status.ps1
-./tools/surface-export/list-platforms.ps1
-. ./tools/shared/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
-
-# Sweep leftover throwaway test/clone surfaces (zero-leftover discipline; protected fixtures never touched):
-./tools/tests/cleanup-test-surfaces.ps1 -DryRun          # then rerun without -DryRun to delete
-
-# Import an export file: use the web UI "Import" button (Gateways tab) or the in-game
-# /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
-
-# GATEWAY CANVAS (the Gateways tab). React Flow decides what can be dragged and where an edge
-# attaches from MEASURED DOM boxes, so the page can render correctly and still not behave — and a
-# hand-rolled DOM probe reports that as a defect. Photograph it instead of describing it, and check
-# WHICH BUILD the page is running before believing any disagreement with the source: the plugin dir
-# is bind-mounted, the cluster is shared, and a stale bundle looks exactly like a bug.
-node tools/surface-export/canvas-shot.mjs --scenario hub --geometry --out /tmp/canvas.png
-node tools/surface-export/canvas-shot.mjs --replay 3      # the 3 most recent REAL transfers as ships
-node tools/surface-export/canvas-shot.mjs --list-transfers
-node tools/tests/run-integration-tests.mjs --only canvas-drag   # the one browser regression
-#   In the page itself:  surfaceExportCanvas.help()  — the console API (mocks, scenarios, ships,
-#   geometry, replay). It is self-documenting; do not mirror it into a doc that will drift.
-```
-
-**Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
-`/repro-transfer` (reproduce a transfer end-to-end locally). Prefer local repro over CI logs.
-
-### Testing discipline
-
-The canonical test taxonomy, baked-fixture lifecycle, measurement boundary, and promotion policy are in
-[docs/testing.md](docs/testing.md) (the Physical Truth Lab Standard + the fidelity-measurement model + the
-hands-on E2E checklist, one doc); repository test layout and entry points are in
-[tests/README.md](tests/README.md). Current facts:
-
-- **`tests/integration/`** holds live regressions for established production contracts; run with
-  `node tools/tests/run-integration-tests.mjs` (cluster must be up). The one-test-save consolidation is tracked in
-  the gallery-suite runner header (tests/integration/gallery-suite/run-tests.mjs), which accounts
-  each deleted runner by problem class: most roundtrip tests are absorbed as pad
-  fixtures on the live gallery save (`tests/lab-gallery/`), where a missing pad reports a RED `MISSING`
-  verdict — never a vacuous pass.
-- **Baked-fixture batches** follow the lifecycle in the standard: consume each certified fixture once through
-  the real production path, no cleanup between fixtures, reload the paired golden saves
-  (`docker/seed-data/lab-saves/`) in an unconditional batch finalizer.
-- **The standing lab suite was removed 2026-07-19** (owner ruling; runners archived at git tag
-  `labs-archive-2026-07-19`). The pads + integration suite are the standing coverage, full stop. **There is no
-  engine-pin certificate and no version-certification lint** — both were DELETED 2026-07-31 by owner ruling.
-  They asserted that a campaign had re-measured "every law production depends on" while checking nothing but a
-  version string, and the 2.1.11 certificate was caught claiming laws its own cited pads never exercised. A
-  green certificate was permission to assume; if a law matters at a new pin, re-measure it and let the measurement
-  stand on its own, in the PR that needs it.
-- **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
-  `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
-  unrelated `atlas-*` cluster shares this machine.
-- **Purpose-invariant discipline** (measured: the prepare-build audit + PR #156's three review rounds):
-  before writing an instrument/guard/branch, write the test stating its PURPOSE as an invariant over its
-  OUTPUT (round-trip or agreement property); derive contracts from the ARTIFACT, not your reading of it.
-  Corollaries, each paid for: enumerate a flag FAMILY at its emitter before writing a flag-keyed branch
-  (your reproduction is one sample; the emitter is the list — a fix keyed on late-SUCCESS missed the
-  sibling cleanup_failed flag in the same verdict, twice in one PR); a "because X at threshold Y" comment
-  names Y's actual value, read this session; test pins use PRODUCTION-shaped values verified against the
-  real library; DI tests get MUTATION-KILL verification (break the branch AND each sibling protection
-  alone — every assertion must carry its own weight). Full checklist: the `/di-change` skill.
-- **Graphify freshness is a git hook**, not a habit: `git config core.hooksPath .githooks` once per clone, and
-  `.githooks/post-commit` rebuilds the code graph in the background after every commit. It no-ops where no
-  `graphify-out/graph.json` exists (fresh clones, CI, worktrees), never fails a commit, and appends every run
-  to `graphify-out/update.log` — read that log, not the graph's mtime, to see whether a rebuild was refused.
-  `SKIP_GRAPHIFY=1 git commit …` opts out.
-- **Name and value discipline (the dominant failure class, measured 2026-08-10):** an API name is
-  LOOKED UP (`testkit api`, or the lua-api page), never typed from memory — three guessed names in one
-  session cost an instance kill, a blind profiler, and two aliases that would have hidden the gap they
-  were written for. A value a probe measured is the value the code ships, cited to the probe. `gh` PR
-  bodies go through `--body-file`, never inline shell. Container commands go through
-  `build-plugin.ps1` (incl. `lint`), never a hand-rolled `docker run`. No `|| fallback` on branch
-  operations — check `git status` first. "Ready for review" includes checking the head SHA actually
-  has CI runs (squash-merging a base orphans them silently).
-- **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
-  the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
-  cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
-  updates. **Subagents never switch this checkout's branch** — the checkout IS the live cluster's
-  bind-mounted plugin source; agents that need to build or mutate code work in isolated copies outside the
-  repo (a reviewer agent switched the checkout to main mid-review, 2026-08-04). **The same rule covers
-  BUILDS, DEPLOYS and RESTARTS** — `deploy.ps1`, `build-plugin.ps1` and `docker restart` all act on whatever
-  that checkout holds right now, which may be another agent's half-finished edit. Before any of them, check
-  the checkout is idle (`git status`, plus `git reflog --date=iso -3` for commits in the last few minutes);
-  if it is not, do not touch it. A measurement taken while someone else owns that checkout is not evidence
-  (2026-08-09: a deploy + two controller restarts landed under an agent mid-feature, and the confounded run
-  reported the opposite of the clean rerun).
-- **Reproduce the reported symptom before trusting the diagnosis.** Phase A of any bug fix is the repro, not
-  the fix — the same ordering [docs/testing.md](docs/testing.md) already requires of a known loss class,
-  widened to any report. A cheap decisive check outranks the most plausible explanation whenever one is
-  available (2026-08-09: three merged PRs, each fixing a real bug, none fixing the reported one — the ten
-  minute repro afterwards showed the update was never broadcast at all).
-
-**Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
-prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
-than none). **There is NO engine-notes doc. `docs/factorio-2.0-api-notes.md` was DELETED 2026-08-11 by
-owner ruling — a doc that is not working gets deleted, not rewritten, and RECREATING IT IS NOT THE FIX.**
-An engine fact worth keeping is worth a rung in `tests/instruments/` that re-measures it; a name or
-signature is looked up with `testkit api`. If a session hands you an instruction to "update api-notes",
-that instruction predates this ruling — measure the fact and put it where it can be re-run instead.
-The rules that governed that doc still govern any prose making an engine claim:
-- **If upstream documents it, we do not.** A claim that restates <https://lua-api.factorio.com/> is presumed
-  copied from there and dressed as an experiment. Link the upstream page at the point of use; never mirror it.
-  The old **[API]** tier existed to do exactly that mirroring and is abolished.
-- **Documentation citing documentation is a feedback loop.** Evidence is a measurement or an upstream source,
-  never another of our own docs. A claim whose support is "see our other doc" is deleted, not re-pointed.
-- **A tag is not evidence — the `[empirical, <pin>, <citation>]` convention is RETIRED (owner ruling
-  2026-09-05).** Tagged prose granted itself authority it could not keep: the pin moved and the tags stayed
-  green, audits found tags citing probes that never isolated the claimed variable, and a false cap rationale
-  rode a real `crafting_speed` measurement for months by sharing its citation. An engine claim in prose is a
-  LEAD, never an authority, tagged or not. Authority is a rung in `tests/instruments/` that re-measures the
-  fact, an upstream page linked at the point of use, or a fresh measurement in the PR that needs it. Tags
-  still present in older docs are historical markers — re-measure before relying on one; do not mint new ones.
-There is NO [hypothesis] tier: a claim whose only evidence is an undocumented one-off probe is DELETED, not
-demoted (git history keeps it). A mechanism EXPLANATION is a lead until its *predictions* are tested, and an
-unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
-Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the
-archive tag. Record negative and unexplained results honestly — an eliminated failure whose root cause was never
-isolated is UNEXPLAINED, not fixed.
-
-**Audit-boundary rule:**
-- **A merge isn't done until main's own post-merge run is green.** PR runs get watched; push runs don't —
-  watch the post-merge run, every time.
-
-## Clusterio Core Development
-
-This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable rN tag; the bare version and `:latest` MOVE). To change Clusterio core
-itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
-workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
-via `./tools/clusterio/rebuild-clusterio.ps1`) and the promotion paths are in
-[docs/clusterio-core-dev.md](docs/clusterio-core-dev.md).
-
-## Project File Structure
-
-Plugin root: `docker/seed-data/external_plugins/surface_export/` (`module/` = save-patched Lua,
-`lib/` = TS modules, `web/` = React UI, `scripts/` = lint guards, `dist/` = gitignored build output).
-Helper scripts: `tools/{clusterio,surface-export,tests,shared}/` (see the tools section above).
-Cluster definition: `docker-compose.yml` (+ `docker-compose.clusterio-src.yml`
-opt-in fork override); all environment config in gitignored `.env`.
-
-### Build Architecture
-
-- **Language**: TypeScript 5.x (`^5.5.4`; the lockfile resolves 5.9.3), strict mode, for plugin code; Lua 5.2 for the Factorio module
-- **Runtime entrypoints**: `index.ts` declares `instanceEntrypoint: "dist/node/instance"`, etc.
-- **Build pipeline**: `npm run build` compiles TypeScript → `dist/node/*.js` and bundles React → `dist/web/*`
-- **Clean source tree**: Only `.ts` and `.tsx` files in source directories; all generated artifacts in `dist/`
-- **Deploy integration**: `deploy.ps1 -Scope cluster` builds via `build-plugin.ps1` (isolated container) before Docker compose up
-- **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
-- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **every `test/*.test.cjs`** under
-  built-in `node --test` (zero deps; the glob is the selection — a new test file is picked up with no
-  edit, which is how `module-version-stamp.test.cjs` came to run nowhere while two tools files cited it
-  as gating) — not just the wire contract. They include transfer-orchestrator rollback,
-  transfer-lock state, canonical identity, destination-hold, persistence-read-failure, cargo-integrity,
-  verdict-aware fidelity and the guard self-tests, so a regression in any of those fires here.
-  The message round-trip harness (`test/messages.roundtrip.test.cjs`) self-discovers every
-  message class in `messages.ts` and, per class, asserts the static wire contract
-  (`plugin/type/src/dst/jsonSchema/fromJSON`), a stable `toJSON`→`fromJSON` round-trip, and that
-  `toJSON` fields agree with `jsonSchema` (catches the field-drift / "Unregistered Event class" /
-  serialization-break classes of bug that otherwise only surface at runtime). A new message is
-  covered automatically — no edits to the harness needed. Run it in the `@clusterio`-stripped host
-  container (it only needs `dist/node`): `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npm test'`.
-
-## Key Technical Constraints
-
-### RCON Throughput Limits
-- **Factorio throttles RCON**: ~100 bytes/tick = ~6 KB/s
-- **Chunking**: payloads split at `RCON_CHUNK_SIZE = 100000` bytes per command (`helpers.ts:11`), processed async; the old "~8KB max / 4KB chunks" figures were stale — the binding constraints are throughput and the >50-char command-reorder caveat (upstream writing-plugins.md)
-
-### Async Processing Model
-- Import/Export use batched async processing (~100 entities/tick)
-- Jobs queued via `AsyncProcessor.queue_import()` / `queue_export()`
-- Progress tracked in `storage.async_jobs`
-- Results stored in `storage.async_job_results`
-
-### Remote Interface (`surface_export`)
-```lua
--- Key remote interface functions (call via /sc remote.call(...))
--- Export:
-remote.call("surface_export", "export_platform", platform_index, force_name, destination_instance_id)
-remote.call("surface_export", "export_platform_to_file", platform_index, force_name, filename)
-remote.call("surface_export", "get_export", export_id)
-remote.call("surface_export", "get_export_json", export_id)  -- JSON string for RCON
-remote.call("surface_export", "list_exports")
-remote.call("surface_export", "list_exports_json")  -- JSON string for RCON
-remote.call("surface_export", "clear_old_exports", max_to_keep)
-
--- Import (chunked RCON — Factorio 2.0 removed runtime file reading):
-remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data, chunk_num, total_chunks, force_name)
-
--- Platform locking (transfer workflow):
-remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
-remote.call("surface_export", "unlock_platform", platform_index, nil, expected_job_id)
-
--- Validation:
-remote.call("surface_export", "get_validation_result", platform_name)
--- Transfer verdicts are carried in the import-complete event and controller transaction log;
--- do not refetch them by mutable platform name.
-
--- Configuration:
-remote.call("surface_export", "configure", config_table)
-
--- Debug/testing:
--- NOTE: clone_platform takes the source platform's globally unique index + a dest name (2 args).
--- Source is keyed on the index, not a name: platform names can collide (see /list-platforms for the index).
-remote.call("surface_export", "clone_platform", source_index, dest_name)
-remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
-remote.call("surface_export", "run_tests")
-```
-
-Remote unlock requires a numeric platform index and the owning nonempty job ID. The legacy
-`lock_platform_for_transfer` helper creates no job ID and is not a matching unlock workflow.
-Fixture cleanup uses `tests/lab-gallery/fixture-cleanup.mjs` to check and pass the owning job.
-
-
-### In-Game Commands
-
-Full list: [docs/commands-reference.md](docs/commands-reference.md).
-
-### Passenger handling on transfer (evacuate, don't block)
-A transfer is **NOT** blocked when players are aboard. A player on a platform is hub-locked in remote view
-(no inventory — only equipped gear, no ammo). When the platform transfers, everyone aboard **and** abandoned
-character bodies are **EVACUATED to Nauvis** at the SOLE source-delete chokepoint
-(`delete_platform_for_transfer` → `Gateway.evacuate_passengers`, in `module/core/gateway.lua`) BEFORE the
-surface is torn down — never orphaned, never duplicated (native-aligned with how the engine returns a player
-to a planet on hub-loss). This replaced an earlier passenger hard-block. Carrying the player **with** the
-platform to the destination (`connect_to_server` + `enter_space_platform`) is a future Layer-2 feature gated on
-a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
-consolidation): evacuation happens at the single source-delete chokepoint named above. The
-character-body half of the branch is covered again since 2026-08-04 by
-`tests/integration/evacuation-coverage` — a body aboard a throwaway platform must ARRIVE on Nauvis
-through the real chokepoint (the engine measurably destroys un-evacuated bodies with the surface,
-so arrival proves the route ran). The connected-player half still awaits the L2 client session.
-Current behavior and limits: [docs/GATEWAYS.md](docs/GATEWAYS.md).
-
-## Export/Import Workflow Notes (Current)
-
-### Export for download
-- UI path: Gateways canvas → an instance's platform list → per-platform **Export JSON**. (The tabs are Transaction Logs / Gateways; the Manual Transfer tab was removed 2026-08-09.)
-- Controller path: `ExportPlatformForDownloadRequest` sends `ExportPlatformRequest` with `targetInstanceId: null`.
-- Instance/Lua path: destination must be Lua `nil` for export-only; otherwise export is treated as transfer.
-- Export-only jobs unlock the source platform after completion; transfer jobs keep source locked until cleanup.
-
-### Upload-import JSON
-- UI path: Gateways canvas top-left **Import** button.
-- Controller path: `ImportUploadedExportRequest` forwards payload via `ImportPlatformRequest` to target instance.
-- Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
-- Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.
-
-### Space Hub schedule export source (CRITICAL)
-- Always read schedule data from `hub_entity.platform`, not from hub entity fields.
-- Use `platform.get_schedule()` and serialize both `schedule.stations` and `schedule.interrupts`.
-- Include interrupt trigger details, wait conditions, and inherited train-group references.
-- This prevents partial exports where stations appear but interrupts are lost.
-
-### Transaction logs
-- Logs now include operation type: `transfer`, `export`, `import`.
-- `TransactionLogsTab` shows mixed operation history in one list with operation type tags.
-- Export/import operations are persisted using the same transaction log store as transfers.
-
-### In-game transaction dashboard
-- **Command**: `/transaction-dashboard [limit]` opens GUI (default 25 entries, max 500)
-- **Features**: Scrollable history table, color-coded by operation type, detail popups with phase timing
-- **Persistence**: Uses LocalisédString profiler snapshots stored in `storage.transaction_history`
-- **Phase timing**: Displays per-phase LuaProfiler values that survive save/load
-- **Implementation**: Three-part system:
-  1. `utils/transaction-history.lua` — Snapshot storage (converts profilers to LocalisedStrings)
-  2. `interfaces/gui/transaction-dashboard.lua` — GUI rendering (assigns snapshots to labels)
-  3. `core/import-completion.lua` + `core/export-pipeline.lua` — History recording hooks
-- **Admin features**: Clear history button, adjustable row limits (10/25/50/100)
-- **See**: LuaProfiler cannot be serialized for LocalisedString profiler serialization requirements
-
-
-## Architecture Overview
-
-For Clusterio core architecture, see [Clusterio docs](https://github.com/clusterio/clusterio).
-
-### Factorio Integration (Lua)
-
-- Custom module system using event_handler library
-- Save patching to inject Clusterio code at runtime
-- RCON protocol for server communication
-- JSON serialization for data exchange
-- This repo's Lua lives in `docker/seed-data/external_plugins/surface_export/module/`. (`/packages/host/modules/` and `/packages/host/lua/` are Clusterio-core paths in the sibling fork, not here.)
-- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (the Clusterio API require path)
-- **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
-- **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
-
-## Prose policy (HARD RULE — owner ruling 2026-08-09)
-
-Prose is the vector. Every false claim in the session that produced this rule was written while
-composing explanatory text; none were in the numbers, which came from tool output. Writing "why"
-opens a slot that gets filled from plausibility. Removing the slot removes the class.
-
-- **Code files carry no prose.** No rationale, no incident history, no "why", no retrospectives.
-  Names, types and structure carry the meaning. Applies to new and changed code; do NOT sweep
-  existing files unless asked.
-- **Prose goes to the owner in chat.** Not code comments, not commit-message essays, not new docs.
-- **`docs/*.md` is the only home for explanation, and it is by request only.** Existing docs carry
-  drift that further editing does not fix. Do not add or expand unprompted — suggest, and wait.
-- **Tools declare outputs and NON-outputs as metadata**, not narrative: `requires:`, `produces:`,
-  `does not:`. The `does not:` line is the load-bearing half — it is what stops a tool's output
-  being read as proof of something it never measured.
-- **No causal claim without a citation.** A "because" requires a measurement that isolated THAT
-  variable, an upstream source, or the words **"cause not isolated"** — a complete finding, not an
-  admission. This already applied to Lua facts; it applies to all prose.
-- **Control arm before the claim, not after.** A measurement with no control cannot separate a
-  broken feature from a broken probe. Run it first, report second.
-- **graphify is the search engine over this code**, not an authority on it:
-  `graphify query "<question>"`, `graphify update` after code changes. It indexes what the code says
-  about itself and returns a bug as faithfully as a feature. Oracles are the Factorio Lua API docs,
-  a measurement on the running cluster, and the owner.
-
-## Code Style and Conventions
-
-### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
-
-> `npm run lint` runs twelve **correctness** guards, all gated in CI. Each guard's full rationale and
-> incident history lives in [docs/lint-guards.md](docs/lint-guards.md) (relocated from the script
-> headers by the code-comment purge — scripts carry enforcement only). Every `*:allow` escape hatch
-> MUST be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is
-> an **escalation**, never self-approved. (The commit-labels guard was RETIRED 2026-08-09, owner
-> ruling: with rationale moving out of code into maintained .md, the docs-commit boundary no longer
-> earns its CI step.)
->
-> | Guard | Command | Rule | Allow marker |
-> |-------|---------|------|--------------|
-> | TS | `lint:js` (eslint) | never extract/cast a Link method (unnamed `no-restricted-syntax` selectors, `eslint.config.js`); no empty catch or bare `.catch(() => {})` | eslint-disable |
-> | Lua invariants | `lint:lua` | no `global.*` — `no-global-persistence-table`; no `__clusterio_lib__` — `no-clusterio-lib-mod-path`; no `platform.destroy()` — `no-platform-destroy`; no name-keyed transfer identity — `no-name-as-transfer-identity` | `-- lint-lua:allow` |
-> | Lua syntax | `lint:lua-syntax` | every module/mods-src .lua parses as Lua 5.2 AND names no undefined global (a parse error ships to a dead instance at save-load; a misspelled module-table name — the FixtureMeters-vs-M incident — surfaces as an undefined global) | none — fix the name or extend the whitelist in the script (reviewed change) |
-> | API names | `lint:api-names` | every API member name in `module/` EXISTS at the pin (checked against the vendored `scripts/factorio-api-index.json`; regenerate at repin with `extract-factorio-api-index.mjs`) — bare `<recv>.<member>` reads AND writes for the five name-bound engine receivers (`entity`/`platform`/`surface`/`player`/`force`), plus `safe_get(recv, "…")` literals and `pcall(… return recv.NAME)` probes (these two arms also cover `stack`/`inventory`); a bare read of an absent member THROWS (`auto_launch` and `planting_position` each killed an instance), while behind safe_get/pcall the same name reads as nil forever, which is how `driver_is_main_gunner` shipped silent for months; receiver types are assumed BY NAME, so a real member on the WRONG SUBCLASS (returns nil, no throw) is NOT covered | none — use `testkit api <Class.member>` to find the real name |
-> | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
-> | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; ps1 success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census; an mjs runner that FETCHES a transfer verdict — the `debug_import_result` artifact name OR any `*ImportResult` helper identifier, derived from what the runner does rather than one hard-coded helper name, because keying on the literal `waitForImportResult` let every rolled-my-own reader opt out silently — must adjudicate `validation_success` after the fetch, and before any board/census read (the ordering arm is deliberately NOT widened to poll-loop destination reads; narrowed scope + sweep in [docs/lint-guards.md](docs/lint-guards.md)) | `lint-test-grounding:allow` |
-> | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
-> | Catch swallow | `lint:catch-swallow` | no catch (incl. empty promise `.catch`) substitutes a default without surfacing the error binding — plugin `.ts`/`.tsx` AND repo-root `tools/`+`tests/` `.mjs`; ESLint also covers `web/**` with typed unbound-method and empty-catch checks; surfacing = log/throw/return/reject or a write/`.push` whose target ROOT is declared OUTSIDE the catch body; a lexer desync fails loud, never mis-scans | `// catch:allow` |
-> | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
-> | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
-> | Tick portability | `lint:tick-portability` | an absolute-tick attribute (doc-derived from the vendored index: every attribute whose upstream doc opens "The tick"/"The last tick") is touched only on a line with `game.tick` arithmetic — durations cross instances, absolute ticks are another clock (a raw write instant-spoils items and mis-grows plants); the derived list must contain `tick_grown`+`spoil_tick` or the guard refuses (an index without doc fields would silently disarm it) | `-- tick:allow` |
-> | Derived art | `lint:derived-art` | every image in `web/assets` still matches its source art re-derived (the bundled gateway icon is a SECOND copy of mod art, and a stale copy shows last month’s art with no error anywhere); an undeclared image in that dir is refused rather than trusted | — |
-> | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
->
-> Discipline the guards cannot fully mechanize: ship the adversarial fixture WITH the fix, and run
-> `/di-change` (or `/code-review`) before merging any gate/validation/rollback/source-delete/test-hook change.
->
-> The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
-
-- **Comments: code carries NO prose** (owner policy 2026-08-09, executed by the comment purge).
-  Rationale, incident history, and behavior claims live in `docs/*.md`, commit messages, and
-  tests — never in code comments, where they rot into misdirection (the born-false "gate consumes
-  this map" comment caused a fourth duplicate meter). The ONLY comments that belong in code are
-  machine-read markers the guards enforce (`*:allow`, `intentional probe`, `deliberately quiet`)
-  and directives (`eslint-disable`, shebangs). A cross-file behavior claim exists ONLY as a test.
-- **Indentation**: Tabs (not spaces, except in Markdown)
-- **Line length**: 120 characters (tabs count as 4)
-- **Strings**: Double quotes `"` (single quotes `'` if string contains double quotes)
-- **Naming (JavaScript)**:
-  - Variables/members: camelCase
-  - Classes: PascalCase
-  - Config values: lowercase_underscore
-  - Booleans: Start with verb unless ending in "ed" (e.g., `canRestart`, `isEnabled`, `connected`)
-  - Times/durations: End with SI unit (e.g., `updatedAtMs`, `timeoutS`)
-- **Naming (Lua)**: Everything uses lowercase_underscore
-- **File naming**:
-  - lowercase_underscore for files exporting multiple values
-  - PascalCase for single-class exports
-
-## Plugin Development
-
-Plugins are the primary extension mechanism. See [Clusterio plugin docs](https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md) for comprehensive guide.
-
-**Plugin Structure**:
-- Separate entrypoints: controller, host, instance, ctl, web
-- Each entrypoint implements lifecycle hooks (onStart, onStop, etc.)
-- Plugins define custom Request/Event messages
-- Config fields integrate into main config system
-- Web modules use Module Federation for runtime loading
-
-## Known Factorio API Limitations (Transfer Fidelity)
-
-Transfers require **100% of restorable items and fluids** at the frozen-world exact gate. The engine facts
-behind this used to be collected in a doc that was deleted 2026-08-11. Before touching fluid or inventory
-restoration, measure what you actually depend on against the running cluster and let the measurement stand
-in the PR that needs it; `tests/instruments/` holds the standing rungs, and git history holds the old text
-if you want a lead to re-measure. Do not recreate the doc.
-
-Project invariants that still bite if changed:
-- **Beacon-before-crafter inventory order.** Phase 3 restores beacons first, then everything else. The
-  mechanism this ordering was documented to protect — a `set_stack()` cap that widens once beacon modules
-  are populated — did NOT reproduce when probed on 2.1.11: the crafter-input cap measured stack-derived and
-  speed-invariant (164 for stack-100 ingredients, 264 for stack-200) across seven recipes and speeds from
-  1.25 to 11.00. The ordering is retained (it is free, and `crafting_speed` genuinely does propagate in the
-  same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
-  [Import Phase Ordering](#import-phase-ordering-critical).
-- **Belt restoration.** Belts continue moving between callbacks. Each captured side group's
-  writes and physical delta check remain atomic; connected groups may span ticks. A single group
-  can exceed the soft budget. Preserve exact quantities by item, quality and lane; position within
-  a segment is not the acceptance criterion. `tests/lua/belt-batches.lua` checks packing and
-  `tests/lua/import-phase-yields.lua` checks scheduling. Physical cargo coverage belongs to the
-  belt-item-state and pad transfer fixtures. The removed belt-freeze instrument is not required.
-- **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
-  carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
-  by our incremental id — engine segment ids differ across instances); entities reference it via
-  `specific_data.fluidboxes`. Restore writes each segment **once** via `set_fluid_segment_fluid` (segmentless
-  storages via `set_fluid`). Plasma rides like any fluid — the `engine_owned` connection-category
-  classification is **deleted** (owner ruling 2026-07-20/21). A member whose entity failed to place is simply
-  absent: there is **no failed-member fluid accounting**, so a short segment fails the exact gate and the
-  two-phase commit preserves the source (fail => revert). `write_rejected` and capacity overflow
-  (`dropped_fluids`) are diagnostic evidence, never allowances subtracted from expected cargo. One pre-activation verdict covers exact items and aggregate-by-name
-  fluids (`epsilon=1e-6`).
-- **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
-  `LuaEntity.set_inventory_size_override` overrides **container** sizes (measured 16→30 on a wooden-chest)
-  but is a **silent no-op for crafter inputs** (the call "succeeds"; the input inventory stays at
-  ingredient count) — re-measured at the 2.1.11 pin 2026-08-03. No production call sites; this is a
-  don't-reach-for-it note.
-
-### Import Phase Ordering (Critical)
-
-`ImportCompletion.run_phase1` and `run_phase2` restore hub inventories, belt groups, entity
-state, inventories (beacons first), held items, then fluids and the exact cargo gate. Hub,
-belt, inventory and held-item phases yield before the next phase. Fluids, validation,
-activation and destination hold preparation share one callback. Source deletion must be
-acknowledged before destination release. See [batching boundaries](docs/async-processing.md)
-and [transfer recovery](docs/TRANSFER_2PC.md).
-
-Failed entity placement, missing cargo and unavailable cargo measurements fail the transfer.
-No measured loss is subtracted to manufacture parity. Failure diagnostics describe the
-attempt before recovery; there is no post-activation loss-analysis scan.
-
-An unexpected import exception stops that job permanently, retains interruption evidence,
-and attempts destination quarantine. The scheduler does not replay partially applied work.
-Such a hold cannot authorize source deletion; inspect both copies before operator recovery.
-Latch original-rule failures keep the export guard and retry with bounded backoff. Never
-release that guard merely because the retry count is high: temporary circuit rules may remain.
-
-## Additional Documentation
-
-- [docs/README.md](docs/README.md) - Plugin overview and documentation index
-- [docs/commands-reference.md](docs/commands-reference.md) - All available commands
-- [docs/QUICK_START.md](docs/QUICK_START.md) - End-to-end transfer walkthrough
-- [docs/CI_CD.md](docs/CI_CD.md) - CI pipeline, Factorio-baking for integration tests, and debugging failed runs
-- [docs/TRANSFER_2PC.md](docs/TRANSFER_2PC.md) - Transfer durability, identity, and two-phase-commit design + current state
-- [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace: sequence diagrams, phases, message names, debugging
-- [docs/async-processing.md](docs/async-processing.md) - Async batch processing architecture
-
-## Debugging Tips
-
-### Docker Logs (IMPORTANT — Windows Shell Escaping)
-
-**CRITICAL**: On Windows with Git Bash, `docker exec` path arguments get mangled by MSYS path conversion (e.g., `/clusterio/` → `C:/Program Files/Git/clusterio/`). Always wrap commands in `sh -c '...'` with single quotes:
-
-```bash
-# WRONG (Git Bash mangles the path):
-docker exec surface-export-controller npx clusterioctl --config=/clusterio/tokens/config-control.json ...
-
-# CORRECT (single-quoted sh -c prevents path mangling):
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json ...'
-```
-
-**RCON command (always use sh -c with single quotes):**
-```bash
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"'
-```
-
-### Observability — WHERE EACH LOG ACTUALLY LIVES (read this before debugging)
-
-**The #1 gotcha that wastes hours**: a plugin's `this.logger.info(...)` output (controller AND instance/host plugins) does **NOT** reliably appear in `docker logs`. `docker logs surface-export-host-1 | grep surface_export` returns **nothing** — the host plugin's own logs are not on host stdout. Clusterio routes them to **log files on disk** instead. Look in the files, not (only) `docker logs`.
-
-| What you want | Where it actually is | How to read it |
-|---|---|---|
-| **Everything, aggregated** (controller + every host + every instance plugin `this.logger`) | Controller: `/clusterio/logs/cluster/cluster-YYYY-MM-DD.log` (JSON lines, date-rotated) | `docker exec surface-export-controller sh -c 'cat /clusterio/logs/cluster/cluster-*.log' \| grep -aoE '"message":"[^"]*"'` |
-| **One host's plugin logs** (instance `this.logger.info/error`) | Host: `/clusterio/logs/host/host-YYYY-MM-DD.log` (JSON lines) | `docker exec surface-export-host-1 sh -c 'cat /clusterio/logs/host/host-*.log' \| grep -aoE '"message":"[^"]*"' \| grep -i transfer` |
-| **Controller-origin plugin logs only** | `docker logs surface-export-controller` stdout (controller `this.logger` DOES appear here; host/instance logs do NOT) | `docker logs --tail 300 surface-export-controller 2>&1 \| grep surface_export` |
-| **Factorio engine + Lua `log(...)` / `[Script]`** | Host: `/clusterio/data/instances/<instance>/factorio-current.log` (also mirrored into the host/cluster JSON logs as `"level":"server"`) | `docker exec surface-export-host-1 sh -c 'tail -200 /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log'` |
-| **Debug dumps** (`debug_source_*`, `debug_destination_*`, `debug_import_result_*`) | Host: `/clusterio/data/instances/<instance>/script-output/` (only when `debug_mode` on) | `docker exec surface-export-host-2 sh -c 'ls /clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_*.json'` |
-
-The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
-
-**Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). **Custom surface_export transfer metrics are now implemented** — `lib/metrics.ts` defines collectors that register to Clusterio's default registry (so they surface on the same `/metrics` with no extra wiring) and `recordOperationOutcome()` is called from `SubscriptionManager.emitTransferUpdate` (the universal terminal chokepoint, idempotent per operation):
-- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/belts/none
-- `surface_export_operation_duration_seconds{operation,result,failure_stage}` — histogram (buckets 0.5s…300s)
-- `surface_export_entities_transferred_total{operation}` — counter (entities placed on the destination)
-- `surface_export_export_stall_seconds` — histogram; the source-side async export span (the tick-stall window that can heartbeat-drop a connected player)
-
-These complement, not replace, the JSON-file logs above — metrics tell you *that* transfers are failing and how long they take; the `cluster-*.log` files tell you *why*. Scrape with `docker exec surface-export-controller sh -c 'curl -s http://localhost:8080/metrics | grep ^surface_export_'`.
-
-**Note**: `--tail N` goes BEFORE the container name. After a container restart, `docker logs` loses pre-restart output — but the on-disk `/clusterio/logs/*` files persist across restarts (until date-rotation), so prefer the files for any post-restart investigation.
-
-### Check Plugin Module is Loaded
-```powershell
-rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"  -- Should print 'true'
-```
-
-### View Factorio Log (from container)
-```bash
-docker exec surface-export-host-1 sh -c 'tail -100 /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log'
-```
-
-### Check Async Job Queue
-```powershell
-rc11 "/sc rcon.print(serpent.block(storage.async_jobs or {}))"
-```
-
-### List Available Remote Interfaces
-```powershell
-rc11 "/sc for name, _ in pairs(remote.interfaces) do rcon.print(name) end"
-```
-
-## Shared Clusterio knowledge (cross-repo)
-
-- **Skill**: a user-level `clusterio-ops` skill (`C:\Users\Solar\.claude\skills\clusterio-ops\`)
-  carries the Clusterio knowledge shared by this repo and FactorioMap — the @clusterio singleton
-  rule, git-bash path mangling (incl. `--config=/...` → "Missing URL and/or token"), the
-  controller-hello boot race, RCON/save-patching mechanics, and this machine's multi-cluster port
-  map. Load it when operating or debugging any cluster.
-- **Singleton problem, structural fix**: FactorioMap solved the shared "@clusterio in plugin
-  node_modules breaks clusterioctl" problem structurally instead of by hand-recovery — the
-  `@clusterio` devDeps live in a repo-root `package.json` (host tsc resolves them via the upward
-  walk; the repo root is never bind-mounted) plus a plugin-level `.npmrc` with
-  `legacy-peer-deps=true` so npm 7+ never auto-installs the peers back. See
-  `FactorioMap/docs/lessons-learned.md` § "Wave C". Worth adopting here as a complement to the
-  isolated `tools/clusterio/build-plugin.ps1` container build.
-- **Multi-cluster coexistence**: this cluster (controller :8080, game 34100–34209) shares the
-  machine with the atlas cluster (controller :8090, game host-port 34300 → container 34100;
-  containers prefixed `atlas-`). The authoritative port/coexistence map lives in
-  `FactorioMap/docs/RUNBOOK.md` — never stop/restart another cluster's containers.
+# Repository instructions for agents
+
+## Workspace and scope
+
+- Work on branches in the canonical checkout. Do not create worktrees, secondary
+  clones or repositories, or replace mounted directories with junctions/symlinks.
+- This checkout is a live development bind-mount source. Check `git status` and
+  coordinate ownership before branch changes, runtime builds, deployment or restarts.
+  Subagents must not switch the shared branch.
+- Scope operations to this deployment's resolved containers/volumes. Never modify
+  another cluster or assume an external volume belongs to this one.
+- Preserve existing saves, player state and original failure artifacts. Use
+  disposable Docker fixtures for destructive acceptance.
+- Keep unrelated changes and credentials out of commits. Leave lockfiles unchanged
+  outside authorized dependency updates. Use `tools/check-pr-scope.ps1` before
+  editing and before preparing a PR.
+
+## Build and deployment
+
+The maintained procedures are [development workflow](docs/developers/workflow.md)
+and [setup](docs/developers/setup.md). Human readers do not need this file.
+
+- Use `tools/clusterio/build-plugin.ps1` for build/lint/test containers. For checks,
+  specify an output directory under `ci-artifacts` so compilation does not replace
+  the running plugin. Do not install/prune packages in the live plugin mount.
+- Use `tools/clusterio/deploy.ps1` for development deployment. Lua/plugin scopes
+  reset saves without `-KeepSaves`; cluster scope destroys volumes without
+  `-KeepData`. These defaults do not authorize deletion.
+- Matching Node, web and Lua changes need corresponding reloads. Check loaded
+  versions and relevant behavior before describing source edits as deployed.
+- Respect `ci-artifacts/workflow.lock`. After a crash, verify the owner process
+  has stopped before removing that specific lock.
+- Use `tools/clusterio/rcon.ps1`; personal shell aliases are not prerequisites.
+
+## Evidence and data integrity
+
+Apply [.agents/skills/di-change/SKILL.md](.agents/skills/di-change/SKILL.md) to cargo,
+identity, ownership, validation, deletion, recovery or mutating fault-hook changes.
+Ordinary prose and unrelated UI/tooling changes do not require its full live ladder.
+
+- Reproduce the symptom before implementing a speculative diagnosis. Inspect the
+  full response/state family, including missing, late, duplicate and ambiguous replies.
+- Look up Factorio API members at the pin. The testkit API lookup checks availability;
+  valid API shape does not prove a reconstruction algorithm. Check Factorio runtime
+  capabilities before introducing third-party Lua dependencies.
+- Compare physical source/destination cargo and fixture state independently. The
+  validator is not its own oracle. Do not subtract loss from expectations or weaken
+  an assertion to match the result.
+- Preserve canonical operations and persistent platform identity. Names and local
+  indexes alone do not authorize deletion, unlock or replay.
+- Missing/pruned status or a lost acknowledgement is uncertainty, not permission to
+  import again. Keep active/unresolved ownership through queue waits and restarts.
+- Belts can move between callbacks. Verify boundaries before splitting capture,
+  restoration or validation. Selected entity disabling is not a frozen world.
+- Measure milliseconds on local clocks. Exact ticks describe scheduling; do not
+  convert them into stall time or align unrelated process clocks.
+- Keep controls, original failures, raw measurements and fixture/version scope.
+  Distinguish unit simulation, engine observation, deployment and published artifacts.
+  An unexplained improvement is not a proven root-cause fix.
+- Mutating probes own cleanup of temporary surfaces and persistent state. Missing
+  fixtures, failed injection, invalid API calls and cleanup failures are not passes.
+  Do not clear protections to force cleanup.
+- Never mutate production guards in a live mounted runtime. Commit the actual fix
+  before mutation checks and use isolated execution or in-memory test doubles.
+
+## Documentation and style
+
+- Human documentation belongs in `docs/users`, `docs/admins`, `docs/developers`
+  and `docs/technical`. Maintain it when requested. Add no unsolicited planning
+  pages, audit ledgers or incident narration. Experiments stay beside their tests;
+  agent instructions stay outside `docs`.
+- Do not recreate the retired API-notes/certification system or evidence-tier tags.
+  Upstream sources and measured artifacts support claims; another internal document
+  or a tag alone does not. Add no documentation-parsing tests.
+- Code comments are restricted to machine-read markers and directives. Put requested
+  educational explanations in human documentation.
+- Match surrounding style: tabs, double-quoted JS strings, camelCase JS members,
+  PascalCase classes and lowercase_underscore Lua names. Use explicit duration units.
+- Preserve error evidence and run applicable guards. Each `*:allow` exception needs
+  its manifest entry, reason and approver. Do not self-approve exceptions.
+- Keep Clusterio Link methods bound and avoid a second installed `@clusterio/lib`
+  within the same runtime process.
+
+## Review and delivery
+
+- Report checks actually run, skips and unavailable evidence. Later changes
+  invalidate affected results; old reports do not certify new source bytes.
+- Use independent review where required by the data-integrity skill. Self-review
+  or green CI is not independent review.
+- Keep findings, fixes and verification together in private run evidence. No
+  permanent planning/report document is required.
+- Use `gh --body-file` for multiline PR bodies. Omit session links and attribution.
+- Do not merge, publish releases or post review comments without applicable user
+  authorization. Verify checks at the current head after stacked-branch updates.
+- After an authorized merge, inspect `main`'s own post-merge checks.
+
+## Repository map
+
+The plugin lives in `docker/seed-data/external_plugins/surface_export/`; its
+`module/` directory is save-patched Lua. Gateway prototypes/artwork live in
+`docker/seed-data/mods-src/surfexp_gateways/`. Maintained helpers live in
+`tools/clusterio`, `tools/surface-export`, `tools/tests` and `tools/shared`.
+See [diagnostics](docs/developers/diagnostics.md) and [test selection](docs/developers/testing.md).
