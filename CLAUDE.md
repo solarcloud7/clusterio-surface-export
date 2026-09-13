@@ -105,7 +105,7 @@ Ordinary prose and unrelated UI/tooling changes do not require its full live lad
   fluids. Fluids, the final cargo gate and activation share one callback.
 - An unexpected import exception is not permission to replay or release the source
   guard. Match recovery actions to their operation and saved platform identity.
-- `remote_unlock_platform(index, player, expected_job_id)` requires the owning job
+- `remote.call("surface_export", "unlock_platform", index, nil, expected_job_id)` requires the owning job
   for a transfer lock. The legacy jobless lock helper is not a matching test setup.
   Use `tests/lab-gallery/fixture-cleanup.mjs` for guarded fixture cleanup; refused
   unlocks must remain visible as cleanup failures.
