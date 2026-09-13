@@ -1,6 +1,7 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
+local platform_identity = require("modules/surface_export/utils/platform-identity")
 
 local DestinationHold = {}
 
@@ -64,7 +65,16 @@ local function restore_active_states(surface, active_states)
 	return restored, kept_inactive
 end
 
-local function resolve_hold(transfer_id)
+local function matches(record, platform, job_id)
+	return platform and platform.valid and platform.surface and platform.surface.valid
+		and record.platform_index == platform.index and record.surface_index == platform.surface.index
+		and type(record.platform_uid) == "string" and record.platform_uid ~= ""
+		and record.platform_uid == platform_identity(platform)
+		and type(record.job_id) == "string" and record.job_id ~= ""
+		and (not job_id or record.job_id == job_id)
+end
+
+local function resolve_hold(transfer_id, job_id)
 	local holds = ensure_storage()
 	local hold = holds[transfer_id]
 	if not hold then
@@ -75,11 +85,42 @@ local function resolve_hold(transfer_id)
 	if not (platform and platform.valid) then
 		return hold, force, nil, "Held platform is missing"
 	end
-	local surface = platform.surface
-	if not (surface and surface.valid and surface.index == hold.surface_index) then
-		return hold, force, platform, "Held platform surface changed or is missing"
+	if not matches(hold, platform, job_id) then
+		return hold, force, platform, "Held platform or job identity changed or is unavailable"
 	end
 	return hold, force, platform, nil
+end
+
+function DestinationHold.reconcile_legacy()
+	local function reconcile(record, transfer_id)
+		if record.platform_uid and record.job_id then return end
+		local platform = find_platform(game.forces[record.force_name], record.platform_index)
+		local uid = platform and platform.valid and platform.surface and platform.surface.valid
+			and platform_identity(platform)
+		local owner
+		for _, job in pairs(storage.async_jobs or {}) do
+			if uid and type(job.job_id) == "string" and job.type == "import" and (job.transfer_id or ("interrupted:" .. job.job_id)) == transfer_id
+				and job.target_platform == platform and job.target_surface == platform.surface
+				and job.force_name == record.force_name then
+				if owner then owner = nil; break end
+				owner = job
+			end
+		end
+		if uid and owner and record.surface_index == platform.surface.index
+			and (not record.platform_uid or record.platform_uid == uid)
+			and (not record.job_id or record.job_id == owner.job_id) then
+			record.platform_uid, record.job_id = uid, owner.job_id
+			record.identity_unverified = nil
+		else
+			if not record.identity_unverified then
+				log("[DestinationHold] Legacy identity unavailable for " .. transfer_id .. "; manual reconciliation required")
+			end
+			record.identity_unverified = true
+		end
+	end
+	for transfer_id, hold in pairs(ensure_storage()) do reconcile(hold, transfer_id) end
+	local bucket = (storage.surface_export_transfer_receipts or {}).destination_live
+	for transfer_id, receipt in pairs(bucket and bucket.records or {}) do reconcile(receipt, transfer_id) end
 end
 
 local function find_hub(surface)
@@ -100,7 +141,7 @@ local function find_hold_for_platform(holds, surface_index, platform_index, exce
 	return nil, nil
 end
 
-function DestinationHold.stage(transfer_id, platform, force, fail_closed, preparation_visibility)
+function DestinationHold.stage(transfer_id, platform, force, fail_closed, preparation_visibility, job_id)
 	if type(transfer_id) ~= "string" or transfer_id == "" then
 		return false, "transfer_id is required"
 	end
@@ -117,13 +158,16 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 	end
 
 	local holds = ensure_storage()
+	local uid = platform_identity(platform)
+	if not uid then return false, "Destination platform identity is unavailable" end
+	job_id = job_id or transfer_id
 	local existing = holds[transfer_id]
 	if Receipts.get("destination_live", transfer_id) then
 		return false, "Destination transfer already released"
 	end
 	if existing then
 		if existing.preparation_failed then return false, "Previous destination preparation failed" end
-		if existing.surface_index == surface.index and existing.platform_index == platform.index then
+		if existing.force_name == force.name and matches(existing, platform, job_id) then
 			return true, existing
 		end
 		return false, "transfer_id already holds a different destination platform"
@@ -146,6 +190,7 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 	local hold = {
 		transfer_id = transfer_id, force_name = force.name, platform_index = platform.index,
 		platform_name = platform.name, surface_index = surface.index,
+		platform_uid = uid, job_id = job_id,
 		original_hidden = original_hidden, original_platform_hidden = original_platform_hidden,
 		original_paused = original_paused, active_states = active_states, held_tick = game.tick,
 		preparation_failed = true,
@@ -189,20 +234,31 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 	return true, hold
 end
 
-function DestinationHold.go_live(transfer_id)
+function DestinationHold.verify(transfer_id, job_id)
 	local holds = ensure_storage()
 	local receipt = Receipts.get("destination_live", transfer_id)
 	if receipt then
 		if holds[transfer_id] then return false, "Released transfer also has a hold" end
 		local released = find_platform(game.forces[receipt.force_name], receipt.platform_index)
-		if not released or not released.surface.valid or released.surface.index ~= receipt.surface_index then
+		if not matches(receipt, released, job_id) then
 			return false, "Released destination is missing or has changed identity"
 		end
 		return true, receipt
 	end
-	local hold, force, platform, err = resolve_hold(transfer_id)
+	local hold, _, platform, err = resolve_hold(transfer_id, job_id)
 	if err then return false, err end
 	if hold.preparation_failed then return false, "Destination preparation did not finish" end
+	if not platform.hidden then return false, "Destination hold visibility changed" end
+	return true, hold
+end
+
+function DestinationHold.go_live(transfer_id, job_id)
+	local verified, result = DestinationHold.verify(transfer_id, job_id)
+	if not verified then return false, result end
+	if Receipts.get("destination_live", transfer_id) then return true, result end
+	local holds = ensure_storage()
+	local hold, force, platform, err = resolve_hold(transfer_id, job_id)
+	if err then return false, err end
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
 	force.set_surface_hidden(surface, hold.original_hidden == true)
@@ -213,6 +269,7 @@ function DestinationHold.go_live(transfer_id)
 	Receipts.put("destination_live", transfer_id, {
 		transfer_id = transfer_id, platform_index = hold.platform_index,
 		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,
+		platform_uid = hold.platform_uid, job_id = hold.job_id,
 	})
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d)",
@@ -227,11 +284,13 @@ function DestinationHold.go_live(transfer_id)
 	}
 end
 
-function DestinationHold.discard(transfer_id)
+function DestinationHold.discard(transfer_id, job_id)
 	local holds = ensure_storage()
-	local hold, _, platform, err = resolve_hold(transfer_id)
+	local held = holds[transfer_id]
+	if held and job_id and held.job_id ~= job_id then return false, "Destination cleanup job identity changed" end
+	local hold, _, platform, err = resolve_hold(transfer_id, job_id)
 	if err then
-		if err == "Held platform is missing" or err == "Held platform surface changed or is missing" then
+		if err == "Held platform is missing" then
 			holds[transfer_id] = nil
 			log(string.format("[DestinationHold] discard transfer %s: %s for platform '%s'; cleared hold",
 				transfer_id, err, hold and hold.platform_name or "?"))
@@ -242,7 +301,6 @@ function DestinationHold.discard(transfer_id)
 				surface_index = hold and hold.surface_index or nil,
 				deleted = false,
 				already_missing = (err == "Held platform is missing"),
-				surface_changed = (err == "Held platform surface changed or is missing"),
 			}
 		end
 		return false, err

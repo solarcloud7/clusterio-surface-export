@@ -33,6 +33,8 @@ const LUA_INNER = "lua_inner";
 const TS_INJECTED = "ts_injected";
 
 const MANIFEST = [
+	{ name: "platform_uid", declared: true, origin: LUA_ENVELOPE },
+	{ name: "force_name", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compressed", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compression", declared: true, origin: LUA_ENVELOPE },
 	{ name: "payload", declared: true, origin: LUA_ENVELOPE },
@@ -139,7 +141,7 @@ function envelopeKeys(source, discriminator = "compressed") {
 
 test("internal section envelope is explicit and distinct from the downloadable envelope", () => {
 	assert.deepEqual(envelopeKeys(exportPipelineSource, "section_codec"), [
-		"platform_name", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
+		"force_name", "platform_name", "platform_uid", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
 	]);
 });
 
@@ -219,7 +221,7 @@ test("MUTATION KILL: an envelope key the manifest omits is reported", () => {
 });
 
 test("MUTATION KILL: a declaration removed from ExportData is reported", () => {
-	const mutated = messagesSource.replace("\t_operationId?: string;\n", "");
+	const mutated = messagesSource.replace(/\t_operationId\?: string;\r?\n/, "");
 	assert.notEqual(mutated, messagesSource, "the mutation must apply, or this test proves nothing");
 	const declared = declaredKeys(mutated);
 	assert.equal(declared.includes("_operationId"), false, "the scan must SEE the removed declaration");

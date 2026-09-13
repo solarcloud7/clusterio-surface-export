@@ -81,6 +81,18 @@ export class PlatformTree {
 		}
 	}
 
+	async resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string> {
+		if (expectedUid !== undefined) {
+			if (typeof expectedUid !== "string" || !expectedUid) throw new Error("Source platform identity is unavailable");
+			return expectedUid;
+		}
+		const response = await this.requestInstancePlatforms(instanceId, forceName);
+		if (response.error) throw new Error(response.error);
+		const platform = response.platforms.find((p: PlatformModel) => p.platformIndex === platformIndex && (p.forceName || "player") === forceName);
+		if (!platform?.platformUid) throw new Error("Source platform identity is unavailable; refresh before exporting");
+		return platform.platformUid;
+	}
+
 	applyActiveTransferState(platforms: Array<PlatformModel>, instanceId: number) {
 		const withState: PlatformModel[] = platforms.map(platform => ({
 			...platform,
@@ -98,9 +110,9 @@ export class PlatformTree {
 			}
 
 			for (const platform of withState) {
-				const indexMatches = transfer.platformIndex && platform.platformIndex === transfer.platformIndex;
-				const nameMatches = platform.platformName === transfer.platformName;
-				if (indexMatches || nameMatches) {
+				if (platform.platformIndex === transfer.platformIndex
+					&& (platform.forceName || "player") === (transfer.forceName || "player")
+					&& transfer.platformUid && platform.platformUid === transfer.platformUid) {
 					platform.transferId = transfer.transferId;
 					platform.transferStatus = transfer.status;
 				}

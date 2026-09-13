@@ -71,6 +71,31 @@ corrected Factorio 2.1.17 run in `evidence/save-policy-unlock-*-2.1.17.json.gz`.
 corrected run covers manual unlock, standalone export cleanup, warning acknowledgement,
 old-message refusal, a fresh transfer, and save/reload with independent physical cargo.
 
+
+Platform ownership uses the saved UID and owning job. Names are display labels;
+indexes locate the platform within its current force. Browser and in-game selections
+retain their UID through admission. Compressed and sectioned envelopes retain UID
+and force, and active transaction details retain UID across controller restart.
+
+The lost-export-reply identity regression is retained in
+`evidence/source-identity-unlock-before-2.1.17.json.gz` and
+`evidence/source-identity-unlock-fixed-2.1.17.json.gz`. The original recovery rejected
+its placeholder name and left the source locked. The corrected run cancelled before
+import, unlocked the owning source job, preserved physical cargo, and completed a
+fresh transfer. Disposable cleanup succeeded.
+
+The same candidate passed `save-policy-game`, retained in
+`evidence/source-identity-save-game-2.1.17.json.gz`: accepted-copy save/restart,
+manual and standalone cleanup, stale-message refusal, a fresh transfer, and
+independent physical cargo. Browser warning and restart-mode assertions passed.
+
+Lua unit regressions cover stale copies at reused indexes, missing/foreign job IDs,
+renames, in-game confirmation, and missing-hub setup cleanup through the startup tick
+gate. Legacy holds migrate only with matching retained import-job object references.
+Unidentified legacy holds and release receipts remain unverified; index/name matches
+do not authorize activation or deletion. These simulated legacy tests do not certify
+all historical save upgrades.
+
 `save-policy-game` and `save-policy-history` use the same mixed checkpoint. One unrelated
 platform is deliberately destroyed and another is transferred away. Reloading the source
 checkpoint must restore the unrelated platform with its physical cargo. The transferred

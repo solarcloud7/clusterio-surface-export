@@ -99,9 +99,9 @@ local function calculate_progress(job)
 	return math.floor((job.current_index / job.total_entities) * 100)
 end
 
-function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id)
+function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid)
 	AsyncProcessor.init()
-	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id)
+	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid)
 end
 
 function AsyncProcessor.queue_import_from_file(filename, new_platform_name, force_name, requester_name)
@@ -114,17 +114,19 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
 end
 
-function AsyncProcessor.process_tick()
-	ActiveStateRestoration.service_pending_mining_progress()
-	LatchRearm.process_tick()
-	GatewayConfigStaging.prune()
+function AsyncProcessor.process_tick(recovery_only)
+	if not recovery_only then
+		ActiveStateRestoration.service_pending_mining_progress()
+		LatchRearm.process_tick()
+		GatewayConfigStaging.prune()
+	end
 	if not storage.async_jobs then return end
 	ImportSession.prune()
 
 	local job_list = {}
 	for job_id, job in pairs(storage.async_jobs) do
 		local cleanup_ready = job.setup_cleanup and game.tick >= job.setup_cleanup.next_tick
-		if cleanup_ready or (not job.completion_interrupted and not (job.pending_beacon_tick and game.tick < job.pending_beacon_tick)) then
+		if (cleanup_ready and job.type == "import") or (not recovery_only and not job.completion_interrupted and not (job.pending_beacon_tick and game.tick < job.pending_beacon_tick)) then
 			table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0,
 				last_step = job.last_step_tick or -1})
 		end

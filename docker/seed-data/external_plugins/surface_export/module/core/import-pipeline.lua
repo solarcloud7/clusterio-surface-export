@@ -13,6 +13,7 @@ local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
 local ImportTarget = require("modules/surface_export/core/import-target")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 local JobResults = require("modules/surface_export/core/job-results")
 
@@ -21,36 +22,50 @@ local ImportPipeline = {}
 
 function ImportPipeline.process_setup_cleanup(job)
 	local cleanup = job.setup_cleanup
+	local startup_lock = SurfaceLock.get_lock_data(cleanup.platform_index)
+	local cleanup_hold = DestinationHold.get(cleanup.hold_id)
+	local legacy_hold = cleanup_hold and cleanup_hold.preparation_failed
+		and cleanup_hold.job_id == nil and cleanup_hold.platform_uid == nil
 	cleanup.attempts = (cleanup.attempts or 0) + 1
 	cleanup.next_tick = game.tick + 60 * math.min(cleanup.attempts, 300)
 	local ok, removed = pcall(function()
 		local platform = job.target_platform
 		local hold = DestinationHold.get(cleanup.hold_id)
-		if hold and (hold.platform_index ~= cleanup.platform_index or hold.surface_index ~= cleanup.surface_index
+		if hold and ((hold.job_id ~= job.job_id and not (legacy_hold and hold == cleanup_hold)) or hold.platform_index ~= cleanup.platform_index or hold.surface_index ~= cleanup.surface_index
 			or hold.force_name ~= job.force_name) then
 			error("Cleanup hold belongs to a different platform")
 		end
 		if not (platform and platform.valid) then
-			if hold then return DestinationHold.discard(cleanup.hold_id) end
+			if platform and legacy_hold then return true end
+			if hold then return DestinationHold.discard(cleanup.hold_id, job.job_id) end
 			return true
 		end
 		if not (platform.force and platform.force.valid and platform.force.name == job.force_name) then
 			error("Cleanup platform force changed or is unavailable")
 		end
-		if platform.index ~= cleanup.platform_index or not (platform.surface and platform.surface.valid)
+		if platform.index ~= cleanup.platform_index or platform.surface ~= job.target_surface
+			or not (platform.surface and platform.surface.valid)
 			or platform.surface.index ~= cleanup.surface_index then error("Cleanup platform surface changed or is unavailable") end
 		if not hold and cleanup.attempts > 1 then
 			ImportCompletion.interrupt(job, cleanup.error)
 			hold = DestinationHold.get(cleanup.hold_id)
-			if not hold then error("Cleanup quarantine unavailable") end
 		end
 		if hold then
 			if not hold.preparation_failed then error("Cleanup cannot discard a validated destination") end
-			return DestinationHold.discard(cleanup.hold_id)
+			if legacy_hold then return GameUtils.delete_platform(platform) end
+			return DestinationHold.discard(cleanup.hold_id, job.job_id)
 		end
 		return GameUtils.delete_platform(platform)
 	end)
 	if ok and removed == true then
+		if legacy_hold and DestinationHold.get(cleanup.hold_id) == cleanup_hold then
+			storage.destination_holds[cleanup.hold_id] = nil
+		end
+		if startup_lock and startup_lock.kind == "startup" and startup_lock.surface_index == cleanup.surface_index
+			and startup_lock.force_name == job.force_name and job.target_platform and not job.target_platform.valid
+			and SurfaceLock.get_lock_data(cleanup.platform_index) == startup_lock then
+			storage.locked_platforms[cleanup.platform_index] = nil
+		end
 		storage.async_jobs[job.job_id] = nil
 		storage.async_job_results = storage.async_job_results or {}
 		local validation = {success = false, failedStage = "setup", mismatchDetails = cleanup.error}

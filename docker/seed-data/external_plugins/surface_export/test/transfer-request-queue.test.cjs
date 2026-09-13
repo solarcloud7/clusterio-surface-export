@@ -163,7 +163,7 @@ test("duplicate admission returns the same request, competing destinations are r
 	const plugin = { logger: { info: noop, warn: noop, error: noop }, activeTransfers: new Map(), transactionLogs: new Map(),
 		persistedTransactionLogs: [], platformStorage: new Map(), pendingTransfers: new Map(),
 		controller: { instances: new Map([1, 2, 3].map(id => [id, { id, isDeleted: false }])) },
-		isInstanceOnline: () => true, platformTree: { resolveInstanceName: id => `instance-${id}` },
+		isInstanceOnline: () => true, platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: id => `instance-${id}` },
 		subscriptions: { emitTransferUpdate: noop, queueTreeBroadcast: noop },
 		txLogger: { ...require("./timing-harness.cjs").makeTimingHarness(), logTransactionEvent: noop, persistTransactionLog: async () => {} } };
 	const orchestrator = new TransferOrchestrator(plugin, messages); t.after(() => orchestrator.requestQueue.stop());

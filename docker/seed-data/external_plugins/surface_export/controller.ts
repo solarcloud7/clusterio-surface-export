@@ -523,7 +523,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async handleExportPlatformForDownloadRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	async handleExportPlatformForDownloadRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; forceName?: string }) {
 		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
 		const result = await timingContext.run(clock, () => this.handleExportPlatformForDownloadRequestMeasured(request));
 		if (!result.success && !clock.operationId) {
@@ -533,7 +533,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return result;
 	}
 
-	async handleExportPlatformForDownloadRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	async handleExportPlatformForDownloadRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; forceName?: string }) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		this.requireRecoveryReady(sourceInstanceId);
 		const sourcePlatformIndex = Number(request.sourcePlatformIndex);
@@ -550,7 +550,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
 		}
+		const platformUid = await this.platformTree.resolvePlatformUid(sourceInstanceId, sourcePlatformIndex, forceName, request.sourcePlatformUid);
 		const operation = await this.createOperationRecord("export", {
+			platformUid,
 			platformName: `platform #${sourcePlatformIndex}`,
 			platformIndex: sourcePlatformIndex,
 			forceName,
@@ -573,6 +575,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				new messages.ExportPlatformRequest({
 					operationId: operation.transferId,
 					platformIndex: sourcePlatformIndex,
+					platformUid,
 					forceName,
 					targetInstanceId: null,
 				}),

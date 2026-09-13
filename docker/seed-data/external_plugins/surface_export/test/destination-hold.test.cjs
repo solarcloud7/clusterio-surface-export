@@ -18,20 +18,15 @@ test("destination hold primitive is registered for explicit proof runs", () => {
 
 test("destination hold primitive exposes stage, go_live, discard, and get", () => {
 	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed, preparation_visibility\)/);
-	assert.match(hold, /function DestinationHold\.go_live\(transfer_id\)/);
-	assert.match(hold, /function DestinationHold\.discard\(transfer_id\)/);
+	assert.match(hold, /function DestinationHold\.stage\(transfer_id, platform, force, fail_closed, preparation_visibility, job_id\)/);
+	assert.match(hold, /function DestinationHold\.go_live\(transfer_id, job_id\)/);
+	assert.match(hold, /function DestinationHold\.discard\(transfer_id, job_id\)/);
 	assert.match(hold, /function DestinationHold\.get\(transfer_id\)/);
 	assert.match(hold, /storage\.destination_holds/);
 });
 
 
-test("discard treats missing or surface-changed held platforms as cleaned up", () => {
-	const hold = read("module/core/destination-hold.lua");
-	assert.match(hold, /err == "Held platform is missing" or err == "Held platform surface changed or is missing"/);
-	assert.match(hold, /holds\[transfer_id\] = nil[\s\S]*deleted = false/);
-	assert.match(hold, /surface_changed = \(err == "Held platform surface changed or is missing"\)/);
-});
+
 
 test("stage first moves the platform toward not-live, then deactivates entities under pcall", () => {
 	const hold = read("module/core/destination-hold.lua");

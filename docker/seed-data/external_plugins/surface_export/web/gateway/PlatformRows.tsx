@@ -27,6 +27,7 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 	const source = {
 		instanceId,
 		instanceName,
+		platformUid: platform.platformUid,
 		platformIndex: platform.platformIndex,
 		platformName: platform.platformName,
 		forceName: platform.forceName || "player",

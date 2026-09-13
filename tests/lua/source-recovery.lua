@@ -9,7 +9,7 @@ env.storage.locked_platforms = locks
 local lock_api = {
     get_lock_data = function(index) return locks[index] end,
     destination_hold_owns_surface = function() return false end,
-    lock_platform = function(p, _, opts) locks[p.index] = {kind = opts.kind}; p.hidden = true; return true end,
+    lock_platform = function(p, _, opts) locks[p.index] = {kind = opts.kind, surface_index = p.surface.index}; p.hidden = true; return true end,
     unlock_platform = function(index, _, bootstrap)
         assert(bootstrap, "bootstrap must explicitly own its unlock")
         locks[index] = nil; platform.hidden = false; return true
@@ -23,6 +23,7 @@ local lock_api = {
     end,
 }
 env.require = function(name)
+    if name:find("destination-hold", 1, true) then return {reconcile_legacy = function() end} end
     if name:find("platform-identity", 1, true) then return assert(loadfile(root .. "utils/platform-identity.lua", "t", env))() end
     return lock_api
 end
@@ -134,7 +135,7 @@ local real_lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
 real_recovery = assert(loadfile(root .. "core/source-recovery.lua", "t", e))()
 e.require = function() error("Require cannot be used outside control.lua parsing") end
 local held = {kind = "transfer", phase = "committed", transfer_job_id = "old", platform_name = "fixture",
-    force_name = "player", platform_index = 3, surface_index = 8, frozen_states = {}}
+    force_name = "player", platform_index = 3, surface_index = 8, platform_uid = "current:16", frozen_states = {}}
 e.storage.locked_platforms[3] = held
 assert(not real_lock.unlock_platform(3), "normal unlock released a committed source")
 assert(not real_lock.accept_restored_source(3, "old"), "adoption outside startup was authorized")
@@ -237,3 +238,63 @@ assert(env.storage.source_recovery_notices[3] == live_notice and env.storage.sou
 assert(locks[3] == preserved_lock and env.storage.surface_export_transfer_receipts == receipts and receipts.source_delete.records.old,
     "metadata pruning changed transfer authority")
 print("PASS complete roster prunes only absent platform metadata")
+
+do
+    local failures = {}
+    local function check(label, fn)
+        e.storage.source_recovery_ready = true
+        e.storage.source_recovery_notices = {}
+        e.storage.source_recovery_identities = {[3] = {surface_index = 8, hub_unit_number = 16, uid = "current:16"}}
+        e.game.tick = 1
+        held.kind = "transfer"; held.phase = "pre_commit"; held.transfer_job_id = "new"
+        held.platform_uid = "current:16"
+        e.storage.locked_platforms[3] = held
+        local ok, err = pcall(fn)
+        if not ok then failures[#failures + 1] = label .. ": " .. tostring(err) end
+    end
+    check("display text cannot veto the owning job", function()
+        assert(real_lock.unlock_platform(3, "Platform #3", nil, nil, "new"))
+    end)
+    check("same indexes cannot unlock a different UID", function()
+        held.platform_uid = "retired:16"
+        assert(not real_lock.unlock_platform(3, nil, nil, nil, "new"))
+        assert(e.storage.locked_platforms[3] == held)
+    end)
+    check("a missing lock job cannot authorize deletion", function()
+        held.transfer_job_id = nil
+        assert(not real_lock.transfer_delete_identity_ok(held, unlock_platform.surface, "new"))
+    end)
+    check("a missing lock job cannot certify ownership", function()
+        held.transfer_job_id = nil
+        assert(real_lock.get_source_transfer_lock_state("new", 3, "fixture", "player").state == "identity_mismatch")
+    end)
+    check("a stale lock cannot certify a replacement copy", function()
+        held.platform_uid = "retired:16"
+        assert(real_lock.get_source_transfer_lock_state("new", 3, "fixture", "player").state == "identity_mismatch")
+    end)
+    assert(#failures == 0, table.concat(failures, "\n"))
+end
+print("PASS source mutations require copy and job identity, independent of display names")
+
+local gui_uid, started = "copy-a", 0
+local gui_platform={valid=true,index=3,name="renamed",force={name="player"}}
+local gui_force={platforms={[3]=gui_platform}}
+local gui_player={index=1,print=function() end,gui={screen={}}}
+local gui_env=setmetatable({game={forces={player=gui_force}}},{__index=_G})
+gui_env.require=function(name)
+    if name:find("platform-identity",1,true) then return function() return gui_uid end end
+    if name:find("gateway-guard",1,true) then return {guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end
+    if name:find("transfer-trigger",1,true) then return {start=function() started=started+1;return true end} end
+    if name:find("surface-lock",1,true) then return {is_locked=function() return false end} end
+    return {parked_at_gateway=function() return "gateway" end,collect_passengers=function() return {},0 end}
+end
+local gui=assert(loadfile(root.."interfaces/gui/gateway-transfer.lua","t",gui_env))()
+local selection={platform_index=3,platform_uid="copy-a",force_name="player",gateway_name="gateway",selected=1,
+    targets={{instanceId=2}}}
+gui.confirm_transfer(gui_player,selection)
+assert(started==1,"renamed same-copy selection was refused")
+gui_uid="copy-b";gui.confirm_transfer(gui_player,selection)
+assert(started==1,"old in-game dialog started a replacement platform")
+selection.platform_uid=nil;gui.confirm_transfer(gui_player,selection)
+assert(started==1,"unidentified in-game dialog started a transfer")
+print("PASS in-game gateway confirmation binds the displayed copy instead of a reusable index")

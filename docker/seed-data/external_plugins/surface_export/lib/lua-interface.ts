@@ -144,10 +144,11 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	async exportPlatform(platformIndex: number, forceName: string, targetArg: string, operationId?: string): Promise<string> {
+	async exportPlatform(platformIndex: number, forceName: string, targetArg: string, operationId?: string, platformUid?: string): Promise<string> {
+		const uidArg = platformUid ? `"${escapeString(platformUid)}"` : "nil";
 		const operationArg = operationId ? `"${escapeString(operationId)}"` : "nil";
 		return this.host.sendRcon(
-			`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${escapeString(forceName)}", ${targetArg}, ${operationArg}); ` +
+			`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${escapeString(forceName)}", ${targetArg}, ${operationArg}, ${uidArg}); ` +
 			`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`,
 		);
 	}

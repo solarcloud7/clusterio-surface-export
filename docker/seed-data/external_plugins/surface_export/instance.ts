@@ -453,14 +453,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null, operationId?: string): Promise<ExportResult> {
+	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null, operationId?: string, platformUid?: string): Promise<ExportResult> {
 		const resolvedTargetId = Number(targetInstanceId);
 		const hasTargetInstance = Number.isInteger(resolvedTargetId) && resolvedTargetId > 0;
 		const targetArg = hasTargetInstance ? String(resolvedTargetId) : "nil";
 		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
 
 		try {
-			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg, operationId);
+			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg, operationId, platformUid);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
 			const clock = timingContext.getStore();
@@ -648,12 +648,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.warn("Unable to confirm Lua console unlock; subsequent exports may require a manual command rerun.");
 	}
 
-	async handleExportPlatformRequest(request: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	async handleExportPlatformRequest(request: { operationId?: string; platformUid?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		return this.withTiming(request.operationId || `export-request:${randomUUID()}`, undefined, "Export request handling", () => this.handleExportPlatformRequestMeasured(request));
 	}
 
-	async handleExportPlatformRequestMeasured(request: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
-		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null, request.operationId);
+	async handleExportPlatformRequestMeasured(request: { operationId?: string; platformUid?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null, request.operationId, request.platformUid);
 		const numericTargetInstanceId = Number(request.targetInstanceId);
 		if (result?.success && Number.isInteger(numericTargetInstanceId) && numericTargetInstanceId > 0) {
 			this.controllerManagedTransferExports.add(result.exportId as string);
@@ -916,7 +916,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		try {
 			const identity = request.operationId ? parseCanonicalTransferId(request.operationId) : null;
 			const sourceJobId = identity?.sourceInstanceId === this.i.id ? identity.sourceJobId : undefined;
-			const result = await this.lua.unlockPlatform(platformIndex, request.platformName, sourceJobId);
+			if (!sourceJobId) return { success: false, error: "Source unlock requires this instance's canonical job identity" };
+			const result = await this.lua.unlockPlatform(platformIndex, undefined, sourceJobId);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);

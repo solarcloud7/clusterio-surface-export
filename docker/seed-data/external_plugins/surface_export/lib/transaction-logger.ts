@@ -272,6 +272,7 @@ export class TransactionLogger {
 			artifactSizeBytes: transfer.artifactSizeBytes ?? null,
 			platformName: transfer.platformName,
 			platformIndex: transfer.platformIndex,
+			platformUid: transfer.platformUid,
 			forceName: transfer.forceName,
 			sourceInstanceId: transfer.sourceInstanceId,
 			sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),

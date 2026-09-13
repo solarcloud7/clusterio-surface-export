@@ -54,7 +54,10 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
-		if storage.source_recovery_ready == false then return end
+		if storage.source_recovery_ready == false then
+			AsyncProcessor.process_tick(true)
+			return
+		end
 		AsyncProcessor.process_tick()
 		if game.tick % 60 == 0 then
 			SurfaceLock.scan_transfer_expiries()

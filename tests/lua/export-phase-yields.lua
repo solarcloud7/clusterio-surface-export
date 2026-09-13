@@ -2,7 +2,7 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local function noop() end
 local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
-local function scenario(standalone, error_at)
+local function scenario(standalone, error_at, sectioned)
 local events, writes, modules, encodes, attempts = {}, {}, {}, 0, 0
 local env = setmetatable({game = {tick = 100, print = noop, forces = {player = {valid = true, platforms = {}}}},
     storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true}},
@@ -26,7 +26,7 @@ modules["utils/surface-lock"] = {unlock_platform = function(index, _, _, _, job_
     mark("unlock"); return true
 end}
 modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap = function() mark("prune") end,
-    record = function(_, data) mark("cache"); assert(data.payload == "compressed") end}
+    record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player") end}
 modules["utils/platform-schedule"] = {summarize = function() return {} end}
 modules["export_scanners/entity-scanner"] = {scan_items_on_ground = function() return {} end}
 modules["export_scanners/inventory-scanner"] = {extract_belt_items = function() mark("belt_read"); return {} end}
@@ -34,7 +34,7 @@ modules["export_scanners/fluid-registry"] = {list = function() return {} end}
 modules["export_scanners/source-cargo-integrity"] = {record = noop, verdict = function() return {ok = true} end}
 modules["validators/verification"] = {count_all_items = function() mark("verify"); return {} end,
     count_fluid_segments = function() return {} end}
-local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture"}
+local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture", platform_uid = "fixture:copy"}
 modules["utils/json-compat"] = {encode_json_compat = function(data)
     if data == payload then encodes = encodes + 1; return '{"captured":true}' end
     return '{}'
@@ -67,6 +67,7 @@ env.storage.async_jobs.test = job
 if standalone then job.destination_instance_id = nil end
 for tick = 100, 103 do
     env.game.tick = tick
+    if sectioned and tick == 103 then job.compressed_sections={"compressed"} end
     pcall(scheduler.process_tick)
     if error_at and events[error_at] then
         local count = size(events)
@@ -94,7 +95,7 @@ for tick = 100, 103 do
     if tick < 103 then assert(env.storage.async_jobs.test, "publication finished too early") end
 end
 assert(events.entities == 100 and events.belt_read == 101 and events.verify == 101)
-assert(events.serialization == 102 and events.compression == 103 and events.surface_export_complete == 103)
+assert(events.serialization == 102 and (sectioned or events.compression == 103) and events.surface_export_complete == 103)
 assert(encodes == 1, "diagnostic output serialized the payload again")
 if standalone then
     assert(events.unlock == 103, "standalone export unlocked before publication")
@@ -106,6 +107,7 @@ assert(not env.storage.async_jobs.test and env.storage.async_job_results.test.co
 end
 scenario(false)
 scenario(true)
+scenario(false, nil, true)
 scenario(false, "surface_export_complete")
 for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
     scenario(false, phase)

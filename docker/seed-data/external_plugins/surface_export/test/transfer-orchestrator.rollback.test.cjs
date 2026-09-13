@@ -7,6 +7,7 @@ const path = require("node:path");
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
 const { isSessionLostError } = require(path.join(distNode, "helpers.js"));
+const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
 
 function sessionLost(message = "Session Closed") {
@@ -36,7 +37,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 			}),
 			delete: noop,
 		},
-		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
+		platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}` },
 		activeTransfers,
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
@@ -152,17 +153,19 @@ test("admitted queue work remains observable through repeated controller restart
 	t.after(() => h.orch.stop());
 	h.plugin.persistedTransactionLogs = [];
 	const operation = {transferId:"1:queued",operationType:"transfer",sourceInstanceId:1,targetInstanceId:2,
-		platformIndex:3,platformName:"fixture",forceName:"player",status:"transporting",sourceExportId:"queued"};
+		platformIndex:3,platformUid:"selected-copy",platformName:"fixture",forceName:"player",status:"transporting",sourceExportId:"queued"};
 	await fs.writeFile(journal, JSON.stringify([{id:"request:1",request:{},operation}]));
 	await h.orch.requestQueue.init(journal);
 	const restored = onlyTransfer(h.activeTransfers);
 	assert.equal(restored.status,"awaiting_validation");assert.equal(restored.completedAt,undefined);
 	assert.equal(restored.awaitingLateVerdict,true);assert.equal(h.calls.importSends,0);
-	h.plugin.persistedTransactionLogs = [{transferId:restored.transferId,transferInfo:{...restored}}];
+	h.plugin.transactionLogs = new Map();
+	h.plugin.persistedTransactionLogs = [{transferId:restored.transferId,transferInfo:JSON.parse(JSON.stringify(new TransactionLogger(h.plugin).buildTransferInfo(restored)))}];
 	h.activeTransfers.clear();
 	h.orch.restoreImportObservations();
 	assert.equal(onlyTransfer(h.activeTransfers).status,"awaiting_validation");
 	assert.equal(onlyTransfer(h.activeTransfers).sourceExportId,"queued");
+	assert.equal(onlyTransfer(h.activeTransfers).platformUid,"selected-copy");
 	assert.equal(h.calls.importSends,0);assert.equal(h.calls.unlockRouteTaken,0);
 });
 
@@ -200,12 +203,12 @@ test("lost export reply is found after two restarts and source cleanup retries w
 	const second = await create(); assert.equal(second.activeTransfers.size, 1, "second restart lost unresolved queue entry");
 	let unlocks = 0;
 	delete second.orch.tryUnlockSource;
-	second.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); unlocks++; return "source disconnected";};
+	second.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); assert.equal(args[3], undefined, "a display placeholder is not lock identity"); unlocks++; return "source disconnected";};
 	await second.orch.observeJobs();
 	assert.equal(unlocks, 1); assert.equal(second.activeTransfers.get(id).status, "preparing");
 	await second.orch.requestQueue.persist(); second.orch.stop();
 	const third = await create(); delete third.orch.tryUnlockSource;
-	third.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); unlocks++; return null;};
+	third.orch.sendUnlockRequest = async (...args) => {assert.equal(args[4], "lost-export"); assert.equal(args[3], undefined, "a display placeholder is not lock identity"); unlocks++; return null;};
 	await third.orch.observeJobs();
 	assert.equal(unlocks, 2); assert.equal(third.activeTransfers.get(id).status, "failed");
 	assert.equal(third.activeTransfers.get(id).timingPendingRecovery, false);
@@ -1178,4 +1181,23 @@ test("timeout config warnings: junk SET values warn, in-range fractionals do not
 	plugin.controller.config = { get: () => null };
 	assert.equal(orch.getValidationTimeoutMs(), 30_000);
 	assert.equal(warns.length, 2, "a CLEARED optional field (null) is not a misconfiguration - silent");
+});
+
+test("compressed source identity and force survive canonical promotion", async t => {
+    for (const envelope of [{compressed:true,compression:"deflate",payload:"test"},
+        {section_codec:1,section_count:1,sections:["test"]}]) {
+        const h=makeHarness(() => ({success:true}));
+        t.after(() => h.orch.stop());
+        h.plugin.platformStorage.get=()=>({exportData:{...envelope,platform_uid:"selected-copy",force_name:"engineers"},
+            platformName:"renamed",platformIndex:3,instanceId:1,size:123});
+        const result=await h.orch.transferPlatform("1:force-export",2);
+        assert.equal(result.success,true);
+        const operation=onlyTransfer(h.activeTransfers);
+        assert.equal(operation.platformUid,"selected-copy");
+        assert.equal(operation.forceName,"engineers");
+        const {PlatformTree}=require(path.join(distNode,"lib","platform-tree.js"));
+        const tree=new PlatformTree(h.plugin,messages);
+        const [row]=tree.applyActiveTransferState([{platformIndex:3,platformUid:"selected-copy",forceName:"engineers"}],1);
+        assert.equal(row.transferId,"1:force-export");
+    }
 });

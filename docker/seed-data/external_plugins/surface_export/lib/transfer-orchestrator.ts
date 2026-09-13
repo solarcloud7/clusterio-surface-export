@@ -132,6 +132,7 @@ export class TransferOrchestrator {
 			const operation = createOperationRecord(kind, {operationId: record.transferId,
 				status: kind === "import" ? "awaiting_completion" : info.status === "transporting" ? "awaiting_validation" : info.status,
 				platformName: info.platformName ?? undefined, forceName: info.forceName ?? undefined,
+				platformUid: info.platformUid ?? undefined,
 				platformIndex: info.platformIndex ?? undefined, sourceExportId: info.sourceExportId ?? undefined,
 				sourceInstanceId: info.sourceInstanceId ?? -1, targetInstanceId: info.targetInstanceId ?? -1,
 				exportId: info.exportId, startedAt: info.startedAt ?? undefined});
@@ -298,10 +299,11 @@ export class TransferOrchestrator {
 		transfer.sourceRollback = "attempted";
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
 		let err;
+		const sourceJobId = transfer.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId;
 		try {
 			err = await timed("Rollback unlock round trip", "round-trip", () => this.sendUnlockRequest(
-				transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName,
-				transfer.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId,
+				transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", sourceJobId ? undefined : transfer.platformName,
+				sourceJobId,
 			));
 		} catch (error) {
 			transfer.sourceRollback = "failed";
@@ -404,8 +406,9 @@ export class TransferOrchestrator {
 			sourceExportId,
 			artifactSizeBytes: exportData.size ?? null,
 			platformName: exportData.platformName || "Unknown",
+			platformUid: typeof exportData.exportData.platform_uid === "string" ? exportData.exportData.platform_uid : undefined,
 			platformIndex: sourcePlatformIndex,
-			forceName: String(platformInfo.force || "player"),
+			forceName: String(innerData.force_name || platformInfo.force || "player"),
 			sourceInstanceId: exportData.instanceId,
 			sourceInstanceName: this.plugin.platformTree.resolveInstanceName(exportData.instanceId),
 			targetInstanceId,
@@ -978,7 +981,7 @@ export class TransferOrchestrator {
 	}
 
 
-	async handleStartPlatformTransferRequest(request: QueuedTransferRequest) {
+	async handleStartPlatformTransferRequest(request: QueuedTransferRequest): Promise<TransferStartResult> {
 		const reject = async (error: string) => {
 			const id = `request:${randomUUID()}`;
 			try {
@@ -996,6 +999,9 @@ export class TransferOrchestrator {
 		if (!this.plugin.isInstanceOnline(source.id) || !this.plugin.isInstanceOnline(target.id)) return reject("Both instances must be online to queue a transfer");
 		const existing = this.requestQueue.find(request);
 		if (existing) {
+			if (request.sourcePlatformUid && existing.request.sourcePlatformUid !== request.sourcePlatformUid) {
+				return reject("Source platform identity changed; refresh before transferring");
+			}
 			if (existing.request.targetInstanceId !== request.targetInstanceId || (existing.request.targetPlanet ?? null) !== (request.targetPlanet ?? null)) {
 				return reject("This platform is already queued or transferring to another destination");
 			}
@@ -1004,13 +1010,20 @@ export class TransferOrchestrator {
 			return { success: true, transferId: existing.operation.transferId, message: "Transfer already queued or active" };
 		}
 		if ([...this.plugin.activeTransfers.values()].some(operation => operation.sourceInstanceId === source.id
-			&& operation.platformIndex === request.sourcePlatformIndex && !["completed", "failed", "error", "cleanup_failed"].includes(operation.status))) {
+			&& operation.platformIndex === request.sourcePlatformIndex && operation.forceName === (request.forceName || "player")
+			&& !["completed", "failed", "error", "cleanup_failed"].includes(operation.status))) {
 			return reject("This platform already has an active transfer");
 		}
 		const observationId = `request:${randomUUID()}`;
+		try {
+			request = { ...request, sourcePlatformUid: await this.plugin.platformTree.resolvePlatformUid(source.id,
+				request.sourcePlatformIndex, request.forceName || "player", request.sourcePlatformUid) };
+		} catch (error) { return reject(getErrorMessage(error)); }
+		if (this.requestQueue.find(request)) return this.handleStartPlatformTransferRequest(request);
 		this.txLogger.beginObservation(observationId);
 		const operation = createOperationRecord("transfer", { operationId: observationId, status: "queued",
 			platformName: request.platformName || `Platform #${request.sourcePlatformIndex}`, platformIndex: request.sourcePlatformIndex,
+			platformUid: request.sourcePlatformUid,
 			sourceInstanceId: source.id, targetInstanceId: target.id, forceName: request.forceName || "player",
 			resolveInstanceName: id => this.plugin.platformTree.resolveInstanceName(id) });
 		this.plugin.activeTransfers.set(observationId, operation);
@@ -1069,7 +1082,7 @@ export class TransferOrchestrator {
 		await this.requestQueue.persist();
 	}
 
-	async handleStartPlatformTransferRequestMeasured(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }, observationId: string) {
+	async handleStartPlatformTransferRequestMeasured(request: QueuedTransferRequest, observationId: string) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		if (!Number.isInteger(sourceInstanceId)) {
 			return { success: false, error: `Invalid source instance: ${request.sourceInstanceId}` };
@@ -1109,6 +1122,7 @@ export class TransferOrchestrator {
 				new this.messages.ExportPlatformRequest({
 					operationId: observationId,
 					platformIndex: sourcePlatformIndex,
+					platformUid: request.sourcePlatformUid,
 					forceName,
 					targetInstanceId: resolvedTarget.id,
 				}),

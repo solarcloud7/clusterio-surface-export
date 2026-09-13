@@ -1,4 +1,5 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local DestinationHold = require("modules/surface_export/core/destination-hold")
 
 local Recovery = {}
 
@@ -83,6 +84,7 @@ function Recovery.begin(epoch, journal_id, has_retirements, mode, allow_adoption
 		if not present[index] then storage.source_recovery_identities[index] = nil end
 	end
 	storage.source_recovery_journal = journal_id
+	DestinationHold.reconcile_legacy()
 	return {success = true, platforms = roster}
 end
 
@@ -94,6 +96,12 @@ function Recovery.reconcile(platform_index, uid, retired_export_id, unresolved_s
 	end
 	if not platform or identity(platform) ~= uid then return {success = false, error = "Recovery platform identity changed"} end
 	local lock = SurfaceLock.get_lock_data(platform_index)
+	if lock then
+		if lock.surface_index ~= platform.surface.index or (lock.platform_uid and lock.platform_uid ~= uid) then
+			return {success = false, error = "Recovery lock identity changed"}
+		end
+		lock.platform_uid = uid
+	end
 	local job_owns_platform = false
 	for _, job in pairs(storage.async_jobs or {}) do
 		if job.platform_index == platform_index or (job.target_platform and job.target_platform.valid

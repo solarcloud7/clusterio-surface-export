@@ -6,7 +6,7 @@ import type { ActiveTransfer } from "../messages";
 
 export interface QueuedTransferRequest {
 	sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number;
-	forceName?: string; targetPlanet?: string | null; platformName?: string;
+	sourcePlatformUid?: string; forceName?: string; targetPlanet?: string | null; platformName?: string;
 }
 export interface QueueEntry {
 	id: string;

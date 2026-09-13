@@ -32,6 +32,7 @@ export function createOperationRecord(
 		artifactSizeBytes: options.artifactSizeBytes ?? null,
 		platformName: options.platformName || "Unknown",
 		platformIndex: platformIndex ?? 1,
+		platformUid: options.platformUid,
 		forceName: options.forceName || "player",
 		sourceInstanceId,
 		sourceInstanceName,

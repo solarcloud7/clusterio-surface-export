@@ -4,6 +4,7 @@ import type { PlatformStatusFields } from "../platform-actions";
 
 
 export type PlatformLike = PlatformStatusFields & {
+	platformUid?: string | null;
 	platformIndex: number;
 	platformName: string;
 	forceName?: string;

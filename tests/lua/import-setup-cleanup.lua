@@ -8,10 +8,10 @@ local function fixture(fault, deletion)
     local stub = setmetatable({}, {__index = function() return noop end})
     local env = setmetatable({storage = {async_jobs = {}, async_job_results = {}, async_job_id_counter = 0},
         log = noop, game = {tick = 10, print = noop, forces = {player = force}},
-        defines = {inventory = {hub_main = 1}}}, {__index = _G})
+        defines = {inventory = {hub_main = 1},events=setmetatable({}, {__index=function(_, key) return key end})}}, {__index = _G})
     force.create_space_platform = function(options)
         created = created + 1
-        local hub = {valid = true, name = "space-platform-hub", type = "space-platform-hub", position = {x=0,y=0},
+        local hub = {valid = true, unit_number = created + 100, name = "space-platform-hub", type = "space-platform-hub", position = {x=0,y=0},
             get_inventory = function() return {clear = noop} end}
         local surface = {valid = true, index = created + 20, find_entities_filtered = function()
             if fault == "scan" then error("injected scan failure") end
@@ -21,6 +21,8 @@ local function fixture(fault, deletion)
             hub = hub, hidden = false, paused = false, apply_starter_pack = function()
                 if fault == "before_surface" then error("injected failure before surface creation") end
                 platform.surface = surface
+                env.storage.source_recovery_surface_epochs = {[surface.index] = "fixture"}
+                if fault == "missing_hub" then platform.hub = nil; error("injected missing hub") end
                 if fault == "starter" then error("injected starter failure") end
             end}
         platforms[created] = platform
@@ -32,7 +34,15 @@ local function fixture(fault, deletion)
         if deletion ~= "success" then return false end
         target.valid = false; target.surface.valid = false; platforms[target.index] = nil; return true
     end}
-    modules['utils/surface-lock'] = {complete_cargo_pods = function() return 0, 0, 0 end}
+    modules['utils/surface-lock'] = {
+        get_lock_data=function(index) return (env.storage.locked_platforms or {})[index] end,
+        destination_hold_owns_surface=function() return false end,
+        lock_platform=function(p, f, opts)
+            env.storage.locked_platforms=env.storage.locked_platforms or {}
+            env.storage.locked_platforms[p.index]={kind=opts.kind,force_name=f.name,surface_index=p.surface.index}
+            p.hidden=true;return true
+        end,
+        complete_cargo_pods = function() return 0, 0, 0 end}
     modules['utils/operation-timing'] = setmetatable({scope = function(_, _, fn, ...) return fn(...) end}, {__index = function() return noop end})
     modules['utils/version-compat'] = {parse = function() return {bucket = "2.1"} end,
         runtime_bucket = function() return "2.1" end, migrate = function(value) return value end,
@@ -46,9 +56,10 @@ local function fixture(fault, deletion)
     modules['utils/util'] = {sum_items = function()
         if fault == "totals" then error("injected totals error") end; return 0
     end, sum_fluids = function() return 0 end}
-    local real = {['core/destination-hold']=true,['core/import-pipeline']=true,['core/import-completion']=true,
+    local real = {['control']=true,['core/source-recovery']=true,['utils/platform-identity']=true,['core/destination-hold']=true,['core/import-pipeline']=true,['core/import-completion']=true,
         ['utils/transfer-receipts']=true,['core/async-processor']=true,['core/job-results']=true,['core/job-status']=true}
     env.require = function(path)
+        if path == 'modules/clusterio/api' then return {events={on_server_startup='startup',on_instance_updated='updated'},send_json=noop} end
         local key = path:match('^modules/surface_export/(.*)$')
         if real[key] and not modules[key] then modules[key] = assert(loadfile(root .. key .. '.lua', 't', env))() end
         return modules[key] or stub
@@ -182,3 +193,29 @@ assert(merged.load('core/destination-hold').get('merge'), 'cleanup dropped the u
 local _,merge_deletes=merged.stats();assert(merge_deletes==1, 'cleanup deleted across a changed force')
 assert(not merged.env.storage.async_job_results[merge_job.job_id], 'cleanup claimed completion without deletion')
 print('PASS changed force retains cleanup ownership instead of mistaking a roster miss for deletion')
+
+local missing=fixture('missing_hub','false')
+missing.load('core/import-pipeline').queue(payload('no-hub'),'fixture','player','RCON')
+local _,missing_job=next(missing.env.storage.async_jobs)
+local _,first_delete,missing_platform=missing.stats()
+assert(first_delete==1 and missing_job and not missing_platform.hub)
+assert(missing_platform.hidden and missing_platform.paused, 'missing hub escaped basic quarantine')
+assert(not missing.load('core/destination-hold').get('no-hub'), 'missing identity manufactured a remote hold')
+missing.env.storage.destination_holds['no-hub']={transfer_id='no-hub',preparation_failed=true,
+    platform_index=missing_platform.index,surface_index=missing_platform.surface.index,force_name='player'}
+missing.reload()
+local recovery=missing.load('core/source-recovery')
+recovery.startup()
+assert(not recovery.begin('new-boot','journal',false).success, 'unidentified setup unexpectedly reconciled')
+local waiting_export={type='export',job_id='must-wait',started_tick=0}
+missing.env.storage.async_jobs[waiting_export.job_id]=waiting_export
+missing.allow();missing.env.game.tick=missing_job.setup_cleanup.next_tick
+missing.load('control').events.on_tick()
+assert(not waiting_export.last_step_tick, 'normal export ran before recovery')
+assert(not missing.load('core/destination-hold').get('no-hub'), 'deleted setup retained its legacy hold')
+assert(recovery.begin('new-boot','journal',false).success and recovery.finish().success,
+    'deleted setup left bootstrap permanently blocked')
+local _,retry_delete=missing.stats()
+assert(retry_delete==2 and not missing_platform.valid and not missing.env.storage.async_jobs[missing_job.job_id],
+    'exact setup references did not permit cleanup after a missing-hub failure')
+print('PASS missing-hub setup deletion retries across reload through exact saved job references')

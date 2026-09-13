@@ -53,7 +53,7 @@ const PASSING_VERDICT = Object.freeze({
 
 function makeSummaryHarness() {
 	const logger = new TransactionLogger({
-		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
+		platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}` },
 		transactionLogs: new Map(),
 		platformStorage: new Map(),
 	});
@@ -100,7 +100,7 @@ function makeControllerHarness() {
 		persistTransactionLog: async () => {},
 	};
 	plugin.subscriptions = { emitTransferUpdate() {}, queueTreeBroadcast() {} };
-	plugin.platformTree = { resolveInstanceName: (id) => `instance-${id}` };
+	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}` };
 	plugin.orchestrator = { pruneOldTransfers() {} };
 	plugin.isInstanceOnline = () => true;
 	return { plugin, operation, logged };

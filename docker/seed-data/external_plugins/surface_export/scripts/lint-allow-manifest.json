@@ -11,8 +11,8 @@
     {
       "file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
       "marker": "lint-lua:allow",
-      "count": 2,
-      "reason": "(1) unlock tripwire compares STORED snapshots, not live platform.name — not rename-vulnerable; (2) sanctioned name→index resolver at the ADMIN tooling boundary, fails loud on ambiguity — the owner-approved exception to identity=surface.index",
+      "count": 1,
+      "reason": "Admin name lookup rejects ambiguity and resolves the current platform; transfer cleanup verifies saved UID and owning job.",
       "approver": "baseline (pre-manifest, audited 2026-07-07; both re-verified in the #60/#61 review cycle)"
     }
   ]

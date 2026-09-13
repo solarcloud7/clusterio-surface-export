@@ -15,7 +15,7 @@ local function transfer_lock_selftest()
 	end
 
 	local old_locks = storage.locked_platforms
-	local old_unlock = SurfaceLock.unlock_platform
+	local old_unlock = SurfaceLock.unlock_current_lock
 	local unlocks = {}
 
 	-- pcall:allow selftest must restore SurfaceLock/storage before reporting the exception
@@ -75,8 +75,8 @@ local function transfer_lock_selftest()
 			},
 		}
 
-		SurfaceLock.unlock_platform = function(platform_index, expected_name)
-			unlocks[#unlocks + 1] = { index = platform_index, name = expected_name }
+		SurfaceLock.unlock_current_lock = function(platform_index, observed_lock)
+			unlocks[#unlocks + 1] = { index = platform_index, lock = observed_lock }
 			storage.locked_platforms[platform_index] = nil
 			return true, nil
 		end
@@ -95,13 +95,9 @@ local function transfer_lock_selftest()
 			"fresh transfer lock must not be touched")
 		check("committed_ttl_retained", storage.locked_platforms[7] ~= nil,
 			"committed transfer locks must survive TTL expiry and remain non-live tombstones")
-		local unlocked_names = {}
-		for _, unlock in pairs(unlocks) do
-			unlocked_names[unlock.name] = true
-		end
-		check("unlock_uses_name_tripwire",
-			#unlocks == 1 and unlocked_names["expired-export"],
-			"only the orphaned standalone export may expire, with its stored name tripwire")
+		check("unlock_uses_observed_lock",
+			#unlocks == 1 and unlocks[1].index == 6 and unlocks[1].lock.platform_name == "expired-export",
+			"only the orphaned standalone export may expire using its observed lock")
 		check("summary_counts",
 			summary.checked == 6 and summary.expired == 1 and summary.skipped == 5 and summary.failed == 0 and summary.committed == 1,
 			"unexpected summary: checked=" .. tostring(summary.checked) ..
@@ -112,7 +108,7 @@ local function transfer_lock_selftest()
 			"legacy orphan-export expiry floor changed")
 	end)
 
-	SurfaceLock.unlock_platform = old_unlock
+	SurfaceLock.unlock_current_lock = old_unlock
 	storage.locked_platforms = old_locks
 
 	if not ok then
@@ -121,11 +117,11 @@ local function transfer_lock_selftest()
 	end
 
 	local function fake_surface(index, valid) return { index = index, valid = valid ~= false } end
-	check("delete_identity_same_surface_ok",
-		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7)) == true,
-		"a locked transfer whose surface.index still matches must be deletable")
+	check("delete_identity_refuses_index_only",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7)) == false,
+		"an index alone cannot authorize deletion")
 	check("delete_identity_ignores_rename",
-		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, platform_name = "OLD" }, fake_surface(7)) == true,
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, platform_name = "OLD" }, fake_surface(7)) == false,
 		"a RENAMED source (same surface.index, different name) must STILL delete — closes the rename dup exploit")
 	check("delete_identity_refuses_released",
 		SurfaceLock.transfer_delete_identity_ok(nil, fake_surface(7)) == false,
@@ -139,15 +135,15 @@ local function transfer_lock_selftest()
 	check("delete_identity_refuses_invalid_surface",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7, false)) == false,
 		"an invalid current surface must REFUSE the delete")
-	check("delete_identity_job_id_match_ok",
-		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_A" }, fake_surface(7), "job_A") == true,
-		"a matching job_id (same transfer) must be deletable")
+	check("delete_identity_refuses_missing_uid",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_A" }, fake_surface(7), "job_A") == false,
+		"job identity cannot replace missing platform UID")
 	check("delete_identity_refuses_job_id_mismatch",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_B" }, fake_surface(7), "job_A") == false,
 		"a DIFFERENT transfer's lock (job_id mismatch) must REFUSE even when surface.index matches — the stale/reused-index delete (P1)")
-	check("delete_identity_degrades_without_lock_job_id",
-		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7), "job_A") == true,
-		"an old-save lock with no transfer_job_id degrades to the surface.index check (no correlation available)")
+	check("delete_identity_refuses_missing_job_id",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7), "job_A") == false,
+		"a lock without its owning job must refuse deletion")
 
 	check("lock_upgrade_same_handoff_ok",
 		SurfaceLock.is_same_transfer_upgrade(nil, "job_A") == true,
@@ -177,13 +173,13 @@ local function transfer_lock_selftest()
 	storage.locked_platforms[10] = { kind = "transfer", platform_name = "lock-time-name", platform_index = 10, force_name = "player", transfer_job_id = "rename-pre" }
 	local renamed_pre = SurfaceLock.get_source_transfer_lock_state("rename-pre", 10, "live-renamed", "player")
 	check("source_query_pre_commit_ignores_rename",
-		renamed_pre.state == "pre_commit",
-		"source state query must not use mutable platform.name as a discriminator for pre_commit")
+		renamed_pre.state == "identity_mismatch",
+		"unverified synthetic platform cannot certify pre-commit ownership")
 	storage.locked_platforms[11] = { kind = "transfer", phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED, platform_name = "lock-time-name", platform_index = 11, force_name = "player", transfer_job_id = "rename-committed" }
 	local renamed_committed = SurfaceLock.get_source_transfer_lock_state("rename-committed", 11, "live-renamed", "player")
 	check("source_query_committed_ignores_rename",
-		renamed_committed.state == "committed",
-		"source state query must not use mutable platform.name as a discriminator for committed")
+		renamed_committed.state == "identity_mismatch",
+		"unverified synthetic platform cannot certify committed ownership")
 	storage.committed_source_transfer_tombstones = {
 		fresh = { committed_tick = game.tick },
 		stale = { committed_tick = game.tick - SurfaceLock.COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS - 1 },

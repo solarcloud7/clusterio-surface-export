@@ -32,10 +32,10 @@ local function scenario(side, fault)
     local schedule = {records = {}}
     local modules = {
         ["utils/operation-timing"] = timing,
-		["core/source-recovery"] = {export_job_id = function(counter, name) return string.format("%03d_%s_test-epoch", counter, name) end},
+		["core/source-recovery"] = {platform_uid = function() return "fixture:3" end, export_job_id = function(counter, name) return string.format("%03d_%s_test-epoch", counter, name) end},
         ["utils/game-utils"] = {platform_has_hub = function() return true end,
             delete_platform = function() called("delete"); deleted = true; return true end},
-        ["utils/surface-lock"] = {DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,
+        ["utils/surface-lock"] = {get_lock_data = function() return nil end,DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,
             lock_platform = function() called("lock"); return true end,
             unlock_platform = function() called("unlock"); return true end},
         ["utils/platform-schedule"] = {
@@ -61,7 +61,15 @@ local function scenario(side, fault)
         end}, {__index = _G})
     local pipeline = assert(loadfile(root .. "core/" .. side .. "-pipeline.lua", "t", env))()
     local id, err
-    if side == "export" then id, err = pipeline.queue(3, "player", "test", 2)
+    if side == "export" then
+        platform.surface=nil
+        local unbuilt, unbuilt_reason=pipeline.queue(3,"player","test",2,nil,nil,nil,"fixture:3")
+        assert(not unbuilt and unbuilt_reason:find("surface",1,true) and #calls==0)
+        platform.surface=surface
+        local rejected, reason = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "stale-copy")
+        assert(not rejected and reason:find("identity",1,true) and #calls==0,
+            "stale selection reached source preparation")
+        id, err = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "fixture:3")
     else id, err = pipeline.queue({_transferId = "operation", platform = {schedule = schedule},
         verification = {item_counts = {}, fluid_counts = {}}, entities = {}}, "destination", "player", "test") end
     if fault then

@@ -1,6 +1,8 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 
+local platform_identity = require("modules/surface_export/utils/platform-identity")
+
 local PREFIX = "hold-aware-unlock-selftest-"
 
 local function key(entity)
@@ -65,6 +67,7 @@ local function install_lock(force, platform, entity, opts)
 		platform_name = platform.name,
 		platform_index = platform.index,
 		surface_index = platform.surface.index,
+		platform_uid = platform_identity(platform),
 		force_name = force.name,
 		original_hidden = false,
 		original_platform_hidden = false,

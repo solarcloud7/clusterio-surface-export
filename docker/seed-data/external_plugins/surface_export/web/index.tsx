@@ -356,7 +356,7 @@ export class WebPlugin extends BaseWebPlugin {
 	async getStoredExport(exportId: string) {
 		return this.link.send(new GetStoredExportRequest({ exportId }));
 	}
-	async exportPlatformForDownload(payload: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	async exportPlatformForDownload(payload: { sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; forceName?: string }) {
 		return this.link.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
@@ -364,7 +364,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
 	}
 

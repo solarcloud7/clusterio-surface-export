@@ -85,7 +85,8 @@ test("source unlock uses canonical identity without accepting foreign or empty j
 		["1:job:attempt", "job:attempt"], ["11:job", undefined],
 		["1:", undefined], ["bad:job", undefined], [undefined, undefined],
 	]) {
-		assert.equal((await plugin.handleUnlockSourcePlatformMeasured({platformIndex: 3, operationId})).success, true);
-		assert.deepEqual(calls.pop(), [3, undefined, expected]);
+		assert.equal((await plugin.handleUnlockSourcePlatformMeasured({platformIndex: 3, operationId})).success, Boolean(expected));
+		if (expected) assert.deepEqual(calls.pop(), [3, undefined, expected]);
+		assert.equal(calls.length, 0, "invalid ownership must not reach Lua");
 	}
 });

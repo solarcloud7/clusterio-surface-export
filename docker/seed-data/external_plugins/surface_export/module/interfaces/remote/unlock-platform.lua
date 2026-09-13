@@ -3,13 +3,9 @@ local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local function unlock_platform(platform_index_or_name, expected_name, expected_job_id)
   local index = tonumber(platform_index_or_name)
-  if not index then
-    local key, err = SurfaceLock.find_lock_key_by_name(platform_index_or_name)
-    if err then return false, err end
-    if not key then return false, "Platform not locked: " .. tostring(platform_index_or_name) end
-    index = key
-  end
-  return SurfaceLock.unlock_platform(index, expected_name, nil, nil, expected_job_id)
+  if not index then return false, "Platform index is required" end
+  if type(expected_job_id) ~= "string" or expected_job_id == "" then return false, "Source job identity is required" end
+  return SurfaceLock.unlock_platform(index, nil, nil, nil, expected_job_id)
 end
 
 return function(platform_index_or_name, expected_name, expected_job_id)

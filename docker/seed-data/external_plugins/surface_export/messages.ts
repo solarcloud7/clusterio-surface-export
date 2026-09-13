@@ -95,6 +95,7 @@ export class ExportPlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			platformUid: { type: "string", minLength: 1 },
 			operationId: { type: "string" },
 			forceName: { type: "string", default: "player" },
 			targetInstanceId: { type: ["integer", "null"], default: null },
@@ -105,22 +106,24 @@ export class ExportPlatformRequest {
 
 	operationId?: string;
 	platformIndex: number;
+	platformUid?: string;
 	forceName: string;
 	targetInstanceId: number | null;
 
-	constructor(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	constructor(json: { platformUid?: string; operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		this.operationId = json.operationId;
 		this.platformIndex = json.platformIndex;
+		this.platformUid = json.platformUid;
 		this.forceName = json.forceName || "player";
 		this.targetInstanceId = json.targetInstanceId ?? null;
 	}
 
-	static fromJSON(json: { operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+	static fromJSON(json: { platformUid?: string; operationId?: string; platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		return new ExportPlatformRequest(json);
 	}
 
 	toJSON() {
-		return { operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
+		return { platformUid: this.platformUid, operationId: this.operationId, platformIndex: this.platformIndex, forceName: this.forceName, targetInstanceId: this.targetInstanceId };
 	}
 
 	static Response = {
@@ -295,6 +298,7 @@ export class ExportPlatformForDownloadRequest {
 		properties: {
 			sourceInstanceId: { type: "integer" },
 			sourcePlatformIndex: { type: "integer" },
+			sourcePlatformUid: { type: "string", minLength: 1 },
 			forceName: { type: "string", default: "player" },
 		},
 		required: ["sourceInstanceId", "sourcePlatformIndex"],
@@ -303,20 +307,22 @@ export class ExportPlatformForDownloadRequest {
 
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
+	sourcePlatformUid?: string;
 	forceName: string;
 
-	constructor(json: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	constructor(json: { sourcePlatformUid?: string; sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.sourcePlatformUid = json.sourcePlatformUid;
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
+	static fromJSON(json: { sourcePlatformUid?: string; sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		return new ExportPlatformForDownloadRequest(json);
 	}
 
 	toJSON() {
-		return { sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, forceName: this.forceName };
+		return { sourcePlatformUid: this.sourcePlatformUid, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, forceName: this.forceName };
 	}
 
 	static Response = {
@@ -779,6 +785,7 @@ export class StartPlatformTransferRequest {
 			platformName: { type: "string", maxLength: 500 },
 			sourceInstanceId: { type: "integer" },
 			sourcePlatformIndex: { type: "integer" },
+			sourcePlatformUid: { type: "string", minLength: 1 },
 			targetInstanceId: { type: "integer" },
 			forceName: { type: "string", default: "player" },
 			targetPlanet: { type: ["string", "null"], default: null },
@@ -790,25 +797,27 @@ export class StartPlatformTransferRequest {
 	platformName?: string;
 	sourceInstanceId: number;
 	sourcePlatformIndex: number;
+	sourcePlatformUid?: string;
 	targetInstanceId: number;
 	forceName: string;
 	targetPlanet: string | null;
 
-	constructor(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	constructor(json: { sourcePlatformUid?: string; platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		this.platformName = json.platformName;
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.sourcePlatformUid = json.sourcePlatformUid;
 		this.targetInstanceId = json.targetInstanceId;
 		this.forceName = json.forceName || "player";
 		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
+	static fromJSON(json: { sourcePlatformUid?: string; platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return new StartPlatformTransferRequest(json);
 	}
 
 	toJSON() {
-		return { platformName: this.platformName, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
+		return { sourcePlatformUid: this.sourcePlatformUid, platformName: this.platformName, sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {
@@ -1531,6 +1540,7 @@ export interface PhaseRecord {
 }
 
 export interface ActiveTransfer {
+	platformUid?: string;
 	sourceRollback?: import("./shared/recovery").SourceRollback;
 	lateDestinationCleanup?: boolean;
  destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
@@ -1654,6 +1664,7 @@ export interface IControllerPlugin {
 	};
 	platformStorage: Map<string, StoredExport>;
 	platformTree: {
+		resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string>;
 		resolveInstanceName: (instanceId: number) => string | null;
 		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
 		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
@@ -1711,6 +1722,8 @@ export type ExportStats = {
 };
 
 export type ExportData = {
+	platform_uid?: string;
+	force_name?: string;
 	compressed?: boolean;
 	compression?: string;
 	payload?: string;
@@ -1725,6 +1738,7 @@ export type ExportData = {
 };
 
 export type OperationOptions = {
+	platformUid?: string;
 	operationId?: string;
 	exportId?: string | null;
 	sourceExportId?: string | null;

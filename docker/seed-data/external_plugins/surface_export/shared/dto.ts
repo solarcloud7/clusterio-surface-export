@@ -171,6 +171,7 @@ export interface AuditRow {
 	operationType: string;
 	platformName: string;
 	platformIndex: number | null;
+	platformUid?: string | null;
 	sourceInstanceId: number;
 	sourceInstanceName: string | null;
 	targetInstanceId: number;
