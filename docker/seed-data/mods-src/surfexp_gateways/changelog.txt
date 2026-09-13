@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.6
+Date: 2026-09-13
+  Changes:
+    - Add the Transfer Gateway thumbnail and clarify the Clusterio plugin requirement for the Mod Portal.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.5
 Date: 2026-09-05
   Changes:

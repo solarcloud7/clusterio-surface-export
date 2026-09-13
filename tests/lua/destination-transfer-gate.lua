@@ -16,6 +16,11 @@ local deleteAccepted = false
 local evacuation = "success"
 local deleteCalls = 0
 local env = setmetatable({storage = {}, game = {tick = 1, forces = {player = force}}, log = noop}, {__index = _G})
+local notices = {}
+env.game.print = function(message)
+    assert(not env.storage.destination_holds.released, "arrival announced before release")
+    notices[#notices + 1] = message
+end
 env.require = function(name)
     if name:find("core/gateway", 1, true) then return {evacuate_passengers = function()
         if evacuation == "throw" then error("injected evacuation failure") end
@@ -47,6 +52,7 @@ for _, mode in ipairs({"refused", "throw", "missing"}) do
 end
 evacuation = "success"
 assert(holds.discard("transfer") and not holds.get("transfer"))
+assert(#notices == 0, "failed preparation or discard announced an arrival")
 print("PASS partial staging and refused discard retain quarantine; incomplete preparation cannot activate")
 
 surface.find_entities_filtered = function() return {} end
@@ -55,6 +61,7 @@ assert(holds.go_live("released"))
 local firstReceipt = env.storage.surface_export_transfer_receipts.destination_live.records.released
 local replayOk, replayReceipt = holds.go_live("released")
 assert(replayOk and replayReceipt == firstReceipt, "lost activation reply cannot be retried")
+assert(#notices == 1 and notices[1] == "Platform 'fixture' arrived.", "release replay duplicated the arrival")
 platform.valid = false
 assert(not holds.go_live("released"), "receipt accepted a missing destination")
 platform.valid = true
@@ -69,6 +76,13 @@ assert(holds.stage("preparing", platform, force, true, {platform_hidden = false,
 assert(holds.go_live("preparing"))
 assert(platform.hidden == false, "completed import retained temporary preparation visibility")
 print("PASS early preparation visibility is restored only through a validated hold")
+
+assert(holds.stage("print-failure", platform, force, true))
+local print_notice = env.game.print
+env.game.print = function() error("injected chat failure") end
+assert(holds.go_live("print-failure"), "chat failure changed the release result")
+assert(holds.go_live("print-failure"), "chat failure lost the release receipt")
+env.game.print = print_notice
 
 assert(holds.stage("identity", platform, force, true, nil, "import-a"))
 platform.name = "renamed"

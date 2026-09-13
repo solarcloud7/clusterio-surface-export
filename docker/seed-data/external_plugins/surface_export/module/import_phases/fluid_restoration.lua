@@ -252,7 +252,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 			msg = msg .. string.format("%s=%.1f ", name, amount)
 		end
 		log(msg)
-		game.print(msg, { 1, 0.5, 0 })
 	end
 
 	log(string.format("[Import] Fluid restoration complete: %d segment writes, %d storage writes.",

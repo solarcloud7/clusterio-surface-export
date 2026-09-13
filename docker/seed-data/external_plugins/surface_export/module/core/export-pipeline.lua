@@ -123,10 +123,8 @@ local function handle_pending_file_write(export_id)
 			local wrote_ok, write_err = Util.write_file_compat(filename, json_string, false)
 			if wrote_ok then
 				log(string.format("[Export] File written: %s (%d bytes)", filename, #json_string))
-				game.print(string.format("[Export] File written: script-output/%s", filename), {0, 1, 0})
 			else
 				log(string.format("[Export ERROR] write_file failed for %s: %s", filename, tostring(write_err)))
-				game.print(string.format("[Export ERROR] Could not write file %s", filename), {1, 0.3, 0})
 			end
 		else
 			log(string.format("[Export ERROR] Failed to serialize export for file write: %s", export_id))
@@ -190,7 +188,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		end
 		log(string.format("[Export] Platform %s was already locked, continuing with export", platform.name))
 	else
-		game.print(string.format("[Export] Locked platform %s for stable export...", platform.name), {1, 0.8, 0})
+		log(string.format("[Export] Locked platform %s for stable export...", platform.name))
 	end
 	Timing.start(job_id, "preparation")
 
@@ -311,7 +309,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 
 	if should_show_progress() and end_index % (batch_size * 10) == 0 then
 		local progress = math.floor((end_index / job.total_entities) * 100)
-		game.print(string.format("[Export %s] Progress: %d%% (%d/%d entities)",
+		log(string.format("[Export %s] Progress: %d%% (%d/%d entities)",
 			job.platform_name, progress, end_index, job.total_entities))
 	end
 
@@ -491,7 +489,6 @@ local function publish_completion(job)
 		"[Export Complete] %s (%d entities; %d ticks elapsed) - ID: %s",
 		job.platform_name, job.total_entities, duration_ticks, export_id
 	)
-	game.print(message, {0, 1, 0})
 	log(message)
 
 	if job.requester == "RCON" then
@@ -503,7 +500,7 @@ local function publish_completion(job)
 		local msg = {"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities):\n",
 			"  Scheduling: ", duration_ticks, " ticks elapsed\n",
 			"  Completion (belt+verify+compress): ", perf.completion}
-		game.print(msg)
+		log(msg)
 		log({"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities, ",
 			duration_ticks, " ticks) WALL CLOCK total: ", perf.total})
 		log({"", "[Perf] Export '", job.platform_name, "' completion phase (belt+verify+compress): ",
@@ -579,7 +576,7 @@ local function publish_completion(job)
 	if not job.destination_instance_id then
 		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index, nil, nil, nil, job.job_id)
 		if unlock_success then
-			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
+			log(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name))
 			if clusterio_api and clusterio_api.send_json then
 				GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed", function()
 					clusterio_api.send_json("surface_platform_state_changed", {
@@ -604,8 +601,6 @@ local function publish_completion(job)
 		else
 			log(string.format("[Clone Platform] FAILED to queue import for '%s': %s",
 				job.clone_dest_name, tostring(import_err)))
-			game.print(string.format("[Clone Platform] Import FAILED for '%s': %s",
-				job.clone_dest_name, tostring(import_err)), {1, 0, 0})
 		end
 	end
 
@@ -761,9 +756,10 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	log(string.format(
 		"[Cargo integrity][ABORT] Transfer export '%s' ABORTED — source cargo integrity failure: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
 		job.platform_name, mismatch_count, tostring(written)))
-	game.print(string.format(
-		"[Cargo integrity] Transfer of '%s' ABORTED — source cargo mismatched or could not be measured; source preserved.",
-		job.platform_name), {1, 0.3, 0})
+	GameUtils.pcall_warn("[Transfer] Abort notice failed", function()
+		game.print(string.format("Platform '%s' aborted transfer: source cargo mismatched or could not be measured.",
+			job.platform_name), {1, 0.3, 0})
+	end)
 
 	Timing.start(job.job_id, "source_unlock")
 	local unlock_success = SurfaceLock.unlock_platform(job.platform_index, nil, nil, nil, job.job_id)

@@ -202,7 +202,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     
     if should_show_progress() and end_index % (batch_size * 10) == 0 then
       local progress = math.floor((end_index / job.total_entities) * 100)
-      game.print(string.format("[Import %s] Progress: %d%% (%d/%d entities)",
+      log(string.format("[Import %s] Progress: %d%% (%d/%d entities)",
         job.platform_name, progress, end_index, job.total_entities))
     end
     

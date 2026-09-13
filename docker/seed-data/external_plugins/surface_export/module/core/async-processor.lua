@@ -40,10 +40,8 @@ function AsyncProcessor.set_sync_mode(value)
 	config.sync_mode = value
 	if value then
 		log("[AsyncProcessor] SYNC MODE ENABLED - all entities will be processed in single tick")
-		game.print("[AsyncProcessor] SYNC MODE ENABLED - all entities processed in single tick (debugging)", {1, 1, 0})
 	else
 		log("[AsyncProcessor] Sync mode disabled - normal async processing")
-		game.print("[AsyncProcessor] Sync mode disabled - normal async processing", {0, 1, 0})
 	end
 end
 

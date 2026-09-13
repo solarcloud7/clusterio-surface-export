@@ -6,7 +6,7 @@ local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; re
 
 local function scenario(options)
     local events, spans, open, scratch, cache = {}, {}, {}, 0, {}
-    local env = setmetatable({game = {tick = 100, print = noop, forces = {}}, log = noop,
+    local env = setmetatable({game = {tick = 100, print = function() error("import phases must not broadcast chat") end, forces = {}}, log = noop,
         storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {}},
         prototypes = {entity = {beacon = {type = "beacon"}}}, table_size = size}, {__index = _G})
     local function mark(name)

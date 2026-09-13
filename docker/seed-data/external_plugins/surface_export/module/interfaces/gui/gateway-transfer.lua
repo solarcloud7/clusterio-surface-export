@@ -209,7 +209,6 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	}
 
 	if result.started then
-		player.print({"", "✓ Gateway transfer started: '", platform.name, "' → ", target.instanceName or tostring(target.instanceId)})
 		GatewayTransferGui.close(player)
 		return
 	end

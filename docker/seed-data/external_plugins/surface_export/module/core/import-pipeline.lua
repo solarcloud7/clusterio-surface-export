@@ -272,7 +272,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	if not new_platform_name or new_platform_name == "" then
 		name_was_missing = true
 		new_platform_name = "Imported Platform"
-		game.print("[Import Warning] No platform name provided, assigning default name", {1, 0.5, 0})
+		log("[Import Warning] No platform name provided, assigning default name")
 	end
 
 	local function platform_name_exists(name)
@@ -291,15 +291,15 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			counter = counter + 1
 		end
 		final_name = string.format("%s #%d", new_platform_name, counter)
-		game.print(string.format("[Import Warning] Platform '%s' already exists, renamed to '%s'",
-			new_platform_name, final_name), {1, 0.5, 0})
+		log(string.format("[Import Warning] Platform '%s' already exists, renamed to '%s'",
+			new_platform_name, final_name))
 	elseif name_was_missing then
 		local counter = 1
 		while platform_name_exists(string.format("Imported Platform #%d", counter)) do
 			counter = counter + 1
 		end
 		final_name = string.format("Imported Platform #%d", counter)
-		game.print(string.format("[Import Warning] Assigned name: '%s'", final_name), {1, 0.5, 0})
+		log(string.format("[Import Warning] Assigned name: '%s'", final_name))
 	end
 
 	Timing.stop(job_id, "platform_naming")
@@ -607,7 +607,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	if not job.target_surface or not job.target_surface.valid then
 		log(string.format("[Import Batch] ABORT: Target surface became invalid for job %s (platform '%s')",
 			job.job_id, job.platform_name))
-		game.print("[Import Error] Target surface became invalid", {1, 0, 0})
+		log("[Import Error] Target surface became invalid")
 		return true
 	end
 

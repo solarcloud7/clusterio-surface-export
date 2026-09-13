@@ -468,7 +468,6 @@ function ImportCompletion.run_phase2(job, batch_size)
 		"[Import Complete] %s (%d entities; %d ticks elapsed)",
 		job.platform_name, job.total_entities, duration_ticks
 	)
-	game.print(message, {0, 1, 0})
 	log(message)
 
 	if job.requester == "RCON" then
@@ -692,8 +691,8 @@ function ImportCompletion.run_phase2(job, batch_size)
 				PhaseRecorder.stop(job, "activation")
 
 
-				game.print(string.format("[Validation] Validation passed - platform %s prepared; awaiting source deletion",
-					job.platform_name), {0, 1, 0})
+				log(string.format("[Validation] Validation passed - platform %s prepared; awaiting source deletion",
+					job.platform_name))
 
 				if success and job.park_target and job.target_platform and job.target_platform.valid then
 					local tp = job.target_platform
@@ -760,10 +759,10 @@ function ImportCompletion.run_phase2(job, batch_size)
 		end
 
 		if not success then
-			game.print(string.format(
+			log(string.format(
 				"[Transfer Validation Failed] %s",
 				result.mismatchDetails or "Unknown error"
-			), {1, 0, 0})
+			))
 
 			Timing.start(job.job_id, "failure_diagnostics")
 			local black_box_ok, black_box_result = pcall(bank_failure_black_box, job, result)
@@ -833,7 +832,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 				job.metrics.belt_shape_error and (" — payload refused: " .. job.metrics.belt_shape_error)
 					or (job.metrics.belt_restore_error and (" — restore error: " .. job.metrics.belt_restore_error) or "")),
 		}
-		game.print(string.format("[Import FAILED] %s", validation_result.mismatchDetails), {1, 0, 0})
+		log(string.format("[Import FAILED] %s", validation_result.mismatchDetails))
 		log("[Import] Non-transfer import FAILED on belt structural anomalies: "
 			.. tostring(job.metrics.belt_anomalies))
 	end
@@ -945,18 +944,18 @@ function ImportCompletion.run_phase2(job, batch_size)
 			if not ticks then return "n/a" end
 			return string.format("%d ticks elapsed", ticks)
 		end
-		game.print({"", "[Perf] Import '", job.platform_name, "' (", job.total_entities, " entities)"})
-		game.print({"", "  Setup:         ", perf.queue_setup})
-		game.print({"", "  Tiles:         ", phase_ms_display("tiles")})
-		game.print({"", "  Beacons:       ", perf.beacons})
-		game.print({"", "  Entities:      ", phase_ms_display("entities")})
-		game.print({"", "  Hub restore:   ", perf.hub_restore})
-		game.print({"", "  Belts:         ", perf.belts})
-		game.print({"", "  State:         ", perf.state})
-		game.print({"", "  Inventories:   ", perf.inventories})
-		game.print({"", "  Validation:    ", perf.validation})
-		game.print({"", "  Activation:    ", perf.activation})
-		game.print({"", "  Fluids:        ", perf.fluids})
+		log({"", "[Perf] Import '", job.platform_name, "' (", job.total_entities, " entities)"})
+		log({"", "  Setup:         ", perf.queue_setup})
+		log({"", "  Tiles:         ", phase_ms_display("tiles")})
+		log({"", "  Beacons:       ", perf.beacons})
+		log({"", "  Entities:      ", phase_ms_display("entities")})
+		log({"", "  Hub restore:   ", perf.hub_restore})
+		log({"", "  Belts:         ", perf.belts})
+		log({"", "  State:         ", perf.state})
+		log({"", "  Inventories:   ", perf.inventories})
+		log({"", "  Validation:    ", perf.validation})
+		log({"", "  Activation:    ", perf.activation})
+		log({"", "  Fluids:        ", perf.fluids})
 		TransactionHistory.record_import(job, validation_result, perf)
 		
 		PhaseProfiler.discard(job.job_id)

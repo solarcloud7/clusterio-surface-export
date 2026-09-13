@@ -99,5 +99,4 @@ attribution and session links from commits and PR bodies.
 When a merge is authorized, verify main's own post-merge checks before calling that
 delivery complete; PR checks do not establish the merged revision's result.
 
-The canonical checklist is `.agents/skills/di-change/SKILL.md`; the Claude entrypoint
-links here so both tools use the same requirements.
+Maintain this shared checklist in `.agents/skills/di-change/SKILL.md`.
