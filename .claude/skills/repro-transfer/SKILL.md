@@ -1,70 +1,32 @@
 ---
 name: repro-transfer
-description: Reproduce a Factorio platform transfer (export → controller route → import → validation) end-to-end on the LOCAL docker cluster, instead of relying on CI. Use to run/test/smoke a transfer or diagnose any transfer/import/validation failure. Local repro is the default; do not parse CI logs unless explicitly asked.
+description: Reproduce a transfer with existing local or disposable fixtures and retain independent evidence.
 ---
 
-# repro-transfer — reproduce a platform transfer locally
+# Reproduce a transfer
 
-Drive the full transfer pipeline against the running local cluster and see exactly where it stalls. Faster and more debuggable than CI. **Debug locally first** — do not parse CI logs unless asked.
+Establish the symptom, deployed version and required fixture first. Read
+[test selection](../../../docs/developers/testing.md). Ordinary integration uses
+the configured cluster, not a disposable one. Use the manual Docker lab for
+destructive recovery cases and preserve the development cluster.
 
-Paths below are relative to the repo root. The driver is `tools/surface-export/repro-transfer.ps1`.
+The local driver is `tools/surface-export/repro-transfer.ps1`. Inspect its
+parameters and required source before running it; an old example naming a
+`test` platform does not establish that it exists. The driver clones, transfers
+and cleans its fixture. A clone made by the serializer is not its independent oracle.
 
-## Run it (the driver — start here)
+1. Confirm loaded plugin/Lua versions and idle-world prerequisites.
+2. Preserve the failure and independently read relevant physical state.
+3. Run the bounded fixture and its control/fault cases.
+4. Check validation, recovery, cleanup and physical source/destination observations.
+5. Verify owned fixture and persistent-state cleanup without deleting protected
+   platforms or resetting the world. Report leftovers explicitly.
 
-One command clones a real platform, transfers it across instances, waits for the destination success signal, and exits 0 (PASS) / 1 (FAIL):
+Use [the deployment wrapper](../../../docs/developers/workflow.md) to load changes.
+Do not compile or install dependencies in a live mount just to run checks. Do not
+use direct `game.delete_surface` as generic recovery. `LuaSpacePlatform.destroy`
+schedules deletion; it is not a universal silent no-op.
 
-```powershell
-./tools/surface-export/repro-transfer.ps1
-```
-
-Verified PASS output (this is what success looks like — ~30s, the `test` platform is 1359 entities):
-```
-  OK  clone queued (1359 entities)
-  OK  clone complete
-  OK  clone at index 7
-  OK  transfer initiated
-  OK  import-result present (3s)
-  PASS  transfer completed — 'reprotest_<stamp>' is on clusterio-host-1-instance-1. ... validation_received: Validation: SUCCESS
-  OK  cleaned up
-```
-Options: `-SourceHost 2` (host holding `test`), `-SourcePlatform test`, `-TimeoutSec 150`, `-KeepResult` (don't delete the transferred platform afterward).
-
-If it exits 1, the line tells you the failing layer; then read the logs (next section).
-
-## Preconditions
-```powershell
-docker ps --format "{{.Names}}: {{.Status}}"        # controller + host-1 + host-2 healthy
-./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"   # -> true
-```
-After a host plugin (`*.ts`) change, rebuild dist in-container and restart hosts so the new module loads:
-```powershell
-docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'
-docker restart surface-export-host-1 surface-export-host-2
-```
-
-## When it FAILS — find the layer
-```powershell
-./tools/clusterio/check-cluster-logs.ps1 -Grep "transfer_created|import_started|validation|transfer_completed|sendRequest|Error handling|rollback"
-```
-(Use the `/cluster-logs` skill for the full log map.) Happy path in the aggregated cluster log:
-`Auto-transfer requested` → `Transfer initiated: <id>` → `transfer_created` → `import_started` → `validation_received: Validation: SUCCESS` → `transfer_completed`.
-
-Where it stops = the layer at fault:
-- Stops after **export stored**, no `transfer_created` → the instance never sent `TransferPlatformRequest`. Check the host JSON log for `Error handling export completion: … reading 'sendRequest'` — the unbound-method footgun (CLAUDE.md: never extract a Clusterio Link method — call it bound).
-- `import_started` then `validation_timeout` (120s) → destination import never emitted validation. Read host-2's host JSON log + factorio log.
-- `validation_received: FAILED` → real item/fluid mismatch. Read `[Loss Analysis]` / `[Validation]` in the destination factorio log.
-
-## What the driver does (manual equivalent, for one-off control)
-1. Clone a realistic source (async). `clone_platform` keys the source on the unique per-force **index** (names aren't unique), so resolve the index first, then clone: `local i; for k,p in pairs(game.forces.player.platforms) do if p.name=='test' then i=k end end; remote.call('surface_export','clone_platform', i, '<newname>')` on the source host, then wait for `storage.async_jobs` to drain. Prefer the real `test` platform (host-2, ~1359 entities, has a schedule) — a hub-only stub has no schedule and hits a benign `Index out of bounds` on unlock/rollback that is NOT representative.
-2. `./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1` (or `/transfer-platform <idx> <destId>`). If "already locked" from a prior run: `./tools/clusterio/rcon.ps1 21 "/unlock-platform <name>"`.
-3. Poll the destination success signal (what CI's integration test waits on):
-   `docker exec surface-export-host-1 sh -c 'ls /clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_import_result_*.json'`
-   (`/clusterio/data/instances/…`, NOT `/clusterio/instances/…`. Requires `debug_mode`, default true on fresh saves.)
-
-## Gotchas
-- **Never `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir while the cluster is up.** The plugin lists `@clusterio/*` as peer+dev deps; npm 7+ auto-installs peers, dropping a 2nd `@clusterio/lib` into the shared bind-mounted `node_modules` → `clusterioctl` dies with `Attempt to import duplicate copy of @clusterio/lib` (and this driver hangs on its RCON calls). Recover: `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'`. To build locally use `npx tsc` (above), not `npm install`.
-- A successful transfer **deletes the source and creates on the destination**; the driver cleans up its own clone afterward unless `-KeepResult`.
-- `game.delete_surface(platform.surface)` is the only reliable platform delete — `platform.destroy()` is a silent no-op; use `GameUtils.delete_platform`.
-
-## Reference
-- Reading logs: the **`/cluster-logs`** skill. CLAUDE.md → "Export/Import Workflow Notes" and "Observability".
+Read logs through `cluster-logs`. Queue waits and unavailable status are
+nonterminal; there is no fixed 120-second validation-failure rule. Apply the
+canonical data-integrity skill to fixes affecting cargo or ownership.

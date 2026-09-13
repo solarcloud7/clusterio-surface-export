@@ -176,7 +176,7 @@ Recovery now starts from the actual `init` hook; a regression checks that lifecy
 
 `ci-artifacts/transfer-cleanup-mtsqusla.json` separately verified held-state survival across a graceful,
 save-preserving Factorio reload. Neither test proves durability through an abrupt process loss or an
-older save. Receipts are bounded and save-local; see [handoff and recovery](../../../docs/TRANSFER_2PC.md).
+older save. Receipts are bounded and save-local; see [handoff and recovery](../../../docs/technical/transfers.md).
 
 The callback-profile run `ci-artifacts/transfer-cleanup-mtss5rbi.json` also passed ordinary recovery.
 It recorded two source callbacks (maximum 11.305 ms) and eighteen destination callbacks (maximum

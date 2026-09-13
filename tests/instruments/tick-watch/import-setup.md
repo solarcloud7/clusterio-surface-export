@@ -1,7 +1,8 @@
 # Import setup hitch investigation
 
-Factorio 2.1.17, module 0.10.281, 2026-09-09. This investigation does not change
-the production serializer, wire format, import scheduler or cargo gate.
+Historical investigation: Factorio 2.1.17, module 0.10.281, 2026-09-09.
+The baseline and isolated candidates below describe that revision. Current codec
+and scheduler behavior is documented in [batching](../../../docs/technical/batching.md).
 
 ## Reproduced boundary
 
@@ -12,7 +13,7 @@ characters. Entities account for 1,924,784 JSON bytes and tiles for 1,060,097;
 together they are about 96.5% of the document. These are measured bytes of this
 fixture, not a bound on other platforms.
 
-`ImportPipeline.queue` does the following before inserting the import job into
+At that baseline revision, `ImportPipeline.queue` performed the following before inserting the import job into
 `storage.async_jobs`:
 
 1. Parse the small outer envelope.
@@ -98,7 +99,7 @@ The decode experiment measures its supplied payload and codec callbacks. It does
 not establish a whole-transfer speedup, a worst client update gap, or crash
 recovery for a changed wire format. Smaller RCON chunks do not divide the cost of
 an indivisible JSON decode. Current sectional encoding and shared scheduling are
-described in [batching and timing](../../../docs/async-processing.md).
+described in [batching and timing](../../../docs/technical/batching.md).
 
 ## External compression and 1x/2x/4x codec scaling
 
@@ -139,7 +140,7 @@ or fresh performance result is claimed for those tooling additions.
 
 ### Live commands and boundaries
 
-Run the next rung manually:
+Replay the recorded codec comparison with:
 
 ```powershell
 node tests/instruments/tick-watch/codec-scaling.mjs --cleanup-proof
@@ -155,8 +156,8 @@ These are larger data workloads, **not physically larger platforms**. Both Facto
 codec endpoints run on unoccupied host-2. The Node process runs in that container,
 uses persistent localhost RCON, and compresses frames through asynchronous zlib
 with one outstanding compression operation. No deployment or game-world mutation
-occurs. Compression is outside Factorio; this is not yet the production Clusterio
-import handler.
+occurs. Compression in this experiment is outside Factorio; its isolated codec path
+is not the production Clusterio import handler.
 
 Each source callback serializes one whole-record JSON frame, at most 64 KiB.
 Node receives it, compresses and base64-encodes it, then submits it to the separate

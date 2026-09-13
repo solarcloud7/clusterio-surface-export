@@ -1,0 +1,70 @@
+# Transfer platforms
+
+Surface Export moves Space Age platforms between Factorio instances managed by
+Clusterio. Your administrator supplies the servers, compatible mod packs and access
+permissions. Start with a disposable platform before transferring a valuable one.
+
+## Use the web map
+
+1. Open **Surface Export → Gateways** in the Clusterio web interface.
+2. Select a platform on its source instance and choose **Transfer**.
+3. Choose the destination instance and, if needed, its arrival location. Confirm once.
+4. Follow the platform on the route. A queued platform waits near the source;
+   movement and status labels show the operation's progress.
+5. Open **Transaction Logs** and select the operation to inspect its result.
+
+The dialog closes after submission. Errors appear as notifications; the map and
+history provide ongoing progress. Animation illustrates state, not measured travel
+distance or a promise about completion time. Do not submit another import simply
+because a reply is delayed.
+
+**Completed** means the controller received successful destination validation,
+confirmed its temporary protection, and received source-deletion and
+destination-release acknowledgements. **Cleanup needs attention** means an
+ownership question remains unresolved. Ask an administrator to inspect it before
+manually unlocking or deleting anything.
+
+## Travel through an in-game gateway
+
+The default layout has one Transfer Gateway per instance, connected to Nauvis,
+Vulcanus, Gleba, Fulgora and Aquilo. It is a space location, not another planet.
+Your administrator configures which other instances it connects to.
+
+Send a platform to the gateway and wait until it is parked. Choose the destination
+in the arrival dialog. An administrator can also open the chooser with
+`/gateway-gui <platform_index>` or transfer directly with
+`/transfer-platform <platform_index> <destination_instance_id>`.
+Use `/list-platforms` for current indexes. An instance ID is not a host number;
+platform names are labels, and indexes are local locators, not persistent identity.
+
+Passengers do not travel to the other server with the platform. Before deleting
+the source, the plugin attempts to evacuate passengers and abandoned character
+bodies to Nauvis, with another non-platform surface as a fallback. Failed
+evacuation prevents deletion and requires recovery. Server switching is a separate
+action through the teleport interface.
+
+## Export or import a copy
+
+**Export JSON** in an instance's platform list downloads a snapshot and retains
+the source platform. **Import** uploads a supported snapshot to a destination and
+creates a new platform. These are copying operations, unlike a transfer.
+
+**Restore from snapshot** in transaction details creates a separate recovery
+import when a usable stored payload remains. Another copy may already exist;
+confirm the destination with your administrator. A diagnostic report alone is
+not necessarily an importable snapshot.
+
+## Map controls and warnings
+
+Host, instance and platform selectors help locate platforms. Reset reframes the
+map and clears saved positions. Positions and line style are local to your browser.
+Editing connections requires transfer permission; changes take effect when saved.
+A failure while saving several connections can leave only some changes applied.
+
+Save-recovery warnings explain whether an older source was accepted as a new copy
+or kept protected. Offline or uncertain identity is **unverified**, not proof that
+the platform is missing. Acknowledging an accepted-copy warning only hides that
+notice in your browser; it does not change transfer history or ownership.
+
+Continue with [reading transaction logs](transaction-logs.md). Administrators can
+use [configuration](../admins/configuration.md) and [recovery](../admins/recovery.md).

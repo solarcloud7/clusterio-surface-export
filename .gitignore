@@ -5,7 +5,7 @@ docs/dev-docs/
 docker/clusterio-containers/
 # Guard: Clusterio core dev lives in the SIBLING fork checkout (../clusterio), NEVER in-repo.
 # Keep this ignore so a stray in-repo `clusterio/` clone can't be committed again (it was once
-# accidentally committed as a submodule gitlink). See CLAUDE.md "Clusterio core development".
+# accidentally committed as a submodule gitlink). See docs/developers/clusterio-integration.md.
 /clusterio/
 
 # Seed data - keep structure, ignore large binary files

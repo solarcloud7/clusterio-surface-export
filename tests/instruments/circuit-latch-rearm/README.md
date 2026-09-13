@@ -2,7 +2,7 @@
 
 ## Baseline contract, 2026-09-07
 
-Before trying a replacement, reproduce the unchanged deployed rearm method failing
+The baseline experiment reproduced the then-deployed rearm method failing
 to preserve a nonzero, stable self-feedback memory register. This is the documented
 count-restoration limitation, not proof of every separate audit finding.
 
@@ -85,9 +85,10 @@ The differing source values result from external arming duration, explicitly out
 the invariant. Both runs require preservation of the captured stable source register.
 The arbitrary-count loss is reproduced; the audit hypotheses concerning write errors,
 slow counters, extra signals and overlapping transfers are NOT reproduced by this fixture.
-Next rungs must test coupled circuits and changing counters at tick boundaries,
-output isolation, power interruption, failed restoration writes, and full transfer
-admission/completion before integrating a replacement. No performance claim is made.
+That isolated candidate did not establish coupled-network behavior, counter
+phase continuity, output isolation or power-interruption recovery. The subsequent
+installed-code and transfer observations below have their own scope. No performance
+claim follows from the isolated candidate.
 
 API source: https://lua-api.factorio.com/latest/concepts/DeciderCombinatorOutput.html
 (`constant` is an explicit int32 output value when input copying is disabled).

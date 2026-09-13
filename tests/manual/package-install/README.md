@@ -8,6 +8,11 @@ hash, and require matching hashes in the lab. Verify entrypoint loading, peer id
 web manifest files and Lua version. The existing lost-source-reply fixture must retain
 exact physical cargo, one import and complete recovery after controller restart.
 
+The prerequisite build below writes `dist` in the canonical plugin directory,
+which is mounted by the development cluster. Coordinate that build with its users.
+The package runner packs that directory; it does not select an isolated build
+output directory. The subsequent install and game tests use disposable resources.
+
 ```powershell
 ./tools/clusterio/build-plugin.ps1 -Target all
 node tests/manual/package-install/run.mjs --cleanup-proof

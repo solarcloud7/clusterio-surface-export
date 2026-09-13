@@ -1,110 +1,78 @@
 # Clusterio Surface Export
 
-Transfer Factorio Space Age platforms between Clusterio instances. The project contains a TypeScript plugin, a save-patched Lua module, and the gateway mod.
+Transfer Factorio Space Age platforms between Clusterio instances. The project
+contains a TypeScript plugin, a save-patched Lua module and the gateway mod.
 
-**Status: development / pre-production.** Bounded transfer/recovery, coordinated volume restoration and packaged fresh-install fixtures pass. Upgrade compatibility, broader disaster recovery and supported operating limits remain open. The root Docker cluster is a development environment.
+**Status: development / pre-production.** Bounded transfer/recovery, coordinated
+volume restoration and packaged fresh-install fixtures pass. Upgrade compatibility,
+broader disaster recovery and supported operating limits remain open. The root
+Docker cluster is a development environment.
+
+## Start here
+
+- [Use gateways and transfer platforms](docs/users/transfers.md)
+- [Read outcomes and audit evidence](docs/users/transaction-logs.md)
+- [Host a packaged deployment](docs/admins/deployment.md)
+- [Configure the plugin](docs/admins/configuration.md)
+- [Back up and recover worlds](docs/admins/recovery.md)
+- [Set up development](docs/developers/setup.md)
+- [Build, test and contribute](docs/developers/workflow.md)
+- [Understand Clusterio integration](docs/developers/clusterio-integration.md)
+
+The [documentation index](docs/README.md) also covers queues, batching, validation,
+timing and recovery records for technical readers.
 
 ## What it does
 
-- Captures supported entity state, tiles, inventories, belt items, fluids, and connections.
-- Restores entities and belt groups in batches, with yields between safe import phases.
-- Checks destination item quantities by item and quality, and fluid quantities through the transfer validation gate. A failed check triggers recovery; item loss is not an acceptable tolerance.
-- Shows transfer progress on the gateway map and retains transaction summaries, detailed audit evidence, and measured timings according to configured limits.
-- Exposes controller retention and timeout settings in the Settings tab; batching and diagnostics are configured per instance.
+The plugin captures supported entity state, tiles, inventories, belt items, fluids
+and connections. It restores them in stages, validates destination cargo and
+coordinates source deletion and destination release. Standalone export/import and
+explicit snapshot recovery create copies and have different ownership behavior.
 
-Lua work runs synchronously within each callback. Import and export jobs share a tick budget, and tiles and several restoration phases yield between batches. Native JSON/compression calls, large belt groups and other indivisible work can still stall the simulation. Tick counts and measured milliseconds are separate signals. See [batching and timing](docs/async-processing.md) for boundaries and measured fixture results; there is no general no-lag or transfer-time guarantee.
+Gateways shows queued and active operations. Transaction Logs retains summaries,
+audit evidence and measured timings according to configured limits. Controller
+settings and per-instance batching/diagnostic settings have separate owners.
 
-## Local development
-
-Use the canonical checkout with Docker Desktop and PowerShell 7. The current seed instances pin Factorio **2.1.17**; package dependencies pin Clusterio **2.0.0-alpha.27**. The container image tag is pinned separately in [.env.example](.env.example).
-
-Follow [Docker setup](docker/README.md) for first startup and client-mod synchronization. Once the cluster is running:
-
-```powershell
-# Web-only changes
-./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController
-
-# Lua changes: back up and reload the current saves
-./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves
-
-# Plugin + web + Lua changes, preserving current saves
-./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves
-
-# Read cluster logs
-node tools/clusterio/read-cluster-logs.mjs 'error|transfer|validation' 20 2000
-
-# List the integration suites before choosing a live test
-node tools/tests/run-integration-tests.mjs --list
-```
-
-Use the isolated build helper instead of installing dependencies into the live bind-mounted plugin directory. Save-preserving reload creates local pre-deploy saves and checks the resulting world; it is not an off-host backup service. Destructive reset commands belong only on disposable development/test clusters.
-
-## Use
-
-Open **Surface Export -> Gateways**, select a platform, and confirm its destination. The controller queues overlapping requests. Follow the operation in **Transaction Logs**, including its validation evidence and cleanup or rollback result.
-
-The in-game command is `/transfer-platform <platform_index> <destination_instance_id>`. Use actual instance IDs, not host numbers. See the [transfer walkthrough](docs/QUICK_START.md) and [command reference](docs/commands-reference.md).
-
-Export/import can also create independent copies; it is distinct from a transfer that removes the source after destination validation.
-
-## Checks
-
-```powershell
-./tools/clusterio/build-plugin.ps1 -Target lint
-./tools/clusterio/build-plugin.ps1 -Target test
-npm test
-lua tests/lua/import-phase-yields.lua
-```
-
-Run build/deploy/browser workflows sequentially; they share a checkout lock. Live suites can transfer or reset fixtures, so use their documented prerequisites. See [tests](tests/README.md), [testing contracts](docs/testing.md), and [CI](docs/CI_CD.md).
-
-For manually triggered, automated reply-loss, crash, save-rollback and callback-cost experiments,
-run `npm run test:manual:transfers -- --list`. The [manual Docker lab](tests/manual/transfer-reliability/README.md)
-creates a disposable cluster and preserves the live development cluster. These cases do not run in ordinary CI.
-
-For a clean consumer install through `npm init @clusterio`, see the
-[consumer installation lab](tests/manual/consumer-install/README.md). It accepts a plugin tarball,
-gateway ZIP, and an existing licensed client volume; no development seed saves are used.
+Lua runs synchronously inside each callback. Jobs share deterministic work limits
+and yield at selected boundaries; native codec calls and large individual work
+units can still stall simulation. Ticks and measured milliseconds are separate.
+See [batching](docs/technical/batching.md) and [timing](docs/technical/timing.md).
 
 ## Verification and limits
 
-The retained candidate package passed
-native install/recovery acceptance and a hosted publication rehearsal. A separate
-consumer install through Clusterio's initializer passed fresh saves, real locale/icons,
-authenticated browser checks and lost-reply recovery. Publication itself and historical
-upgrades were not exercised. See the [retained package evidence](tests/manual/package-install/README.md)
-and [consumer evidence](tests/manual/consumer-install/evidence/accepted-0.10.281.json).
+The recorded package and consumer acceptance used **0.10.281**, Clusterio
+**2.0.0-alpha.27** and Factorio Space Age **2.1.17**. Those results identify
+historically tested artifacts, not a certification of every later source revision
+or a statement about the currently published release. The current seed runtime and
+dependency pins are in their configuration; the Docker image revision is in
+[.env.example](.env.example).
 
-The [packaged deployment profile](docker/production/README.md) separates runtime images
-and persistent data from development source. Its [complete restoration acceptance](tests/manual/production-profile/evidence/complete-restore-0.10.281.json.gz)
-passed fresh worlds, all twelve volumes restored into new owned resources, explicit save
-selection, settings, authentication, exact cargo, history, assets and another transfer.
-Lost-reply recovery and controller recreation also passed. The [incident procedure](docker/README.md#incident-and-backup-procedure)
-still applies. The evidence covers the recorded image pair, runtime, and fixtures.
-
-| Area | Verified scope and limitations |
+| Area | Retained evidence and limits |
 |---|---|
-| Recovery | Both save policies, pending handoffs and explicit snapshot recovery pass [bounded fixtures](tests/manual/transfer-reliability/README.md#configurable-save-recovery). The original unassisted [destination rollback after release](tests/manual/transfer-reliability/README.md#destination-save-rollback) still leaves a missing platform. Manual restoration creates a separate import and preserves that history. Missing journals and receipt eviction remain unproven. |
-| Backup and restore | The [complete profile drill](tests/manual/production-profile/README.md) restores twelve stores into fresh containers and volumes on the same machine and image pair. Mixed backup generations, rebuilding another host and off-host backup handling remain untested. |
-| Callback cost | Phase yields and fixture measurements are recorded in [batching and timing](docs/async-processing.md). Indivisible native operations and large lane groups remain synchronous. There is no general platform-size or callback-time guarantee. |
-| Installation and upgrades | Exact-package fresh installation and the publishing handoff are exercised. Historical saves/journal migration and code rollback are unverified. Fresh-install evidence does not establish upgrade compatibility. |
+| Transfer recovery | [Manual fixtures](tests/manual/transfer-reliability/README.md) cover their save-policy, lost-reply and crash boundaries with independent cargo checks. Original failures remain recorded. |
+| Destination save rollback | The [original rollback case](tests/manual/transfer-reliability/README.md#destination-save-rollback) left a missing platform. Explicit snapshot restoration is a separate import, not automatic repair of that old outcome. |
+| Backup/restore | [Production acceptance](tests/manual/production-profile/README.md) restored all twelve resolved stores into fresh resources on the same machine/image pair, then checked cargo, history, settings, authentication, assets and another transfer. Mixed generations and off-host disaster recovery remain separate cases. |
+| Installation | [Package acceptance](tests/manual/package-install/README.md) and [consumer installation](tests/manual/consumer-install/README.md) record exact bytes, fresh worlds and native checks. Fresh installation is not proof of historical upgrade or code-rollback compatibility. |
+| Performance | [Retained experiments](tests/README.md) identify fixture sizes and measured boundaries. There is no general no-lag, platform-size or transfer-duration guarantee. |
+
+Do not treat an unavailable status as permission to replay an import or unlock a
+protected source. Follow [recovery](docs/admins/recovery.md) and preserve both worlds
+and their matching journals before intervention.
 
 ## Repository map
 
 | Path | Purpose |
 |---|---|
-| [Plugin](docker/seed-data/external_plugins/surface_export/) | Controller, instance bridge, CLI, web UI, shared types, and Lua module |
-| [Gateway mod](docker/seed-data/mods-src/surfexp_gateways/) | Factorio prototypes and gateway graphics |
-| [Tools](tools/) | Build, deployment, diagnostics, and test helpers |
-| [Tests](tests/) | Unit tests, live regressions, retained experiments, and fixtures |
-| [Documentation](docs/README.md) | Focused reference index |
+| [Plugin](docker/seed-data/external_plugins/surface_export/) | Controller, instance bridge, CLI, web UI and Lua module |
+| [Gateway mod](docker/seed-data/mods-src/surfexp_gateways/) | Factorio prototypes and graphics |
+| [Tools](tools/) | Build, deployment, diagnostics and test helpers |
+| [Tests](tests/) | Regressions, fixtures and retained experiments |
+| [Documentation](docs/README.md) | Human guides by task and audience |
 
-## Troubleshooting
-
-- **Validation failed:** inspect the failed stage and item/entity/fluid evidence in Transaction Logs. Preserve the diagnostic report; do not dismiss item differences as expected loss.
-- **Cleanup failed:** inspect both instances before retrying. The destination may already exist while the source remains. Follow the [recovery contract](docs/TRANSFER_2PC.md).
-- **Jobs do not advance:** check that the instance is running and game ticks are advancing. A paused simulation cannot process tick-batched jobs.
-- **Old web UI or Lua code:** use the matching deployment command above; web builds and save-patched Lua have separate reload paths.
+Use [Issues](https://github.com/solarcloud7/clusterio-surface-export/issues/new/choose)
+for actionable bugs, [Discussions](https://github.com/solarcloud7/clusterio-surface-export/discussions)
+for questions, and [private reporting](SECURITY.md) for security concerns.
+See [contributing](docs/developers/contributing.md).
 
 ## License
 

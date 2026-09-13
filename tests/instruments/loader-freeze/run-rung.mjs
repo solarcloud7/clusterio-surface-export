@@ -7,7 +7,7 @@
 //           exemplar platform lab-omnibus-platform-v1 does not exist; measured 2026-08-12)
 // produces: per-loader refill counts for three arms (control, disabled_by_script=true, re-enabled) on
 //           the built rigs, readback of the written flag, per-arm status names, and a verdict on
-//           docs/testing.md's "freeze the feed with disabled_by_script = true" instruction
+//           whether disabled_by_script stops the harness loaders at the tested pin
 // does not: measure transport-belt behavior,
 //           measure paused-platform behavior, assert item conservation, measure the save's four
 //           feed-less native loaders, or touch a protected fixture (it clones and sweeps)
@@ -229,10 +229,10 @@ return { success = true, paused = p.paused, rigs = rigs, loaders = list }`);
 		}
 		if (bFed.length === 0) {
 			say(`  FREEZES: 0/${b.rows.length} loaders refilled under disabled_by_script=true (control and re-enable ` +
-				"arms both refilled). docs/testing.md's instruction holds for loaders at this pin.");
+				"arms both refilled). disabled_by_script stopped the tested harness loaders at this pin.");
 		} else {
 			fail(`freeze DIVERGED: ${bFed.length}/${b.rows.length} loaders kept feeding under disabled_by_script=true — ` +
-				"docs/testing.md's freeze instruction no longer holds for loaders at this pin; re-measure before " +
+				"disabled_by_script did not stop every tested harness loader at this pin; re-measure before " +
 				"trusting any fill-harness freeze window");
 		}
 	} finally {

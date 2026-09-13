@@ -147,8 +147,8 @@ a new live experiment or a change to production restoration.
 The enum values were read from the running 2.1.17 engine and retained in
 `ci-artifacts/belt-lane-api-values.json`; do not infer them from documentation ordering.
 Fixture-wide side counts do not certify branch/route membership in arbitrary networks.
-At junctions, subsequent fixtures must distinguish actual route membership and legal
-flow from a restoration that puts an item onto the wrong branch or side.
+These fixture-wide counts alone do not distinguish legal flow through a junction
+from incorrect branch placement; the following fixture results retain that limit.
 
 Research confirmed the 2.1.17 LuaTransportLine members `line_equals`, `input_lines`,
 `output_lines`, `line_length`, and `total_segment_length`. They expose internal-line
@@ -156,15 +156,13 @@ equality, connections and lengths, not a stable persisted segment identity or an
 snapshot across callbacks. Any new physical observer using these fields still needs
 the pinned manifest, shape smoke and cleanup ladder before behavior claims.
 
-A separate future candidate can rebuild the full geometry, choose valid positions
-on the corresponding source lane, and verify exact physical lane deltas and item state.
-That candidate has not run. Do not describe the previous out-of-range coordinate
-failure as disproving lane-preserving reconstruction under this clarified requirement.
+The out-of-range coordinate failure did not disprove lane-preserving reconstruction.
+The subsequent same-lane candidate below rebuilt the geometry and checked physical
+lane deltas under the clarified position requirement.
 
 ## Same-lane reconstruction candidate (2026-09-08)
 
-Authorized continuation: test the simplest lane-preserving reconstruction before
-applying a production change. `--same-lane` uses the fidelity ladder, rebuilds all
+The isolated `--same-lane` candidate uses the fidelity checks and rebuilds all
 geometry, waits one tick, then restores one captured unit per callback. The isolated
 production-helper bundle changes only its insertion coordinate guard: finite captured
 positions are clamped to this same destination line's valid range. Entity identity,

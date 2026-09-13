@@ -27,8 +27,8 @@ Analyze again without the cluster using `--analyze <artifact>`.
 
 The profiler includes query plus projection for each algorithm, excluding equality
 checks. Results are paired local elapsed measurements, not exclusive CPU time or a
-universal speedup. Only apply the candidate to production after parity passes; then
-run the existing transfer/recovery acceptance fixture with exact physical cargo.
+universal speedup. The recorded deployment below followed tile-set parity and the
+existing transfer/recovery acceptance fixture with exact physical cargo.
 
 ## Read-only comparison — 2026-09-09
 

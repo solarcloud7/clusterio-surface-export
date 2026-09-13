@@ -85,6 +85,25 @@ interception exists only in the disposable containers through `NODE_OPTIONS`.
 
 ## What each case proves
 
+### Upload status and acknowledgement faults
+
+```powershell
+node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/<candidate-dist>
+node tests/manual/transfer-reliability/upload-status.mjs ci-artifacts/<candidate-dist> ci-artifacts/<candidate-package> notification
+```
+
+The first positional argument is the built candidate `dist` directory. The second
+optionally supplies its containing package; supply both when choosing a third-argument
+case: `notification`, `admitting`, `lost-notification` or `diagnostics`. Omitting the
+case selects the main acceptance suite; `diagnostics` runs separately. The fixture owns
+`se-manual-upload-*` Docker resources and records
+commands, observations and `result.json` in its run directory under `ci-artifacts`.
+Exit codes are 0 for PASS, 2 for STOP and 1 for a harness error.
+
+The diagnostics case deliberately leaves all four admission slots unresolved until
+its isolated resources are torn down. It checks declared capacity limits, not an
+allocation of 1 GiB of real payload data. Do not run it against a shared cluster.
+
 ### Configurable save recovery
 
 `--package-dir ci-artifacts/<runtime>` uses an already built staged plugin for these
@@ -621,6 +640,7 @@ Follow-up matrix `se-manual-mtt3yb2o-a3a8c621`, maximum callback milliseconds:
 | 518 entities: destination setup | 55.39 | 53.34 | 52.51 |
 | 518 entities: destination scheduler | 63.27 | 60.50 | 62.12 |
 
-Large source setup, JSON encoding and destination tile work remain synchronous. The
+In that recorded revision, large source setup, JSON encoding and destination tile
+work were synchronous. Current boundaries are in [batching](../../../docs/technical/batching.md). The
 small-fixture normal-mode spike and setup variation also remain visible; these three
 repetitions do not isolate instrumentation overhead from host scheduling noise.
