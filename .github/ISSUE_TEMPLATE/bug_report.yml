@@ -5,11 +5,17 @@ body:
   - type: markdown
     attributes:
       value: For security vulnerabilities, use [private reporting](https://github.com/solarcloud7/clusterio-surface-export/security/advisories/new). Remove tokens, passwords and license information from attachments.
-  - type: input
+  - type: textarea
     id: versions
     attributes:
       label: Versions and installation
       description: Plugin version or commit, Factorio and Clusterio versions, and Docker or standalone installation. Include other mods if relevant.
+      placeholder: |
+        Plugin version or commit:
+        Factorio version:
+        Clusterio version:
+        Installation (Docker or standalone):
+        Other mods:
     validations:
       required: true
   - type: textarea

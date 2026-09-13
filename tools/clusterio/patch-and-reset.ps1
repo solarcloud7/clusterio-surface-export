@@ -1,6 +1,7 @@
 param(
     [switch]$Help = $false,
-    [switch]$LuaOnly = $false
+    [switch]$LuaOnly = $false,
+    [switch]$SkipIncrement
 )
 
 if ($Help) {
@@ -20,7 +21,7 @@ Usage:
                                      # dist would silently ship old plugin code).
 
 This script:
-1. Bumps the plugin version (cache-bust marker)
+1. Bumps stable plugin versions unless -SkipIncrement is set. Prereleases require -SkipIncrement.
 2. Builds plugin artifacts (dist/node + dist/web) via tools/clusterio/build-plugin.ps1 — an isolated
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
    (skipped by -LuaOnly, guarded by the staleness tripwire above)
@@ -86,13 +87,13 @@ if ($LuaOnly) {
     Write-Host ""
 }
 
-Write-Host "Incrementing plugin version..." -ForegroundColor Yellow
+Write-Host "Reading plugin version..." -ForegroundColor Yellow
 $PluginJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package.json"
 $ModuleJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module/module.json"
 
 $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
 . "$PSScriptRoot/../shared/version-utils.ps1"
-$NewVersion = Get-NextPluginVersion $PluginJson.version
+$NewVersion = if ($SkipIncrement) { $PluginJson.version } else { Get-NextPluginVersion $PluginJson.version }
 Write-Host "  $($PluginJson.version) → $NewVersion" -ForegroundColor Green
 
 Update-JsonVersion -Path $PluginJsonPath -NewVersion $NewVersion

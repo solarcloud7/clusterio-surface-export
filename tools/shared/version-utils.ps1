@@ -4,8 +4,7 @@ function Get-NextPluginVersion {
     if (-not $match.Success) { throw "Unsupported plugin version: $Version" }
     $base = '{0}.{1}' -f $match.Groups['major'].Value, $match.Groups['minor'].Value
     if ($match.Groups['channel'].Success) {
-        return '{0}.{1}-{2}.{3}' -f $base, $match.Groups['patch'].Value,
-            $match.Groups['channel'].Value, (1 + [long]$match.Groups['sequence'].Value)
+        throw "Automatic prerelease bumps are disabled for $Version. Choose release versions explicitly. Use -SkipIncrement for fixture resets or -KeepSaves for code updates."
     }
     return '{0}.{1}' -f $base, (1 + [long]$match.Groups['patch'].Value)
 }
