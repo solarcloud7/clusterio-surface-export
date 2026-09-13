@@ -155,7 +155,7 @@ test("import and validation failures expose the actual source rollback acknowled
 			delete h.orch.tryUnlockSource;
 			let reply;
 			h.orch.sendUnlockRequest = () => new Promise(resolve => { reply = resolve; });
-			h.orch.broadcastTransferStatus = async () => {};
+			h.orch.broadcastTransferAbort = async () => {};
 			const row = { transferId: "rollback:1", platformIndex: 3, platformName: "fixture", forceName: "player",
 				sourceInstanceId: 1, targetInstanceId: 2, status: "awaiting_validation" };
 			h.activeTransfers.set(row.transferId, row);
@@ -548,8 +548,9 @@ test("acknowledged recovery releases the queue reservation; failed cleanup retai
 
 test("successful transfer verifies the held destination, deletes source, then activates once", async () => {
 	const order = [];
+	const notices = [];
 	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }), msg => {
-		if (msg.constructor.name === "TransferStatusUpdate") return { success: true };
+		if (msg.constructor.name === "TransferStatusUpdate") { notices.push(msg.message); return { success: true }; }
 		order.push(msg.action || msg.constructor.name);
 		return { success: true };
 	});
@@ -559,6 +560,36 @@ test("successful transfer verifies the held destination, deletes source, then ac
 	assert.equal(onlyTransfer(activeTransfers).status, "completed");
 	assert.equal(calls.pendingRemoved, result.transferId);
 	assert.equal(calls.openPhases.has("cleanup"), false);
+	assert.deepEqual(notices, [], "controller duplicated Lua arrival/departure notices");
+});
+
+test("validation rejection broadcasts one final abort reason per involved instance", async t => {
+	const notices = [];
+	const h = makeHarness(() => ({success: true}), msg => {
+		if (msg.constructor.name === "TransferStatusUpdate") notices.push(msg.message);
+		return {success: true};
+	});
+	t.after(() => h.orch.stop());
+	const result = await h.orch.transferPlatform("export_1", 2);
+	await Promise.all([1, 2].map(() => h.orch.handleTransferValidation({
+		transferId: result.transferId, success: false, validation: {mismatchDetails: "belt item count mismatch"},
+	})));
+	assert.deepEqual(notices, Array(2).fill("Platform 'test-platform' aborted transfer: belt item count mismatch"));
+	assert.equal(onlyTransfer(h.activeTransfers).status, "failed");
+});
+
+test("lost activation reply never announces an aborted transfer", async t => {
+	const notices = [];
+	const h = makeHarness(() => ({success: true}), msg => {
+		if (msg.constructor.name === "TransferStatusUpdate") notices.push(msg.message);
+		if (msg.action === "go_live") throw sessionLost("activation reply lost");
+		return {success: true};
+	});
+	t.after(() => h.orch.stop());
+	const result = await h.orch.transferPlatform("export_1", 2);
+	await h.orch.handleTransferValidation({transferId: result.transferId, success: true});
+	assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
+	assert.deepEqual(notices, []);
 });
 
 for (const restart of [false, true]) {

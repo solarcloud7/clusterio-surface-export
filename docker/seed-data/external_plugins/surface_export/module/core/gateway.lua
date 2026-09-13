@@ -158,10 +158,6 @@ function Gateway.evacuate_passengers(platform)
 				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
 		else
 			result.players = result.players + 1
-			-- intentional probe; best-effort notify, a print failure must NOT abort evacuation.
-			pcall(function()
-				player.print({"", "🛟 '", platform.name, "' was transferred — you were returned to ", dest.name, "."})
-			end)
 		end
 	end
 

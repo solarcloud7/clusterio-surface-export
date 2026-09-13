@@ -203,7 +203,7 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
         activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))
 
     if activated_count > 0 then
-        game.print(string.format("[Import] Activated %d entities (restored to original state)", activated_count), {0, 1, 0})
+        log(string.format("[Import] Activated %d entities (restored to original state)", activated_count))
     end
 
     local segmented_units = 0

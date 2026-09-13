@@ -4,7 +4,7 @@ local function noop() end
 local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
 local function scenario(standalone, error_at, sectioned)
 local events, writes, modules, encodes, attempts = {}, {}, {}, 0, 0
-local env = setmetatable({game = {tick = 100, print = noop, forces = {player = {valid = true, platforms = {}}}},
+local env = setmetatable({game = {tick = 100, print = function() error("export phases must not broadcast chat") end, forces = {player = {valid = true, platforms = {}}}},
     storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true}},
     log = noop, table_size = size}, {__index = _G})
 local function mark(name)

@@ -32,13 +32,6 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 		log(string.format("[TransferTrigger] '%s' (idx %d) starting transfer with %d connected + %d total player(s) aboard, %d character(s) — export tick-stall may drop connected clients (#86)",
 			platform_name, platform_index, #connected, #aboard_players, aboard_characters))
 	end
-	for _, p in ipairs(connected) do
-		-- intentional probe; best-effort pre-stall notify, a print failure must NOT abort the transfer.
-		pcall(function()
-			p.print({"", "🚀 '", platform_name, "' is transferring to another server — you'll return to Nauvis. A brief disconnect is possible during the transfer; just reconnect."})
-		end)
-	end
-
 	local lock_ok, lock_err = SurfaceLock.lock_platform(platform, force, {
 		kind = "transfer",
 		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
@@ -66,8 +59,6 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	if not announced then
 		log(string.format("[TransferTrigger] announce (send_json) failed for '%s' (idx %d) — transfer still proceeds via export-complete: %s",
 			platform_name, platform_index, tostring(announce_err)))
-		game.print(string.format("⚠ Transfer of '%s' is proceeding; its status announce failed, so dashboard updates may lag (see log).",
-			platform_name), {1, 0.8, 0})
 	end
 
 	log(string.format("[TransferTrigger] started: platform='%s' (idx %d) -> instance %s, job_id=%s",

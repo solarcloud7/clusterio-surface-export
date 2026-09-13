@@ -66,8 +66,10 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
         surface_index = lock.surface_index, tick = game.tick,
       })
     end
-    game.print(string.format("[Transfer Complete] Platform '%s' (index %s) transferred and deleted from source",
-      platform_name, tostring(platform_index)), {0, 1, 0})
+    local announced, announce_error = pcall(function()
+      game.print(string.format("Platform '%s' departed.", platform_name), {0, 1, 0})
+    end)
+    if not announced then log("[Transfer] Departure notice failed: " .. tostring(announce_error)) end
     return "SUCCESS"
   end
   return "ERROR:delete_platform could not remove '" .. tostring(platform_name) .. "' (no valid surface)"

@@ -275,12 +275,12 @@ export class TransferOrchestrator {
 		}
 	}
 
-	async broadcastTransferStatus(transfer: ActiveTransfer, status: string, color: string | null = null) {
+	async broadcastTransferAbort(transfer: ActiveTransfer, reason: string) {
 		const msg = new this.messages.TransferStatusUpdate({
 			transferId: transfer.transferId,
 			platformName: transfer.platformName,
-			message: `[Transfer: ${transfer.platformName}] ${status}`,
-			color,
+			message: `Platform '${transfer.platformName}' aborted transfer: ${reason}`,
+			color: "red",
 		});
 		for (const instanceId of [transfer.sourceInstanceId, transfer.targetInstanceId]) {
 			try { await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo({ instanceId }, msg)); }
@@ -857,7 +857,6 @@ export class TransferOrchestrator {
 			transfer.status = "error";
 			transfer.error = errMsg;
 			this.updateTransfer(transfer);
-			await this.broadcastTransferStatus(transfer, `Error: ${errMsg}`, "red");
 		}
 	}
 
@@ -874,7 +873,6 @@ export class TransferOrchestrator {
 			transfer.completedAt = Date.now();
 			this.txLogger.logTransactionEvent(transferId, "cleanup_failed", error);
 			this.updateTransfer(transfer);
-			await this.broadcastTransferStatus(transfer, `Cleanup incomplete: ${error}`, "yellow");
 			await this.txLogger.persistTransactionLog(transferId);
 			return { sourceResolved: false };
 		};
@@ -887,7 +885,6 @@ export class TransferOrchestrator {
 			}
 			if (!held.success) return failed(`Destination hold not confirmed: ${held.error}`);
 			transfer.awaitingLateVerdict = false;
-			await this.broadcastTransferStatus(transfer, "Validation passed — destination held; deleting source...", "green");
 
 			const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: transfer.sourceInstanceId },
@@ -915,7 +912,6 @@ export class TransferOrchestrator {
 						phases: this.txLogger.buildPhaseSummary(transfer),
 					});
 				this.updateTransfer(transfer);
-				await this.broadcastTransferStatus(transfer, "Transfer complete! ✓", "green");
 				await this.txLogger.persistTransactionLog(transferId);
 				await this.plugin.persistStorage();
 				this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
@@ -942,18 +938,12 @@ export class TransferOrchestrator {
 		this.txLogger.logTransactionEvent(transferId, "validation_failed",
 			`Validation failed: ${errorMsg}`, { validation });
 
-		await this.broadcastTransferStatus(transfer, "Validation failed ✗ — rolling back...", "red");
-
 		const rollbackError = await this.tryUnlockSource(transferId, transfer);
 		if (!rollbackError && !destinationCleanupError) transfer.timingPendingRecovery = false;
-		if (rollbackError) {
-			await this.broadcastTransferStatus(transfer, `⚠ Rollback failed: ${rollbackError}`, "red");
-		} else {
-			await this.broadcastTransferStatus(transfer, `Rolled back. Error: ${errorMsg}`, "red");
-		}
 
 		transfer.status = destinationCleanupError ? "cleanup_failed" : "failed";
 		transfer.error = [errorMsg, rollbackError, destinationCleanupError].filter(Boolean).join("; ");
+		await this.broadcastTransferAbort(transfer, transfer.error);
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",
 			"Transfer failed", {

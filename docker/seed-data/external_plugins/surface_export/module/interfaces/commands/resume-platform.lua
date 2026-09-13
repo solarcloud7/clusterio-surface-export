@@ -41,6 +41,6 @@ Base.admin_command("resume-platform",
       ctx.print(string.format("✓ Activated %d entities on platform", activated))
     end
 
-    game.print(string.format("[Platform] %s resumed and entities activated", target_platform.name), {0, 1, 0})
+    ctx.print(string.format("[Platform] %s resumed and entities activated", target_platform.name))
   end
 )

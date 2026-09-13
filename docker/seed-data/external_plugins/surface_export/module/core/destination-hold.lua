@@ -284,6 +284,10 @@ function DestinationHold.go_live(transfer_id, job_id)
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d)",
 		transfer_id, platform.name, restored, kept_inactive))
+	local announced, announce_error = pcall(function()
+		game.print(string.format("Platform '%s' arrived.", platform.name), {0, 1, 0})
+	end)
+	if not announced then log("[Transfer] Arrival notice failed: " .. tostring(announce_error)) end
 	return true, {
 		transfer_id = transfer_id,
 		platform_name = platform.name,

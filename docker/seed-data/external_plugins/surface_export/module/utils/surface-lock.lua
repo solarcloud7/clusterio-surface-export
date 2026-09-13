@@ -440,8 +440,8 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
     end
     
     if descending > 0 or ascending > 0 then
-        game.print(string.format("[Lock] Completed %d incoming (%d items) and %d outgoing cargo pods", 
-            descending, items, ascending), {0.5, 1, 0.5})
+        log(string.format("[Lock] Completed %d incoming (%d items) and %d outgoing cargo pods",
+            descending, items, ascending))
     end
 
     local frozen_states, frozen_count = freeze_entities(surface)
@@ -543,7 +543,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         storage.locked_platforms[platform_index] = nil
         log(string.format("[SurfaceLock] unlock: destination hold %s owns platform '%s' (index %s, surface %s); not restoring hold-owned not-live state",
             tostring(destination_hold_transfer_id), tostring(platform_name), tostring(platform_index), tostring(surface.index)))
-        game.print(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)), {0.5, 1, 0.5})
+        log(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)))
         return true, nil
     end
 
@@ -563,7 +563,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
 
     log(string.format("[SurfaceLock] Unlocked platform '%s' (index %s), restored %d entities",
         tostring(platform_name), tostring(platform_index), restored))
-    game.print(string.format("[Lock] Platform '%s' unlocked and restored", tostring(platform_name)), {0.5, 1, 0.5})
+    log(string.format("[Lock] Platform '%s' unlocked and restored", tostring(platform_name)))
 
     return true, nil
 end

@@ -58,7 +58,7 @@ Base.admin_command("export-platform",
       end
       log(string.format("[INFO] %s", message))
       if ctx.player then
-        game.print(message, {1, 1, 0})
+        ctx.print(message)
       else
         ctx.print("QUEUED:" .. job_id)
       end

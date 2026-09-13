@@ -332,7 +332,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 					return;
 				}
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
-				await this.startControllerTransfer(exportId, Number(data.destination_instance_id), Number(data.platform_index));
+				await this.startControllerTransfer(exportId, Number(data.destination_instance_id), Number(data.platform_index), String(data.platform_name || "unknown"));
 				return;
 			}
 
@@ -344,7 +344,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 					return;
 				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
-				await this.startControllerTransfer(exportId, pendingTargetId, Number(this.pendingTransfer.platform_index));
+				await this.startControllerTransfer(exportId, pendingTargetId, Number(this.pendingTransfer.platform_index), String(data.platform_name || "unknown"));
 				this.pendingTransfer = null;
 			}
 		} catch (err: unknown) {
@@ -352,7 +352,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	private async startControllerTransfer(exportId: string, targetInstanceId: number, platformIndex: number) {
+	private async startControllerTransfer(exportId: string, targetInstanceId: number, platformIndex: number, platformName: string) {
 		const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
 		this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${targetInstanceId}`);
 
@@ -389,8 +389,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 			}
 		}
 
+		if (transferResponse.safeToUnlockSource !== true) return;
 		try {
-			await this.lua.printToGame(`[Transfer] ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
+			await this.lua.printToGame(`Platform '${platformName}' aborted transfer: ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
 		} catch (printErr: unknown) {
 			this.logger.warn(`Could not print the transfer refusal in game: ${getErrorMessage(printErr)}`);
 		}

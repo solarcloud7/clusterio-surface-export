@@ -16,9 +16,13 @@ for _, committed in ipairs({false, true}) do
       for _, evacuation in ipairs({"success", "failed", "throw", "missing"}) do
         local lock = {committed = committed}
         local platform = {valid = true, surface = {valid = true, index = 9}}
-        local cleared, deleted, deleteCalls = false, false, 0
-        local env = setmetatable({storage = {locked_platforms = {[3] = lock}},
-            game = {forces = {player = {platforms = {[3] = platform}}}, print = noop}}, {__index = _G})
+        local cleared, deleted, deleteCalls, notices = false, false, 0, {}
+        local env = setmetatable({storage = {locked_platforms = {[3] = lock}}, log = noop,
+            game = {forces = {player = {platforms = {[3] = platform}}}, print = function(message)
+                assert(deleted and cleared, "departure announced before deletion was confirmed")
+                notices[#notices + 1] = message
+                if committed then error("injected chat failure") end
+            end}}, {__index = _G})
         local modules = {
             ["core/source-recovery"] = {matches = function(_, uid) return uid == "uid" end},
             ["utils/operation-timing"] = {begin = noop, finish = noop, scope = function(_, _, fn, ...) return fn(...) end},
@@ -69,6 +73,7 @@ for _, committed in ipairs({false, true}) do
             assert(env.storage.locked_platforms[3] == lock and not cleared,
                 "evacuation failure lost source protections")
             assert(not modules["utils/transfer-receipts"].get("source_deleted", "job"), "false deletion receipt")
+            assert(#notices == 0, "failed evacuation announced departure")
             evacuation = "success"
             result = remove(3, "fixture", "player", "job", "uid")
         end
@@ -78,12 +83,14 @@ for _, committed in ipairs({false, true}) do
             assert(remove(3, "renamed fixture", "player", "job", "uid") == "SUCCESS", "lost deletion reply cannot be retried")
             assert(remove(3, "fixture", "player", "job", "other-uid"):sub(1, 6) == "ERROR:", "receipt accepted a different UID")
             assert(deleteCalls == 1, "duplicate source deletion executed twice")
+            assert(#notices == 1 and notices[1] == "Platform 'fixture' departed.", "departure was duplicated or missing")
             platform.valid = true
             assert(remove(3, "fixture", "player", "job", "uid"):sub(1, 6) == "ERROR:", "receipt accepted a present platform")
             platform.valid = false
             assert(remove(4, "fixture", "player", "job", "uid"):sub(1, 6) == "ERROR:", "receipt accepted a different index")
         else
             assert(result:sub(1, 6) == "ERROR:" and env.storage.locked_platforms[3] == lock and not cleared)
+            assert(#notices == 0, "failed deletion announced departure")
         end
       end
     end

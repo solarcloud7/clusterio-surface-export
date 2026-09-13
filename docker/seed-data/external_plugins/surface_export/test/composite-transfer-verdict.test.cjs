@@ -183,7 +183,7 @@ function makeTransferHarness() {
 	};
 	const orch = new TransferOrchestrator(plugin, require(path.join(distNode, "messages.js")));
 	orch.tryUnlockSource = async () => null;
-	orch.broadcastTransferStatus = async () => {};
+  orch.broadcastTransferAbort = async () => {};
 	orch.pruneOldTransfers = noop;
 	return { orch, transfer };
 }
