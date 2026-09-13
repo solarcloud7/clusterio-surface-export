@@ -24,12 +24,15 @@ docker/config/
 docker/server-settings.json
 
 # IDE
+/*.code-workspace
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
 .vscode
 # Claude configuration and state are local.
 /.claude/
+# Local skill installer state.
+/skills-lock.json
 # Track maintained shared skills; other agent state remains local.
 /.agents/*
 !/.agents/skills/
