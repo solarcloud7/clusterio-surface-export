@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and setup help
+    url: https://github.com/solarcloud7/clusterio-surface-export/discussions/categories/q-a
+    about: Ask for help or discuss behavior before opening a bug report.
+  - name: Beta feedback
+    url: https://github.com/solarcloud7/clusterio-surface-export/discussions/categories/general
+    about: Share your installation experience, workload and observations.
+  - name: Report a security vulnerability privately
+    url: https://github.com/solarcloud7/clusterio-surface-export/security/advisories/new
+    about: Send sensitive security details to the maintainer without a public issue.

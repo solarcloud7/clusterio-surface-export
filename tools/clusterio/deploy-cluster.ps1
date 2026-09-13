@@ -19,18 +19,13 @@ if (-not $PluginPath) {
 
 $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
+. "$PSScriptRoot/../shared/version-utils.ps1"
 
 if (-not $SkipIncrement) {
     Write-Host "Reading version..." -ForegroundColor Cyan
     $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
 
-    $VerParts = $PluginJson.version.Split('.')
-    if ($VerParts.Count -ne 3) {
-        Write-Error "Version format $($PluginJson.version) not supported for auto-increment. Expected X.Y.Z"
-    }
-
-    $NewPatch = [int]$VerParts[2] + 1
-    $NewVersion = "{0}.{1}.{2}" -f $VerParts[0], $VerParts[1], $NewPatch
+    $NewVersion = Get-NextPluginVersion $PluginJson.version
 
     Write-Host "Bumping version: $($PluginJson.version) -> $NewVersion" -ForegroundColor Green
 
@@ -52,7 +47,6 @@ if (-not $SkipIncrement) {
     Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
 }
 
-. "$PSScriptRoot/../shared/version-utils.ps1"
 . "$PSScriptRoot/../shared/cluster-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
@@ -282,11 +276,11 @@ foreach ($probeInstance in $expectedInstances) {
     $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
         --log-level error instance send-rcon $probeInstance $versionProbe 2>&1
     $probeText = ($probe | Out-String).Trim()
+    $reported = Get-ModuleVersionResponse $probeText
     if ($LASTEXITCODE -ne 0 -or $probeText -match 'plugin-missing' -or
-        -not ($probeText -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$')) {
+        -not $reported) {
         throw "surface_export interface is NOT loaded on ${probeInstance} (exit $LASTEXITCODE): $probeText"
     }
-    $reported = $Matches[1]
     if ($reported -eq 'stale-module-no-version-oracle') { $reported = "a pre-oracle module (no version stamp)" }
     if ($reported -eq $NewVersion) {
         Write-Host "  OK - $probeInstance runs module version $reported" -ForegroundColor Green

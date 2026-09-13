@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible problem or unexpected transfer result.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: For security vulnerabilities, use [private reporting](https://github.com/solarcloud7/clusterio-surface-export/security/advisories/new). Remove tokens, passwords and license information from attachments.
+  - type: input
+    id: versions
+    attributes:
+      label: Versions and installation
+      description: Plugin version or commit, Factorio and Clusterio versions, and Docker or standalone installation. Include other mods if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: Describe what happened and what you expected. For transfers, distinguish the failed attempt from its recovery result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Include the steps, whether it repeats, and any restart or save restoration involved. Say if you cannot reproduce it yet.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Attach a diagnostic report, relevant log excerpt or screenshot. Include the operation ID and time if available. Avoid posting private saves publicly.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and recovery
+      description: Note missing or duplicated cargo, a protected platform, blocked transfers, or any recovery action already taken. Keep the original failure evidence.

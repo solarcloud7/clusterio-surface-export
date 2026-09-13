@@ -1,3 +1,22 @@
+function Get-NextPluginVersion {
+    param([Parameter(Mandatory)][string]$Version)
+    $match = [regex]::Match($Version, '\A(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:-(?<channel>alpha|beta|rc)\.(?<sequence>0|[1-9]\d*))?\z')
+    if (-not $match.Success) { throw "Unsupported plugin version: $Version" }
+    $base = '{0}.{1}' -f $match.Groups['major'].Value, $match.Groups['minor'].Value
+    if ($match.Groups['channel'].Success) {
+        return '{0}.{1}-{2}.{3}' -f $base, $match.Groups['patch'].Value,
+            $match.Groups['channel'].Value, (1 + [long]$match.Groups['sequence'].Value)
+    }
+    return '{0}.{1}' -f $base, (1 + [long]$match.Groups['patch'].Value)
+}
+
+function Get-ModuleVersionResponse {
+    param([AllowEmptyString()][string]$Output)
+    $match = [regex]::Match($Output, '(?m)^[\t ]*(?<version>\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?|stale-module-no-version-oracle)[\t ]*\r?$')
+    if ($match.Success) { return $match.Groups['version'].Value }
+    return $null
+}
+
 function Update-JsonVersion {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$NewVersion)
     $encoding = [Text.UTF8Encoding]::new($false, $true)

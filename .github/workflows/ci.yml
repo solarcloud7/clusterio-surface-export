@@ -590,10 +590,13 @@ jobs:
           artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
           path: release-package
       - name: Verify bytes, version, commit and native evidence
+        id: verified-package
         run: node tools/release/verify-package.mjs release-package
       - name: Rehearse publishing the tarball without lifecycle scripts
+        env:
+          NPM_DIST_TAG: ${{ steps.verified-package.outputs.dist-tag }}
         run: |
-          npm publish ./release-package/package.tgz --ignore-scripts --dry-run --json --access public > publish-preview.json
+          npm publish ./release-package/package.tgz --ignore-scripts --dry-run --json --access public --tag "$NPM_DIST_TAG" > publish-preview.json
           node tools/release/verify-package.mjs release-package publish-preview.json
 
   publish:
@@ -625,7 +628,10 @@ jobs:
           path: release-package
 
       - name: Verify bytes, version, commit and native evidence
+        id: verified-package
         run: node tools/release/verify-package.mjs release-package
 
       - name: Publish to npm
-        run: npm publish ./release-package/package.tgz --ignore-scripts --provenance --access public
+        env:
+          NPM_DIST_TAG: ${{ steps.verified-package.outputs.dist-tag }}
+        run: npm publish ./release-package/package.tgz --ignore-scripts --provenance --access public --tag "$NPM_DIST_TAG"

@@ -91,16 +91,10 @@ $PluginJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/su
 $ModuleJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module/module.json"
 
 $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
-$VerParts = $PluginJson.version.Split('.')
-if ($VerParts.Count -ne 3) {
-    Write-Error "Version format $($PluginJson.version) not supported. Expected X.Y.Z"
-}
-
-$NewPatch = [int]$VerParts[2] + 1
-$NewVersion = "{0}.{1}.{2}" -f $VerParts[0], $VerParts[1], $NewPatch
+. "$PSScriptRoot/../shared/version-utils.ps1"
+$NewVersion = Get-NextPluginVersion $PluginJson.version
 Write-Host "  $($PluginJson.version) → $NewVersion" -ForegroundColor Green
 
-. "$PSScriptRoot/../shared/version-utils.ps1"
 Update-JsonVersion -Path $PluginJsonPath -NewVersion $NewVersion
 
 if (Test-Path $ModuleJsonPath) {
@@ -337,15 +331,16 @@ foreach ($h in 1, 2) {
             instance send-rcon $inst $versionProbe 2>&1
         $lastPing = ($ping | Out-String).Trim()
         if ($LASTEXITCODE -eq 0 -and $lastPing -match "(?m)^\s*$([regex]::Escape($NewVersion))\s*$") { $bootOk = $true; break }
-        if ($LASTEXITCODE -eq 0 -and $lastPing -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$') { break }
+        if ($LASTEXITCODE -eq 0 -and (Get-ModuleVersionResponse $lastPing)) { break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {
         Write-Host "  ✓ ${inst}: patched save loaded, module version $NewVersion answering" -ForegroundColor Green
     } else {
         Write-Host "  X ${inst} FAILED the boot check (no answer with module version $NewVersion within 90s)." -ForegroundColor Red
-        if ($lastPing -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$') {
-            Write-Host "    The instance IS answering — but with STALE module code (reported: $($Matches[1]))." -ForegroundColor Red
+        $reported = Get-ModuleVersionResponse $lastPing
+        if ($reported) {
+            Write-Host "    The instance IS answering — but with STALE module code (reported: $reported)." -ForegroundColor Red
             Write-Host "    The save was not re-patched (a plain restart reuses old script.dat) — rerun patch-and-reset." -ForegroundColor Red
         } else {
             Write-Host "    A Lua error at save-load kills the server — read the actual error with:" -ForegroundColor Red
