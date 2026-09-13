@@ -104,6 +104,7 @@ if (Test-Path $ModuleJsonPath) {
 
 Update-PackageLockVersion -LockPath (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module") -NewVersion $NewVersion
+$ModuleBuildId = Update-ModuleBuildStamp -ModuleDir (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module")
 Write-Host "✓ Version updated" -ForegroundColor Green
 Write-Host ""
 
@@ -316,11 +317,8 @@ Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "Boot check: verifying the patched saves loaded with module version $NewVersion..." -ForegroundColor Yellow
-$versionProbe = "/sc local i = remote.interfaces['surface_export'] " +
-    "if not i then rcon.print('plugin-missing') " +
-    "elseif not i['get_module_version'] then rcon.print('stale-module-no-version-oracle') " +
-    "else rcon.print(remote.call('surface_export','get_module_version')) end"
+Write-Host "Boot check: verifying the patched saves loaded with module version $NewVersion and build $ModuleBuildId..." -ForegroundColor Yellow
+$versionProbe = Get-ModuleDeploymentProbe
 foreach ($h in 1, 2) {
     $inst = "clusterio-host-$h-instance-1"
     $bootDeadline = (Get-Date).AddSeconds(90)
@@ -331,15 +329,15 @@ foreach ($h in 1, 2) {
         $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
             instance send-rcon $inst $versionProbe 2>&1
         $lastPing = ($ping | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and $lastPing -match "(?m)^\s*$([regex]::Escape($NewVersion))\s*$") { $bootOk = $true; break }
-        if ($LASTEXITCODE -eq 0 -and (Get-ModuleVersionResponse $lastPing)) { break }
+        if ($LASTEXITCODE -eq 0 -and (Test-ModuleDeploymentResponse -Output $lastPing -Version $NewVersion -BuildId $ModuleBuildId)) { $bootOk = $true; break }
+        if ($LASTEXITCODE -eq 0 -and (Get-ModuleDeploymentResponse $lastPing)) { break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {
-        Write-Host "  ✓ ${inst}: patched save loaded, module version $NewVersion answering" -ForegroundColor Green
+        Write-Host "  ✓ ${inst}: patched save loaded, module version $NewVersion, build $ModuleBuildId answering" -ForegroundColor Green
     } else {
         Write-Host "  X ${inst} FAILED the boot check (no answer with module version $NewVersion within 90s)." -ForegroundColor Red
-        $reported = Get-ModuleVersionResponse $lastPing
+        $reported = Get-ModuleDeploymentResponse $lastPing
         if ($reported) {
             Write-Host "    The instance IS answering — but with STALE module code (reported: $reported)." -ForegroundColor Red
             Write-Host "    The save was not re-patched (a plain restart reuses old script.dat) — rerun patch-and-reset." -ForegroundColor Red

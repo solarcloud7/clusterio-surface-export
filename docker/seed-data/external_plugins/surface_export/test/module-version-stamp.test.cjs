@@ -8,9 +8,8 @@ const path = require("node:path");
 
 const pluginRoot = path.join(__dirname, "..");
 
-test("version stamp agrees across package.json, module.json, and version.lua", async () => {
-	const { pathToFileURL } = require("node:url");
-	const { releaseChannel } = await import(pathToFileURL(path.resolve(pluginRoot, "../../../../tools/release/verify-package.mjs")));
+test("version stamp agrees across package.json, module.json, and version.lua", () => {
+	const { releaseChannel } = require("../scripts/release-version.cjs");
 	const pkg = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8"));
 	const mod = JSON.parse(fs.readFileSync(path.join(pluginRoot, "module", "module.json"), "utf8"));
 	const stamp = fs.readFileSync(path.join(pluginRoot, "module", "version.lua"), "utf8");

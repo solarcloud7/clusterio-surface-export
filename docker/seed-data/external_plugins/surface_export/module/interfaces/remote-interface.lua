@@ -5,8 +5,13 @@ local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local Upload = require("modules/surface_export/interfaces/remote/upload-session")
 
 local module_version = require("modules/surface_export/version")
+local module_build_id = require("modules/surface_export/build-id")
 local function get_module_version()
   return module_version
+end
+
+local function get_module_build_id()
+  return module_build_id
 end
 
 local export_platform = require("modules/surface_export/interfaces/remote/export-platform")
@@ -75,6 +80,7 @@ RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
 RemoteInterface.version_selftest = version_selftest
 RemoteInterface.get_module_version = get_module_version
+RemoteInterface.get_module_build_id = get_module_build_id
 RemoteInterface.teleport_roster_update = teleport_roster_update
 RemoteInterface.selection_lab_drive = selection_lab_drive
 RemoteInterface.belt_side_restore_selftest = belt_side_restore_selftest
@@ -153,6 +159,7 @@ function RemoteInterface.register()
     timing_selftest = timing_selftest,
     version_selftest_json = Base.json_wrap(version_selftest),
     get_module_version = get_module_version,
+    get_module_build_id = get_module_build_id,
     teleport_roster_update = teleport_roster_update,
     selection_lab_drive = selection_lab_drive,
     selection_lab_drive_json = Base.json_wrap(selection_lab_drive),

@@ -6,12 +6,8 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { analyzePackage } from "../../tests/manual/package-install/oracle.mjs";
 
-export function releaseChannel(version) {
-  assert.equal(typeof version, "string", "unsupported release version");
-  const match = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(alpha|beta|rc)\.(?:0|[1-9]\d*))?$/.exec(version);
-  assert.ok(match && match[0] === version, "unsupported release version; use a stable version or alpha.N, beta.N, rc.N");
-  return match[1] ?? "latest";
-}
+import versionFormat from "../../docker/seed-data/external_plugins/surface_export/scripts/release-version.cjs";
+export const releaseChannel = versionFormat.releaseChannel;
 
 // The report and tarball come from one immutable artifact in this workflow run.
 // Recheck native acceptance, not just the saved verdict, before npm sees the file.

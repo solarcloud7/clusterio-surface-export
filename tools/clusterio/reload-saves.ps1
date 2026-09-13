@@ -2,6 +2,7 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/../shared/cluster-utils.ps1"
 . "$PSScriptRoot/../shared/workflow-lock.ps1"
+. "$PSScriptRoot/../shared/version-utils.ps1"
 
 Invoke-WorkflowLock {
 
@@ -30,6 +31,9 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 $evidence = Join-Path $PSScriptRoot "../../ci-artifacts/predeploy-$stamp.json"
 node "$PSScriptRoot/../tests/cluster-readiness.mjs" --runtime --capture-world --snapshot $evidence
 if ($LASTEXITCODE -ne 0) { throw 'Cannot capture existing world before reload.' }
+$modulePath = Join-Path $PSScriptRoot '../../docker/seed-data/external_plugins/surface_export/module'
+$expectedVersion = (Get-Content (Join-Path $modulePath 'module.json') -Raw | ConvertFrom-Json).version
+$moduleBuildId = Update-ModuleBuildStamp -ModuleDir $modulePath
 
 foreach ($instance in $instances) {
     Invoke-Control instance send-rcon $instance.Name "/sc game.server_save('predeploy-$stamp')" | Out-Null
@@ -57,5 +61,11 @@ docker restart surface-export-host-1 surface-export-host-2 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Host restart failed; backups and existing saves are retained.' }
 node "$PSScriptRoot/../tests/cluster-readiness.mjs" --runtime --compare $evidence
 if ($LASTEXITCODE -ne 0) { throw "Preserving reload did not pass verification. Before-state: $evidence. Existing saves and backups are retained." }
-Write-Host 'Verified Lua version, surface/platform census and player positions after preserving reload.'
+foreach ($instance in $instances) {
+    $loaded = Invoke-Control instance send-rcon $instance.Name (Get-ModuleDeploymentProbe)
+    if (-not (Test-ModuleDeploymentResponse $loaded $expectedVersion $moduleBuildId)) {
+        throw "$($instance.Name): expected Lua build $moduleBuildId was not loaded. Existing saves and backups are retained."
+    }
+}
+Write-Host 'Verified Lua build, surface/platform census and player positions after preserving reload.'
 }
