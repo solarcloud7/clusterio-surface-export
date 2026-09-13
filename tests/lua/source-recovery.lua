@@ -248,9 +248,22 @@ do
         e.game.tick = 1
         held.kind = "transfer"; held.phase = "pre_commit"; held.transfer_job_id = "new"
         held.platform_uid = "current:16"
+        held.force_name = "player"; held.platform_index = 3
         e.storage.locked_platforms[3] = held
         local ok, err = pcall(fn)
         if not ok then failures[#failures + 1] = label .. ": " .. tostring(err) end
+    end
+    setmetatable(e.game.forces, {__index=function(_, key)
+        assert(type(key)=="string", "Factorio force lookup requires a string")
+    end})
+    for _, field in ipairs({"force_name", "platform_index"}) do
+        check("missing " .. field .. " retains source ownership", function()
+            held[field]=nil
+            assert(not real_lock.transfer_delete_identity_ok(held, unlock_platform.surface, "new"))
+            assert(real_lock.get_source_transfer_lock_state("new",3,"fixture","player").state=="identity_mismatch")
+            assert(not real_lock.unlock_platform(3,nil,nil,nil,"new"))
+            assert(e.storage.locked_platforms[3]==held, "incomplete metadata released ownership")
+        end)
     end
     check("rename preserves verified deletion and source state", function()
         unlock_platform.name="renamed-live-copy"
@@ -282,6 +295,28 @@ do
     assert(#failures == 0, table.concat(failures, "\n"))
 end
 print("PASS source mutations require copy and job identity, independent of display names")
+
+unlock_platform.force={name="player"}
+e.remote={call=function(interface, method, index, name, job)
+    assert(interface=="surface_export" and method=="unlock_platform" and name==nil)
+    return real_lock.unlock_platform(index,nil,nil,nil,job)
+end}
+local cleanup=assert(loadfile("tests/lab-gallery/fixture-unlock.lua","t",e))()
+held.platform_uid="current:16"; held.transfer_job_id="new"; held.phase="pre_commit"
+e.storage.locked_platforms[3]=held
+assert(cleanup(unlock_platform) and not e.storage.locked_platforms[3], "fixture cleanup missed owning job")
+assert(cleanup(unlock_platform), "absent fixture lock was not a no-op")
+for _, fault in ipairs({"uid", "job", "location", "committed"}) do
+    held.platform_uid=fault=="uid" and "old-copy" or "current:16"
+    held.transfer_job_id=fault~="job" and "new" or nil
+    held.surface_index=fault=="location" and 99 or 8
+    held.phase=fault=="committed" and "committed" or "pre_commit"
+    e.storage.locked_platforms[3]=held
+    local removed=false
+    local ok=pcall(function() cleanup(unlock_platform); removed=true end)
+    assert(not ok and not removed and e.storage.locked_platforms[3]==held, "fixture cleanup ignored "..fault.." refusal")
+end
+print("PASS fixture cleanup uses the owning job and stops on source protection refusals")
 
 local gui_uid, started = "copy-a", 0
 local gui_platform={valid=true,index=3,name="renamed",force={name="player"}}

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
+
 import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
@@ -139,7 +141,7 @@ try {
 		try {
 			const swept = rconJson(instance,
 				`(function() local n=0 for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
-				+ `pcall(remote.call, 'surface_export', 'unlock_platform', q.index) `
+				+ fixtureUnlockLua("q")
 				+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end return {swept=n} end)()`,
 			);
 			if (swept.swept > 0) console.log(`  cleanup(${instance}): swept ${swept.swept} probe platform(s)`);

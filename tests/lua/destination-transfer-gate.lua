@@ -104,6 +104,25 @@ holds.reconcile_legacy()
 assert(receipts.old.identity_unverified and not holds.go_live("old"),"old receipt invented current-copy authority")
 print("PASS legacy destination ownership migrates only from exact saved job references; unknown evidence remains protected")
 
+setmetatable(env.game.forces, {__index=function(_, key)
+    assert(type(key)=="string", "Factorio force lookup requires a string")
+end})
+for _, field in ipairs({"force_name", "platform_index"}) do
+    local incomplete=legacy("incomplete")
+    incomplete[field]=nil
+    holds.reconcile_legacy()
+    assert(incomplete.identity_unverified)
+    assert(not holds.verify("incomplete"))
+    assert(not holds.go_live("incomplete"))
+    assert(not holds.discard("incomplete"))
+    assert(env.storage.destination_holds.incomplete==incomplete, "incomplete metadata released ownership")
+    env.storage.destination_holds.incomplete=nil
+    receipts.incomplete=incomplete
+    assert(not holds.go_live("incomplete"))
+    receipts.incomplete=nil
+end
+print("PASS incomplete location metadata retains destination ownership without engine lookup errors")
+
 -- Deferred latch work must not execute or consume its job while the hold owns the surface.
 env.storage = {destination_holds = {transfer = {}}, latch_rearm_jobs = {
     latch = {transfer_id = "transfer", at_tick = 0, stage = "preflight", items = {}},

@@ -15,6 +15,12 @@ local function entity_key(entity)
 	return GameUtils.make_stable_id(entity)
 end
 
+local function has_location(record)
+	return type(record.force_name) == "string" and record.force_name ~= ""
+		and type(record.platform_index) == "number" and record.platform_index > 0
+		and record.platform_index % 1 == 0
+end
+
 local function find_platform(force, platform_index)
 	if not (force and force.valid and platform_index) then return nil end
 	platform_index = tonumber(platform_index)
@@ -80,6 +86,9 @@ local function resolve_hold(transfer_id, job_id)
 	if not hold then
 		return nil, nil, nil, "No destination hold for transfer_id " .. tostring(transfer_id)
 	end
+	if not has_location(hold) then
+		return hold, nil, nil, "Held platform location is unavailable"
+	end
 	local force = game.forces[hold.force_name]
 	local platform = find_platform(force, hold.platform_index)
 	if not (platform and platform.valid) then
@@ -94,7 +103,7 @@ end
 function DestinationHold.reconcile_legacy()
 	local function reconcile(record, transfer_id)
 		if record.platform_uid and record.job_id then return end
-		local platform = find_platform(game.forces[record.force_name], record.platform_index)
+		local platform = has_location(record) and find_platform(game.forces[record.force_name], record.platform_index)
 		local uid = platform and platform.valid and platform.surface and platform.surface.valid
 			and platform_identity(platform)
 		local owner
@@ -239,7 +248,7 @@ function DestinationHold.verify(transfer_id, job_id)
 	local receipt = Receipts.get("destination_live", transfer_id)
 	if receipt then
 		if holds[transfer_id] then return false, "Released transfer also has a hold" end
-		local released = find_platform(game.forces[receipt.force_name], receipt.platform_index)
+		local released = has_location(receipt) and find_platform(game.forces[receipt.force_name], receipt.platform_index)
 		if not matches(receipt, released, job_id) then
 			return false, "Released destination is missing or has changed identity"
 		end

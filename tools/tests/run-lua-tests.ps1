@@ -33,6 +33,7 @@ foreach ($testPath in $Test) {
         'docker/seed-data/external_plugins/surface_export/module',
         $testPath
     )
+    if ($testPath -eq 'tests/lua/source-recovery.lua') { $mounts += 'tests/lab-gallery/fixture-unlock.lua' }
     if ($testPath -eq 'tests/mods/gateway-layout.lua') { $mounts += 'docker/seed-data/mods-src/surfexp_gateways' }
     if ($testPath -eq 'tests/lua/callback-profiler.lua') { $mounts += 'tests/instruments/callback-profile/probe.lua' }
     if ($testPath -eq 'tests/manual/transfer-reliability/performance.test.lua') {

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 // ghost-item-requests — an entity-ghost's pending item requests must survive a real host-1 -> host-2
 // transfer, with the item-request-proxy alongside it as the control arm
 //
@@ -253,7 +255,7 @@ async function main() {
 			try {
 				const swept = lua(host, "local n=0 for _,q in pairs(game.forces.player.platforms) do "
 					+ `if q.valid and q.name=='${PROBE}' then `
-					+ "pcall(remote.call,'surface_export','unlock_platform',q.index) "
+					+ fixtureUnlockLua("q")
 					+ "if q.surface and q.surface.valid then game.delete_surface(q.surface) n=n+1 end end end "
 					+ "return {success=true, swept=n}");
 				console.log(`  cleanup host ${host}: swept ${swept.swept} probe platform(s)`);

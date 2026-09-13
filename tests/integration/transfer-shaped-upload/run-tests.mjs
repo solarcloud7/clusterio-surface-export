@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 // transfer-shaped-upload — an uploaded payload that carries _transferId but no verification block is
 // refused at intake, instead of arriving as a platform whose entities are never activated
 //
@@ -311,14 +313,6 @@ try {
 		docker(["exec", HOSTS[SOURCE_HOST].container, "sh", "-c",
 			`rm -f ${instancePath(SOURCE_HOST, `script-output/${DUMP_FILE}`)}`]);
 
-		// Source-only, and through the production unlock: the export takes a lock keyed by PLATFORM
-		// INDEX, and that index means a different platform on the other host.
-		if (probeIndex !== null) {
-			const unlocked = lua(SOURCE_HOST,
-				`local ok, err = pcall(remote.call, 'surface_export', 'unlock_platform', ${probeIndex})\n`
-				+ "return { success = true, called = ok, detail = tostring(err) }");
-			say(`  host ${SOURCE_HOST}: unlock_platform(${probeIndex}) called=${unlocked.called} (${unlocked.detail})`);
-		}
 		if (exportJobId) {
 			lua(SOURCE_HOST, "if storage.platform_exports then\n"
 				+ `  storage.platform_exports['${exportJobId}'] = nil\n`
@@ -330,6 +324,7 @@ try {
 			+ "for _, pl in pairs(game.forces.player.platforms) do\n"
 			+ `  if pl.valid and pl.name:sub(1, ${PREFIX.length}) == '${PREFIX}' and pl.surface and pl.surface.valid then\n`
 			+ "    removed[#removed + 1] = pl.name\n"
+			+ fixtureUnlockLua("pl")
 			+ "    game.delete_surface(pl.surface)\n"
 			+ "  end\n"
 			+ "end\n"

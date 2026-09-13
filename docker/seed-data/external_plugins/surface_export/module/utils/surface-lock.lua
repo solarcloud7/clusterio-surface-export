@@ -6,6 +6,12 @@ local platform_identity = require("modules/surface_export/utils/platform-identit
 
 local SurfaceLock = {}
 
+local function has_location(record)
+    return type(record.force_name) == "string" and record.force_name ~= ""
+        and type(record.platform_index) == "number" and record.platform_index > 0
+        and record.platform_index % 1 == 0
+end
+
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000
 local VALIDATION_TIMEOUT_TICKS     = 7200
@@ -328,6 +334,9 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
         if type(transfer_id) ~= "string" or transfer_id == "" or lock.transfer_job_id ~= transfer_id then
             return { state = "identity_mismatch", transferId = transfer_id, error = "transfer id mismatch" }
         end
+        if not has_location(lock) then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "platform location unavailable" }
+        end
         local force = game.forces[lock.force_name]
         local platform = force and force.platforms[platform_index]
         if not SurfaceLock.matches_platform(lock, platform) then
@@ -494,6 +503,9 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
             tostring(platform_name), tostring(platform_index))
     end
+    if not has_location(lock_data) then
+        return false, "Unlock refused: platform location unavailable; protection retained"
+    end
     local force = game.forces[lock_data.force_name]
     if not force then
         storage.locked_platforms[platform_index] = nil
@@ -589,6 +601,9 @@ function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected
     end
     if not (current_surface and current_surface.valid and current_surface.index == lock.surface_index) then
         return false, "surface identity mismatch (index reused since lock?)"
+    end
+    if not has_location(lock) then
+        return false, "platform location unavailable"
     end
     local force = game.forces[lock.force_name]
     if not SurfaceLock.matches_platform(lock, force and force.platforms[lock.platform_index]) then

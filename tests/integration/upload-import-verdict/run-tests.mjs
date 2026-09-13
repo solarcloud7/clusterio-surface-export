@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+
+import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 // upload-import-verdict — the controller transaction row for a NON-TRANSFER upload import carries the
 // destination's own verdict: an import the destination REFUSED reads failed with its failure stage, an
 // import the destination completed still reads completed
@@ -465,12 +467,6 @@ try {
 		docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
 			`rm -f ${instancePath(DEST_HOST, `script-output/failure_black_box_${PREFIX}*`)}`]);
 
-		if (probeIndex !== null) {
-			const unlocked = lua(SOURCE_HOST,
-				`local ok, err = pcall(remote.call, 'surface_export', 'unlock_platform', ${probeIndex})\n`
-				+ "return { success = true, called = ok, detail = tostring(err) }");
-			say(`  host ${SOURCE_HOST}: unlock_platform(${probeIndex}) called=${unlocked.called} (${unlocked.detail})`);
-		}
 		if (exportJobId) {
 			lua(SOURCE_HOST, "if storage.platform_exports then\n"
 				+ `  storage.platform_exports['${exportJobId}'] = nil\n`
@@ -486,6 +482,7 @@ try {
 			+ "for _, pl in pairs(game.forces.player.platforms) do\n"
 			+ `  if pl.valid and pl.name:sub(1, ${PREFIX.length}) == '${PREFIX}' and pl.surface and pl.surface.valid then\n`
 			+ "    removed[#removed + 1] = pl.name\n"
+			+ fixtureUnlockLua("pl")
 			+ "    game.delete_surface(pl.surface)\n"
 			+ "  end\n"
 			+ "end\n"
