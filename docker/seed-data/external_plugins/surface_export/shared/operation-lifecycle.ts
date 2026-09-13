@@ -22,5 +22,5 @@ export function isAdmissionSettled(operation: OperationState): boolean {
 
 export function hasUnresolvedPlatformOwnership(operation: OperationState): boolean {
 	return operation.status !== "queued" && (Boolean(operation.timingPendingRecovery)
-		|| !["completed", "failed", "error"].includes(operation.status));
+		|| !hasRecordedOutcome(operation.status) || operation.status === "cleanup_failed");
 }
