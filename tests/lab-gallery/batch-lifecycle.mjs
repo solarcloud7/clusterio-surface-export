@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createSaveSession } from "./save-session.mjs";
 import { probeCluster, compareWorlds, evaluateRuntime, expectedModuleVersion } from "../../tools/tests/cluster-readiness.mjs";
-import { developmentCluster, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
+import { developmentCluster, CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
 import { fileURLToPath } from "node:url";
 
 export { CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";

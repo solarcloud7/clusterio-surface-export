@@ -1,6 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createClusterTransport } from "../../tools/shared/cluster-transport.mjs";
+import { createClusterTransport, developmentCluster, CONTROLLER, CTL_CONFIG } from "../../tools/shared/cluster-transport.mjs";
+import { createBatchLifecycle } from "../lab-gallery/batch-lifecycle.mjs";
+
+test("gallery lifecycle constructs with the shared transport before any cluster work", async () => {
+	const lifecycle = createBatchLifecycle({ goldenSourceSave: "source.zip", goldenDestSave: "destination.zip", markerPrefix: "transport-test" });
+	assert.equal(lifecycle.CONTROLLER, CONTROLLER);
+	assert.equal(lifecycle.CTL_CONFIG, CTL_CONFIG);
+	for (const method of ["docker", "ctl", "rcon", "lua", "instanceIds"]) {
+		assert.equal(lifecycle[method], developmentCluster[method]);
+	}
+	const results = {}, errors = [];
+	await lifecycle.restoreLivePair(results, errors);
+	assert.deepEqual(errors, []);
+	assert.deepEqual(results.restored, { skipped: "test worlds never loaded" });
+});
 
 test("transport honors target, request timeout and output bounds without shell interpolation", () => {
 	const calls = [];
