@@ -22,6 +22,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
+local PlatformIdentity = require("modules/surface_export/utils/platform-identity")
 
 local ImportCompletion = {}
 
@@ -839,6 +840,11 @@ function ImportCompletion.run_phase2(job, batch_size)
 
 	job.metrics.validation_completed_tick = game.tick
 
+	local platform = job.target_platform
+	local target_identity = platform and platform.valid and platform.surface and platform.surface.valid and {
+		platform_index = platform.index, surface_index = platform.surface.index,
+		platform_uid = PlatformIdentity(platform), force_name = job.force_name,
+	} or nil
 	storage.async_job_results[job.job_id] = {
 		status = "complete",
 		complete = true,
@@ -847,6 +853,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 		platform_name = job.platform_name,
 		total_entities = job.total_entities,
 		operation_id = job.operation_id, transfer_id = job.transfer_id,
+		target_identity = target_identity,
 		duration_ticks = duration_ticks,
 		progress = 100,
 		requester = job.requester,

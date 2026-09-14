@@ -84,7 +84,7 @@ jobs:
           lua5.2 tests/lua/chunk-operation-isolation.lua
           lua5.2 tests/lua/upload-sessions.lua
           lua5.2 tests/lua/job-status.lua
-          node --input-type=module -e "import { cloneStatusLua } from './tests/lab-gallery/clone-fixture.mjs'; process.stdout.write(cloneStatusLua('fixture', 'export_1'));" | lua5.2 tests/lua/clone-fixture-status.lua
+          SE_TEST_LUA=lua5.2 node --test --test-name-pattern "Lua cleanup guards|generated Lua status" tests/tools/probe-transfer.test.mjs tests/lab-gallery/clone-fixture.test.mjs
           lua5.2 tests/lua/destination-transfer-gate.lua
           lua5.2 tests/lua/callback-profiler.lua
           lua5.2 tests/manual/transfer-reliability/performance.test.lua

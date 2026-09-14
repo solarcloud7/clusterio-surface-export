@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cloneStatusLua, completedCloneIndex, waitForFixtureClone } from "./clone-fixture.mjs";
 
-const complete = { success: true, index: 7, jobId: "import_51", active: false,
+const complete = { success: true, index: 7, jobId: "import_51", active: false, identityMatched: true,
 	status: "complete", complete: true };
 
 test("a visible clone and even an early result cannot authorize fixture editing while its import runs", () => {
@@ -15,6 +15,10 @@ test("a visible clone and even an early result cannot authorize fixture editing 
 test("successful completed imports, including clones without a transfer validation result, are ready", () => {
 	assert.equal(completedCloneIndex(complete), 7);
 	assert.equal(completedCloneIndex({ ...complete, validationSuccess: true }), 7);
+});
+
+test("a completed clone without a matching saved identity is unavailable", () => {
+	assert.throws(() => completedCloneIndex({ ...complete, identityMatched: false }), /identity unavailable/);
 });
 
 test("absence of a job or retained result is not completion", () => {
@@ -63,13 +67,28 @@ test("completed export without an available clone import fails immediately", asy
 });
 
 test("generated Lua status executes failure, completion and ambiguity branches", t => {
-	const probe = spawnSync("lua", ["-v"], { encoding: "utf8" });
-	if (probe.error?.code === "ENOENT") return t.skip("Lua unavailable locally; CI also runs this case with Lua 5.2");
+	const lua = process.env.SE_TEST_LUA || "lua";
+	const probe = spawnSync(lua, ["-v"], { encoding: "utf8" });
+	if (probe.error?.code === "ENOENT" && !process.env.SE_TEST_LUA) return t.skip("Lua unavailable locally; CI also runs this case with Lua 5.2");
 	assert.equal(probe.status, 0, probe.stderr || String(probe.error));
-	const result = spawnSync("lua", [fileURLToPath(new URL("../lua/clone-fixture-status.lua", import.meta.url))], {
+	const result = spawnSync(lua, [fileURLToPath(new URL("../lua/clone-fixture-status.lua", import.meta.url))], {
 		input: cloneStatusLua("fixture", "export_1"), encoding: "utf8",
 	});
 	assert.equal(result.status, 0, result.stdout + result.stderr);
+	const query = cloneStatusLua("fixture", "export_1");
+	for (const [guard, replacement] of [
+		["source and source.clone_import_job_id", "next(ids)"],
+		["platform.platform_index==identity.platform_index", "true"],
+		["platform.surface_index==identity.surface_index", "true"],
+		["platform.platform_uid==identity.platform_uid", "true"],
+		["platform.force_name==identity.force_name", "true"],
+	]) {
+		assert.ok(query.includes(guard));
+		const mutated = spawnSync(lua, [fileURLToPath(new URL("../lua/clone-fixture-status.lua", import.meta.url))], {
+			input: query.replace(guard, replacement), encoding: "utf8",
+		});
+		assert.notEqual(mutated.status, 0, `Clone identity guard removal survived: ${guard}`);
+	}
 });
 
 test("fixture identities cannot inject Lua", () => {

@@ -2,7 +2,7 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local function noop() end
 local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
-local function scenario(standalone, error_at, sectioned)
+local function scenario(standalone, error_at, sectioned, clone)
 local events, writes, modules, encodes, attempts = {}, {}, {}, 0, 0
 local env = setmetatable({game = {tick = 100, print = function() error("export phases must not broadcast chat") end, forces = {player = {valid = true, platforms = {}}}},
     storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true}},
@@ -55,6 +55,13 @@ env.require = function(path)
     if not modules[name] then modules[name] = assert(loadfile(root .. name .. ".lua", "t", env))() end
     return modules[name]
 end
+if clone then
+    modules["core/import-pipeline"] = {queue = function(_, name, force, requester)
+        assert(name == "clone-fixture" and force == "player" and requester == "clone")
+        if clone == "refused" then return nil, "admission refused" end
+        return "clone-import"
+    end}
+end
 local pipeline = env.require("modules/surface_export/core/export-pipeline")
 local admitted, admission_error = pipeline.queue(3, "player")
 assert(admitted == nil and admission_error == "Startup recovery is not ready")
@@ -65,6 +72,7 @@ local job = {job_id = "test", type = "export", started_tick = 100, current_index
     export_data = payload, belt_entities = {[1] = {valid = true}}, surface = {valid = true}, census = {}}
 env.storage.async_jobs.test = job
 if standalone then job.destination_instance_id = nil end
+if clone then job.clone_dest_name = "clone-fixture" end
 for tick = 100, 103 do
     env.game.tick = tick
     if sectioned and tick == 103 then job.compressed_sections={"compressed"} end
@@ -104,9 +112,17 @@ else
     assert(writes["debug_source_platform_fixture_103.json"] == '{"captured":true}', "diagnostic bytes differ from transport JSON")
 end
 assert(not env.storage.async_jobs.test and env.storage.async_job_results.test.complete)
+if clone then
+    local result = env.storage.async_job_results.test
+    if clone == "refused" then
+        assert(result.clone_import_job_id == nil and result.clone_import_error == "admission refused")
+    else assert(result.clone_import_job_id == "clone-import" and result.clone_import_error == nil) end
+end
 end
 scenario(false)
 scenario(true)
+scenario(true, nil, false, true)
+scenario(true, nil, false, "refused")
 scenario(false, nil, true)
 scenario(false, "surface_export_complete")
 for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
