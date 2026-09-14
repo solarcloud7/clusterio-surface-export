@@ -595,6 +595,8 @@ local function publish_completion(job)
 	if job.clone_dest_name then
 		job.export_data.platform_name = job.clone_dest_name
 		local import_job_id, import_err = ImportPipeline.queue(job.export_data, job.clone_dest_name, job.force_name, "clone")
+		storage.async_job_results[job.job_id].clone_import_job_id = import_job_id
+		storage.async_job_results[job.job_id].clone_import_error = import_err
 		if import_job_id then
 			log(string.format("[Clone Platform] Import queued from completed export %s: job=%s, platform='%s'",
 				export_id, import_job_id, job.clone_dest_name))

@@ -148,6 +148,13 @@ local function scenario(options)
         job.entity_map[1].unit_number, job.entity_map[1].active = 1, true
     end
     if not options.standalone then job.transfer_id = "transfer" end
+    if options.identity then
+        job.force_name = "player"
+        job.target_surface.index = 8
+        job.target_platform.index, job.target_platform.surface = 3, job.target_surface
+        job.target_platform.hub = {valid = true, unit_number = 401}
+        env.storage.source_recovery_surface_epochs = {[8] = "fixture-epoch"}
+    end
     if options.largeInventory then
         for _, ed in ipairs(job.entities_to_create) do
             local items = {}; for i = 1, 600 do items[i] = {name = "iron-plate", count = i} end
@@ -220,6 +227,10 @@ local function scenario(options)
     assert(env.storage.async_jobs.test == nil, "job never finished")
     assert(not options.inventoryError, "injected exception was not reached")
     local result = env.storage.async_job_results.test
+    if options.identity then
+        assert(result.target_identity.platform_index == 3 and result.target_identity.surface_index == 8)
+        assert(result.target_identity.platform_uid == "fixture-epoch:401" and result.target_identity.force_name == "player")
+    end
     assert(result.duration_ticks == env.game.tick - job.started_tick)
     local function eventTicks(name)
         local ticks = {}; for _, e in ipairs(events) do if e.name == name then ticks[#ticks + 1] = e.tick end end
@@ -283,6 +294,7 @@ end
 scenario({label = "transfer"})
 scenario({label = "bounded beacon and inventory passes", largeInventory = true, smallBatches = true})
 scenario({label = "standalone", standalone = true})
+scenario({label = "retained import identity", standalone = true, identity = true})
 scenario({label = "validated standalone snapshot", snapshot = true})
 scenario({label = "rejected standalone snapshot", snapshot = true, reject = true})
 scenario({label = "standalone snapshot hold failure", snapshot = true, holdFailure = true})
