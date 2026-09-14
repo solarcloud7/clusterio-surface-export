@@ -15,20 +15,57 @@ does not supply a replacement controller, host, container distribution or networ
 topology. Hosting, authentication, TLS and process supervision remain responsibilities
 of the Clusterio deployment.
 
-Choose a published plugin version compatible with your Clusterio and Factorio
-versions. These guides describe the checked-in implementation; an older npm release
-may not include every documented feature. A version in this checkout's package file
-does not mean it has been published.
+## Release availability
+
+The registry check on **2026-09-14 UTC** found only plugin versions `0.9.77` and
+`0.9.82`, with `latest` pointing to `0.9.82`. Its Clusterio peer requirement,
+`^2.0.0`, excludes the pinned prerelease `2.0.0-alpha.27`. There is currently no
+compatible published plugin for this stack. These guides describe the newer
+implementation; `0.9.82` does not provide its upload and save-recovery behavior.
+
+The candidate `0.11.0-beta.1` requires exactly Clusterio `2.0.0-alpha.27` and is
+not yet published. Until a compatible release is available, use an accepted
+candidate archive as below. Do not bypass npm peer checks with `--force` or
+`--legacy-peer-deps` to install the older release.
 
 ## Install the npm package
 
-For a normal npm-based Clusterio installation, run these commands in its installation
-directory. Replace `VERSION` with the exact published version you intend to use:
+### Accepted candidate archive
+
+Obtain `package.tgz` and its accompanying `acceptance.json` from the maintainer's
+accepted CI artifact. Require a successful run for that commit, including package
+acceptance and the integration checks. Confirm the recorded package version and
+compare the archive's SHA-256 with `package.sha256` in the report. Keep the archive
+available for every participating installation; do not rebuild or repack it.
+
+In the normal npm-based Clusterio installation directory, replace the path below
+with the archive's absolute path:
+
+```text
+npm install --save-exact /absolute/path/to/package.tgz
+```
+
+This is the package-install route exercised by the
+[acceptance fixture](../../tests/manual/package-install/README.md). If no compatible
+accepted archive is available, wait for one or for the published beta.
+
+### Published version
+
+Once a compatible release has been published, check the registry and replace
+`VERSION` with its exact version. Run these commands in the Clusterio installation
+directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
 npm view @solarcloud7/plugin-surface-export@VERSION peerDependencies
 npm install --save-exact @solarcloud7/plugin-surface-export@VERSION
+```
+
+### Register the installed plugin
+
+After either installation route, check Clusterio's plugin list:
+
+```text
 npx clusteriocontroller plugin list
 ```
 
