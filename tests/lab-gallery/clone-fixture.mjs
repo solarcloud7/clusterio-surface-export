@@ -25,6 +25,7 @@ for _,platform in pairs(game.forces.player.platforms) do
   end
 end
 return {success=true,index=index,jobId=job_id,active=active~=nil and active~=false,
+  sourceStatus=source and source.status,sourceComplete=source and source.complete,
   sourceError=source_error or nil,
   error=active and ((active.completion_interrupted or {}).error or (active.setup_cleanup or {}).error)
     or result and result.error,
@@ -37,6 +38,10 @@ export function completedCloneIndex(observation) {
 	if (observation.sourceError || observation.error || ["failed", "interrupted"].includes(observation.status)
 		|| observation.validationSuccess === false) {
 		throw new Error(`Clone failed: ${observation.sourceError || observation.error || observation.status}`);
+	}
+	if (observation.sourceStatus === "complete" && observation.sourceComplete === true && !observation.jobId) {
+		throw new Error("Clone import unavailable after export completion. Check the instance log for "
+			+ "[Clone Platform] FAILED to queue import; retained job status may also have expired.");
 	}
 	if (observation.active !== false || observation.complete !== true || observation.status !== "complete"
 		|| typeof observation.jobId !== "string" || !observation.jobId) return null;

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { cloneStatusLua, completedCloneIndex, waitForFixtureClone } from "./clone-fixture.mjs";
 
 const complete = { success: true, index: 7, jobId: "import_51", active: false,
@@ -49,6 +51,25 @@ test("missing or pruned clone results produce a bounded failure", async () => {
 		timeoutMs: 1000, now: () => time, sleep: async ms => { time += ms; },
 	}), /did not complete within 1000 ms/);
 	assert.equal(time, 1000);
+});
+
+test("completed export without an available clone import fails immediately", async () => {
+	let sleeps = 0;
+	await assert.rejects(waitForFixtureClone({
+		read: () => ({ success: true, active: false, sourceStatus: "complete", sourceComplete: true }),
+		timeoutMs: 1000, now: () => sleeps * 250, sleep: async () => { sleeps++; },
+	}), /Clone import unavailable.*FAILED to queue import/);
+	assert.equal(sleeps, 0);
+});
+
+test("generated Lua status executes failure, completion and ambiguity branches", t => {
+	const probe = spawnSync("lua", ["-v"], { encoding: "utf8" });
+	if (probe.error?.code === "ENOENT") return t.skip("Lua unavailable locally; CI also runs this case with Lua 5.2");
+	assert.equal(probe.status, 0, probe.stderr || String(probe.error));
+	const result = spawnSync("lua", [fileURLToPath(new URL("../lua/clone-fixture-status.lua", import.meta.url))], {
+		input: cloneStatusLua("fixture", "export_1"), encoding: "utf8",
+	});
+	assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
 test("fixture identities cannot inject Lua", () => {

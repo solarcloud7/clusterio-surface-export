@@ -13,6 +13,7 @@
 //           feed-less native loaders, or touch a protected fixture (it clones and sweeps)
 
 import { lua as luaRaw, sleep } from "../../lab-gallery/batch-lifecycle.mjs";
+import { cloneStatusLua, waitForFixtureClone } from "../../lab-gallery/clone-fixture.mjs";
 
 const HOST = 1;
 const SOURCE_NAME = "lab-omnibus-state-v1";
@@ -127,17 +128,13 @@ async function runArm(label, flagWrite) {
 
 async function cloneFixture(sourceIndex) {
 	const queued = lua(`local r = remote.call('surface_export', 'clone_platform', ${sourceIndex}, '${CLONE}')
+if not (r and r.success) then return { success = false, error = r and r.message or 'clone failed' } end
 return { success = true, job_id = r and r.job_id, entity_count = r and r.entity_count }`);
 	say(`clone of '${SOURCE_NAME}' [${sourceIndex}] -> ${CLONE}: job=${queued.job_id} entities=${queued.entity_count}`);
-	const deadline = Date.now() + CLONE_WAIT_MS;
-	while (Date.now() < deadline) {
-		const found = lua(`local idx
-for _, pl in pairs(game.forces.player.platforms) do if pl.name == '${CLONE}' and pl.surface and pl.surface.valid then idx = pl.index end end
-return { success = true, index = idx }`);
-		if (typeof found.index === "number") return found.index;
-		await sleep(3000);
-	}
-	throw new Error(`clone '${CLONE}' did not materialize within ${CLONE_WAIT_MS} ms`);
+	return waitForFixtureClone({
+		read: () => lua(cloneStatusLua(CLONE, queued.job_id)),
+		timeoutMs: CLONE_WAIT_MS, sleep,
+	});
 }
 
 async function main() {
