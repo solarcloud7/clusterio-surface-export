@@ -1,5 +1,4 @@
 import { runLab } from './lifecycle.mjs';
-import { checkRecoveryPreview } from '../../integration/canvas-motion/recovery.mjs';
 import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -107,11 +106,6 @@ await withWorkflowLock(async()=>{
     await page.getByTestId('job-observation').filter({hasText:'Waiting in Lua queue'}).waitFor({timeout:20_000});
     await page.screenshot({path:join(directory,'queued.png'),fullPage:true});
     report.cases.push({name:'queued beyond 30 seconds, repeated commit and browser presentation',status:'PASS'});save();
-    await page.goto(`${lab.url}/surface-export?tab=gateways`);
-    await page.getByRole('button',{name:'toggle debug mode',exact:true}).click();
-    await checkRecoveryPreview(page);
-    report.cases.push({name:'recovery marker stays unresolved and visible beyond terminal fade',status:'PASS'});save();
-
     lab.mutateContainer('kill',lab.controller,['--signal','KILL']);lab.mutateContainer('start',lab.controller);
     await lab.ready();
     report.afterRestart=await lab.until(()=>{const row=summary(lab,transferId);return row?.jobObservation?.state==='queued'&&row;},'queued job reobserved after controller restart',65);

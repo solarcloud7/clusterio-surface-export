@@ -6,25 +6,31 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
-import { checkRecoveryPreview } from "./recovery.mjs";
+import { checkMarkerPersistence } from "./persistence.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "local credentials stay on localhost");
 const browser = await launchChromiumOrSkip("canvas-motion");
 try {
-	const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, reducedMotion: "no-preference" });
 	const errors = [];
-	page.on("pageerror", error => errors.push(error.message));
-	const config = execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" });
+	const controller = process.env.SE_WEB_CONTROLLER || "surface-export-controller";
+	const config = execFileSync("docker", ["exec", controller, "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" });
 	const token = JSON.parse(config)["control.controller_token"];
 	assert.equal(typeof token, "string");
-	await page.goto(base);
-	await page.evaluate(value => localStorage.setItem("controller_token", value), token);
-	await page.goto(`${base}/surface-export?tab=gateways`);
-	await page.getByRole("button", { name: "toggle debug mode", exact: true }).click();
-	await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
-	await page.getByRole("button", { name: "Pause", exact: true }).click();
-	await assertPageMatchesDisk(page, { context: "canvas-motion" });
+	const openPreview = async (controlledTime = false) => {
+		const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, reducedMotion: "no-preference" });
+		if (controlledTime) await page.clock.install();
+		page.on("pageerror", error => errors.push(error.message));
+		await page.goto(base);
+		await page.evaluate(value => localStorage.setItem("controller_token", value), token);
+		await page.goto(`${base}/surface-export?tab=gateways`);
+		await page.getByRole("button", { name: "toggle debug mode", exact: true }).click();
+		await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
+		await page.getByRole("button", { name: "Pause", exact: true }).click();
+		await assertPageMatchesDisk(page, { context: "canvas-motion" });
+		return page;
+	};
+	const page = await openPreview();
 	const scene = page.getByTestId("transfer-motion-preview");
 	const ship = scene.locator("[data-transfer-id]");
 	const next = () => page.getByRole("button", { name: "Next phase", exact: true }).click();
@@ -39,29 +45,30 @@ try {
 		const original = await ship.elementHandle();
 		assert.ok(Math.abs(await position() - from) < 0.001);
 		await next();
-		const samples = await original.evaluate(async el => {
+		const samples = await original.evaluate(async (el, target) => {
 			const values = [];
 			const start = performance.now();
 			while (performance.now() - start < 1200) {
-				values.push(parseFloat(getComputedStyle(el).offsetDistance));
+				const value = parseFloat(getComputedStyle(el).offsetDistance);
+				values.push(value);
+				if (value === target) break;
 				await new Promise(requestAnimationFrame);
 			}
 			return { values, connected: el.isConnected };
-		});
+		}, to);
 		assert.ok(samples.connected, `${label}: the moving element must survive the phase change`);
 		assert.ok(samples.values.some(value => value > Math.min(from, to) && value < Math.max(from, to)),
 			`${label}: must render intermediate positions, not jump to the endpoint`);
 		assert.ok(Math.abs(await position() - to) < 0.001, `${label}: reaches correct endpoint`);
+		if (marker) await scene.locator(".surface-export-edge-status").waitFor();
 		assert.equal(await ship.evaluate(el => getComputedStyle(el).visibility), marker ? "hidden" : "visible", "Only holding or terminal ships join markers");
 		assert.equal(await scene.locator(".surface-export-edge-status").count(), marker ? 1 : 0);
 		console.log(`PASS ${label}`);
 	};
 
 	await settledAt(50);
-	await next(); // validation
-	await page.waitForTimeout(10500);
-	assert.ok(Number(await scene.locator(".surface-export-edge-status").evaluate(el => getComputedStyle(el).opacity)) > 0.1);
-	console.log("PASS validation remains visible beyond ten seconds");
+	await next();
+	await scene.locator(".surface-export-edge-status").waitFor();
 	await moveTo(50, 100, "forward arrival");
 	await next(); // reverse departure
 	await settledAt(50);
@@ -81,7 +88,6 @@ try {
 	console.log("PASS reduced-motion preference");
 	await page.emulateMedia({ reducedMotion: "no-preference" });
 	await page.getByRole("button", { name: "Close", exact: true }).click();
-	await checkRecoveryPreview(page);
 	await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
 	await page.getByRole("button", { name: "Pause", exact: true }).click();
 	const interrupted = await ship.elementHandle();
@@ -96,13 +102,14 @@ try {
 	await page.getByRole("button", { name: "Preview round trip", exact: true }).click();
 	await page.getByRole("button", { name: "Show queue", exact: true }).click();
 	await settledAt(0);
-	await page.waitForTimeout(10500);
 	const queueMarker = scene.locator(".surface-export-edge-status");
+	await queueMarker.waitFor();
 	assert.match(await queueMarker.getAttribute("title"), /queued/);
-	assert.ok(Number(await queueMarker.evaluate(el => getComputedStyle(el).opacity)) > 0.1, "Queue markers do not expire while waiting");
 	assert.equal(await queueMarker.evaluate(el => parseFloat(getComputedStyle(el).offsetDistance)), 0);
 	await moveTo(0, 50, "queue release moves smoothly from source into transit", false);
-	console.log("PASS queued origin, persistent marker and animated release");
+	await page.close();
+	const timedPage = await openPreview(true);
+	await checkMarkerPersistence(timedPage);
 	assert.deepEqual(errors, [], "preview must not raise browser errors");
 } finally {
 	await browser.close();
