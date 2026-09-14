@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { allocate, loadPlacementRules } from "./lattice.mjs";
+import { cloneStatusLua, waitForFixtureClone } from "../../lab-gallery/clone-fixture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const UNIVERSE = JSON.parse(readFileSync(path.join(here, "universe.json"), "utf8"));
@@ -276,17 +277,21 @@ async function main() {
 	console.log(`deleted ${removal.deleted} prior ${PLATFORM_NAME} platform(s)`);
 	if (removal.deleted > 0) await sleep(4000);
 
-	const clone = lua(`return remote.call('surface_export','clone_platform',${SOURCE_INDEX},'${PLATFORM_NAME}')`);
+	const cloneName = `oneofeach-staging-${Date.now().toString(36)}`;
+	const clone = lua(`return remote.call('surface_export','clone_platform',${SOURCE_INDEX},'${cloneName}')`);
 	if (!clone.success) throw new Error(`clone refused: ${clone.error || JSON.stringify(clone)}`);
 	console.log(`cloning fixture ${SOURCE_INDEX} (${clone.source_platform}, ${clone.entity_count} entities) ...`);
 
-	let arrived = false;
-	for (let attempt = 0; attempt < 60 && !arrived; attempt++) {
-		await sleep(3000);
-		arrived = lua(`local n=0 for _,p in pairs(game.forces.player.platforms) do `
-			+ `if p.valid and p.name=='${PLATFORM_NAME}' and p.surface then n=1 end end return {ready=n}`).ready === 1;
-	}
-	if (!arrived) throw new Error(`${PLATFORM_NAME} never appeared after the clone`);
+	const cloneIndex = await waitForFixtureClone({
+		read: () => lua(cloneStatusLua(cloneName, clone.job_id)),
+		timeoutMs: 180_000, sleep,
+	});
+	lua(`for _,p in pairs(game.forces.player.platforms) do
+  if p.valid and p.index==${cloneIndex} and p.name=='${cloneName}' then
+    p.name='${PLATFORM_NAME}'; return {success=true}
+  end
+end
+error('Completed staging clone missing')`);
 
 	const x1 = ORIGIN.x + COLUMNS * 28 - 1;
 	const y1 = ORIGIN.y + ROWS * 14 - 1;

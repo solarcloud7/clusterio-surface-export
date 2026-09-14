@@ -7,6 +7,9 @@
 //           replace the integration suite — this is the ad-hoc probe loop, made repeatable
 
 import { execFileSync } from "node:child_process";
+import assert from "node:assert/strict";
+import { lua as luaRaw } from "../../tests/lab-gallery/batch-lifecycle.mjs";
+import { cloneStatusLua, waitForFixtureClone } from "../../tests/lab-gallery/clone-fixture.mjs";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
@@ -23,6 +26,8 @@ const direction = valueOf("--direction", "1to2");
 const luaPrep = valueOf("--lua", null);
 const keep = args.includes("--keep");
 const probeName = valueOf("--name", `probe-${Date.now().toString(36)}`);
+assert.match(probeName, /^[A-Za-z0-9_-]+$/);
+assert.ok(Number.isSafeInteger(fixtureIndex) && fixtureIndex >= 0, "Invalid fixture index");
 
 const [sourceHost, destHost] = direction === "2to1" ? [2, 1] : [1, 2];
 
@@ -69,17 +74,15 @@ const fail = line => { console.log(line); failed = true; };
 try {
 	report(`=== probe-transfer: fixture ${fixtureIndex} as '${probeName}', host ${sourceHost} -> ${destHost} ===`);
 
-	const cloneRaw = rcon(sourceHost, `/sc local ok, res = pcall(function() return `
-		+ `remote.call('surface_export','clone_platform', ${fixtureIndex}, '${probeName}') end); `
-		+ `rcon.print(ok and (res and res.success and 'ok' or ('refused: ' .. tostring(res and res.message))) or ('threw: ' .. tostring(res)))`);
-	if (!/\bok\b/.test(cloneRaw.split(/\r?\n/).at(-1))) {
-		throw new Error(`clone failed: ${cloneRaw.slice(-200)}`);
+	const queued = luaRaw(sourceHost,
+		`return remote.call('surface_export','clone_platform', ${fixtureIndex}, '${probeName}')`);
+	if (queued?.success !== true) {
+		throw new Error(`clone failed: ${queued?.error || queued?.message || "no result"}`);
 	}
-	await sleep(4000);
-	const cloneIndex = findPlatform(sourceHost, probeName);
-	if (cloneIndex === null) {
-		throw new Error("clone did not appear on the source");
-	}
+	const cloneIndex = await waitForFixtureClone({
+		read: () => luaRaw(sourceHost, cloneStatusLua(probeName, queued.job_id)),
+		timeoutMs: 300_000, sleep,
+	});
 	report(`  clone ready at index ${cloneIndex}`);
 
 	if (luaPrep) {
