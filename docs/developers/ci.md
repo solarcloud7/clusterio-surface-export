@@ -39,8 +39,9 @@ distribution tag rather than silently replacing the stable tag. A manual dry run
 does not prove credentials, provenance exchange or actual registry publication.
 
 The [package lab](../../tests/manual/package-install/README.md) records exactly
-which artifact was exercised. The [runtime builder](../../tools/release/build-runtime.mjs)
-then builds deployment images from accepted package bytes. Source version,
+which artifact was exercised. The [fixture runtime builder](../../tests/manual/production-profile/build-runtime.mjs)
+builds disposable acceptance images from accepted package bytes. These images are
+test inputs, not the plugin's distribution. Source version,
 accepted tarball, image identity, deployed runtime and published release are
 separate facts. Do not describe a local source edit as deployed or published.
 

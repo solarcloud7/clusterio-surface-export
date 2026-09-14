@@ -1,6 +1,25 @@
-# Production profile acceptance
+# Packaged installation and backup acceptance
 
-Contract fixed before running: use the actual resolved production Compose file and
+This directory owns the Docker runtime used by the disposable acceptance fixture.
+It is not an operator deployment product or a replacement for Clusterio or
+clusterio-docker. The public installation path is the
+[npm plugin installed into Clusterio](../../../docs/admins/deployment.md).
+The `production-profile` directory name and historical records remain so earlier
+failure artifacts and results can still be interpreted.
+
+Build fixture images from an accepted package and a gateway archive matching
+`runtime/pins.json`:
+
+```text
+node tests/manual/production-profile/build-runtime.mjs <accepted-artifact-dir> <accepted-commit> <version> <gateway.zip> <gateway-sha256> <new-output-dir>
+```
+
+The builder verifies package acceptance and archive hashes and stages only the
+fixture recipe and supplied archives. Use its `runtime.json` with the commands
+below. Fixture pins describe the test environment, not the latest published plugin
+or gateway version. Run the cleanup proof before exercising the full fixture.
+
+Contract fixed before running: use the actual resolved fixture Compose file and
 baked images, create two fresh saves with the public CLI, verify disabled diagnostic
 and experimental settings, real exported assets and authenticated browser views.
 First transfer with the shipped startup and no fault hook. Stop the complete deployment,
@@ -20,7 +39,7 @@ history, physical cargo and exported assets through the authenticated browser.
 Test-only changes: unique resource names/labels, random loopback ports, read-only fault
 hook on hosts during the recovery arm and a private copy of the supplied licensed client volume. No seed worlds, product-source mounts,
 receipt edits, timer changes or live-cluster operations. Diagnostic defaults stay off.
-The shipped profile keeps auto-pause off so unattended destinations can process imports.
+The fixture keeps auto-pause off so unattended destinations can process imports.
 
 First run `--cleanup-proof`, deliberately failing after Compose startup. Require verified
 zero owned resources before the full run. Ten-minute setup and twenty-minute restore limits,

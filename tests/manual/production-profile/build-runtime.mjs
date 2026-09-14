@@ -4,10 +4,10 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { verifyPackage } from "./verify-package.mjs";
-import { withWorkflowLock } from "../shared/workflow-lock.mjs";
+import { verifyPackage } from "../../../tools/release/verify-package.mjs";
+import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 
-const pins = JSON.parse(readFileSync(new URL("../../docker/production/pins.json", import.meta.url)));
+const pins = JSON.parse(readFileSync(new URL("./runtime/pins.json", import.meta.url)));
 const { bases } = pins;
 export const buildFiles = ["Dockerfile", "pins.json", "verify-gateway.cjs", "verify-install.cjs", "start.sh",
   "configure.cjs", "configure-host.cjs", "configure-controller.cjs", "wire-startup.cjs", "settings.json"];
@@ -23,7 +23,7 @@ export function buildRuntime({ artifact, commit, version, gateway, gatewaySha256
   assert.ok(!existsSync(output), "output must be a new directory");
   mkdirSync(output, { recursive: true });
   for (const file of buildFiles)
-    copyFileSync(new URL(`../../docker/production/${file}`, import.meta.url), join(output, file));
+    copyFileSync(new URL(`./runtime/${file}`, import.meta.url), join(output, file));
   copyFileSync(join(artifact, "package.tgz"), join(output, "package.tgz"));
   copyFileSync(gateway, join(output, "gateway.zip"));
   const result = { schemaVersion: 1, accepted, gatewaySha256, pins, bases, images: {}, buildIdentities: {} };
@@ -41,7 +41,7 @@ export function buildRuntime({ artifact, commit, version, gateway, gatewaySha256
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [artifact, commit, version, gateway, gatewaySha256, output, ...rest] = process.argv.slice(2);
   if (!output || rest.length) {
-    console.log("node tools/release/build-runtime.mjs <accepted-artifact-dir> <accepted-commit> <version> <gateway.zip> <gateway-sha256> <new-output-dir>");
+    console.log("node tests/manual/production-profile/build-runtime.mjs <accepted-artifact-dir> <accepted-commit> <version> <gateway.zip> <gateway-sha256> <new-output-dir>");
     process.exitCode = 1;
   } else await withWorkflowLock(async () => console.log(JSON.stringify(buildRuntime({ artifact, commit, version, gateway, gatewaySha256, output }), null, 2)));
 }

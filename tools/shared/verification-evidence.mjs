@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, lstatSync, readlinkSync } from "node:fs";
 import { join, resolve, relative, isAbsolute, dirname } from "node:path";
 import { runCommand } from "./command-evidence.mjs";
-import { buildFiles, buildIdentity } from "../release/build-runtime.mjs";
+import { buildFiles, buildIdentity } from "../../tests/manual/production-profile/build-runtime.mjs";
 
 export const contract = { requires: ["canonical checkout", "candidate manifest when supplied"],
   produces: ["source and candidate identities"], "does not": ["certify test results", "inspect the live deployment"] };
@@ -39,7 +39,7 @@ export function candidateIdentity(file, root) {
       `candidate staged inputs differ from the recorded ${role} build`);
   }
   const recipeDifferences = buildFiles.filter(name => {
-    try { return !readFileSync(join(root, "docker/production", name)).equals(readFileSync(join(dirname(file), name))); }
+    try { return !readFileSync(join(root, "tests/manual/production-profile/runtime", name)).equals(readFileSync(join(dirname(file), name))); }
     catch (error) { if (error.code !== "ENOENT") throw error; return true; }
   });
   return { path: resolve(file), manifestSha256: digest(bytes), images: runtime.images,

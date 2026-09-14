@@ -45,7 +45,7 @@ Normal transaction history, required validation and phase measurements do not
 depend on debug mode. `belt_trace` adds successful belt-position evidence.
 `debug_destination_snapshot`, together with debug mode, adds a full destination
 snapshot after successful validation. That extra scan can be expensive and is
-disabled in the production profile. Neither setting replaces the required check.
+disabled in the Docker acceptance fixture. Neither setting replaces the required check.
 
 Relevant implementation: the
 [cargo integrity modules](../../docker/seed-data/external_plugins/surface_export/module/core/)

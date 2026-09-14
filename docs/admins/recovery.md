@@ -68,24 +68,25 @@ for the responsibilities of each store.
 
 ## Back up a deployment
 
-For a packaged deployment, retain its private environment file, resolved Compose
-configuration, settings, runtime manifest, exact image IDs/digests, accepted package
-and gateway archive. Stop the complete deployment before copying its persistent
-volumes as one checkpoint. Keep the licensed client and credentials private.
-Copy backups to storage independent of the Docker host and check archive integrity.
+Use the backup procedure for your Clusterio or clusterio-docker deployment. Retain
+its configuration, installed package versions and lockfile, mod packs, gateway mod,
+controller data, authentication material, instance saves and plugin recovery journals.
+For Docker deployments, also retain the resolved mounts and image identities.
+Stop the affected deployment before copying its persistent stores as one checkpoint.
+Keep licensed client files and credentials private. Copy backups to independent
+storage and check archive integrity.
 
-The production profile resolves controller data, logs and tokens, both hosts' data,
-configuration, logs and plugin state, and its dedicated external client volume.
-Do not assume `docker compose down -v` handles an external volume or is a backup
-command. It deletes managed volumes.
+Resolve the stores used by your actual installation; do not assume the directory
+layout or volume count of a test fixture. `docker compose down -v` is not a backup
+command: it deletes managed volumes.
 
 Restore into fresh, separately named resources first. Keep the original resources
 stopped until the restored worlds, journals, settings, authentication and assets
 have been checked. Verify the saved generation, physical cargo and another transfer;
 seeing an instance already running is not proof that it loaded the checkpoint.
 
-The [production acceptance fixture](../../tests/manual/production-profile/README.md)
-automates this sequence for the resolved profile. Its
+The [Docker acceptance fixture](../../tests/manual/production-profile/README.md)
+automates this sequence for its isolated test installation. Its
 [backup/restore evidence](../../tests/manual/transfer-reliability/backup-restore.md)
 states the tested boundaries. These are disposable test commands, not a generic
 restore tool for an arbitrary production installation.

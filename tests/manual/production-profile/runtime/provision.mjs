@@ -56,7 +56,7 @@ export function provision(call, { placements = [
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [env, ...extra] = process.argv.slice(2);
-  assert.ok(env && extra.length === 0, "usage: node docker/production/provision.mjs <production.env>");
+  assert.ok(env && extra.length === 0, "usage: node tests/manual/production-profile/runtime/provision.mjs <production.env>");
   const call = (args, timeout = 30_000) => execFileSync("docker", ["compose", "--env-file", resolve(env),
     "-f", fileURLToPath(new URL("./compose.yml", import.meta.url)), "exec", "-T", "--user", "clusterio",
     "controller", "npx", "--no-install", "clusterioctl", "--log-level", "error", "--config", "/clusterio/tokens/config-control.json", ...args],

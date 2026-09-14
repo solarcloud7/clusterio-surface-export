@@ -46,10 +46,10 @@ instance before its Lua behavior changes.
 | `debug_mode` | `true` | Diagnostic JSON output and development instruments, including selection-lab tools. Normal transfer logs and validation do not depend on this flag. |
 | `debug_destination_snapshot` | `false` | Additional full destination scan after successful validation; also requires debug mode. |
 
-The [production profile](../../docker/production/settings.json) explicitly disables
-`debug_mode`, `debug_destination_snapshot`, `belt_trace`, and `profile_batches`.
-The plugin default for debug mode is still `true`; installations outside that
-profile do not inherit its overrides automatically.
+For operational instances, set `debug_mode` to `false` unless diagnostics are needed.
+Leave `debug_destination_snapshot`, `belt_trace`, and `profile_batches` off unless
+investigating a problem. The plugin default for debug mode is `true`; installation
+does not automatically replace it with the settings used by acceptance tests.
 
 Test commands, self-tests, cloning, roster changes, and lifecycle fixtures require
 `debug_mode` to be explicitly `true` at invocation, including their JSON aliases.

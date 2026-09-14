@@ -74,7 +74,7 @@ node tools/verification-status.mjs --offline --report <result.json>
 ```
 
 The startup case tests container bootstrap without Factorio worlds. Acceptance
-uses the [disposable production fixture](../../tests/manual/production-profile/README.md).
+uses the [disposable Docker acceptance fixture](../../tests/manual/production-profile/README.md).
 Reports retain source/candidate identity, command outcomes and bounded redacted
 output. Review evidence before sharing; filtering cannot recognize every secret.
 An old report does not certify changed code or a different image recipe.

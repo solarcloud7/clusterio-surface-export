@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sourceIdentity, evidenceMatch, candidateIdentity } from "../../tools/shared/verification-evidence.mjs";
 import { collectStatus, summarizeChecks, summarizeHeadRuns, formatStatus, latestReport, reviewFindings, parseStatusOptions } from "../../tools/verification-status.mjs";
-import { buildFiles, buildIdentity } from "../../tools/release/build-runtime.mjs";
+import { buildFiles, buildIdentity } from "../../tests/manual/production-profile/build-runtime.mjs";
 import { stageTimer } from "../../tools/shared/stage-timing.mjs";
 import { parseOptions } from "../../tools/verify-workflow.mjs";
 import { prepareStartupCase, scenarios, startupRounds } from "../manual/production-profile/startup.mjs";
@@ -54,7 +54,7 @@ test("reports with missing, changed or historical identities never match current
 });
 
 test("candidate matching binds all staged build inputs and notices a changed recipe", t => {
-  const root = directory(t), staged = join(root, "staged"), production = join(root, "docker/production");
+  const root = directory(t), staged = join(root, "staged"), production = join(root, "tests/manual/production-profile/runtime");
   mkdirSync(staged); mkdirSync(production, { recursive: true });
   for (const file of buildFiles) { writeFileSync(join(staged, file), file); writeFileSync(join(production, file), file); }
   for (const file of ["package.tgz", "gateway.zip"]) writeFileSync(join(staged, file), file);

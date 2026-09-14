@@ -14,7 +14,7 @@ Do not replace mounted directories with junctions or symlinks.
   34200–34209, unless deliberately changed in the Compose configuration.
 
 The root Compose file is a development environment with writable plugin mounts
-and seeded test worlds. It is different from the [packaged deployment](../admins/deployment.md).
+and seeded test worlds. Administrators instead [install the plugin into Clusterio](../admins/deployment.md).
 Its published ports and seed visibility settings need deliberate network access
 restrictions; a localhost URL alone does not make a service private.
 

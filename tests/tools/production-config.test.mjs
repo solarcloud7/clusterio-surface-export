@@ -3,12 +3,12 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import configuration from "../../docker/production/configure.cjs";
-import startup from "../../docker/production/wire-startup.cjs";
+import configuration from "../../tests/manual/production-profile/runtime/configure.cjs";
+import startup from "../../tests/manual/production-profile/runtime/wire-startup.cjs";
 
-const settings = JSON.parse(readFileSync(new URL("../../docker/production/settings.json", import.meta.url)));
+const settings = JSON.parse(readFileSync(new URL("../../tests/manual/production-profile/runtime/settings.json", import.meta.url)));
 function configure(role, rejected) {
-  const file = fileURLToPath(new URL(`../../docker/production/configure-${role}.cjs`, import.meta.url));
+  const file = fileURLToPath(new URL(`../../tests/manual/production-profile/runtime/configure-${role}.cjs`, import.meta.url));
   const fields = settings[role === "host" ? "host" : "controllerLocal"];
   const script = `
     const cp = require('node:child_process');
