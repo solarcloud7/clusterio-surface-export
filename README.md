@@ -5,8 +5,8 @@ contains a TypeScript plugin, a save-patched Lua module and the gateway mod.
 
 Install the plugin package into Clusterio and add the
 [gateway mod](https://mods.factorio.com/mod/surfexp_gateways) to its mod pack.
-Check [release availability and the accepted-package installation path](docs/admins/deployment.md#release-availability)
-first: the compatible beta is not yet published on npm. This repository's Docker
+Use the [installation guide](docs/admins/deployment.md#release-availability)
+to install the compatible `0.11.0-beta.1` release explicitly. This repository's Docker
 setup is for development and acceptance tests. Use [Clusterio](https://github.com/clusterio/clusterio#installation) or
 [clusterio-docker](https://github.com/solarcloud7/clusterio-docker) to host the cluster.
 
