@@ -23,6 +23,7 @@
 
 import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
+import { cloneStatusLua, waitForFixtureClone } from "../../lab-gallery/clone-fixture.mjs";
 
 const SOURCE_HOST = 1;
 const DEST_HOST = 2;
@@ -139,13 +140,10 @@ async function cloneFixture(sourceIndex) {
 		+ `end\n`
 		+ `return { success = true, job_id = r.job_id, entity_count = r.entity_count }`);
 	say(`  clone of '${FIXTURE}' [${sourceIndex}] -> ${CLONE}: job=${queued.job_id} entities=${queued.entity_count}`);
-	const deadline = Date.now() + CLONE_WAIT_MS;
-	while (Date.now() < deadline) {
-		await sleep(4000);
-		const index = findPlatformIndex(SOURCE_HOST, CLONE);
-		if (index !== null) return index;
-	}
-	throw new Error(`clone '${CLONE}' did not materialize within ${CLONE_WAIT_MS} ms`);
+	return waitForFixtureClone({
+		read: () => lua(SOURCE_HOST, cloneStatusLua(CLONE, queued.job_id)),
+		timeoutMs: CLONE_WAIT_MS, sleep,
+	});
 }
 
 function buildAndArm() {
