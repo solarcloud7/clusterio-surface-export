@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { analyze, evaluateCopies } from "../transfer-reliability/oracle.mjs";
-import { settings } from "../../../docker/production/provision.mjs";
+import { settings } from "./runtime/provision.mjs";
 
 import { preservesInstalledCode } from "./mounts.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";

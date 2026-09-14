@@ -54,7 +54,7 @@ tarball, gateway archive and licensed full client. It creates fresh worlds and
 exports actual locale/icons. It is different from seeding this repository's
 development cluster or proving an upgrade from an older installation.
 
-For supervised hosting, use [packaged deployment](../admins/deployment.md).
+For operator installation, use [the npm plugin procedure](../admins/deployment.md).
 Upstream install instructions apply to their pinned version; this documentation
 does not mirror a changing upstream setup wizard.
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { provision, settings, pins } from "../../docker/production/provision.mjs";
+import { provision, settings, pins } from "../../tests/manual/production-profile/runtime/provision.mjs";
 
 test("existing instances are refused before configuration or save mutations", () => {
   const calls = [];

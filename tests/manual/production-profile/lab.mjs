@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DockerLab, ROOT } from "../transfer-reliability/docker-lab.mjs";
-import { provision, settings, pins } from "../../../docker/production/provision.mjs";
+import { provision, settings, pins } from "./runtime/provision.mjs";
 import { gatewayMapObserver, verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
 import { readConfigList } from "../../../tools/tests/clusterio-cli.mjs";
 
-import configuration from "../../../docker/production/configure.cjs";
+import configuration from "./runtime/configure.cjs";
 import { preservesInstalledCode } from "./mounts.mjs";
-import { readTable } from "../../../docker/production/cli-table.mjs";
+import { readTable } from "./runtime/cli-table.mjs";
 
 export class ProductionLab extends DockerLab {
   factorioVersion = pins.factorio;
@@ -34,7 +34,7 @@ export class ProductionLab extends DockerLab {
     const env = { ...process.env, SE_PROJECT: this.run, SE_CONTROLLER_IMAGE: runtime.images.controller,
       SE_HOST_IMAGE: runtime.images.host, SE_ADMIN: "profile-test", SE_CLIENT_VOLUME: client,
       SE_HTTP_PORT: "0", SE_HOST1_PORT: "0", SE_HOST2_PORT: "0", SE_GAME_BIND: "127.0.0.1" };
-    const config = JSON.parse(this.docker(["compose", "-f", join(ROOT, "docker/production/compose.yml"), "config", "--format", "json"], { env }));
+    const config = JSON.parse(this.docker(["compose", "-f", join(ROOT, "tests/manual/production-profile/runtime/compose.yml"), "config", "--format", "json"], { env }));
     for (const [name, service] of Object.entries(config.services)) {
       service.container_name = `${this.run}-${name}`;
       service.labels = { ...service.labels, ...label };

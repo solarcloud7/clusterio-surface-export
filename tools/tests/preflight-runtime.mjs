@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { runCommand } from "../shared/command-evidence.mjs";
-import configuration from "../../docker/production/configure.cjs";
-import { pins } from "../../docker/production/provision.mjs";
+import configuration from "../../tests/manual/production-profile/runtime/configure.cjs";
+import { pins } from "../../tests/manual/production-profile/runtime/provision.mjs";
 
 export const contract = { requires: ["candidate image IDs", "Docker"], produces: ["verified native CLI results", "cleanup evidence"],
   "does not": ["start the deployment", "modify existing containers or volumes"] };

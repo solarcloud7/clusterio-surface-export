@@ -3,6 +3,12 @@
 Transfer Factorio Space Age platforms between Clusterio instances. The project
 contains a TypeScript plugin, a save-patched Lua module and the gateway mod.
 
+Install the [npm plugin](https://www.npmjs.com/package/@solarcloud7/plugin-surface-export)
+into Clusterio and add the [gateway mod](https://mods.factorio.com/mod/surfexp_gateways)
+to its mod pack. This repository's Docker setup is for development and acceptance
+tests. Use [Clusterio](https://github.com/clusterio/clusterio#installation) or
+[clusterio-docker](https://github.com/solarcloud7/clusterio-docker) to host the cluster.
+
 **Status: development / pre-production.** Bounded transfer/recovery, coordinated
 volume restoration and packaged fresh-install fixtures pass. Upgrade compatibility,
 broader disaster recovery and supported operating limits remain open. The root
@@ -12,7 +18,7 @@ Docker cluster is a development environment.
 
 - [Use gateways and transfer platforms](docs/users/transfers.md)
 - [Read outcomes and audit evidence](docs/users/transaction-logs.md)
-- [Host a packaged deployment](docs/admins/deployment.md)
+- [Install and update the Clusterio plugin](docs/admins/deployment.md)
 - [Configure the plugin](docs/admins/configuration.md)
 - [Back up and recover worlds](docs/admins/recovery.md)
 - [Set up development](docs/developers/setup.md)
@@ -51,7 +57,7 @@ dependency pins are in their configuration; the Docker image revision is in
 |---|---|
 | Transfer recovery | [Manual fixtures](tests/manual/transfer-reliability/README.md) cover their save-policy, lost-reply and crash boundaries with independent cargo checks. Original failures remain recorded. |
 | Destination save rollback | The [original rollback case](tests/manual/transfer-reliability/README.md#destination-save-rollback) left a missing platform. Explicit snapshot restoration is a separate import, not automatic repair of that old outcome. |
-| Backup/restore | [Production acceptance](tests/manual/production-profile/README.md) restored all twelve resolved stores into fresh resources on the same machine/image pair, then checked cargo, history, settings, authentication, assets and another transfer. Mixed generations and off-host disaster recovery remain separate cases. |
+| Backup/restore | [Docker acceptance fixture](tests/manual/production-profile/README.md) restored all twelve resolved stores into fresh resources on the same machine/image pair, then checked cargo, history, settings, authentication, assets and another transfer. Mixed generations and off-host disaster recovery remain separate cases. |
 | Installation | [Package acceptance](tests/manual/package-install/README.md) and [consumer installation](tests/manual/consumer-install/README.md) record exact bytes, fresh worlds and native checks. Fresh installation is not proof of historical upgrade or code-rollback compatibility. |
 | Performance | [Retained experiments](tests/README.md) identify fixture sizes and measured boundaries. There is no general no-lag, platform-size or transfer-duration guarantee. |
 

@@ -13,7 +13,7 @@ A runtime validator's own totals cannot independently prove cargo conservation.
 | `tests/lua/` | Lua state transitions, scheduling and guards | Lua 5.2 test harness with simulated engine objects. |
 | `tests/integration/` | Real transfers, gallery observations and browser behavior | Configured running cluster; suites can mutate or reload worlds. |
 | `tests/instruments/` | A bounded engine or performance question | Fixture-specific setup; some require an idle cluster or consenting client. |
-| `tests/manual/` | Crashes, save restoration, installation and production acceptance | Explicitly invoked disposable Docker resources and recorded cleanup. |
+| `tests/manual/` | Crashes, save restoration, installation and backup acceptance | Explicitly invoked disposable Docker resources and recorded cleanup. |
 
 ## Discover before running
 
@@ -30,7 +30,7 @@ world just to satisfy a readiness check.
 The manual [transfer reliability lab](../../tests/manual/transfer-reliability/README.md)
 has explicit preview, run and cleanup modes. It creates labelled isolated resources
 and retains the original failure separately from a passing recovery observation.
-The [production fixture](../../tests/manual/production-profile/README.md) adds a
+The [Docker acceptance fixture](../../tests/manual/production-profile/README.md) adds a
 complete deployment checkpoint/restore and another transfer. Follow each runner's
 current arguments and prerequisites; they do not all share one CLI.
 

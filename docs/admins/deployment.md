@@ -1,119 +1,88 @@
-# Packaged deployment profile
+# Install and update the Clusterio plugin
 
-This separate Compose file runs one controller and two hosts from locally built,
-content-addressed images. It uses Clusterio Docker's existing entrypoints and public
-Clusterio CLI. It does not mount this checkout, seed test saves, download dependencies
-at startup, or modify the development cluster. No Docker base-image change is required.
+Surface Export installs into Clusterio as the npm package
+[@solarcloud7/plugin-surface-export](https://www.npmjs.com/package/@solarcloud7/plugin-surface-export).
+The separate [Surface Export Gateways mod](https://mods.factorio.com/mod/surfexp_gateways)
+provides the Factorio prototypes and artwork. Administrators do not need to clone
+this repository or run its development containers.
 
-Recorded acceptance used plugin 0.10.281, Clusterio 2.0.0-alpha.27, Factorio
-Space Age 2.1.17 and gateway 0.6.5. That identifies a tested artifact, not the
-currently published release or an acceptance of every later source revision.
-Historical upgrades, mixed-generation recovery and operating limits require
-separate verification.
+## Start with a working Clusterio installation
 
-## Build the accepted package into images
+Follow [Clusterio's installation instructions](https://github.com/clusterio/clusterio#installation).
+For a deployment managed by [clusterio-docker](https://github.com/solarcloud7/clusterio-docker),
+use that project's container setup and plugin-installation process. Surface Export
+does not supply a replacement controller, host, container distribution or network
+topology. Hosting, authentication, TLS and process supervision remain responsibilities
+of the Clusterio deployment.
 
-Use `package.tgz` and `acceptance.json` from the same passing release-acceptance
-artifact. Supply the full commit that produced that artifact, not a later merge SHA.
-The helper replays its acceptance oracle and verifies both npm integrity and SHA256.
-It copies only build scripts and the two supplied archives into a new build context.
+Choose a published plugin version compatible with your Clusterio and Factorio
+versions. These guides describe the checked-in implementation; an older npm release
+may not include every documented feature. A version in this checkout's package file
+does not mean it has been published.
 
-```powershell
-node tools/release/build-runtime.mjs <artifact-directory> <accepted-commit> <accepted-version> <gateway.zip> <gateway-sha256> <new-output-directory>
+## Install the npm package
+
+For a normal npm-based Clusterio installation, run these commands in its installation
+directory. Replace `VERSION` with the exact published version you intend to use:
+
+```text
+npm view @solarcloud7/plugin-surface-export dist-tags
+npm view @solarcloud7/plugin-surface-export@VERSION peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@VERSION
+npx clusteriocontroller plugin list
 ```
 
-The build uses normal `npm install` into the pinned Clusterio installation. It verifies
-the four core versions and shared library identity, then registers only Surface Export.
-Other plugins bundled in the base images are removed through npm during the build;
-Clusterio otherwise rediscovers them from dependencies even with an explicit plugin list.
-Their companion mods and
-compatibility would need separate installation and acceptance.
-This is the Docker deployment path; the separate consumer lab tests `npm init @clusterio`.
-The gateway archive must be version 0.6.5. Keep `runtime.json`, the two image IDs, package
-acceptance and gateway hash together. Dependency resolution happens at build time;
-rebuilding can produce different image bytes. Deploy the recorded image IDs, or push
-the built images and use their registry digests. Do not substitute mutable tags.
+If `surface_export` is absent from the plugin list, register it:
 
-## First installation
-
-Create a private environment file outside version control:
-
-```dotenv
-SE_PROJECT=surface-export-production
-SE_CONTROLLER_IMAGE=sha256:<controller ID from runtime.json>
-SE_HOST_IMAGE=sha256:<host ID from runtime.json>
-SE_ADMIN=your-factorio-username
-SE_CLIENT_VOLUME=your-dedicated-factorio-2117-client
-SE_HTTP_PORT=8180
-SE_HOST1_PORT=35100
-SE_HOST2_PORT=35200
-SE_GAME_BIND=127.0.0.1
+```text
+npx clusteriocontroller plugin add @solarcloud7/plugin-surface-export
 ```
 
-The client volume must already contain a licensed Linux full Space Age 2.1.17 client
-and belong to this deployment. Both hosts mount it read-only. This profile neither
-downloads nor redistributes it. Do not point a production deployment at development
-data volumes. The test harness copies the development client into a disposable volume.
+The shared-directory Clusterio setup uses the same plugin list for its controller,
+host and control client. For separate installations, install the same package version
+and register it in each controller, participating host and control-client directory.
+Use `clusteriohost` or `clusterioctl` in place of `clusteriocontroller` where appropriate.
+Preserve other installed plugins and existing configuration. This follows the
+[pinned Clusterio plugin-install procedure](https://github.com/clusterio/clusterio/blob/v2.0.0-alpha.27/README.md#installing-plugins).
 
-```powershell
-docker compose --env-file <production.env> -f docker/production/compose.yml up -d --wait
-node docker/production/provision.mjs <production.env>
-```
+For Docker-managed installations, make the package change through the hosting
+project's persistent installation/update mechanism; an edit in a disposable container
+layer is not a durable installation.
 
-Provisioning creates `platforms-1` and `platforms-2` with fresh `world.zip` saves,
-enables all required Space Age mods including Recycler, exports locale/icons, and
-starts both instances. It refuses existing instance names; it is not an upgrade or
-repair command. If provisioning stops midway, inspect the failed command and existing
-state before continuing with Clusterio's CLI. It never deletes existing worlds to retry.
+## Enable the gateway mod and verify startup
 
-The explicit values in [settings.json](../../docker/production/settings.json) disable debug snapshots, belt
-tracing, per-batch profiling and the experimental codec. Transfer history, phase
-timings and validation remain enabled. Admission and the shared Lua step limit are
-both one. Instances auto-save every five minutes, keep ticking when empty, require
-Factorio user verification and are not publicly listed. Unattended transfers require
-advancing game ticks; auto-pause is an operator choice, not a transfer timeout fix.
-Remote core/package updates are disabled on controller and hosts; runtime updates
-replace built images. These fields are local-only in Clusterio. A checked build-time
-hook adds local configuration after the pinned controller entrypoint's bootstrap and
-before its server starts. Host fields are applied after host configuration bootstrap.
-The hook refuses a changed startup marker instead of silently skipping configuration.
+Add a compatible `surfexp_gateways` release from the Mod Portal to the instances'
+Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
+bundled mods enabled. Players need the matching mod pack when joining; the gateway
+mod alone does not provide the server-side transfer implementation.
 
-The web port binds to loopback only. Use an operator-managed HTTPS reverse proxy
-before exposing the controller remotely; preserve WebSocket forwarding and Clusterio
-token authentication. Game ports also default to loopback. Set `SE_GAME_BIND` to the
-intended host interface and configure its firewall deliberately for remote players.
-Public game listing remains disabled. All containers are within one trusted operator
-boundary: the existing Docker boot guard gives hosts access to the shared admin-token
-volume. This is not isolation from an untrusted host administrator.
+Restart the controller, affected hosts and instances through the deployment's normal
+save-preserving procedure so the Node plugin and save-patched Lua are both loaded.
+Use Clusterio's export-data process for the selected mod pack to generate locale and
+icon assets. Confirm that the plugin loads, Surface Export opens in the controller
+web interface, and each participating instance exposes its gateway.
 
-Generate a login token privately with the existing Clusterio CLI:
+Review [configuration](configuration.md) and [permissions](commands.md) before
+enabling transfers. The checked-in default for `debug_mode` is `true`; set it to
+`false` on operational instances unless diagnostics are needed, then restart those
+instances. Normal transfer history and validation do not require debug mode.
 
-```powershell
-docker compose --env-file <production.env> -f docker/production/compose.yml exec --user clusterio controller npx --no-install clusteriocontroller --config /clusterio/data/config-controller.json bootstrap generate-user-token <admin-name>
-```
+## Update an existing installation
 
-Treat the output as a secret. Do not paste it into reports or commit the environment
-file. Docker log rotation is bounded; Clusterio's persistent file logs need an operator
-retention policy. The profile retains the controller's native static-cache behavior.
+1. Check the target version's compatibility and release notes. Keep controller, host
+   and control-client plugin versions aligned.
+2. Finish transfers where possible. Preserve evidence for unresolved operations and
+   take a coordinated [backup](recovery.md#back-up-a-deployment) before updating.
+3. Install the chosen package version through the same Clusterio deployment mechanism
+   used for the original installation. Update the mod pack when that release requires it.
+4. Restart the affected processes and instances while retaining saves, configuration,
+   history and recovery journals. Verify loaded versions and a supervised transfer.
 
-## Updates and recovery
+Do not create fresh worlds, delete volumes or rerun a development seed/reset script
+to update the plugin. Fresh-install acceptance does not establish compatibility with
+every historical save or code rollback.
 
-Build and accept the replacement package and image pair before scheduling an
-update. Preserve the current resolved deployment and its persistent data. Use
-the replacement image IDs/digests with that same deployment configuration;
-provisioning is only for fresh instance names and is not an upgrade command.
-Do not rerun it to repair a partially completed installation.
-
-Back up the complete deployment and rehearse restoration into fresh resources.
-Follow [backups and recovery](recovery.md) for save-policy choices, snapshot
-restoration and unresolved handoffs. Do not delete volumes to update the plugin.
-Fresh-install acceptance does not establish compatibility with historical saves,
-journals or code rollback.
-
-The [production-profile fixture](../../tests/manual/production-profile/README.md)
-retains the exact image, checkpoint and physical-state observations for its
-complete-volume restoration. A same-machine fixture does not establish an off-host
-backup service, disaster recovery on different hardware or a capacity limit.
-
-The [local development workflow](../developers/workflow.md) applies to the root
-source-mounted cluster. Do not use its reset paths on this packaged deployment.
+The [consumer-install fixture](../../tests/manual/consumer-install/README.md) exercises
+Clusterio's published installer and plugin registration with a candidate npm tarball.
+Its recorded results identify exact tested versions. Docker-based backup and restart
+fixtures are test infrastructure, not an alternative operator installation path.

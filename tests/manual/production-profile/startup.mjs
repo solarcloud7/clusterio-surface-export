@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { ProductionLab } from "./lab.mjs";
 import { ROOT } from "../transfer-reliability/docker-lab.mjs";
-import { readTable } from "../../../docker/production/cli-table.mjs";
+import { readTable } from "./runtime/cli-table.mjs";
 import { stageTimer } from "../../../tools/shared/stage-timing.mjs";
 import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 import { sourceIdentity, candidateIdentity } from "../../../tools/shared/verification-evidence.mjs";

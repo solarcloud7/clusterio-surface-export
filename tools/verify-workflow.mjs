@@ -62,7 +62,7 @@ async function main(options) {
 			const keys = ["artifact", "commit", "version", "gateway", "gatewaySha256", "output"];
 			for (const key of keys) assert.equal(typeof config[key], "string", `build config needs ${key}`);
 			runtimePath = resolve(root, config.output, "runtime.json");
-			return command("runtime build", ["tools/release/build-runtime.mjs", ...keys.map(key => config[key])], 1500000);
+			return command("runtime build", ["tests/manual/production-profile/build-runtime.mjs", ...keys.map(key => config[key])], 1500000);
 		}]);
 		if (options["--runtime"] || options["--build-config"]) stages.push(["native CLI preflight", () => {
 			report.provenance.candidate = candidateIdentity(runtimePath, root); save();

@@ -30,7 +30,7 @@ if (mode === "--analyze") {
   const report = { schemaVersion: 3, run, startedAt: new Date().toISOString(), runtime, cleanup: { success: false }, hashes: {},
     expectedStages: ["startup", "world creation and assets", "normal transfer", "complete deployment restore", "enable recovery faults", "lost-reply recovery",
       "controller recreation", "retained history", "browser and assets", "cleanup"], stages: [] };
-  for (const file of ["docker/production/compose.yml", "docker/production/settings.json", "docker/production/provision.mjs",
+  for (const file of ["tests/manual/production-profile/runtime/compose.yml", "tests/manual/production-profile/runtime/settings.json", "tests/manual/production-profile/runtime/provision.mjs",
     "tests/manual/production-profile/lab.mjs", "tests/manual/production-profile/run.mjs", "tests/manual/production-profile/oracle.mjs", "tests/manual/production-profile/restore.mjs",
     "tests/manual/transfer-reliability/backup-storage.mjs",
     "tests/integration/settings/run-tests.mjs",

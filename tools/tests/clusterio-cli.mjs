@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import configuration from "../../docker/production/configure.cjs";
+import configuration from "../../tests/manual/production-profile/runtime/configure.cjs";
 
 export const contract = { requires: ["pinned native Clusterio CLI output"], produces: ["validated configuration values"],
 	"does not": ["mutate configuration"] };

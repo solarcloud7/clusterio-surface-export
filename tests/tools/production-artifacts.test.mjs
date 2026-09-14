@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import gateway from "../../docker/production/verify-gateway.cjs";
-import { buildFiles, buildIdentity } from "../../tools/release/build-runtime.mjs";
-import { pins } from "../../docker/production/provision.mjs";
+import gateway from "../../tests/manual/production-profile/runtime/verify-gateway.cjs";
+import { buildFiles, buildIdentity } from "../../tests/manual/production-profile/build-runtime.mjs";
+import { pins } from "../../tests/manual/production-profile/runtime/provision.mjs";
 import { preservesInstalledCode } from "../manual/production-profile/mounts.mjs";
 
 test("gateway metadata and directory must agree with the production pin", async () => {
@@ -47,7 +47,7 @@ test("production mounts cannot overlay installed code at any depth", () => {
 });
 
 test("Compose and the shared lab cannot silently diverge from the production version pins", () => {
-  const compose = readFileSync(new URL("../../docker/production/compose.yml", import.meta.url), "utf8");
+  const compose = readFileSync(new URL("../../tests/manual/production-profile/runtime/compose.yml", import.meta.url), "utf8");
   assert.equal(compose.match(/DEFAULT_FACTORIO_VERSION: "([^"]+)"/)[1], pins.factorio);
   assert.equal(compose.match(/DEFAULT_MOD_PACK: Space Age ([^\r\n]+)/)[1], pins.factorio);
   const env = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
