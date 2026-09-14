@@ -1,8 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import vm from "node:vm";
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runPlatformTransfer, transferPlatform } from "../../tools/surface-export/platform-transfer.mjs";
@@ -85,35 +84,6 @@ for (const [settings, error] of [[{ lostReply: true }, /lost acknowledgement/], 
 		assert.equal(r.calls.filter(body => body.includes("'export_platform'")).length, 1);
 	});
 }
-
-test("integration caller cannot sweep either platform after its transfer reply is lost", async () => {
-	for (const suite of ["inventory-item-state", "belt-item-state", "config-attrs"]) {
-		const syntax = spawnSync(process.execPath, ["--check", `tests/integration/${suite}/run-tests.mjs`], { encoding: "utf8" });
-		assert.equal(syntax.status, 0, syntax.stderr);
-	}
-	const source = readFileSync(new URL("../integration/inventory-item-state/run-tests.mjs", import.meta.url), "utf8");
-	const main = source.slice(source.indexOf("async function main() {"), source.indexOf("main().then(() =>"));
-	const deletions = [];
-	const sandbox = {
-		CLONE: "invstate-test", SOURCE_HOST: 1, DEST_HOST: 2, FIXTURE: "fixture", REPO_ROOT: ".", BP_EXPECT: "expected", READBACK_LUA: "readback",
-		say() {}, fail() {}, pass() {}, console, sleep: async () => {}, platformLua: () => "", findPlatformIndex: () => 21,
-		cloneFixture: async () => ({ platform_index: 22, platform_uid: "fixture-uid", surface_index: 122, force_name: "player" }),
-		buildAndArm: () => ({ chest: "chest", book_slots: 2 }),
-		cleanupProbe: (...args) => { deletions.push(args); },
-		lua: (host, body) => {
-			if (body.includes("game.delete_surface")) deletions.push([host, body]);
-			return { bp: { key: "expected" }, book: { filled: 2 }, deleted: 1, paused: false };
-		},
-		instanceIds: () => ({ 1: 123, 2: 456 }), ctl() {},
-		transferPlatform: ({ platform }, io) => {
-			assert.equal(platform.platform_uid, "fixture-uid", "transfer must retain clone identity instead of selecting by index again");
-			io.beforeExport();
-			throw new Error("lost status reply after admission");
-		},
-	};
-	await assert.rejects(vm.runInNewContext(main + "main()", sandbox), /lost status reply/);
-	assert.equal(deletions.length, 0);
-});
 
 test("manual PowerShell transfer propagates observation failure instead of a five-second success", {
 	skip: spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0,

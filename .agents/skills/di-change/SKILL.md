@@ -62,9 +62,11 @@ Use the checked-in entrypoints from the repository root:
 
 - `./tools/clusterio/build-plugin.ps1 lint`
 - `./tools/clusterio/build-plugin.ps1 test -OutputDirectory ci-artifacts/di-check`
-- `./tools/clusterio/build-plugin.ps1 smoke -OutputDirectory ci-artifacts/di-smoke`
 
-The test and smoke targets compile Node code; keep their output isolated as shown.
+The test target includes the lifecycle tests selected by smoke. Use
+`./tools/clusterio/build-plugin.ps1 smoke -OutputDirectory ci-artifacts/di-smoke`
+for focused feedback while editing, not as an additional requirement after an
+unchanged full test. Both targets compile Node code; keep their output isolated.
 Use this wrapper for build/lint/test containers instead of hand-written Docker commands.
 `node tools/tests/run-integration-tests.mjs --list` lists integration suites; `--only`
 selects a suite on the configured cluster, not a disposable one. Use the checked-in
