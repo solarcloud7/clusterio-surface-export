@@ -15,6 +15,18 @@ A runtime validator's own totals cannot independently prove cargo conservation.
 | `tests/instruments/` | A bounded engine or performance question | Fixture-specific setup; some require an idle cluster or consenting client. |
 | `tests/manual/` | Crashes, save restoration, installation and backup acceptance | Explicitly invoked disposable Docker resources and recorded cleanup. |
 
+The plugin's `smoke` target selects lifecycle tests already included in `test`.
+Use smoke for focused feedback while editing, or run the full target for the final
+check. Running smoke again after an unchanged full test adds no coverage. Root
+Node tests and Lua harnesses cover different code and remain separate checks.
+
+The `item-state` integration suite prepares inventory blueprints/books and belt
+item state on one clone, then transfers it once. Both cases retain independent
+source and destination observations and their own stored counter assertions.
+`config-attrs` uses a separate clone for entity configuration. These suites share
+clone identity tracking, transfer observation and guarded cleanup; failures in any
+case or in cleanup fail the suite. Fault and recovery suites remain separate.
+
 ## Discover before running
 
 ```powershell

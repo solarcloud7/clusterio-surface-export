@@ -9,6 +9,18 @@ const { pathToFileURL } = require("node:url");
 
 const scriptUrl = pathToFileURL(path.join(__dirname, "..", "scripts", "lint-test-grounding.mjs")).href;
 
+test("extracted integration cases remain subject to grounding checks", async (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "grounding-cases-"));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const directory = path.join(root, "tests/integration/example");
+	fs.mkdirSync(directory, { recursive: true });
+	fs.writeFileSync(path.join(directory, "run-tests.mjs"), "import './case.mjs';");
+	fs.writeFileSync(path.join(directory, "case.mjs"), "const loss = result.totalItemLoss;");
+	const { findTestFiles, findGroundingViolations } = await import(scriptUrl);
+	const failures = findGroundingViolations(findTestFiles(path.dirname(directory), root));
+	assert.ok(failures.some(failure => failure.path.endsWith("/case.mjs") && failure.rule === 2));
+});
+
 async function rule3(source) {
 	const { findGroundingViolations } = await import(scriptUrl);
 	return findGroundingViolations([{ name: "fixture", path: "tests/integration/fixture/run-tests.ps1", source }])

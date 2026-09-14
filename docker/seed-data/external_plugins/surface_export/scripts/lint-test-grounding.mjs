@@ -35,7 +35,7 @@ export function findTestFiles(testsDir = TESTS_DIR, repoRoot = REPO_ROOT) {
 	for (const name of readdirSync(testsDir)) {
 		const directory = join(testsDir, name);
 		if (!statSync(directory).isDirectory()) continue;
-		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
+		for (const runner of ["run-tests.ps1", "run-tests.mjs", "case.mjs"]) {
 			const file = join(directory, runner);
 			if (!existsSync(file)) continue;
 			files.push({
