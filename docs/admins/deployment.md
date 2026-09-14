@@ -17,21 +17,32 @@ of the Clusterio deployment.
 
 ## Release availability
 
-The registry check on **2026-09-14 UTC** found only plugin versions `0.9.77` and
-`0.9.82`, with `latest` pointing to `0.9.82`. Its Clusterio peer requirement,
-`^2.0.0`, excludes the pinned prerelease `2.0.0-alpha.27`. There is currently no
-compatible published plugin for this stack. These guides describe the newer
-implementation; `0.9.82` does not provide its upload and save-recovery behavior.
+Plugin `0.11.0-beta.1` is published under npm's `beta` tag and requires exactly
+Clusterio `2.0.0-alpha.27`. Its [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/runs/34800778352)
+passed package acceptance and integration checks before publication. The published
+archive matches the tested archive byte for byte.
 
-The candidate `0.11.0-beta.1` requires exactly Clusterio `2.0.0-alpha.27` and is
-not yet published. Until a compatible release is available, use an accepted
-candidate archive as below. Do not bypass npm peer checks with `--force` or
-`--legacy-peer-deps` to install the older release.
+At publication on **2026-09-14 UTC**, `latest` still pointed to `0.9.82`. That
+version's Clusterio peer requirement, `^2.0.0`, excludes the pinned prerelease
+`2.0.0-alpha.27`, and it does not provide the newer upload and save-recovery
+behavior. Select the beta version explicitly. Do not bypass npm peer checks with
+`--force` or `--legacy-peer-deps` to install the older release.
 
 ## Install the npm package
 
+### Published version
+
+Run these commands in the Clusterio installation directory:
+
+```text
+npm view @solarcloud7/plugin-surface-export dist-tags
+npm view @solarcloud7/plugin-surface-export@0.11.0-beta.1 peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.1
+```
+
 ### Accepted candidate archive
 
+For an unpublished candidate, use the same archive that passed acceptance.
 Obtain `package.tgz` and its accompanying `acceptance.json` from the maintainer's
 accepted CI artifact. Require a successful run for that commit, including package
 acceptance and the integration checks. Confirm the recorded package version and
@@ -46,20 +57,7 @@ npm install --save-exact /absolute/path/to/package.tgz
 ```
 
 This is the package-install route exercised by the
-[acceptance fixture](../../tests/manual/package-install/README.md). If no compatible
-accepted archive is available, wait for one or for the published beta.
-
-### Published version
-
-Once a compatible release has been published, check the registry and replace
-`VERSION` with its exact version. Run these commands in the Clusterio installation
-directory:
-
-```text
-npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@VERSION peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@VERSION
-```
+[acceptance fixture](../../tests/manual/package-install/README.md).
 
 ### Register the installed plugin
 
