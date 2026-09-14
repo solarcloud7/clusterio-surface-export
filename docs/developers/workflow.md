@@ -35,24 +35,28 @@ a maintenance window and keep a backup outside the cluster for valuable worlds.
 # Node handlers: restart both controller and hosts when both changed.
 ./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartController -RestartHosts
 # Lua only: verify existing build artifacts, then patch current saves.
-./tools/clusterio/deploy.ps1 -Scope lua -KeepSaves
+./tools/clusterio/deploy.ps1 -Scope lua
 # Combined plugin, web and Lua change.
-./tools/clusterio/deploy.ps1 -Scope plugin -KeepSaves
+./tools/clusterio/deploy.ps1 -Scope plugin
 ```
 
 The preserving reload takes pre-deploy saves and compares the existing world/player
 observations after restart. Avoid player movement during that check. It is not an
 off-host backup or proof of every entity property.
 
-Lua/plugin deployment without `-KeepSaves` resets saves. Cluster deployment without
-`-KeepData` destroys volumes. These reset paths are for deliberately disposable
-worlds, not routine updates. `docker compose down -v` is also destructive.
+Lua/plugin deployment preserves saves by default. Cluster deployment preserves
+volumes by default, but retained saves still need a Lua reload when the module changes.
+`-ResetSaves` (Lua/plugin) and `-ResetData` (cluster) explicitly select destructive
+resets for disposable worlds. The older `-KeepSaves` and `-KeepData` switches still
+select preservation; combining them with a reset is rejected. `docker compose down -v`
+also deletes volumes.
 
 Public alpha, beta and release-candidate versions are selected explicitly. The
 deployment scripts refuse to increment them automatically. A save-preserving
 update does not change the version. For an intentional fixture reset at the same
-version, use `-Scope lua -SkipIncrement` or `-Scope plugin -SkipIncrement`;
-these commands still reset saves. Do not combine `-SkipIncrement` with `-KeepSaves`.
+version, use `-Scope lua -ResetSaves -SkipIncrement` or
+`-Scope plugin -ResetSaves -SkipIncrement`. For Lua/plugin scopes, `-SkipIncrement`
+requires `-ResetSaves`; preserving saves already preserves the version.
 
 Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`.
 If it reports an owner, let that operation finish. After a crash, verify that the

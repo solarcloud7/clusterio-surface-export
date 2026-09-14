@@ -1,3 +1,6 @@
+# requires: development cluster, built dependencies and explicit reset authorization for disposable state
+# produces: selected deployment, preserving saves and volumes unless reset is requested
+# does not: deploy a production Clusterio installation
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -10,21 +13,26 @@ param(
     [switch]$RestartHosts,
     [switch]$SkipIncrement,
     [switch]$KeepData,
-    [switch]$KeepSaves
+    [switch]$KeepSaves,
+    [switch]$ResetSaves,
+    [switch]$ResetData
 )
 
 $ErrorActionPreference = 'Stop'
 
 $scopeParams = @{
     artifacts = @('Target', 'Fresh', 'RestartController', 'RestartHosts')
-    lua       = @('KeepSaves', 'SkipIncrement')
-    plugin    = @('KeepSaves', 'SkipIncrement')
-    cluster   = @('SkipIncrement', 'KeepData')
+    lua       = @('KeepSaves', 'ResetSaves', 'SkipIncrement')
+    plugin    = @('KeepSaves', 'ResetSaves', 'SkipIncrement')
+    cluster   = @('SkipIncrement', 'KeepData', 'ResetData')
 }
 $suppliedNames = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'Scope' -and $_ -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable') })
 $rejected = @($suppliedNames | Where-Object { $_ -notin $scopeParams[$Scope] })
-if ($KeepSaves -and $PSBoundParameters.ContainsKey('SkipIncrement')) {
-    throw '-KeepSaves already preserves the version; -SkipIncrement applies to fixture resets and cluster deployments.'
+if (($KeepSaves -and $ResetSaves) -or ($KeepData -and $ResetData)) {
+    throw 'Choose preservation or reset; Keep and Reset switches cannot be combined.'
+}
+if ($Scope -in @('lua', 'plugin') -and -not $ResetSaves -and $PSBoundParameters.ContainsKey('SkipIncrement')) {
+    throw 'Save-preserving deployment already preserves the version; -SkipIncrement requires -ResetSaves for Lua/plugin scopes.'
 }
 if ($rejected.Count -gt 0) {
     $allowed = if ($scopeParams[$Scope].Count) { $scopeParams[$Scope] -join ', ' } else { '(none)' }
@@ -53,11 +61,11 @@ switch ($Scope) {
         if ($LASTEXITCODE -ne 0) { throw 'Deployment runtime readiness failed.' }
     }
     'lua' {
-        if ($KeepSaves) { Assert-PluginArtifactsFresh; & (Join-Path $here 'reload-saves.ps1') }
+        if (-not $ResetSaves) { Assert-PluginArtifactsFresh; & (Join-Path $here 'reload-saves.ps1') }
         else { & (Join-Path $here 'patch-and-reset.ps1') -LuaOnly -SkipIncrement:$SkipIncrement }
     }
     'plugin' {
-        if ($KeepSaves) {
+        if (-not $ResetSaves) {
             & (Join-Path $here 'build-plugin.ps1') all
             & (Join-Path $here 'reload-saves.ps1')
         } else { & (Join-Path $here 'patch-and-reset.ps1') -SkipIncrement:$SkipIncrement }
@@ -65,7 +73,7 @@ switch ($Scope) {
     'cluster' {
         $childArgs = @{}
         if ($SkipIncrement) { $childArgs.SkipIncrement = $true }
-        if ($KeepData) { $childArgs.KeepData = $true }
+        if ($ResetData) { $childArgs.ResetData = $true }
         & (Join-Path $here 'deploy-cluster.ps1') @childArgs
     }
 }

@@ -327,7 +327,7 @@ export function loadSources() {
 	return {
 		captureFiles: [read("core/export-pipeline.lua"), ...inDir(SCANNERS_DIR, "export_scanners")],
 		restoreFiles: [read(DESERIALIZER_REL), read("core/import-completion.lua"),
-			read("core/import-pipeline.lua"), ...inDir(PHASES_DIR, "import_phases")],
+			read("core/import-pipeline.lua"), read("core/import-reporting.lua"), ...inDir(PHASES_DIR, "import_phases")],
 	};
 }
 

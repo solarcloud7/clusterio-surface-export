@@ -1,9 +1,14 @@
+# requires: development compose stack and explicit ResetData for a disposable rebuild
+# produces: rebuilt containers with existing volumes retained by default
+# does not: automatically reload the Lua already patched into retained saves
 param (
     [switch]$SkipIncrement,
-    [switch]$KeepData
+    [switch]$KeepData,
+    [switch]$ResetData
 )
 
 $ErrorActionPreference = "Stop"
+if ($KeepData -and $ResetData) { throw '-KeepData and -ResetData cannot be combined.' }
 
 $WorkspaceRoot = Resolve-Path "$PSScriptRoot/../.."
 $PluginPathCandidates = @(
@@ -86,16 +91,17 @@ $clientContainer = "surface-export-host-$exportHostNumber"
 Write-Host "Stopping existing cluster..." -ForegroundColor Cyan
 Set-Location $WorkspaceRoot
 docker compose down
+if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed; deployment stopped.' }
 
-if (-not $KeepData) {
+if ($ResetData) {
     Write-Host "Removing Docker volumes (clean slate)..." -ForegroundColor Yellow
     $downOut = docker compose down -v 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host ($downOut | Out-String) -ForegroundColor Red
-        throw "docker compose down -v failed (exit $LASTEXITCODE) — volumes were NOT wiped, so this is not the clean slate it claims. Re-run, or pass -KeepData if you meant to keep them."
+        throw "docker compose down -v failed (exit $LASTEXITCODE); reset may be partial. Inspect the remaining volumes before retrying."
     }
 } else {
-    Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
+    Write-Host "Keeping existing data volumes" -ForegroundColor Yellow
 }
 
 Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
@@ -281,8 +287,8 @@ foreach ($probeInstance in $expectedInstances) {
     }
     if (Test-ModuleDeploymentResponse -Output $probeText -Version $NewVersion -BuildId $ModuleBuildId) {
         Write-Host "  OK - $probeInstance runs module version $($reported.version), build $($reported.buildId)" -ForegroundColor Green
-    } elseif ($KeepData) {
-        Write-Host "  ~ $probeInstance runs $reported (deploy is $NewVersion) — EXPECTED with -KeepData: kept saves keep their old patched Lua" -ForegroundColor Yellow
+    } elseif (-not $ResetData) {
+        Write-Host "  ~ $probeInstance runs $reported (deploy is $NewVersion) — retained saves keep their old patched Lua; reload with deploy.ps1 -Scope plugin" -ForegroundColor Yellow
     } else {
         throw "$probeInstance runs STALE module code ($reported) after a full deploy (expected $NewVersion). The save was not re-patched — do not trust this deploy."
     }

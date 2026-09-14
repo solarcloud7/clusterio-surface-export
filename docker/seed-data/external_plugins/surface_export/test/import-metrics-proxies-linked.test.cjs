@@ -10,6 +10,7 @@ const { buildImportMetrics } = require(path.join(distNode, "helpers.js"));
 
 const moduleRoot = path.join(__dirname, "..", "module");
 const completionSource = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+const reportingSource = fs.readFileSync(path.join(moduleRoot, "core", "import-reporting.lua"), "utf8");
 const restorationSource = fs.readFileSync(
 	path.join(moduleRoot, "import_phases", "entity_state_restoration.lua"), "utf8");
 
@@ -47,14 +48,14 @@ test("an import that relinked no proxy targets stores zero, never an absent key"
 
 test("the Lua half of the wire emits proxies_linked beside the sibling it was modelled on", () => {
 	const marker = "copper_pruned = job.metrics.copper_pruned or 0,";
-	const at = completionSource.indexOf(marker);
+	const at = reportingSource.indexOf(marker);
 	assert.notEqual(at, -1,
 		"the import-complete event's metrics table must still carry copper_pruned — this scan anchors on "
 		+ "it, and an anchor that matches nothing would pass the check below vacuously");
-	assert.equal(completionSource.lastIndexOf(marker), at,
+	assert.equal(reportingSource.lastIndexOf(marker), at,
 		"the copper_pruned anchor must be unique: a second emission site would make this scan prove the "
 		+ "wire for one of them and say nothing about the other");
-	assert.match(completionSource, /proxies_linked = job\.metrics\.proxies_linked or 0,/,
+	assert.match(reportingSource, /proxies_linked = job\.metrics\.proxies_linked or 0,/,
 		"buildImportMetrics can only carry a key the Lua event actually emits. Without this line the "
 		+ "TypeScript allowlist reads 0 for every transfer, which is indistinguishable from a transfer "
 		+ "that relinked nothing");

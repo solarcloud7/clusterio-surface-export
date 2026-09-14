@@ -31,6 +31,7 @@
 				"module/core/deserializer.lua",
 				"module/core/import-completion.lua",
 				"module/core/import-pipeline.lua",
+				"module/core/import-reporting.lua",
 				"module/import_phases/active_state_restoration.lua",
 				"module/import_phases/belt_batches.lua",
 				"module/import_phases/belt_restoration.lua",
@@ -1316,7 +1317,7 @@
 				"field": "force",
 				"sites": [
 					"core/deserializer.lua:Deserializer.create_entity",
-					"core/import-completion.lua:bank_failure_black_box"
+					"core/import-reporting.lua:ImportReporting.bank_failure_black_box"
 				]
 			},
 			{

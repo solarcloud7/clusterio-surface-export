@@ -2,58 +2,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createSaveSession } from "./save-session.mjs";
 import { probeCluster, compareWorlds, evaluateRuntime, expectedModuleVersion } from "../../tools/tests/cluster-readiness.mjs";
-import { execFileSync } from "node:child_process";
+import { developmentCluster, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
 import { fileURLToPath } from "node:url";
 
-export const CONTROLLER = "surface-export-controller";
-export const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-import { seededHosts } from "../../tools/shared/seeded-instances.mjs";
-export const HOSTS = seededHosts();
+export { CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
+export const { docker, ctl, rcon, lua, instanceIds } = developmentCluster;
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const FLUID_EPSILON = 1e-6;
 export const DOUBLE_EPSILON = 1e-9;
-
-export function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-export function lastLine(v) { return String(v).split(/\r?\n/).map(l => l.trim()).filter(Boolean).at(-1) || ""; }
-
-export function docker(args, options = {}) {
-	return execFileSync("docker", args, {
-		encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"],
-		maxBuffer: 32 * 1024 * 1024, ...options,
-	});
-}
-
-export function ctl(...args) {
-	return docker(["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",
-		"--config", CTL_CONFIG, ...args], { timeout: 180_000 });
-}
-
-export function rcon(host, command) {
-	return docker(["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",
-		"instance", "send-rcon", HOSTS[host].instance, command, "--config", CTL_CONFIG],
-	{ timeout: 180_000 }).trim();
-}
-
-export function lua(host, body) {
-	const command = `/sc local ok,result=pcall(function() ${body} end); ` +
-		`if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({success=false,error=tostring(result)})) end`;
-	const raw = lastLine(rcon(host, command));
-	try { return JSON.parse(raw); }
-	catch (error) { throw new Error(`Invalid Lua JSON from host ${host}: ${raw}\n${error.message}`); }
-}
-
-export function instanceIds() {
-	const ids = {};
-	for (const host of [1, 2]) {
-		const out = ctl("instance", "save", "list", HOSTS[host].instance);
-		for (const line of out.split(/\r?\n/)) {
-			const id = Number((line.match(/^\s*(\d+)\s*\|/) || [])[1]);
-			if (Number.isInteger(id)) { ids[host] = id; break; }
-		}
-		if (!ids[host]) throw new Error(`Could not resolve instance ID for host ${host} from:\n${out}`);
-	}
-	return ids;
-}
 
 export function instancePath(host, suffix) {
 	return `/clusterio/data/instances/${HOSTS[host].instance}/${suffix}`;
@@ -136,76 +92,21 @@ export function fetchTransferSummaries({ limit = 200 } = {}) {
 }
 
 
-const LIVE_TRANSFER_STATUSES = new Set([
-	"transporting", "awaiting_validation", "awaiting_completion", "in_progress",
-]);
-
-function wouldRefuse(hit) {
-	if (hit.registrySource !== "active") return false;
-	if (LIVE_TRANSFER_STATUSES.has(hit.status)) return false;
-	return hit.status !== "failed";
-}
-
 export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }) {
-	const scope = `${candidates.length} predicted ID(s), ${candidates[0]} .. ${candidates.at(-1)}`;
-	const caveat = `BEST-EFFORT: the query is windowed at ${limit} records and activeTransfers is `
-		+ "pruned above 100, so a clear result does not prove the IDs are free.";
-
 	if (summaries === null) {
-		return {
-			status: "skipped", fatal: false, hits: [],
-			message: "preflight SKIPPED (not passed): could not query the controller transfer registry. "
-				+ "Proceeding — a settled-ID collision would surface later as a refused transfer.",
-		};
+		return { status: "skipped", fatal: false, hits: [],
+			message: "preflight SKIPPED: controller history unavailable; runtime admission still decides whether the export may proceed." };
 	}
-
-	const byId = new Map(summaries.map(summary => [summary.transferId, summary]));
-	const hits = candidates.filter(id => byId.has(id)).map(id => byId.get(id));
-	if (!hits.length) {
-		return { status: "clear", fatal: false, hits: [], message: `preflight: ${scope} — none present. ${caveat}` };
+	const ids = new Set(candidates);
+	const hits = summaries.filter(row => ids.has(row.transferId));
+	if (hits.length) {
+		return { status: "collision", fatal: true, hits,
+			message: "preflight COLLISION: " + hits.map(row => row.transferId).join(", ")
+				+ " already belongs to recorded operations. Use a fresh export identity; do not clear history or restart to bypass replay protection." };
 	}
-
-	const describe = hit => `${hit.transferId} (status=${hit.status}, registry=${hit.registrySource ?? "unknown"})`;
-	const refusing = hits.filter(wouldRefuse);
-	if (refusing.length) {
-		return {
-			status: "collision", fatal: true, hits,
-			message: `preflight COLLISION: ${refusing.map(describe).join(", ")} is settled in the `
-				+ "controller's IN-MEMORY activeTransfers in a status the retry guard REFUSES. This run "
-				+ "will be refused. Remedy: docker restart surface-export-controller (that clears "
-				+ "activeTransfers), then re-run. The persisted transaction log is reloaded on restart but "
-				+ "is NOT consulted by the guard, so it does not need clearing.",
-		};
-	}
-
-	const replaceable = hits.filter(hit => hit.registrySource === "active");
-	if (replaceable.length) {
-		return {
-			status: "replaceable", fatal: false, hits,
-			message: `preflight NOTE (no action needed): ${replaceable.map(describe).join(", ")} is in the `
-				+ "in-memory registry, but in a status transferPlatform does NOT refuse — a live status "
-				+ "dedupes, and 'failed' is explicitly replaced because its rollback discarded the "
-				+ "destination. The suite's own refusal leg manufactures exactly this every run.",
-		};
-	}
-
-	const unknown = hits.filter(hit => hit.registrySource !== "persisted");
-	if (unknown.length) {
-		return {
-			status: "unknown", fatal: false, hits,
-			message: "preflight POSSIBLE COLLISION (provenance unknown — an older controller build, or a "
-				+ `registrySource value this checker does not know): ${unknown.map(describe).join(", ")}. `
-				+ "It may or may not be refused. Remedy if it is: docker restart "
-				+ "surface-export-controller, then re-run; if it persists after a restart the record is "
-				+ "historical only. Not failing on an unprovable signal.",
-		};
-	}
-
-	return {
-		status: "historical", fatal: false, hits,
-		message: `preflight NOTE (no action needed): ${hits.map(describe).join(", ")} exist only in the `
-			+ "PERSISTED transaction log, which the retry guard never reads. They will not refuse this run.",
-	};
+	return { status: "clear", fatal: false, hits: [],
+		message: "preflight: no predicted IDs found in the windowed query (limit " + limit
+			+ "). Absence does not prove admission; runtime replay protection remains authoritative." };
 }
 
 

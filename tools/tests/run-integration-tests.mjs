@@ -75,7 +75,7 @@ const readiness = runReadinessGate();
 if (!readiness.ok) {
 	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
 		+ "blank-booted or unreachable cluster. Every check above is measured live; re-seed with "
-		+ "`./tools/clusterio/deploy.ps1 -Scope cluster` (or reload the golden saves) before re-running.");
+		+ "reload the golden saves before re-running; -Scope cluster preserves existing volumes.");
 	process.exit(3);
 }
 

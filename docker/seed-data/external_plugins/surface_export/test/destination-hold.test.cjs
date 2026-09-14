@@ -88,7 +88,7 @@ test("normal transfer finalization stages the destination before reporting compl
 	const importCompletion = read("module/core/import-completion.lua");
 	assert.match(importCompletion, /DestinationHold\.stage\(job.transfer_id/);
 	assert.ok(importCompletion.indexOf("DestinationHold.stage(job.transfer_id")
-		< importCompletion.indexOf('clusterio_api.send_json("surface_export_import_complete"'));
+		< importCompletion.indexOf("ImportReporting.publish(job, validation_result, duration_ticks)"));
 });
 
 test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {

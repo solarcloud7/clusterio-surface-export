@@ -26,8 +26,9 @@ and [setup](docs/developers/setup.md). Human readers do not need this file.
   specify an output directory under `ci-artifacts` so compilation does not replace
   the running plugin. Do not install/prune packages in the live plugin mount.
 - Use `tools/clusterio/deploy.ps1` for development deployment. Lua/plugin scopes
-  reset saves without `-KeepSaves`; cluster scope destroys volumes without
-  `-KeepData`. These defaults do not authorize deletion.
+  preserve saves by default; cluster scope preserves volumes. Only `-ResetSaves`
+  and `-ResetData` select destructive resets. These switches require explicit
+  authorization for disposable state.
 - Matching Node, web and Lua changes need corresponding reloads. Check loaded
   versions and relevant behavior before describing source edits as deployed.
 - Respect `ci-artifacts/workflow.lock`. After a crash, verify the owner process

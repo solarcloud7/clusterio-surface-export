@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { createClusterTransport } from "../../tools/shared/cluster-transport.mjs";
 
 import { LEGEND, TEMPLATE_ROWS } from "./test-foundation.mjs";
 
@@ -18,22 +18,9 @@ const OPEN_CARD = {
 	forbidden: "Do not store loose materials on the pad; the paste zone (right half) is swept by /test-run.",
 };
 
-function docker(args, timeout = 120_000) {
-	return execFileSync("docker", args, {
-		encoding: "utf8", timeout, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024,
-	});
-}
-function rcon(command, timeout = 240_000) {
-	return docker(["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",
-		"instance", "send-rcon", GALLERY, command, "--config", CTL_CONFIG], timeout).trim();
-}
-function luaJson(body, timeout = 240_000) {
-	const raw = rcon(`/sc local out={} local ok,err=pcall(function() ${body} end) ` +
-		`if not ok then out={success=false,error=tostring(err)} end rcon.print(helpers.table_to_json(out))`, timeout);
-	const last = raw.split(/\r?\n/).filter(Boolean).at(-1) || "";
-	try { return JSON.parse(last); }
-	catch (error) { throw new Error(`unparseable Lua JSON (${error.message}): ${last.slice(0, 500)}`); }
-}
+const transport = createClusterTransport({ requestTimeoutMs: 240_000, maxBufferBytes: 64 * 1024 * 1024 });
+const luaJson = (body, timeout = 240_000) => transport.luaTable(GALLERY, body, { timeout });
+
 function jlit(value) { return JSON.stringify(value).replace(/'/g, "\\'"); }
 
 const OMNI = `local plat for _,p in pairs(game.forces.player.platforms) do if p.valid and p.name=='${OMNIBUS}' then plat=p end end ` +

@@ -1,7 +1,8 @@
+import { waitForTransfer } from "../../tools/surface-export/platform-transfer.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { runTransferProbe, waitForProbeTransfer, cleanupProbeLua } from "../../tools/surface-export/transfer-probe.mjs";
+import { runTransferProbe, cleanupProbeLua } from "../../tools/surface-export/transfer-probe.mjs";
 
 function cliProbe(scenario) {
 	const script = `
@@ -177,7 +178,7 @@ test("queued work advances to completion without treating another success as our
 
 test("unavailable and malformed transfer observations fail closed", async () => {
 	for (const read of [() => { throw new Error("offline"); }, () => null, () => "invalid"]) {
-		await assert.rejects(waitForProbeTransfer({ read, transferId: "1:transfer_1", sourceId: 1, targetId: 2,
+		await assert.rejects(waitForTransfer({ read, transferId: "1:transfer_1", sourceId: 1, targetId: 2,
 			timeoutMs: 5, sleep: async () => {} }));
 	}
 });

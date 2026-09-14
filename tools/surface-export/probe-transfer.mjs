@@ -4,7 +4,7 @@
 // does not: replay transfers, remove unresolved platforms, or certify independent cargo parity
 import { parseArgs } from "node:util";
 import { randomUUID } from "node:crypto";
-import * as cluster from "../../tests/lab-gallery/batch-lifecycle.mjs";
+import { developmentCluster as cluster } from "../shared/cluster-transport.mjs";
 import { withWorkflowLock } from "../shared/workflow-lock.mjs";
 import { runTransferProbe } from "./transfer-probe.mjs";
 
