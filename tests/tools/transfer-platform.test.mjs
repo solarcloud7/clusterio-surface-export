@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, rmSy
 import vm from "node:vm";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runPlatformTransfer } from "../../tools/surface-export/platform-transfer.mjs";
+import { runPlatformTransfer, transferPlatform } from "../../tools/surface-export/platform-transfer.mjs";
 
 function rig({ lostReply = false, failed = false, replaced = false } = {}) {
 	const source = { platform_index: 21, platform_uid: "source-uid", surface_index: 121, force_name: "player" };
@@ -32,8 +32,41 @@ function rig({ lostReply = false, failed = false, replaced = false } = {}) {
 			status: elapsed < 6000 ? "in_progress" : failed ? "failed" : "completed", completedAt: 100,
 			...(failed ? { error: "validation refused" } : {}) }]),
 	};
-	return { io, calls, destination, elapsed: () => elapsed };
+	return { io, calls, source, destination, elapsed: () => elapsed };
 }
+
+for (const lostReply of [false, true]) {
+	test(`export boundary is notified before sending, lost reply=${lostReply}`, async () => {
+		const r = rig({ lostReply });
+		const events = [];
+		r.io.beforeExport = () => events.push("boundary");
+		const lua = r.io.lua;
+		r.io.lua = (host, body) => {
+			if (body.includes("'export_platform'")) {
+				events.push("send");
+				assert.deepEqual(events, ["boundary", "send"]);
+			}
+			return lua(host, body);
+		};
+		const result = runPlatformTransfer({ platformIndex: 21, direction: "1to2", timeoutMs: 9000 }, r.io);
+		if (lostReply) await assert.rejects(result, /lost acknowledgement/);
+		else await result;
+		assert.deepEqual(events, ["boundary", "send"]);
+	});
+}
+
+test("invalid export arguments retain cleanup authority", async () => {
+	for (const change of [{ ids: { 1: 1, 2: 1 } }, { ids: {} }, { timeoutMs: 0 },
+		{ platform: { platform_index: -1 } }]) {
+		const r = rig();
+		let attempted = false;
+		r.io.beforeExport = () => { attempted = true; };
+		await assert.rejects(transferPlatform({ platform: r.source, source: 1, target: 2,
+			ids: r.io.instanceIds(), ...change }, r.io));
+		assert.equal(attempted, false);
+		assert.equal(r.calls.length, 0);
+	}
+});
 
 test("manual transfer waits past five seconds and retains the selected platform at destination", async () => {
 	const r = rig();
@@ -72,8 +105,9 @@ test("integration caller cannot sweep either platform after its transfer reply i
 			return { bp: { key: "expected" }, book: { filled: 2 }, deleted: 1, paused: false };
 		},
 		instanceIds: () => ({ 1: 123, 2: 456 }), ctl() {},
-		transferPlatform: ({ platform }) => {
+		transferPlatform: ({ platform }, io) => {
 			assert.equal(platform.platform_uid, "fixture-uid", "transfer must retain clone identity instead of selecting by index again");
+			io.beforeExport();
 			throw new Error("lost status reply after admission");
 		},
 	};

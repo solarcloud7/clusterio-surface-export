@@ -90,9 +90,11 @@ export async function transferPlatform({ platform, source, target, ids, timeoutM
 	const platforms = host => listPlatforms(io, host);
 	let transferId;
 	try {
-		const started = checked(await io.lua(source, `${currentLua(platform)}
+		const command = `${currentLua(platform)}
 local id,err=remote.call('surface_export','export_platform',p.index,'player',${ids[target]},nil,${quote(platform.platform_uid)})
-return {success=type(id)=='string',jobId=id,error=err}`));
+return {success=type(id)=='string',jobId=id,error=err}`;
+		io.beforeExport?.();
+		const started = checked(await io.lua(source, command));
 		assert.match(started.jobId, /^[A-Za-z0-9_-]+$/);
 		transferId = `${ids[source]}:${started.jobId}`;
 		report(`Tracking transfer ${transferId}`);

@@ -295,9 +295,9 @@ async function main() {
 		pass(`source armed: blueprint ${before.bp.key}; book ${before.book.filled} page(s) [${before.book.pages}]`);
 
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
-		cleanup = undefined;
 		const transferred = await transferPlatform({ platform: clone, source: SOURCE_HOST, target: DEST_HOST,
-			ids: instanceIds(), timeoutMs: 300_000 }, { lua, ctl, sleep, report: say });
+			ids: instanceIds(), timeoutMs: 300_000 }, { lua, ctl, sleep, report: say,
+			beforeExport: () => { cleanup = undefined; } });
 		cleanup = { host: DEST_HOST, platform: transferred.destination };
 		const arrived = transferred.destination.platform_index;
 

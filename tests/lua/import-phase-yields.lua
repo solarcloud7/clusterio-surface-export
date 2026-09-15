@@ -114,7 +114,7 @@ local function scenario(options)
     env.require = function(path)
         local name = path:match("^modules/surface_export/(.*)$")
         if not name then
-            return options.errorAt == "publish" and {send_json = function() mark("publish") end} or {}
+            return {send_json = function() mark("publish") end}
         end
         if not cache[name] then cache[name] = assert(loadfile(root .. name .. ".lua", "t", env))() end
         return cache[name]
@@ -252,6 +252,7 @@ local function scenario(options)
         assert(spans.inventories.startTick == 103 and #eventTicks("hub") == 0 and #eventTicks("belt_batch") == 0)
     end
     assert(#eventTicks("held_items") == 1 and #eventTicks("fluids") == 1)
+    assert(#eventTicks("publish") == 1, "completion must publish exactly once")
     if options.largeInventory then
         local writes = eventTicks("inventory")
         assert(#writes == 2 and writes[1] < writes[2], "large inventories shared a callback or replayed")

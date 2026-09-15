@@ -45,7 +45,8 @@ observations after restart. Avoid player movement during that check. It is not a
 off-host backup or proof of every entity property.
 
 Lua/plugin deployment preserves saves by default. Cluster deployment preserves
-volumes by default, but retained saves still need a Lua reload when the module changes.
+volumes by default. Both verify the loaded Lua version and build; a stale build fails
+deployment verification even when saves are retained.
 `-ResetSaves` (Lua/plugin) and `-ResetData` (cluster) explicitly select destructive
 resets for disposable worlds. The older `-KeepSaves` and `-KeepData` switches still
 select preservation; combining them with a reset is rejected. `docker compose down -v`

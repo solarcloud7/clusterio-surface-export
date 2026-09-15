@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -30,11 +30,12 @@ function Get-SeededInstances { @(@{Host='one';Instance='world';Container='fixtur
 	return { dir, put };
 }
 
-function run(dir, script, args) {
+function run(dir, script, args, setup = "") {
 	const command = `
 $ErrorActionPreference='Stop'
 $global:calls=[Collections.Generic.List[string]]::new()
 function docker { $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0 }
+${setup}
 $failure=$null
 try { & $env:DEPLOY_SCRIPT ${args.map(s => s.startsWith("-") ? s : `'${s}'`).join(" ")} } catch { $failure=$_.Exception.Message }
 @{calls=@($global:calls);error=$failure} | ConvertTo-Json -Compress
@@ -81,3 +82,49 @@ test("direct cluster helper never deletes volumes without ResetData", { skip }, 
 	const conflict = run(dir, "deploy-cluster", ["-KeepData", "-ResetData", "-SkipIncrement"]);
 	assert.ok(conflict.error); assert.deepEqual(conflict.calls, []);
 });
+
+test("preserving cluster volumes also preserves the selected version", { skip }, t => {
+	const { dir, put } = fixture(t, "deploy-cluster");
+	copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
+	put("tools/clusterio/build-plugin.ps1", "throw 'fixture stopped after compose down'");
+	const result = run(dir, "deploy-cluster", []);
+	assert.equal(result.error, "fixture stopped after compose down");
+	assert.equal(JSON.parse(readFileSync(join(dir, "docker/seed-data/external_plugins/surface_export/package.json"))).version, "1.0.0");
+});
+
+for (const stale of [false, true]) {
+	test(`cluster deployment checks loaded build with retained volumes, stale=${stale}`, { skip }, t => {
+		const { dir, put } = fixture(t, "deploy-cluster");
+		copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
+		put("tools/shared/cluster-utils.ps1", `
+function Update-PackageLockVersion {}
+function Update-ModuleVersionStamp {}
+function Update-ModuleBuildStamp { '${"a".repeat(32)}' }
+function Get-SeededInstances { @(@{Host='one';Instance='clusterio-host-1-instance-1';Container='fixture-host'}) }
+`);
+		put("docker/seed-data/hosts/one/clusterio-host-1-instance-1/instance.json", '{"factorio.version":"2.1.17"}');
+		put("docker-compose.yml", "volumes:\n  fixture-client:\n    external: true\n");
+		put("tools/clusterio/sync-client-mods.ps1", "$global:calls.Add('sync-client')");
+		const result = run(dir, "deploy-cluster", ["-SkipIncrement"], `
+function Start-Sleep {}
+function Start-Job { 1 }
+function Receive-Job { 'Seeding complete' }
+function Stop-Job {}
+function Remove-Job {}
+function docker {
+ $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0
+ if ($args[0] -eq 'inspect') { return 'healthy' }
+ if (($args -join ' ') -match 'instance list') { return 'clusterio-host-1-instance-1 running' }
+ if (($args -join ' ') -match 'send-rcon') { return '{"version":"1.0.0","buildId":"${(stale ? "b" : "a").repeat(32)}"}' }
+}
+`);
+		if (stale) {
+			assert.match(result.error || "", /STALE module code/);
+			assert.equal(result.calls.includes("sync-client"), false);
+		} else {
+			assert.equal(result.error, null);
+			assert.ok(result.calls.includes("sync-client"));
+		}
+		assert.equal(result.calls.includes("docker compose down -v"), false);
+	});
+}

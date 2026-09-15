@@ -1,6 +1,6 @@
 # requires: development compose stack and explicit ResetData for a disposable rebuild
 # produces: rebuilt containers with existing volumes retained by default
-# does not: automatically reload the Lua already patched into retained saves
+# does not: accept stale Lua builds or deploy a production installation
 param (
     [switch]$SkipIncrement,
     [switch]$KeepData,
@@ -26,7 +26,7 @@ $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
 . "$PSScriptRoot/../shared/version-utils.ps1"
 
-if (-not $SkipIncrement) {
+if ($ResetData -and -not $SkipIncrement) {
     Write-Host "Reading version..." -ForegroundColor Cyan
     $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
 
@@ -287,10 +287,8 @@ foreach ($probeInstance in $expectedInstances) {
     }
     if (Test-ModuleDeploymentResponse -Output $probeText -Version $NewVersion -BuildId $ModuleBuildId) {
         Write-Host "  OK - $probeInstance runs module version $($reported.version), build $($reported.buildId)" -ForegroundColor Green
-    } elseif (-not $ResetData) {
-        Write-Host "  ~ $probeInstance runs $reported (deploy is $NewVersion) — retained saves keep their old patched Lua; reload with deploy.ps1 -Scope plugin" -ForegroundColor Yellow
     } else {
-        throw "$probeInstance runs STALE module code ($reported) after a full deploy (expected $NewVersion). The save was not re-patched — do not trust this deploy."
+        throw "$probeInstance runs STALE module code ($($reported.version), build $($reported.buildId)); expected $NewVersion, build $ModuleBuildId. Deployment verification failed."
     }
 }
 
