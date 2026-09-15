@@ -4,19 +4,13 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import { cloneStatusLua, waitForFixtureClone } from "../../tests/lab-gallery/clone-fixture.mjs";
-import { fixtureSweepLua, assertFixtureCleanup } from "../../tests/lab-gallery/fixture-cleanup.mjs";
+import { fixtureIdleLua, fixtureSweepLua, assertFixtureCleanup } from "../../tests/lab-gallery/fixture-cleanup.mjs";
 
 import { quote, checked, identity, unique, currentLua, listPlatforms, transferPlatform } from "./platform-transfer.mjs";
 
 export function cleanupProbeLua(platform) {
 	return `${currentLua(platform)}
-assert(not (storage.locked_platforms or {})[p.index],'Probe platform is locked; preserve it')
-for _,hold in pairs(storage.destination_holds or {}) do
- assert(hold.platform_index~=p.index and hold.surface_index~=p.surface.index,'Probe platform has a destination hold')
-end
-for _,job in pairs(storage.async_jobs or {}) do
- assert(job.platform_index~=p.index and job.target_platform~=p and job.target_surface~=p.surface,'Probe platform has active work')
-end
+${fixtureIdleLua("p")}
 return ${fixtureSweepLua(`q.index==${platform.platform_index}`)}`;
 }
 
