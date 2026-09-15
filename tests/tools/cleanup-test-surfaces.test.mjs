@@ -38,7 +38,8 @@ const noPowerShell = spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { s
 
 test("platform sweep refuses missing, malformed and unconfirmed deletion replies", { skip: noPowerShell }, () => {
 	const invalid = ["", "Lua ownership guard refused", "{}", '{"deleted":0,"names":["itemstate-retained"]}',
-		'{"deleted":1,"names":null}', '{"deleted":"1","names":["itemstate-retained"]}'];
+		'{"deleted":1,"names":null}', '{"deleted":"1","names":["itemstate-retained"]}',
+		...[0, false, "", null].map(value => JSON.stringify({ deleted: 1, names: [value] }))];
 	const results = capturePlatformSweeps([...invalid, '{"deleted":0,"names":{}}', '{"deleted":1,"names":["itemstate-retained"]}']);
 	for (const result of results.slice(0, invalid.length)) assert.match(result.error || "", /Platform cleanup failed/);
 	assert.equal(results.at(-2).result.deleted, 0);
