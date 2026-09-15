@@ -8,6 +8,8 @@ function cliProbe(scenario) {
 	const script = `
 const cp = require('node:child_process');
 const { syncBuiltinESMExports } = require('node:module');
+const { mock } = require('node:test');
+mock.module('./tools/shared/workflow-lock.mjs', { namedExports: { withWorkflowLock: async work => work() } });
 const calls = [], deleted = new Set();
 let cloned = false;
 const platform = (index, uid, name) => ({platform_index:index, surface_index:index+100,platform_uid:uid,platform_name:name,force_name:'player'});
@@ -41,7 +43,7 @@ process.argv = [process.execPath, 'tools/surface-export/probe-transfer.mjs', '--
 process.on('exit', () => console.log('CALLS:'+JSON.stringify(calls)));
 import('./tools/surface-export/probe-transfer.mjs').catch(e => { console.error(e); process.exitCode=1; });
 `;
-	const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 10_000 });
+	const result = spawnSync(process.execPath, ["--experimental-test-module-mocks", "-e", script], { encoding: "utf8", timeout: 10_000 });
 	assert.ifError(result.error);
 	const calls = JSON.parse(result.stdout.split(/\r?\n/).find(line => line.startsWith("CALLS:")).slice(6));
 	return { ...result, calls };
