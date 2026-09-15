@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import luaparse from "../../docker/seed-data/external_plugins/surface_export/scripts/vendor/luaparse.cjs";
 
@@ -14,6 +15,72 @@ const selftestPath = path.join(repoRoot, "docker", "seed-data", "external_plugin
 
 const sweeper = fs.readFileSync(sweeperPath, "utf8");
 const selftest = fs.readFileSync(selftestPath, "utf8");
+
+function capturePlatformSweeps(replies) {
+	const script = `
+$module = Import-Module ./tests/integration/lib/TestBase.psm1 -Force -PassThru
+& $module {
+    function script:Invoke-Lua { param($Instance, $Code) $script:query=$Code; return $script:reply }
+    $results = foreach ($value in ($env:SE_SWEEP_REPLIES | ConvertFrom-Json)) {
+        $script:reply=$value; $script:query=$null
+        try { $result=Remove-PlatformSurfacesWhere -Instance fixture -PredicateLua "p.name == 'itemstate-retained'"; @{result=$result;query=$script:query} }
+        catch { @{error=$_.Exception.Message;query=$script:query} }
+    }
+    ConvertTo-Json -Depth 6 -Compress -InputObject @($results)
+}`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { cwd: repoRoot, encoding: "utf8",
+		env: { ...process.env, SE_SWEEP_REPLIES: JSON.stringify(replies) } });
+	assert.equal(result.status, 0, result.stderr);
+	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+}
+
+const noPowerShell = spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0;
+
+test("platform sweep refuses missing, malformed and unconfirmed deletion replies", { skip: noPowerShell }, () => {
+	const invalid = ["", "Lua ownership guard refused", "{}", '{"deleted":0,"names":["itemstate-retained"]}',
+		'{"deleted":1,"names":null}', '{"deleted":"1","names":["itemstate-retained"]}'];
+	const results = capturePlatformSweeps([...invalid, '{"deleted":0,"names":{}}', '{"deleted":1,"names":["itemstate-retained"]}']);
+	for (const result of results.slice(0, invalid.length)) assert.match(result.error || "", /Platform cleanup failed/);
+	assert.equal(results.at(-2).result.deleted, 0);
+	assert.equal(results.at(-1).result.deleted, 1);
+});
+
+test("a refused platform sweep stops later surface and group deletion", { skip: noPowerShell }, () => {
+	const script = `
+function Import-Module {}
+function Get-ProtectedFixtures { @('protected') }
+function Get-PlatformInventory { @{name='itemstate-retained';force='player';hasSurface=$true;hasHub=$true;entities=1} }
+function Remove-PlatformSurfacesWhere { throw 'retained transfer' }
+$global:later=0
+function Invoke-Lua { $global:later++; throw 'later sweep ran' }
+function Step-Tick { $global:later++ }
+try { & ./tools/tests/cleanup-test-surfaces.ps1 -Hosts 1 } catch { $failure=$_.Exception.Message }
+@{error=$failure;later=$global:later} | ConvertTo-Json -Compress`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { cwd: repoRoot, encoding: "utf8" });
+	assert.equal(result.status, 0, result.stderr);
+	assert.deepEqual(JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1)), { error: "retained transfer", later: 0 });
+});
+
+test("Lua cleanup guards protect bulk fixture sweeps", { skip: noPowerShell }, t => {
+	const binary = process.env.SE_TEST_LUA || "lua";
+	const check = spawnSync(binary, ["-v"], { encoding: "utf8" });
+	if (check.error?.code === "ENOENT" && !process.env.SE_TEST_LUA) return t.skip("Lua unavailable; CI runs this on Lua 5.2");
+	assert.ifError(check.error);
+	assert.equal(check.status, 0, check.stderr);
+	const [{ query, error }] = capturePlatformSweeps(['{"deleted":1,"names":["itemstate-retained"]}']);
+	assert.equal(error, undefined);
+	const execute = input => spawnSync(binary, ["tests/lua/probe-cleanup.lua", "bulk"], { input, encoding: "utf8", timeout: 5000 });
+	const baseline = execute(query);
+	assert.equal(baseline.status, 0, baseline.stderr);
+	for (const guard of [
+		"assert(not (storage.locked_platforms or {})[p.index],'Probe platform is locked; preserve it')",
+		"assert(hold.platform_index~=p.index and hold.surface_index~=p.surface.index,'Probe platform has a destination hold')",
+		"assert(job.platform_index~=p.index and job.target_platform~=p and job.target_surface~=p.surface,'Probe platform has active work')",
+	]) {
+		assert.ok(query.includes(guard));
+		assert.notEqual(execute(query.replace(guard, "")).status, 0, `Removing guard survived: ${guard}`);
+	}
+});
 
 function defaultPrefixes() {
 	const m = sweeper.match(/\$Prefixes\s*=\s*@\(([^)]*)\)/);

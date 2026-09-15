@@ -85,7 +85,7 @@ jobs:
           lua5.2 tests/lua/chunk-operation-isolation.lua
           lua5.2 tests/lua/upload-sessions.lua
           lua5.2 tests/lua/job-status.lua
-          SE_TEST_LUA=lua5.2 node --test --test-name-pattern "Lua cleanup guards|generated Lua status" tests/tools/probe-transfer.test.mjs tests/lab-gallery/clone-fixture.test.mjs
+          SE_TEST_LUA=lua5.2 node --test --test-name-pattern "Lua cleanup guards|generated Lua status" tests/tools/probe-transfer.test.mjs tests/tools/cleanup-test-surfaces.test.mjs tests/lab-gallery/clone-fixture.test.mjs
           lua5.2 tests/lua/destination-transfer-gate.lua
           lua5.2 tests/lua/callback-profiler.lua
           lua5.2 tests/manual/transfer-reliability/performance.test.lua
