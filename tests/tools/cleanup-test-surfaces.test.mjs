@@ -53,6 +53,12 @@ test("the selftest's scratch-surface prefix is one the sweeper actually sweeps",
 		"-Prefixes of tools/tests/cleanup-test-surfaces.ps1 — a leak would be unsweepable");
 });
 
+test("combined and historical item-state fixtures remain eligible for guarded cleanup", () => {
+	for (const prefix of ["itemstate-", "beltstate-", "invstate-"]) {
+		assert.ok(defaultPrefixes().includes(prefix), `Missing fixture cleanup prefix: ${prefix}`);
+	}
+});
+
 test("the plain-surface sweep Lua parses, on both the sweep and the -DryRun path", () => {
 	for (const dryRun of [false, true]) {
 		const code = plainSurfaceSweepLua({ dryRun });

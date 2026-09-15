@@ -58,7 +58,7 @@ local function scenario(options)
         get = function() if options.foreignHold then return {platform_index = 999, surface_index = 999} end end,
         discard = function() error("discarded a different held platform") end,
         stage = function(id, platform)
-        assert(id, "transfer identity required")
+        assert(id == "transfer", "hold must be keyed on job.transfer_id")
         mark("hold")
         if options.holdFailure then return false, "injected hold failure" end
         platform.paused = true
