@@ -76,6 +76,23 @@ for (const [fault, message] of [["clone", /clone interrupted/], ["lost-reply", /
 	});
 }
 
+for (const fault of ["lookup", "invalid-ids"]) {
+	test(`${fault}: preflight failure cleans the known unexported clone`, async () => {
+		const r = rig();
+		r.io.instanceIds = async () => {
+			if (fault === "lookup") throw new Error("instance lookup failed");
+			return { 1: 1, 2: 1 };
+		};
+		await assert.rejects(runFixtureTransfer({ cloneName: "fixture-test", cases: r.cases }, r.io),
+			fault === "lookup" ? /instance lookup failed/ : /Source and destination must differ/);
+		assert.equal(r.calls.filter(call => call.body.includes("'export_platform'")).length, 0);
+		const removals = r.calls.filter(call => call.body.includes("game.delete_surface"));
+		assert.equal(removals.length, 1);
+		assert.equal(removals[0].host, 1);
+		assert.match(removals[0].body, /clone/);
+	});
+}
+
 for (const fault of ["prepare", "verify", "cleanup"]) {
 	test(`${fault} failure stays red after shared cleanup`, async () => {
 		const r = rig(fault);

@@ -21,8 +21,10 @@ check. Running smoke again after an unchanged full test adds no coverage. Root
 Node tests and Lua harnesses cover different code and remain separate checks.
 
 The `item-state` integration suite prepares inventory blueprints/books and belt
-item state on one clone, then transfers it once. Both cases retain independent
-source and destination observations and their own stored counter assertions.
+item state on one clone, then transfers it once. All setup and source checks must
+pass before transfer; a partially prepared fixture is cleaned up without being
+transferred. After successful setup, both cases retain independent source and
+destination observations and their own stored counter assertions.
 `config-attrs` uses a separate clone for entity configuration. These suites share
 clone identity tracking, transfer observation and guarded cleanup; failures in any
 case or in cleanup fail the suite. Fault and recovery suites remain separate.

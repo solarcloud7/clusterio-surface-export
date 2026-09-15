@@ -41,9 +41,8 @@ return {success=true,job_id=r.job_id}`);
 		for (const spec of selected) await spec.prepare();
 		for (const spec of selected) await spec.source();
 		if (problems.length) return { problems };
-		cleanup = undefined;
 		transferred = await transferPlatform({ platform: current, source, target, ids: await io.instanceIds(), timeoutMs: 300_000 },
-			{ ...io, lua, report: say });
+			{ ...io, lua, report: say, beforeExport: () => { cleanup = undefined; } });
 		current = identity(transferred.destination);
 		cleanup = { host: target, platform: current };
 		for (const spec of [...selected].reverse()) await spec.verify(transferred.transferId);
