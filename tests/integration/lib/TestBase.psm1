@@ -235,7 +235,7 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
         }
         if ($parsed.names -is [pscustomobject] -and @($parsed.names.PSObject.Properties).Count -eq 0) {
             $names = @()
-        } elseif ($parsed.names -is [array] -and -not ($parsed.names | Where-Object { $_ -isnot [string] -or $_.Length -eq 0 })) {
+        } elseif ($parsed.names -is [array] -and @($parsed.names | Where-Object { $_ -isnot [string] -or $_.Length -eq 0 }).Count -eq 0) {
             $names = @($parsed.names)
         } else { throw 'Invalid platform cleanup names' }
         if (-not $WhatIf -and $parsed.deleted -ne $names.Count) { throw 'Platform cleanup count mismatch' }
