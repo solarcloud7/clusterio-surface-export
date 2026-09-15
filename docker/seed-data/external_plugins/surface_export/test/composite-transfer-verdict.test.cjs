@@ -323,7 +323,7 @@ test("failed destination discard evacuates passengers before deletion", () => {
 test("diagnostic output failure cannot suppress destination cleanup", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 
-	const bankAt = importCompletion.indexOf("pcall(bank_failure_black_box");
+	const bankAt = importCompletion.indexOf("pcall(ImportReporting.bank_failure_black_box");
 	const configAt = importCompletion.indexOf("local config = storage.surface_export_config", bankAt);
 	const evacuateAt = importCompletion.indexOf("pcall(Gateway.evacuate_passengers", bankAt);
 	const deleteAt = importCompletion.indexOf("local delete_ok, delete_result = pcall(", bankAt);
@@ -375,7 +375,7 @@ test("fluid reconciliation uses one emitted key across Lua, DTO, and CLI", () =>
 
 test("fluid-loss configuration coerces unsafe input and debug result emits once", () => {
 	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
-	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-reporting.lua"), "utf8");
 	assert.match(configure, /tonumber\(config\.test_force_fluid_loss\)/,
 		"non-numeric debug input must not crash import completion");
 	const emits = importCompletion.match(/\n\s*emit_debug_import_result\(job, validation_result, duration_ticks\)/g) || [];
@@ -457,7 +457,7 @@ test("source-position restore is guarded on the on_tick path and anomalies fail 
 		"a legacy payload carrying belt items without side groups must be refused loudly");
 });
 test("failed transfer banks gate-time belt attribution and replayable payload", () => {
-	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-reporting.lua"), "utf8");
 	assert.match(completion, /belt_lines\s*=\s*BeltRestoration\.attribute_lines/,
 		"failure black box must refresh attribution at the frozen gate point");
 	assert.match(completion, /replay_payload\s*=\s*job\.platform_data/,

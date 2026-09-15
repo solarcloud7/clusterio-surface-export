@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../tools/shared/cluster-transport.mjs";
 import { pathToFileURL } from "node:url";
 
 export const CELL_WIDTH = 26;
@@ -82,10 +82,7 @@ export function buildFoundationLua(originX, originY, testName) {
 async function main() {
 	const [ox, oy, name, instance = "surface-export-lab-gallery"] = process.argv.slice(2);
 	if (!ox || !oy || !name) throw new Error("usage: test-foundation.mjs <originX> <originY> <test-name> [instance]");
-	const out = execFileSync("docker", ["exec", "surface-export-controller", "npx", "clusterioctl",
-		"--log-level", "error", "--config", "/clusterio/tokens/config-control.json",
-		"instance", "send-rcon", instance, buildFoundationLua(Number(ox), Number(oy), name)],
-	{ encoding: "utf8", timeout: 120_000 });
+	const out = developmentCluster.rcon(instance, buildFoundationLua(Number(ox), Number(oy), name), { timeout: 120_000 });
 	console.log(out.trim());
 }
 

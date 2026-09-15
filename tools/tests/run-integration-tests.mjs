@@ -74,8 +74,9 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 const readiness = runReadinessGate();
 if (!readiness.ok) {
 	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
-		+ "blank-booted or unreachable cluster. Every check above is measured live; re-seed with "
-		+ "`./tools/clusterio/deploy.ps1 -Scope cluster` (or reload the golden saves) before re-running.");
+		+ "blank-booted or unreachable cluster. Resolve the failed checks above before re-running. "
+		+ "To rebuild a disposable cluster from seeds, use ./tools/clusterio/deploy.ps1 -Scope cluster -ResetData -SkipIncrement "
+		+ "(deletes its existing data). Without -ResetData, cluster deployment preserves volumes.");
 	process.exit(3);
 }
 

@@ -47,7 +47,9 @@
 //           over the pair AND zero onto empty foundation with the chunk charted, so that script
 //           path is inert on a platform surface at this pin and could establish nothing either way
 
-import { lua as luaRaw, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
+import { transferPlatform } from "../../../tools/surface-export/platform-transfer.mjs";
+import { cleanupProbe } from "../../../tools/surface-export/transfer-probe.mjs";
+import { lua as luaRaw, ctl, instanceIds, sleep, docker, HOSTS, REPO_ROOT } from "../../lab-gallery/batch-lifecycle.mjs";
 import { execFileSync } from "node:child_process";
 import { cloneStatusLua, waitForFixtureClone } from "../../lab-gallery/clone-fixture.mjs";
 
@@ -56,7 +58,6 @@ const DEST_HOST = 2;
 const FIXTURE = "lab-transfer-fixture-v1";
 const CLONE = `cfgattr-${Date.now().toString(36)}`;
 const CLONE_WAIT_MS = 300_000;
-const ARRIVAL_WAIT_MS = 300_000;
 
 const say = (...a) => console.log(...a);
 const problems = [];
@@ -949,10 +950,12 @@ async function cloneFixture(sourceIndex) {
 		+ `end\n`
 		+ `return { success = true, job_id = r.job_id, entity_count = r.entity_count }`);
 	say(`clone of '${FIXTURE}' [${sourceIndex}] -> ${CLONE}: job=${queued.job_id} entities=${queued.entity_count}`);
-	return waitForFixtureClone({
-		read: () => lua(SOURCE_HOST, cloneStatusLua(CLONE, queued.job_id)),
+	let observation;
+	await waitForFixtureClone({
+		read: () => (observation = lua(SOURCE_HOST, cloneStatusLua(CLONE, queued.job_id))),
 		timeoutMs: CLONE_WAIT_MS, sleep,
 	});
+	return observation.identity;
 }
 
 function buildAndArm() {
@@ -1768,8 +1771,8 @@ return out`);
 	}
 }
 
-function adjudicateGate() {
-	const summary = execFileSync("node", ["tools/tests/testkit/cli.mjs", "log", "latest", "--field", "summary"],
+function adjudicateGate(expectedTransferId) {
+	const summary = execFileSync("node", ["tools/tests/testkit/cli.mjs", "log", expectedTransferId, "--field", "summary"],
 		{ encoding: "utf8", timeout: 120_000, cwd: REPO_ROOT }).trim();
 	const result = summary.match(/"result": "(\w+)"/);
 	const validation_success = result !== null && result[1] === "SUCCESS";
@@ -1793,8 +1796,11 @@ async function main() {
 	measureEnvironment();
 	checkInert();
 
+	let cleanup;
 	try {
-		const cloneIndex = await cloneFixture(fixtureIndex);
+		const clone = await cloneFixture(fixtureIndex);
+		const cloneIndex = clone.platform_index;
+		cleanup = { host: SOURCE_HOST, platform: clone };
 		say(`clone ready at index ${cloneIndex}`);
 
 		say("\n=== SOURCE: build rig, write non-default values, read back ===");
@@ -1892,27 +1898,15 @@ async function main() {
 		say(`  ${surviving.length}/${exercisable.length} armed values still present on the source`);
 
 		say(`\n=== TRANSFER: host ${SOURCE_HOST} -> host ${DEST_HOST} through the production path ===`);
-		const transferOut = execFileSync("pwsh", ["-NoProfile", "-File", "tools/surface-export/transfer-platform.ps1",
-			"-PlatformIndex", String(cloneIndex), "-Direction", `${SOURCE_HOST}to${DEST_HOST}`],
-		{ encoding: "utf8", timeout: 600_000, stdio: ["ignore", "pipe", "pipe"], cwd: REPO_ROOT });
-		if (!/Export queued/.test(transferOut)) {
-			throw new Error(`transfer-platform.ps1 did not queue: ${transferOut.slice(-300)}`);
-		}
+		const transferred = await transferPlatform({ platform: clone, source: SOURCE_HOST, target: DEST_HOST,
+			ids: instanceIds(), timeoutMs: 300_000 }, { lua, ctl, sleep, report: say,
+			beforeExport: () => { cleanup = undefined; } });
+		cleanup = { host: DEST_HOST, platform: transferred.destination };
+		const arrived = transferred.destination.platform_index;
 
-		let arrived = null;
-		const deadline = Date.now() + ARRIVAL_WAIT_MS;
-		while (Date.now() < deadline) {
-			await sleep(3000);
-			arrived = findPlatformIndex(DEST_HOST, CLONE);
-			if (arrived !== null && findPlatformIndex(SOURCE_HOST, CLONE) === null) break;
-		}
-		if (arrived === null) {
-			fail(`'${CLONE}' never arrived on host ${DEST_HOST} — nothing to read`);
-			return;
-		}
 		say(`  arrived on host ${DEST_HOST} at index ${arrived}, source copy gone`);
 
-		if (!adjudicateGate()) return;
+		if (!adjudicateGate(transferred.transferId)) return;
 
 		say("\n=== DESTINATION: physical readback on the arrived entities ===");
 		const destRows = asArray(readRig(DEST_HOST, surviving).rows);
@@ -1947,23 +1941,15 @@ async function main() {
 		reportPruneLog(DEST_HOST);
 	} finally {
 		say("\n=== SWEEP ===");
-		for (const host of [SOURCE_HOST, DEST_HOST]) {
+		if (cleanup) {
 			try {
-				const swept = lua(host, `local deleted = 0\n`
-					+ `for _, pl in pairs(game.forces.player.platforms) do\n`
-					+ `  if pl.valid and pl.name == '${CLONE}' then\n`
-					+ `    if pl.surface and pl.surface.valid then game.delete_surface(pl.surface) end\n`
-					+ `    deleted = deleted + 1\n`
-					+ `  end\n`
-					+ `end\n`
-					+ `return { success = true, deleted = deleted }`);
-				say(`  host ${host}: delete_surface issued for ${swept.deleted} platform(s)`);
+				await cleanupProbe({ lua }, cleanup.host, cleanup.platform);
+				say("  identified fixture cleanup confirmed");
 			} catch (error) {
-				console.error(error && error.stack ? error.stack : error);
-				fail(`sweep on host ${host} threw: ${error.message} — hand-clean with `
-					+ "tools/tests/cleanup-test-surfaces.ps1 (prefix cfgattr- is in its sweep list)");
+				console.error(error);
+				fail("fixture cleanup refused or unavailable: " + error.message);
 			}
-		}
+		} else say("  platforms retained: no cleanup authority after an incomplete clone or unresolved transfer");
 		await sleep(4000);
 		for (const host of [SOURCE_HOST, DEST_HOST]) {
 			try {

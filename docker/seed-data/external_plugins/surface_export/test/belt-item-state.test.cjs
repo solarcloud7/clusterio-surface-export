@@ -152,7 +152,7 @@ test("the declined counter reaches the log line and the import-complete metrics"
 	const completion = read("core", "import-completion.lua");
 	assert.match(completion, /job\.metrics\.belt_state_declined = r_state\.declined/,
 		"the restore's declined count must reach job.metrics");
-	assert.match(completion, /belt_state_declined = job\.metrics\.belt_state_declined or 0,/,
+	assert.match(read("core", "import-reporting.lua"), /belt_state_declined = job\.metrics\.belt_state_declined or 0,/,
 		"and the import-complete event's metrics whitelist, or nothing off-instance can see a decline");
 });
 

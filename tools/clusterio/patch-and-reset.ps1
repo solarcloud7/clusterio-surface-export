@@ -59,7 +59,7 @@ if ($LuaOnly) {
     $pluginRoot = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
     $distNode = Join-Path $pluginRoot "dist/node"
     $distWeb = Join-Path $pluginRoot "dist/web"
-    $remedy = ("Use 'deploy.ps1 -Scope plugin' (builds AND resets), or call this script directly " +
+    $remedy = ("Use 'deploy.ps1 -Scope plugin -ResetSaves' (builds AND resets), or call this script directly " +
         "without -LuaOnly. Tree being checked: $WorkspaceRoot")
     if (-not (Test-Path $distNode) -or -not (Test-Path $distWeb)) {
         throw "-LuaOnly refused: dist/node or dist/web is missing. $remedy"
