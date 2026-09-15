@@ -209,28 +209,39 @@ function Remove-PlatformSurfacesWhere {
     )
 
     $protectedLua = ($script:ProtectedFixtures | ForEach-Object { "['" + $_ + "']=true" }) -join ", "
-    $deleteStmt = if ($WhatIf) { "" } else { "if s.valid then game.delete_surface(s); deleted = deleted + 1 end" }
+    $idle = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../../lab-gallery/fixture-idle.lua')
+    $deleteStmt = if ($WhatIf) { "" } else { "for _, s in ipairs(doomed) do assert(game.delete_surface(s), 'Fixture deletion refused'); deleted = deleted + 1 end" }
     $lua = @"
 local protected = {$protectedLua}
+local assert_idle = (function() $idle end)()
 local deleted = 0
-local names = {}
+local names, doomed = {}, {}
 for _, s in pairs(game.surfaces) do
     local p = s.platform
     if p and p.valid and not protected[p.name] and ($PredicateLua) then
+        assert_idle(p)
         table.insert(names, p.name)
-        $deleteStmt
+        table.insert(doomed, s)
     end
 end
+$deleteStmt
 rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
 "@
     $result = Invoke-Lua -Instance $Instance -Code $lua
     try {
-        $parsed = $result | ConvertFrom-Json
-        $names = @($parsed.names) | Where-Object { $_ -is [string] -and $_.Length -gt 0 }
+        $parsed = $result | ConvertFrom-Json -ErrorAction Stop
+        if (($parsed.deleted -isnot [int] -and $parsed.deleted -isnot [long]) -or $parsed.deleted -lt 0) {
+            throw 'Invalid platform cleanup result'
+        }
+        if ($parsed.names -is [pscustomobject] -and @($parsed.names.PSObject.Properties).Count -eq 0) {
+            $names = @()
+        } elseif ($parsed.names -is [array] -and @($parsed.names | Where-Object { $_ -isnot [string] -or $_.Length -eq 0 }).Count -eq 0) {
+            $names = @($parsed.names)
+        } else { throw 'Invalid platform cleanup names' }
+        if (-not $WhatIf -and $parsed.deleted -ne $names.Count) { throw 'Platform cleanup count mismatch' }
         return @{ deleted = [int]$parsed.deleted; names = @($names) }
     } catch {
-        Write-Warning "Failed to parse delete result: $result"
-        return @{ deleted = 0; names = @() }
+        throw "Platform cleanup failed or result unavailable: $result ($($_.Exception.Message))"
     }
 }
 

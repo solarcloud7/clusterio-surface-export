@@ -84,13 +84,6 @@ test("destination hold remote fails loud for unknown force names", () => {
 	assert.match(remote, /local force = game\.forces\[selected_force_name\]/);
 	assert.doesNotMatch(remote, /game\.forces\[force_name or "player"\] or game\.forces\.player/);
 });
-test("normal transfer finalization stages the destination before reporting completion", () => {
-	const importCompletion = read("module/core/import-completion.lua");
-	assert.match(importCompletion, /DestinationHold\.stage\(job.transfer_id/);
-	assert.ok(importCompletion.indexOf("DestinationHold.stage(job.transfer_id")
-		< importCompletion.indexOf("ImportReporting.publish(job, validation_result, duration_ticks)"));
-});
-
 test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {
 	const hold = read("module/core/destination-hold.lua");
 	const lock = read("module/utils/surface-lock.lua");

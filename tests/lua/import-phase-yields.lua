@@ -7,7 +7,9 @@ local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; re
 local function scenario(options)
     local events, spans, open, scratch, cache = {}, {}, {}, 0, {}
     local env = setmetatable({game = {tick = 100, print = function() error("import phases must not broadcast chat") end, forces = {}}, log = noop,
-        storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {}},
+        script = {active_mods = {}},
+        storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {
+            debug_mode = options.debug, preserve_failed_destination = options.preserve}},
         prototypes = {entity = {beacon = {type = "beacon"}}}, table_size = size}, {__index = _G})
     local function mark(name)
         events[#events + 1] = {name = name, tick = env.game.tick}
@@ -37,7 +39,13 @@ local function scenario(options)
         "utils/util", "utils/platform-schedule", "utils/version-compat", "core/import-target",
         "utils/phase-profiler", "utils/transaction-history",
         "export_scanners/inventory-scanner", "export_scanners/fluid-registry",
-        "export_scanners/entity-scanner", "utils/debug-export"}) do cache[name] = stub end
+        "export_scanners/entity-scanner"}) do cache[name] = stub end
+    cache["utils/debug-export"] = {destination_snapshot_enabled = function() return false end,
+        write_failure_black_box = function()
+            mark("black_box")
+            if options.blackBoxFailure then error("injected diagnostic error") end
+            return "failure.json"
+        end}
     cache["core/gateway"] = {evacuate_passengers = function()
         if options.evacuation == "throw" then error("injected evacuation error") end
         if options.evacuation == "missing" then return nil end
@@ -50,7 +58,7 @@ local function scenario(options)
         get = function() if options.foreignHold then return {platform_index = 999, surface_index = 999} end end,
         discard = function() error("discarded a different held platform") end,
         stage = function(id, platform)
-        assert(id, "transfer identity required")
+        assert(id == "transfer", "hold must be keyed on job.transfer_id")
         mark("hold")
         if options.holdFailure then return false, "injected hold failure" end
         platform.paused = true
@@ -86,6 +94,7 @@ local function scenario(options)
         return {batches = {{indices = {1}, cost = 1}, {indices = {2}, cost = 1}}, cursor = 1, networks = 1}
     end}
     cache["import_phases/belt_restoration"] = {
+        attribute_lines = function() return {} end,
         validate_side_groups = function() return true end,
         restore_side_groups = function()
             mark("belt_batch"); return 1, 0, options.beltFailure and 1 or 0
@@ -114,7 +123,11 @@ local function scenario(options)
     env.require = function(path)
         local name = path:match("^modules/surface_export/(.*)$")
         if not name then
-            return {send_json = function() mark("publish") end}
+            return {send_json = function(name, payload)
+                assert(name == "surface_export_import_complete")
+                mark("publish")
+                assert(payload.success == (payload.validation and payload.validation.success == true))
+            end}
         end
         if not cache[name] then cache[name] = assert(loadfile(root .. name .. ".lua", "t", env))() end
         return cache[name]
@@ -236,6 +249,20 @@ local function scenario(options)
         local ticks = {}; for _, e in ipairs(events) do if e.name == name then ticks[#ticks + 1] = e.tick end end
         return ticks
     end
+    local function before(first, second)
+        local a, b
+        for index, event in ipairs(events) do
+            if event.name == first then a = index end
+            if event.name == second and not b then b = index end
+        end
+        assert(a and b and a < b, first .. " must precede " .. second)
+    end
+    assert(#eventTicks("publish") == 1, "completion must publish exactly once")
+    before("held_items", "fluids")
+    if not options.standalone then
+        assert(#eventTicks("validate") == 1, "final cargo gate must execute exactly once")
+        before("fluids", "validate")
+    end
     if not options.legacyWait then
         local phases = {"tiles", "beacons", "entities", "hub", "belts", "state", "inventories", "held_items", "fluids"}
         for i = 2, #phases do
@@ -262,6 +289,7 @@ local function scenario(options)
     assert(spans.held_items.endTick < spans.fluids.startTick)
     if options.reject or options.beltFailure or options.holdFailure then
         assert(result.validation.success == false)
+        assert(#eventTicks("black_box") == 1, "failure diagnostic must be attempted")
         if not options.holdFailure then assert(not spans.activation) end
         if options.evacuation then
             assert(#eventTicks("discard") == 0 and job.target_platform.valid)
@@ -274,11 +302,22 @@ local function scenario(options)
             options.evacuation = nil
             assert(holds.discard("transfer", job.job_id), "confirmed evacuation could not retry cleanup")
             assert(not holds.get("transfer") and not job.target_platform.valid)
-        else assert(#eventTicks("discard") == 1 and not job.target_platform.valid) end
+        elseif options.debug and options.preserve then
+            assert(#eventTicks("discard") == 0 and job.target_platform.valid)
+            assert(result.validation.destinationPreserved and not env.storage.surface_export_config.preserve_failed_destination)
+        else
+            assert(#eventTicks("discard") == 1 and not job.target_platform.valid)
+            before("black_box", "discard")
+        end
     else
+        assert(#eventTicks("activate") == 1)
+        if not options.standalone then before("validate", "activate") end
+        before("activate", "publish")
         assert(spans.activation.startTick == spans.fluids.endTick)
         if not options.standalone then
             assert(result.validation.success == true and #eventTicks("hold") == 1)
+            before("activate", "hold")
+            before("hold", "publish")
             assert(eventTicks("hold")[1] == spans.activation.endTick, "activation escaped its hold callback")
 			if options.snapshot then
 				assert(#eventTicks("release") == 1, "validated snapshot remained held for a source deletion that will never arrive")
@@ -300,6 +339,9 @@ scenario({label = "validated standalone snapshot", snapshot = true})
 scenario({label = "rejected standalone snapshot", snapshot = true, reject = true})
 scenario({label = "standalone snapshot hold failure", snapshot = true, holdFailure = true})
 scenario({label = "validation rejection", reject = true})
+scenario({label = "diagnostic failure still discards", reject = true, blackBoxFailure = true})
+scenario({label = "debug preservation", reject = true, debug = true, preserve = true})
+scenario({label = "preservation requires debug", reject = true, preserve = true})
 for _, mode in ipairs({"refused", "throw", "missing"}) do
     scenario({label = "validation rejection with " .. mode .. " evacuation", reject = true, evacuation = mode})
 end

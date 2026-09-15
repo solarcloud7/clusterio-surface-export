@@ -237,21 +237,6 @@ test("operation outcome metrics expose bounded failure_stage label", () => {
 	assert.deepEqual(operationsMetric.options.labels, ["operation", "result", "failure_stage"]);
 });
 
-test("Lua import completion injects fluids and renders one verdict before activation", () => {
-	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const heldAt = importCompletion.indexOf("ActiveStateRestoration.restore_held_items_only");
-	const injectAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map,", heldAt);
-	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", injectAt);
-	const activateAt = importCompletion.indexOf("ActiveStateRestoration.restore(job.entities_to_create", gateAt);
-	assert.ok(heldAt !== -1 && injectAt > heldAt, "frozen fluid injection must follow held-item completion");
-	assert.ok(gateAt > injectAt, "the complete-world census must follow frozen fluid injection");
-	assert.ok(activateAt > gateAt, "activation must remain strictly after the one verdict");
-	assert.doesNotMatch(importCompletion, /validate_fluids_post_activation/,
-		"no post-activation verdict writer may remain");
-	assert.doesNotMatch(importCompletion, /test_measure_frozen_fluid_injection|r11FrozenFluidMeasurement/,
-		"the R11 measurement seam must retire when its body becomes production ordering");
-});
-
 test("single gate is exact for items and by-name fluids", () => {
 	const transferValidation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
 	assert.match(transferValidation, /function\s+aggregate_fluid_counts_by_name\s*\(/,
@@ -262,17 +247,6 @@ test("single gate is exact for items and by-name fluids", () => {
 		"destructive transfer parity must contain no band, floor, or percentage tolerance");
 	assert.match(transferValidation, /CargoCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
 		"the exact census must receive injection segment temperatures (2.1 registry: no ownership-exclusion arg)");
-});
-
-test("failed single gate banks an always-on black box before discard", () => {
-	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const bankAt = importCompletion.indexOf("bank_failure_black_box");
-	const discardAt = importCompletion.indexOf("GameUtils.delete_platform", bankAt);
-	assert.ok(bankAt !== -1 && discardAt > bankAt, "black-box evidence must be banked before destination discard");
-	assert.match(importCompletion, /preserve_failed_destination/,
-		"debug-gated preserve mode must remain an explicit escape hatch");
-	assert.doesNotMatch(importCompletion, /quarantine_destination_after_discard_failure|destinationDiscard(?:ed|Escalated|Quarantined|QuarantineError)/,
-		"retired quarantine and consumer-less destination fields must be gone");
 });
 
 test("failed-entity and overflow item losses retain quality keys end to end", () => {
