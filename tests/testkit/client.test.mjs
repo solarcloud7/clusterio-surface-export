@@ -60,11 +60,12 @@ test("capture polling retries partial writes but rejects incorrect evidence imme
 
 test("cleanup rechecks ownership, verifies removal and refuses unrelated containers", () => {
 	const name = `se-client-${id}-gui`;
-	for (const [listed, owner] of [["surface-export-host-1", id], [name, "other-run"]]) {
+	for (const [listed, owner, refusal] of [["surface-export-host-1", id, /Refusing unexpected resource name/],
+		[name, "other-run", /Refusing container with different ownership/]]) {
 		assert.throws(() => cleanupRun(id, args => {
 			assert.notEqual(args[0], "rm", "must not delete foreign resources");
 			return args[0] === "ps" ? listed : owner;
-		}));
+		}), refusal);
 	}
 	let removed = false;
 	const command = args => {

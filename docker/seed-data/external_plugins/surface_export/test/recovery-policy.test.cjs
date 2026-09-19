@@ -59,6 +59,18 @@ test("refused planet configuration keeps startup recovery closed", async () => {
 	assert.ok(!calls.includes("controller:finish"));
 	assert.notEqual(plugin.recoveryStatus.state, "ready");
 });
+
+test("disabled planets are parsed from the comma-separated instance setting", async () => {
+	const {plugin, calls} = harness();
+	const settings = {"instance.name": "Instance one", "surface_export.disabled_planets": " nauvis, gleba ,", "surface_export.default_planet": "fulgora"};
+	plugin.instance.config.get = key => settings[key];
+	plugin.lua.configurePlanetPolicy = async (...args) => {
+		assert.deepEqual(args, [["nauvis", "gleba"], "fulgora", "Instance one", "boot"]);
+		calls.push("planets:configure");
+	};
+	await plugin.reconcileSourceRetirements("boot");
+	assert.ok(calls.includes("planets:configure"));
+});
 test("unavailable controller or local journal never authorizes Lua reconciliation", async () => {
 	for (const journalFailure of [false,true]) {
 		const {plugin,calls} = harness();

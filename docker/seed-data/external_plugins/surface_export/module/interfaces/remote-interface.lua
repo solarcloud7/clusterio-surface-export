@@ -145,7 +145,11 @@ function RemoteInterface.register()
     
     configure = configure,
     configure_planet_policy_json = function(json)
-      local result = PlanetPolicy.apply(helpers.json_to_table(json))
+      local ok, result = pcall(PlanetPolicy.apply, helpers.json_to_table(json))
+      if not ok then
+        log("[Surface Export] Planet policy refused: " .. tostring(result))
+        return helpers.table_to_json({success = false, error = tostring(result)})
+      end
       for _, player in pairs(game.players) do InstancePanel.refresh_button(player) end
       return helpers.table_to_json(result)
     end,

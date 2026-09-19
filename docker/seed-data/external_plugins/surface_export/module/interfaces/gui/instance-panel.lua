@@ -11,7 +11,7 @@ local MARGIN = 11
 local ROW = 36
 local VISIBLE_ROWS = 8
 local DEFAULT_INFO = "Players arrive here when this instance needs to return them to a planet, including after their platform transfers to another server."
-local UNAVAILABLE_INFO = "These planets are unavailable on this instance. They cannot be selected for new journeys. Their dim icons may remain on the space map. Existing ships may unload and leave."
+local UNAVAILABLE_INFO = "These planets are unavailable on this instance. They are hidden from the surface list and cannot be selected for new journeys."
 local BOARDING_INFO = "Board another platform stopped at this location on this instance. Both ships must be enabled, at the same location and not transferring."
 
 local function estimate_left(player)

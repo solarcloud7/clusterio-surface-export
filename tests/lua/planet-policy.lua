@@ -7,7 +7,7 @@ local function fixture()
 		surface.find_non_colliding_position = function() return {1, 1} end
 		surface.request_to_generate_chunks = function() end
 		surface.force_generate_chunk_requests = function() end
-		planets[name] = {name = name, surface = surface}
+		planets[name] = {name = name, surface = surface, prototype = {localised_name = name}}
 		surface.planet = planets[name]
 	end
 	local force = {index = 1, technologies = {}}

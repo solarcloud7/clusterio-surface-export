@@ -193,4 +193,9 @@ ui_targets = {choice, second_choice}
 joined_panel.open(ui_player)
 local listed = ui_player.gui.screen[boarding_name]
 assert(contains(listed, "button", "Board") and not contains(listed, "label", "None"), "eligible platforms should render Board buttons without None")
-print("PASS the Boarding panel renders None with zero eligible platforms and Board buttons otherwise")
+assert(contains(ui_player.gui.screen[planets_name], "label", "None"), "no unavailable planets should render None")
+ui_env.storage.surface_export_planet_policy.disabled = {nauvis = true}
+joined_panel.refresh_planets(ui_player)
+assert(not contains(ui_player.gui.screen[planets_name], "label", "None"), "an unavailable planet should replace None")
+ui_env.storage.surface_export_planet_policy.disabled = {}
+print("PASS the Boarding panel renders None with zero eligible platforms and Board buttons otherwise; Unavailable Planets renders None only when empty")

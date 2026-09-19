@@ -58,7 +58,7 @@ inventory (including item qualities), and retain the save before each case:
 
 1. Connect a real client, board the platform, disconnect, and transfer it while that
    player is offline. Reconnect to the source instance and verify the player is on
-   Nauvis with the same inventory. Repeat after disconnecting in remote view while
+   the instance's configured default planet (Nauvis by default) with the same inventory. Repeat after disconnecting in remote view while
    physically aboard.
 2. Enter the platform's hub seat while connected, then disconnect and save. Transfer
    the platform while offline, reconnect to the source instance, and check location

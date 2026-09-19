@@ -71,10 +71,8 @@ can share the same mod pack and startup settings. They do not filter the pre-gam
 map generator or remove planet prototypes, surfaces, factories or schedule stops.
 
 Disabled planets are hidden from the surface list and locked against new journeys.
-Their dim icons and connections remain on the native space map. Ships already
-there or in flight may finish unloading and leave. Cargo delivery is not blocked.
-Existing factories continue running. A retained disabled schedule stop can prevent
-a later journey; operators must adjust that schedule themselves.
+Prototypes, surfaces, factories and schedule stops are left as they are; a schedule
+stop that names a disabled planet is the operator's to adjust.
 
 Players on an unavailable planetary surface are moved near 0,0 on the default
 planet. Occupants of valid platforms remain aboard. New players use the default

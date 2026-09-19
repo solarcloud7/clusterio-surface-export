@@ -61,10 +61,11 @@ function Policy.enforce(force)
 			previous[name] = nil
 		end
 	end
+	local default = game.planets[policy.default_planet]
+	if not default then return end
 	force.unlock_space_location(policy.default_planet)
 	force.set_script_visible({type = "space-location", name = policy.default_planet}, true)
-	force.set_surface_hidden(Policy.default_surface(), false)
-	force.set_spawn_position({0, 0}, Policy.default_surface())
+	if default.surface then force.set_surface_hidden(default.surface, false) end
 end
 
 function Policy.rescue(player, use_default)
@@ -83,7 +84,8 @@ function Policy.rescue(player, use_default)
 	if player.controller_type == defines.controllers.remote then player.exit_remote_view() end
 	if player.controller_type == defines.controllers.remote then return false end
 	if not player.teleport(position, destination) then return false end
-	player.print({"", use_default and "Welcome to " or "This planet is unavailable on this instance. Returned to ", destination.localised_name, "."})
+	local label = destination.planet and destination.planet.prototype.localised_name or destination.name
+	player.print({"", use_default and "Welcome to " or "This planet is unavailable on this instance. Returned to ", label, "."})
 	return true
 end
 
@@ -122,7 +124,10 @@ function Policy.apply(request)
 		default_planet = request.defaultPlanet, disabled = disabled, instance_name = request.instanceName,
 		previous = old and old.previous or {},
 	}
-	for _, force in pairs(game.forces) do Policy.enforce(force) end
+	for _, force in pairs(game.forces) do
+		Policy.enforce(force)
+		force.set_spawn_position({0, 0}, surface)
+	end
 	for _, player in pairs(game.players) do
 		Policy.ensure_player(player)
 	end

@@ -45,19 +45,21 @@ action through the teleport interface.
 
 ## Board another platform on this server
 
-Open the in-game **Instance** button, choose a nearby platform, and select
-**Board platform**. Both platforms must be enabled, physically at the same space
-location, and free of transfer or recovery protections. Loading, unloading and
-waiting states do not otherwise prevent boarding. Paused thrust counts as disabled.
+In Remote View, while you are physically aboard a platform, a **Boarding** panel
+appears beneath the platform sidebar listing the other platforms stopped at the
+same space location. Press **Board** on a row. Both platforms must be enabled,
+at the same space location, and free of transfer or recovery protections. Loading,
+unloading and waiting states do not otherwise prevent boarding. Paused thrust counts
+as disabled. With no eligible platform the panel shows `None`.
 
-The destination is checked again when you confirm. Boarding uses Factorio's player
-movement operation; it does not export or reconstruct your inventory. This control
-requires the companion mod's **Allow platform boarding** map setting.
+The destination is checked again when you press Board. Boarding uses Factorio's
+player movement operation; it does not export or reconstruct your inventory. This
+control requires the companion mod's **Allow platform boarding** map setting.
 
-The same panel lists planets unavailable on this instance. Dim planet icons may
-still appear on the native space map. Existing ships can finish unloading and leave;
-new journeys to those planets are unavailable. Players reaching an unavailable
-planet are returned to the configured default planet.
+A second panel beneath the Surfaces sidebar shows this instance's default planet
+and the planets unavailable on it. Unavailable planets are hidden from the surface
+list and locked against new journeys. Players reaching an unavailable planet are
+returned to the configured default planet.
 
 ## Export or import a copy
 

@@ -116,8 +116,8 @@ writes `<name>-positions.json` with panel locations and tags; `location-events.j
 records every engine location event and display resolution or scale event with the
 values seen at that tick. The container's virtual display accepts pointer requests
 (`pointer-request-<n>.txt`, executed with `xdotool` and logged to `pointer.log`);
-no current capture issues one. It does not board a player or prove possessions
-survive boarding. Use the separate boarding acceptance for that behavior.
+no current capture issues one. It does not board a player; whether possessions
+survive boarding is unverified.
 
 `gui-anchors` probes the controller, additional entity information and platform
 hub anchors in Remote View, then opens the hub window as a control. It retains

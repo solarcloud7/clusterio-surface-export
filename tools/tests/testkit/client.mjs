@@ -9,9 +9,9 @@ import { withWorkflowLock } from "../../shared/workflow-lock.mjs";
 import { sourceIdentity } from "../../shared/verification-evidence.mjs";
 
 export const contract = {
-	requires: ["Docker Linux engine", "configured full Factorio client volume", "pinned development host image"],
-	produces: ["isolated graphical captures", "virtual-display pointer input on request", "source and runtime identity", "owned container cleanup evidence"],
-	"does not": ["use Steam", "modify the shared client volume", "deploy", "approve visual layout", "prove multiplayer or cargo behavior"],
+	requires: ["Docker Linux engine", "configured full Factorio client volume", "pinned development host image", ".env with the pinned image tag", "git", "package repository access on the first graphics build"],
+	produces: ["isolated graphical captures", "source and runtime identity", "owned container cleanup evidence"],
+	"does not": ["use Steam", "modify the shared client volume", "deploy", "verify pointer input", "approve visual layout", "prove multiplayer or cargo behavior"],
 };
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const recipe = fileURLToPath(new URL("client/", import.meta.url));
