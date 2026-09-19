@@ -132,14 +132,18 @@ function Panel.refresh_planets(player)
 	local names = {}
 	for name in pairs(policy.disabled) do names[#names + 1] = name end
 	table.sort(names)
-	if #names > 0 then
-		section_heading(frame, "Unavailable Planets", UNAVAILABLE_INFO)
-		local content = inset(frame).add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never"}
-		content.style.maximal_height = 224
-		content.style.horizontally_stretchable = true
-		for _, name in ipairs(names) do planet_row(content, name, true) end
+	section_heading(frame, "Unavailable Planets", UNAVAILABLE_INFO)
+	local content = inset(frame).add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never"}
+	content.style.maximal_height = 224
+	content.style.horizontally_stretchable = true
+	for _, name in ipairs(names) do planet_row(content, name, true) end
+	if #names == 0 then
+		local none = content.add{type = "flow", direction = "horizontal"}
+		none.style.height = 32
+		none.style.vertical_align = "center"
+		none.add{type = "label", caption = "None"}
 	end
-	frame.tags = {panel_height = 96 + (#names > 0 and 52 + math.min(224, 32 * #names) or 0)}
+	frame.tags = {panel_height = 148 + math.min(224, 32 * math.max(1, #names))}
 	Panel.refresh_position(player)
 	Panel.refresh_visibility(player)
 end

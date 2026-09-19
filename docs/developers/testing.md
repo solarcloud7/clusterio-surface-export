@@ -109,7 +109,8 @@ performance measurements.
 
 `smoke` captures a small test window in the game. `remote-view-panels` stages the
 current Lua UI and companion mod, then captures a short platform list, a growing
-list, a shrinking list, a long scrolling list and the Boarding menu. Each capture
+list, a shrinking list, a long scrolling list, the Boarding menu, and the left panel
+after the policy is re-applied with no unavailable planets (`none`). Each capture
 writes `<name>-positions.json` with panel locations and tags; `location-events.jsonl`
 records every engine location event and display resolution or scale event with the
 values seen at that tick. The container's virtual display accepts pointer requests
