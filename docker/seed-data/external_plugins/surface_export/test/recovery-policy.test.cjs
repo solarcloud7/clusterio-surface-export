@@ -23,10 +23,16 @@ test("pending source ownership survives a checkpoint without a Lua retirement re
 function harness() {
 	const plugin = Object.create(InstancePlugin.prototype), calls = [];
 	plugin.timingEpoch = "boot";
-	plugin.lua = {uploads: {initialize: async () => calls.push("uploads:initialize")}};
+	plugin.lua = {
+		uploads: {initialize: async () => calls.push("uploads:initialize")},
+		configurePlanetPolicy: async (...args) => {
+			assert.deepEqual(args, [[], "nauvis", "Instance one", "boot"]);
+			calls.push("planets:configure");
+		},
+	};
 	plugin.logger = {warn() {}, info() {}};
 	plugin.retirementJournal = {snapshot: () => ({id: "journal", retirements: [{platformUid: "old", exportId: "job"}]})};
-	plugin.instance = {id: 1, sendTo: async (_target, request) => {
+	plugin.instance = {id: 1, config: {get: key => key === "instance.name" ? "Instance one" : undefined}, sendTo: async (_target, request) => {
 		calls.push(`controller:${request.action}`); return {mode: "save_game", allowAdoption: true};
 	}};
 	plugin.sourceRecoveryCall = async (action, ...args) => {
@@ -40,9 +46,30 @@ function harness() {
 }
 test("startup obtains policy before Lua reconciliation and reports applied mode after both finish acknowledgements", async () => {
 	const {plugin,calls} = harness();await plugin.reconcileSourceRetirements("boot");
-	assert.deepEqual(calls,["controller:begin","lua:begin","lua:reconcile","uploads:initialize","lua:finish","controller:finish","broadcast"]);
+	assert.deepEqual(calls,["controller:begin","lua:begin","lua:reconcile","uploads:initialize","planets:configure","lua:finish","controller:finish","broadcast"]);
 	assert.equal(plugin.recoveryStatus.mode,"save_game");assert.equal(plugin.recoveryStatus.state,"ready");
 	assert.equal(plugin.recoveryStatus.notices[0].status,"accepted");
+});
+
+test("refused planet configuration keeps startup recovery closed", async () => {
+	const {plugin, calls} = harness();
+	plugin.lua.configurePlanetPolicy = async () => { throw new Error("Default planet is disabled"); };
+	await assert.rejects(plugin.reconcileSourceRetirements("boot"), /Default planet/);
+	assert.ok(!calls.includes("lua:finish"));
+	assert.ok(!calls.includes("controller:finish"));
+	assert.notEqual(plugin.recoveryStatus.state, "ready");
+});
+
+test("disabled planets are parsed from the comma-separated instance setting", async () => {
+	const {plugin, calls} = harness();
+	const settings = {"instance.name": "Instance one", "surface_export.disabled_planets": " nauvis, gleba ,", "surface_export.default_planet": "fulgora"};
+	plugin.instance.config.get = key => settings[key];
+	plugin.lua.configurePlanetPolicy = async (...args) => {
+		assert.deepEqual(args, [["nauvis", "gleba"], "fulgora", "Instance one", "boot"]);
+		calls.push("planets:configure");
+	};
+	await plugin.reconcileSourceRetirements("boot");
+	assert.ok(calls.includes("planets:configure"));
 });
 test("unavailable controller or local journal never authorizes Lua reconciliation", async () => {
 	for (const journalFailure of [false,true]) {

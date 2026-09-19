@@ -295,10 +295,11 @@ test("background recovery visits all 500 identities before finish and reports a 
 		const plugin = Object.create(InstancePlugin.prototype);
 		const errors = [], calls = [];
 		plugin.logger = { ...noopLogger, error: message => errors.push(message) };
-		Object.defineProperty(plugin, "i", { value: { id: 42, sendTo: async () => ({ mode: "plugin_history", allowAdoption: true }) } });
+		plugin.instance = { id: 42, config: { get: key => key === "instance.name" ? "Instance 42" : undefined },
+			sendTo: async () => ({ mode: "plugin_history", allowAdoption: true }) };
 		plugin.ensureLuaConsoleUnlocked = async () => {};
 		plugin.retirementJournal = { snapshot: () => ({ id: "journal", retirements: [{ platformUid: "u499", exportId: "retired" }] }) };
-		plugin.lua = { uploads: {initialize: async () => {}, stop() {}}, sourceRecovery: async (action, ...args) => {
+		plugin.lua = { uploads: {initialize: async () => {}, stop() {}}, configurePlanetPolicy: async () => calls.push(["planets"]), sourceRecovery: async (action, ...args) => {
 			calls.push([action, ...args]);
 			await new Promise(resolve => setImmediate(resolve));
 			if (action === "begin") return JSON.stringify(refuse ? { success: false, error: "wrong journal" }
@@ -318,7 +319,7 @@ test("background recovery visits all 500 identities before finish and reports a 
 			assert.equal(done, true);
 			assert.equal(calls.filter(call => call[0] === "reconcile").length, 500);
 		assert.deepEqual(calls[500], ["reconcile", 499, "u499", "retired", false]);
-			assert.deepEqual(calls.slice(-2), [["finish"], ["config"]]);
+			assert.deepEqual(calls.slice(-3), [["planets"], ["finish"], ["config"]]);
 		}
 	}
 });

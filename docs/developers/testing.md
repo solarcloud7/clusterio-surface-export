@@ -84,6 +84,59 @@ rendering. See [timing](../technical/timing.md),
 
 ## Browser and diagnostic checks
 
+### Factorio GUI captures
+
+The testkit can launch the development environment's full Linux client in a
+disposable container with a virtual display. It uses the client volume configured
+in Compose and requires the version recorded in the plugin's API index. It does
+not launch Steam, control the desktop mouse, or connect to the development worlds.
+
+```powershell
+node tools/tests/testkit/cli.mjs client doctor
+node tools/tests/testkit/cli.mjs client run smoke
+node tools/tests/testkit/cli.mjs client run remote-view-panels --resolution 1600x1000 --scale 1
+node tools/tests/testkit/cli.mjs client run gui-anchors
+node tools/tests/testkit/cli.mjs client inspect <run-id>
+node tools/tests/testkit/cli.mjs client cleanup <run-id>
+```
+
+`doctor` checks Docker, the installed image and the actual client version. The
+first capture run builds a cached graphics layer with Xvfb and Mesa; this needs
+package repository access. Game containers run without network access, mount the
+client read-only and create a fresh save. Each has a four-CPU limit and an 8 GiB
+memory limit. Software rendering is useful for layout inspection, not client
+performance measurements.
+
+`smoke` captures a small test window in the game. `remote-view-panels` stages the
+current Lua UI and companion mod, then captures a short platform list, a growing
+list, a shrinking list, a long scrolling list, the Boarding menu, the left panel
+after the policy is re-applied with no unavailable planets (`no-planets`), and the
+Boarding panel once every other ship is paused (`no-boarding`). Each capture
+writes `<name>-positions.json` with panel locations and tags; `location-events.jsonl`
+records every engine location event and display resolution or scale event with the
+values seen at that tick. The container's virtual display accepts pointer requests
+(`pointer-request-<n>.txt`, executed with `xdotool` and logged to `pointer.log`);
+no current capture issues one. It does not board a player; whether possessions
+survive boarding is unverified.
+
+`gui-anchors` probes the controller, additional entity information and platform
+hub anchors in Remote View, then opens the hub window as a control. It retains
+both screenshots and the accessible GUI roots in `gui-roots.json`. An accepted
+anchor property alone does not prove that a panel is visible.
+
+Runs retain reports, command evidence, logs, fresh saves and PNGs under
+`ci-artifacts/client/<run-id>/`. A successful capture requires a matching engine
+completion marker, viewport, UI scale and complete screenshot files, followed by
+owned-container cleanup. Inspect the images before accepting the layout; the
+report deliberately leaves visual review unapproved. A missing marker, timeout,
+changed source or failed cleanup fails the run. `--timeout-seconds` accepts
+30–600 seconds for the client run; graphics-image preparation has its own bound.
+After interruption, `cleanup` removes only containers bearing that run's identity
+and retains the evidence. It does not remove the shared client volume or graphics
+image cache.
+
+### Clusterio web interface
+
 Check which web bundle the controller serves before attributing a stale screen to
 source code. Browser regressions inspect actual navigation, permissions and error
 states. Motion/log previews are synthetic rendering tests. They do not certify a

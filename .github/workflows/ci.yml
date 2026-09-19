@@ -69,6 +69,8 @@ jobs:
           lua5.2 tests/lua/import-reporting.lua
           lua5.2 tests/lua/source-delete-gate.lua
           lua5.2 tests/lua/gateway-evacuation.lua
+          lua5.2 tests/lua/planet-policy.lua
+          lua5.2 tests/lua/platform-boarding.lua
           lua5.2 tests/lua/remote-debug-gates.lua
           lua5.2 tests/lua/export-cache-protection.lua
           lua5.2 tests/lua/sync-mode-gate.lua

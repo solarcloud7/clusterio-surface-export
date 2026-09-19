@@ -53,6 +53,25 @@ This does not simulate a network disconnect or client reconnect. An attempted hu
 fixture was refused by `enter_space_platform` for the offline player; that case needs a
 checkpoint prepared by a connected client and remains unverified.
 
+Manual client acceptance remains pending. Use a disposable platform with a recorded
+inventory (including item qualities), and retain the save before each case:
+
+1. Connect a real client, board the platform, disconnect, and transfer it while that
+   player is offline. Reconnect to the source instance and verify the player is on
+   the instance's configured default planet (Nauvis by default) with the same inventory. Repeat after disconnecting in remote view while
+   physically aboard.
+2. Enter the platform's hub seat while connected, then disconnect and save. Transfer
+   the platform while offline, reconnect to the source instance, and check location
+   and inventory again. Confirm this case actually starts with an occupied hub seat.
+3. For each successful case, verify the source platform was removed and the destination
+   transfer completed, then save/restart and reconnect to check persistence. If
+   evacuation is refused, retain the error and verify source protections remain;
+   do not clear them to make the test pass.
+
+Record the deployed plugin revision, Factorio version, operation ID, before/after
+inventory and reconnect observations with the result. These client checks are separate
+from the automated evidence below and are not yet reported as passed.
+
 Retained Factorio 2.1.17 observations: [original refusal](evidence/offline-evacuation-before-2.1.17.json.gz),
 [passing character/remote-view run](evidence/offline-evacuation-after-2.1.17.json.gz),
 and [refused hub setup](evidence/offline-hub-setup-refused-2.1.17.json.gz).

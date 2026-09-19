@@ -183,6 +183,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 		await this.lua.uploads.initialize(epoch);
 		this.assertRecoveryRuntime(epoch);
+		await this.lua.configurePlanetPolicy(
+			(this.cfg<string>("surface_export.disabled_planets") ?? "").split(",").map(name => name.trim()).filter(Boolean),
+			this.cfg<string>("surface_export.default_planet") ?? "nauvis",
+			this.cfg<string>("instance.name"),
+			epoch,
+		);
+		this.assertRecoveryRuntime(epoch);
 		await call("finish");
 		await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "finish" }));
 		this.assertRecoveryRuntime(epoch);

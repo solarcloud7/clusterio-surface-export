@@ -39,9 +39,27 @@ platform names are labels, and indexes are local locators, not persistent identi
 
 Passengers do not travel to the other server with the platform. Before deleting
 the source, the plugin attempts to evacuate passengers and abandoned character
-bodies to Nauvis, with another non-platform surface as a fallback. Failed
+bodies to the instance's configured default planet (Nauvis by default). Failed
 evacuation prevents deletion and requires recovery. Server switching is a separate
 action through the teleport interface.
+
+## Board another platform on this server
+
+In Remote View, while you are physically aboard a platform, a **Boarding** panel
+appears beneath the platform sidebar listing the other platforms stopped at the
+same space location. Press **Board** on a row. Both platforms must be enabled,
+at the same space location, and free of transfer or recovery protections. Loading,
+unloading and waiting states do not otherwise prevent boarding. Paused thrust counts
+as disabled. With no eligible platform the panel shows `None`.
+
+The destination is checked again when you press Board. Boarding uses Factorio's
+player movement operation; it does not export or reconstruct your inventory. This
+control requires the companion mod's **Allow platform boarding** map setting.
+
+A second panel beneath the Surfaces sidebar shows this instance's default planet
+and the planets unavailable on it. Unavailable planets are hidden from the surface
+list and locked against new journeys. Players reaching an unavailable planet are
+returned to the configured default planet.
 
 ## Export or import a copy
 

@@ -1,9 +1,11 @@
 local ImportTarget = require("modules/surface_export/core/import-target")
 local Gateway = require("modules/surface_export/core/gateway")
+local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 
 local function import_target_selftest()
 	local details = {}
 	local passed, failed = 0, 0
+	local default_planet = ImportTarget.default_planet()
 
 	local function check(name, cond, msg)
 		if cond then
@@ -15,19 +17,19 @@ local function import_target_selftest()
 		end
 	end
 
-	local default_proto = prototypes.space_location[ImportTarget.DEFAULT_PLANET]
+	local default_proto = prototypes.space_location[default_planet]
 	check("default_creation_target_is_a_planet_on_this_instance",
 		default_proto ~= nil and default_proto.type == "planet",
-		"'" .. ImportTarget.DEFAULT_PLANET .. "' must exist as a planet — every non-planet target falls back to it")
+		"'" .. default_planet .. "' must exist as an enabled planet")
 
 	local cp, park, err = ImportTarget.resolve(nil)
 	check("no_request_resolves_to_the_default_planet",
-		cp == ImportTarget.DEFAULT_PLANET and park == nil and err == nil,
+		cp == default_planet and park == nil and err == nil,
 		string.format("got create='%s', park='%s', err='%s'", tostring(cp), tostring(park), tostring(err)))
 
-	cp, park, err = ImportTarget.resolve("nauvis")
+	cp, park, err = ImportTarget.resolve(default_planet)
 	check("a_planet_is_its_own_creation_target_with_no_park",
-		cp == "nauvis" and park == nil and err == nil,
+		cp == default_planet and park == nil and err == nil,
 		string.format("got create='%s', park='%s', err='%s'", tostring(cp), tostring(park), tostring(err)))
 
 	cp, park, err = ImportTarget.resolve("surfexp_selftest_bogus_location")
@@ -47,7 +49,7 @@ local function import_target_selftest()
 	if gateway_name then
 		cp, park, err = ImportTarget.resolve(gateway_name)
 		check("a_gateway_creates_on_the_default_planet_and_parks_at_the_gateway",
-			cp == ImportTarget.DEFAULT_PLANET and park == gateway_name and err == nil,
+			cp == default_planet and park == gateway_name and err == nil,
 			string.format("resolve('%s') got create='%s', park='%s', err='%s' — passing a gateway to "
 				.. "create_space_platform throws 'Given space location is not a planet'",
 				gateway_name, tostring(cp), tostring(park), tostring(err)))
@@ -56,7 +58,9 @@ local function import_target_selftest()
 	local violations = {}
 	for name in pairs(prototypes.space_location) do
 		local create_target, _, resolve_err = ImportTarget.resolve(name)
-		if resolve_err ~= nil then
+		if PlanetPolicy.is_disabled(name) then
+			if create_target ~= nil or resolve_err == nil then violations[#violations + 1] = name .. " was not refused" end
+		elseif resolve_err ~= nil then
 			violations[#violations + 1] = string.format("%s errored: %s", name, resolve_err)
 		else
 			local proto = prototypes.space_location[create_target]

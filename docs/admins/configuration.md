@@ -35,6 +35,8 @@ instance before its Lua behavior changes.
 
 | Field | Default | Behavior |
 |---|---|---|
+| `disabled_planets` | Empty | Comma-separated installed planet names unavailable on this instance. Empty enables all planets; normal research still controls discovery. |
+| `default_planet` | `nauvis` | Enabled planet for new players, displaced passengers and imports with no requested destination. Must have a safe arrival position near 0,0. |
 | `batch_size` | 50 | Entities processed per batch; not a time limit on a callback. |
 | `max_concurrent_jobs` | 1 | Combined import/export job steps advanced per tick. |
 | `belt_batch_size` | 500 | Target stacks or belt lines per restoration batch. A lane group remains indivisible and can exceed the target. |
@@ -55,12 +57,47 @@ Test commands, self-tests, cloning, roster changes, and lifecycle fixtures requi
 `debug_mode` to be explicitly `true` at invocation, including their JSON aliases.
 Read-only roster summaries and leftover checks remain available when it is off.
 
+### Planets on each instance
+
+Set `disabled_planets` and `default_planet` in that instance's Clusterio
+configuration, then restart it. For example, set `default_planet` to `fulgora`
+and `disabled_planets` to `nauvis,vulcanus,gleba,aquilo` for a Fulgora instance.
+Names must match installed planets. The default cannot be disabled; invalid
+configuration prevents startup recovery from releasing platforms.
+
+The checked planet-policy exchange runs before the startup recovery gate opens;
+it is separate from `configure.lua`. These are runtime restrictions, so instances
+can share the same mod pack and startup settings. They do not filter the pre-game
+map generator or remove planet prototypes, surfaces, factories or schedule stops.
+
+Disabled planets are hidden from the surface list and locked against new journeys.
+Prototypes, surfaces, factories and schedule stops are left as they are; a schedule
+stop that names a disabled planet is the operator's to adjust.
+
+Players on an unavailable planetary surface are moved near 0,0 on the default
+planet. Occupants of valid platforms remain aboard. New players use the default
+even if Nauvis is enabled; existing residents of enabled planets are not moved.
+Relocation that Factorio temporarily refuses is retried once per second of
+simulation time. Changing the default does not make its terrain or technology a
+playable starting scenario; administrators still need to prepare the world.
+
+The in-game **Instance** panel shows the applied instance name and unavailable
+planets. A configuration edit does not change that panel until restart applies it.
+
 ## Mod startup setting
 
 [surfexp-gateway-layout](../../docker/seed-data/mods-src/surfexp_gateways/settings.lua)
 belongs to the gateway mod and accepts `one_gate` or `multi`, defaulting to
 `one_gate`. Restart affected instances and clients to load changed prototypes.
 Changing layouts can remove routes, so return platforms to planets first.
+
+## Mod map setting
+
+`surfexp-platform-boarding` is a runtime-global boolean in the companion mod,
+defaulting to `true`. It permits boarding another enabled platform at the same
+space location on the same instance. It does not connect players to another server.
+Changes apply without an instance restart. Both the updated plugin and companion
+mod are needed for this control.
 
 ## Verification
 

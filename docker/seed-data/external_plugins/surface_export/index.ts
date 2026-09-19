@@ -39,6 +39,16 @@ export const plugin = {
 	routes: ["/surface-export"],
 	features: ["SavePatching", "ScriptCommands"],
 	instanceConfigFields: {
+		[`${PLUGIN_NAME}.disabled_planets`]: {
+			title: "Unavailable planets",
+			description: "Comma-separated installed planet names, such as vulcanus,gleba. Empty enables all planets. Applies on instance restart. Existing surfaces and schedules remain; ships already arriving can unload and leave.",
+			type: "string", initialValue: "",
+		},
+		[`${PLUGIN_NAME}.default_planet`]: {
+			title: "Default planet",
+			description: "Enabled planet used for player arrivals and platform imports without a destination. Must be installed and have a safe arrival position near 0,0. Applies on instance restart.",
+			type: "string", initialValue: "nauvis",
+		},
 		[`${PLUGIN_NAME}.max_export_cache_size`]: {
 			description:
 				"Export cache size: how many completed platform exports each instance keeps in its save. " +
