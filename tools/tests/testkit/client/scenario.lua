@@ -86,7 +86,8 @@ script.on_event(defines.events.on_tick, function()
 			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora", disabledPlanets = {}, instanceName = "Fulgora instance"}.success)
 			Panel.refresh_button(player)
 		end
-		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding", [420] = "none"})[elapsed]
+		if elapsed == 430 then for i = 2, 3 do storage.ships[i].paused = true end end
+		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding", [420] = "no-planets", [460] = "no-boarding"})[elapsed]
 	elseif elapsed == 45 then capture = "smoke" end
 	if capture then
 		local path = capture .. ".png"
@@ -102,7 +103,7 @@ script.on_event(defines.events.on_tick, function()
 			helpers.write_file(capture .. "-positions.json", helpers.table_to_json(state), false)
 		end
 	end
-	if elapsed == (run.scenario == "gui-anchors" and 150 or (Panel and 460 or 75)) then
+	if elapsed == (run.scenario == "gui-anchors" and 150 or (Panel and 500 or 75)) then
 		helpers.write_file("client-result.json", helpers.table_to_json({runId = run.id,
 			scenario = run.scenario, status = "captured", engineVersion = script.active_mods.base,
 			resolution = player.display_resolution, scale = player.display_scale, screenshots = storage.captures}), false)

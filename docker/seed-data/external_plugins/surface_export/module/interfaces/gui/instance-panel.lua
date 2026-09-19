@@ -182,9 +182,10 @@ function Panel.open(player)
 		label.style.single_line = false
 		label.style.maximal_width = 228
 	elseif #targets == 0 then
-		local label = content.add{type = "label", caption = "No eligible platform here. Both ships must be enabled, at the same location and not transferring."}
-		label.style.single_line = false
-		label.style.maximal_width = 228
+		local none = content.add{type = "flow", direction = "horizontal"}
+		none.style.height = ROW
+		none.style.vertical_align = "center"
+		none.add{type = "label", caption = "None"}
 	else
 		local list = content.add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never", vertical_scroll_policy = "auto"}
 		list.style.minimal_height = list_height

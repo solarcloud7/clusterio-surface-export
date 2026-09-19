@@ -102,8 +102,10 @@ local function gui(parent, values)
 	counter = counter + 1
 	element.valid, element.index, element.style = true, counter, {}
 	element.tags = element.tags or {}
+	element.children = {}
 	element.add = function(spec)
 		local child = gui(element, spec)
+		element.children[#element.children + 1] = child
 		if spec.name then element[spec.name] = child end
 		return child
 	end
@@ -117,12 +119,13 @@ local ui_player = {index = 1, gui = {top = gui(), left = gui(), screen = gui()},
 	display_scale = 1, display_resolution = {width = 1600, height = 1000}, force = force, controller_type = 2}
 local ui_calls = 0
 local second_choice = {name = choice.name, uid = "another-target", source_uid = choice.source_uid}
+local ui_targets = {choice, second_choice}
 local ui_env = setmetatable({storage = {surface_export_planet_policy = {default_planet = "nauvis", disabled = {}, instance_name = "One"}},
 	prototypes = {space_location = {nauvis = {localised_name = "Nauvis"}}},
 	defines = {controllers = {remote = 2}},
 	game = {tick = 100, planets = {}, get_player = function() return ui_player end},
 	require = function()
-		return {source = function() return source end, enabled = function() return true end, targets = function() return {choice, second_choice} end, board = function(_, selected)
+		return {source = function() return source end, enabled = function() return true end, targets = function() return ui_targets end, board = function(_, selected)
 			assert(selected.uid == second_choice.uid and selected.source_uid == choice.source_uid)
 			ui_calls = ui_calls + 1
 			return true
@@ -170,3 +173,20 @@ ui_player.controller_type = 1
 joined_panel.refresh_visibility(ui_player)
 assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen[boarding_name].visible)
 print("PASS panels follow the estimated sidebar height, skip platforms pending deletion, clamp to the viewport and hide outside Remote View")
+
+local function contains(element, kind, caption)
+	for _, child in ipairs(element.children) do
+		if (child.type == kind and child.caption == caption) or contains(child, kind, caption) then return true end
+	end
+	return false
+end
+ui_player.controller_type = 2
+ui_targets = {}
+joined_panel.open(ui_player)
+local empty = ui_player.gui.screen[boarding_name]
+assert(contains(empty, "label", "None") and not contains(empty, "button", "Board"), "zero eligible platforms should render None without Board buttons")
+ui_targets = {choice, second_choice}
+joined_panel.open(ui_player)
+local listed = ui_player.gui.screen[boarding_name]
+assert(contains(listed, "button", "Board") and not contains(listed, "label", "None"), "eligible platforms should render Board buttons without None")
+print("PASS the Boarding panel renders None with zero eligible platforms and Board buttons otherwise")
