@@ -36,9 +36,8 @@ node tools/clusterio/ci-await-seeding.mjs
 node tools/tests/cluster-readiness.mjs --runtime
 ```
 
-Do not reuse a different cluster's client volume. Host 1 provisions the full client;
-host 2 skips client download. Running worlds and Clusterio state live in named
-volumes. The fixture saves in the repository are inputs, not the current world.
+Running worlds and Clusterio state live in named volumes. The fixture saves in
+the repository are inputs, not the current world.
 If readiness fails, inspect its reason before resetting any data.
 
 Open [the controller](http://localhost:8080). For local login,
@@ -46,6 +45,22 @@ Open [the controller](http://localhost:8080). For local login,
 keep it private. Container names are `surface-export-controller`,
 `surface-export-host-1` and `surface-export-host-2`. Their `clusterio-*` hostnames
 are different names used inside the network.
+
+## Full Factorio client for icons
+
+The development environment intentionally provisions the full Linux Factorio
+client on **host 1** for Clusterio's `instance export-data` operation. It includes
+the graphics needed to generate the web interface's icon spritesheets; the
+headless package does not. This is separate from the Steam client you use to play.
+
+The root Compose file sets `SKIP_CLIENT=false` on host 1 and mounts the external
+`factorio-client-2117` volume at `/opt/factorio-client`. Host 2 sets
+`SKIP_CLIENT=true`. Do not reuse or modify another cluster's client volume.
+
+Having the full client installed does not make a server process render the GUI.
+For UI screenshots, run the graphical client with a display and a disposable
+save. Factorio's [`take_screenshot` API](https://lua-api.factorio.com/2.1.17/classes/LuaGameScript.html#take_screenshot)
+does nothing when Factorio runs headless.
 
 ## Connect a Steam client
 

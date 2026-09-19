@@ -51,13 +51,20 @@ local function fixture(options)
         end
         players[1] = player
     end
-    local env = setmetatable({game = {players = players, surfaces = options.no_destination and {} or {nauvis = destination}},
+    local env = setmetatable({storage = {}, game = {players = players, surfaces = options.no_destination and {} or {nauvis = destination},
+        planets = options.no_destination and {} or {nauvis = {surface = destination}}},
         defines = {controllers = {remote = 7}}, log = function() end}, {__index = _G})
+    env.require = function(name)
+        assert(name == "modules/surface_export/core/planet-policy")
+        return assert(loadfile(root .. "core/planet-policy.lua", "t", env))()
+    end
     if options.offline then
         source.count_entities_filtered = function() return 0 end
         source.find_entities_filtered = function() return {} end
     end
-    return assert(loadfile(root .. "core/gateway.lua", "t", env))(), platform, bodies, source
+    local gateway = assert(loadfile(root .. "core/gateway.lua", "t", env))()
+    env.require = function() error("require is unavailable after control loading") end
+    return gateway, platform, bodies, source
 end
 for _, options in ipairs({{refuse = true}, {throw = true}, {false_success = true}, {no_destination = true},
     {count_error = true}, {find_error = true}, {player = true, player_error = true}, {player = true, refuse = true},

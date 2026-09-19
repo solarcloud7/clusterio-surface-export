@@ -1,4 +1,5 @@
 local Gateway = {}
+local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 
 Gateway.PREFIX = "surfexp_gateway_"
 
@@ -120,8 +121,12 @@ function Gateway.evacuate_passengers(platform)
 		return result
 	end
 
-	local dest = game.surfaces["nauvis"]
+	local dest = PlanetPolicy.default_surface()
 	if not (dest and dest.valid) then
+		if storage.surface_export_planet_policy then
+			result.error = "configured default planet is unavailable for evacuation"
+			return result
+		end
 		for _, s in pairs(game.surfaces) do
 			if s.valid and not s.platform then dest = s; break end
 		end

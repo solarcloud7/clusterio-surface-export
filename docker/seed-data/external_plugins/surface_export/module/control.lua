@@ -11,6 +11,15 @@ local SelectionLab = require("modules/surface_export/interfaces/gui/selection-la
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local PlanetPolicy = require("modules/surface_export/core/planet-policy")
+local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
+
+local function refresh_player(event, use_default)
+	local player = game.get_player(event.player_index)
+	if not player then return end
+	PlanetPolicy.ensure_player(player, use_default)
+	InstancePanel.refresh_button(player)
+end
 
 local SurfaceExportModule = {}
 
@@ -37,6 +46,7 @@ function SurfaceExportModule.on_configuration_changed(data)
 	initialize_storage()
 	SurfaceLock.ensure_index_keyed()
 	Gateway.discover_and_unlock()
+	for _, force in pairs(game.forces) do PlanetPolicy.enforce(force) end
 	log("[Surface Export] Configuration changed - module state initialized")
 end
 
@@ -54,6 +64,13 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
+		if game.tick % 60 == 0 then
+			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
+			for player_index in pairs(storage.surface_export_pending_arrivals or {}) do
+				if game.get_player(player_index) then refresh_player{player_index = player_index}
+				else storage.surface_export_pending_arrivals[player_index] = nil end
+			end
+		end
 		if storage.source_recovery_ready == false then
 			AsyncProcessor.process_tick(true)
 			return
@@ -74,7 +91,22 @@ SurfaceExportModule.events = {
 
 	[e.on_surface_created] = function(event)
 		SourceRecovery.surface_created(event.surface_index)
+		for _, force in pairs(game.forces) do PlanetPolicy.enforce(force) end
 	end,
+	[e.on_research_finished] = function(event) PlanetPolicy.enforce(event.research.force) end,
+	[e.on_technology_effects_reset] = function(event) PlanetPolicy.enforce(event.force) end,
+	[e.on_force_created] = function(event) PlanetPolicy.enforce(event.force) end,
+	[e.on_forces_merged] = function(event) PlanetPolicy.enforce(event.destination) end,
+	[e.on_player_created] = function(event) refresh_player(event, true) end,
+	[e.on_player_joined_game] = refresh_player,
+	[e.on_player_respawned] = refresh_player,
+	[e.on_player_changed_surface] = refresh_player,
+	[e.on_player_controller_changed] = function(event)
+		local player = game.get_player(event.player_index)
+		if player then InstancePanel.refresh_visibility(player) end
+	end,
+	[e.on_player_display_resolution_changed] = InstancePanel.refresh_viewport,
+	[e.on_player_display_scale_changed] = InstancePanel.refresh_viewport,
 
 	[clusterio_api.events.on_instance_updated] = function()
 		log("[Surface Export] Instance configuration updated")
@@ -161,12 +193,14 @@ SurfaceExportModule.events = {
 		TransactionDashboard.on_gui_click(event)
 		GatewayTransferGui.on_gui_click(event)
 		TeleportGui.on_gui_click(event)
+		InstancePanel.on_gui_click(event)
 	end,
 
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
 		GatewayTransferGui.on_gui_closed(event)
 		TeleportGui.on_gui_closed(event)
+		InstancePanel.on_gui_closed(event)
 	end,
 
 	[e.on_player_selected_area] = function(event)

@@ -209,6 +209,17 @@ export class LuaInterface {
 		return this.protocolCall<import("../shared/job-status").JobStatusBatch>("get_job_status_json", {version: 1, jobs});
 	}
 
+	async configurePlanetPolicy(disabledPlanets: string[], defaultPlanet: string, instanceName: string, epoch: string) {
+		const request = {version: 1, disabledPlanets, defaultPlanet, instanceName, epoch};
+		const result = await this.protocolCall<typeof request & {success: boolean}>("configure_planet_policy_json", request);
+		if (result.success !== true || result.version !== 1 || result.defaultPlanet !== defaultPlanet
+			|| result.instanceName !== instanceName || result.epoch !== epoch
+			|| !result.disabledPlanets || JSON.stringify(Object.values(result.disabledPlanets)) !== JSON.stringify(disabledPlanets)) {
+			throw new Error("Planet policy acknowledgement does not match the requested configuration");
+		}
+		return result;
+	}
+
 	async destinationTransferGate(transferId: string, action: "verify" | "go_live"): Promise<string> {
 		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "destination_hold_json", `
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);

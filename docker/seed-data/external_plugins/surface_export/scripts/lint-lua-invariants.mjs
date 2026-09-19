@@ -2,14 +2,14 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(SCRIPT_DIR, "..");
 const MODULE_DIR = join(PLUGIN_DIR, "module");
 const ALLOW_MARKER = "lint-lua:allow";
 
-const RULES = [
+export const RULES = [
 	{
 		id: "no-clusterio-lib-mod-path",
 		pitfall: "#12",
@@ -20,7 +20,7 @@ const RULES = [
 	{
 		id: "no-global-persistence-table",
 		pitfall: "#4",
-		regex: /\bglobal\s*[.[=]/,
+		regex: /(?<![\w.]|\.\s*)global\s*[.[=]/,
 		hint: "Factorio 2.0 renamed the persistent table to `storage`. Use storage.<key>, not global.<key>.",
 	},
 	{
@@ -116,4 +116,4 @@ function main() {
 	process.exit(1);
 }
 
-main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

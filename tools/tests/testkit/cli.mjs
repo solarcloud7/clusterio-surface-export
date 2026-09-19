@@ -256,7 +256,12 @@ async function cmdCoverage() {
 	console.log(`checklist: ${mdPath}${jsonPath ? `\njson: ${jsonPath}` : ""}`);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation, coverage: cmdCoverage };
+async function cmdClient() {
+	const { clientCommand } = await import("./client.mjs");
+	return clientCommand(rest);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation, coverage: cmdCoverage, client: cmdClient };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }

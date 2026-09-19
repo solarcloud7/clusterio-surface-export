@@ -3,6 +3,8 @@ local RemoteInterface = {}
 local Base = require("modules/surface_export/interfaces/remote/base")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local Upload = require("modules/surface_export/interfaces/remote/upload-session")
+local PlanetPolicy = require("modules/surface_export/core/planet-policy")
+local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
 
 local module_version = require("modules/surface_export/version")
 local module_build_id = require("modules/surface_export/build-id")
@@ -142,6 +144,11 @@ function RemoteInterface.register()
     import_platform_chunk = import_platform_chunk,
     
     configure = configure,
+    configure_planet_policy_json = function(json)
+      local result = PlanetPolicy.apply(helpers.json_to_table(json))
+      for _, player in pairs(game.players) do InstancePanel.refresh_button(player) end
+      return helpers.table_to_json(result)
+    end,
     
     get_validation_result = get_validation_result,
     get_validation_result_json = Base.json_wrap(get_validation_result),

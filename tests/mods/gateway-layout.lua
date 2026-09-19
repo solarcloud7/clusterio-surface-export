@@ -1,7 +1,13 @@
 local root = "docker/seed-data/mods-src/surfexp_gateways/"
-local setting
-data = {extend = function(_, list) setting = list[1] end}
+local setting, boarding
+data = {extend = function(_, list)
+  for _, value in ipairs(list) do
+    if value.name == "surfexp-gateway-layout" then setting = value end
+    if value.name == "surfexp-platform-boarding" then boarding = value end
+  end
+end}
 dofile(root .. "settings.lua")
+assert(boarding.type == "bool-setting" and boarding.setting_type == "runtime-global" and boarding.default_value == true)
 assert(setting.default_value == "one_gate")
 assert(setting.setting_type == "startup")
 for _, mode in ipairs(setting.allowed_values) do
