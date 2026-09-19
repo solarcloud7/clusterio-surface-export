@@ -165,8 +165,12 @@ for _, name in ipairs({planets_name, boarding_name}) do
 	assert(frame.location[1] >= 0 and frame.location[1] <= 800 - 256 * 1.5)
 	assert(frame.location[2] >= 0 and frame.location[2] < 600)
 end
-ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
+ui_player.display_scale, ui_player.display_resolution = 1.5, {width = 1280, height = 900}
 joined_panel.refresh_viewport{player_index = 1, tick = 6}
+assert_position(planets_name, 17, 396)
+assert_position(boarding_name, 879, 684)
+ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
+joined_panel.refresh_viewport{player_index = 1, tick = 7}
 assert_position(boarding_name, 1333, 604)
 assert_position(planets_name, 11, 264)
 ui_player.controller_type = 1

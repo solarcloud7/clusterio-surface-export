@@ -47,7 +47,7 @@ function Panel.refresh_position(player)
 	local planets = player.gui.screen[PLANETS]
 	if planets then place(player, planets, MARGIN, estimate_left(player)) end
 	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, player.display_resolution.width / scale - WIDTH - MARGIN, 604) end
+	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, 604) end
 end
 
 function Panel.refresh_viewport(event)
