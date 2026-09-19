@@ -148,14 +148,14 @@ local function assert_position(name, x, y)
 	assert(location[1] == x and location[2] == y, name .. " at " .. location[1] .. "," .. location[2] .. " expected " .. x .. "," .. y)
 end
 assert(ui_player.gui.screen[planets_name] and ui_player.gui.screen[boarding_name] and not ui_player.opened)
-assert_position(planets_name, 10, 262)
-assert_position(boarding_name, 1334, 604)
+assert_position(planets_name, 11, 264)
+assert_position(boarding_name, 1333, 604)
 platform(3)
 panel.refresh_position(ui_player)
-assert_position(planets_name, 10, 290)
+assert_position(planets_name, 11, 292)
 force.platforms[3].scheduled_for_deletion = 60
 panel.refresh_position(ui_player)
-assert_position(planets_name, 10, 262)
+assert_position(planets_name, 11, 264)
 force.platforms[3] = nil
 ui_player.display_scale = 1.5
 ui_player.display_resolution = {width = 800, height = 600}
@@ -167,8 +167,8 @@ for _, name in ipairs({planets_name, boarding_name}) do
 end
 ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
 joined_panel.refresh_viewport{player_index = 1, tick = 6}
-assert_position(boarding_name, 1334, 604)
-assert_position(planets_name, 10, 262)
+assert_position(boarding_name, 1333, 604)
+assert_position(planets_name, 11, 264)
 ui_player.controller_type = 1
 joined_panel.refresh_visibility(ui_player)
 assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen[boarding_name].visible)

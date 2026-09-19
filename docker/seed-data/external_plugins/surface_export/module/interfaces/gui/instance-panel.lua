@@ -7,6 +7,7 @@ local BOARD = "surfexp_instance_board"
 local PLANETS = "surfexp_instance_planets"
 local TITLE = "surfexp_instance_title"
 local WIDTH = 256
+local MARGIN = 11
 local ROW = 36
 local VISIBLE_ROWS = 8
 local DEFAULT_INFO = "Players arrive here when this instance needs to return them to a planet, including after their platform transfers to another server."
@@ -21,14 +22,14 @@ local function estimate_left(player)
 	for _, platform in pairs(player.force.platforms) do
 		if platform.valid and not platform.hidden and platform.scheduled_for_deletion == 0 then rows = rows + 1 end
 	end
-	return 38 + math.min(168 + 28 * rows, player.display_resolution.height / player.display_scale * 0.6)
+	return 40 + math.min(168 + 28 * rows, player.display_resolution.height / player.display_scale * 0.6)
 end
 
 local function place(player, frame, x, y)
 	local scale = player.display_scale
 	local tags = frame.tags
-	x = math.floor(math.max(0, math.min(x * scale, player.display_resolution.width - WIDTH * scale)))
-	y = math.floor(math.max(0, math.min(y * scale, player.display_resolution.height - (tags.panel_height or 160) * scale)))
+	x = math.floor(math.max(0, math.min(x * scale, player.display_resolution.width - WIDTH * scale)) + 0.5)
+	y = math.floor(math.max(0, math.min(y * scale, player.display_resolution.height - (tags.panel_height or 160) * scale)) + 0.5)
 	if tags.placed_x == x and tags.placed_y == y then return end
 	tags.placed_x, tags.placed_y = x, y
 	frame.tags = tags
@@ -44,9 +45,9 @@ function Panel.refresh_position(player)
 		title.location = {math.floor((player.display_resolution.width - width * scale) / 2), math.floor(40 * scale)}
 	end
 	local planets = player.gui.screen[PLANETS]
-	if planets then place(player, planets, 10, estimate_left(player)) end
+	if planets then place(player, planets, MARGIN, estimate_left(player)) end
 	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, player.display_resolution.width / scale - WIDTH - 10, 604) end
+	if boarding then place(player, boarding, player.display_resolution.width / scale - WIDTH - MARGIN, 604) end
 end
 
 function Panel.refresh_viewport(event)
