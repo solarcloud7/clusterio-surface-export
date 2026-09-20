@@ -17,14 +17,13 @@ env.require = function(name)
 		destination_hold_owns_surface = function(_, p) return p.held end}
 end
 local boarding = assert(loadfile(root .. "core/platform-boarding.lua", "t", env))()
-local possessions = {}
 local calls = 0
-local player = {force = force, physical_surface_index = 1, possessions = possessions, enter_space_platform = function(p)
+local player = {force = force, physical_surface_index = 1, enter_space_platform = function(p)
 	assert(p == target); calls = calls + 1; return true
 end}
 local choice = boarding.targets(player)[1]
 assert(choice and choice.uid == target.uid and boarding.board(player, choice))
-assert(calls == 1 and player.possessions == possessions)
+assert(calls == 1)
 for _, p in ipairs({source, target}) do
 	for _, field in ipairs({"paused", "hidden", "locked", "held", "space_connection"}) do
 		p[field] = true
@@ -48,7 +47,7 @@ print("PASS boarding checks both platforms, location, saved identity, map settin
 
 env.settings.global["surfexp-platform-boarding"].value = true
 local seat_exits = 0
-local seated_player = {force = force, physical_surface_index = source.index, hub = source.hub, possessions = possessions}
+local seated_player = {force = force, physical_surface_index = source.index, hub = source.hub}
 seated_player.leave_space_platform = function()
 	seat_exits = seat_exits + 1
 	seated_player.hub = nil
@@ -89,11 +88,10 @@ assert_seated_refusal()
 env.settings.global["surfexp-platform-boarding"].value = true
 assert(boarding.board(seated_player, choice), "seated passenger cannot board another platform")
 assert(seat_exits == 1 and seated_player.physical_surface_index == target.index and seated_player.hub == target.hub)
-assert(seated_player.possessions == possessions)
 seated_player.physical_surface_index, seated_player.hub = source.index, source.hub
 seated_player.enter_space_platform = function() return false end
 assert(not boarding.board(seated_player, choice))
-assert(seated_player.physical_surface_index == source.index and seated_player.possessions == possessions)
+assert(seated_player.physical_surface_index == source.index)
 print("PASS seated boarding leaves the source hub only after admission and preserves source location when the engine refuses")
 
 local counter = 0

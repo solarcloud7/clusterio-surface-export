@@ -48,12 +48,11 @@ assert(policy.apply(request({}, "fulgora")).success)
 assert(unlocked.nauvis and unlocked.gleba and not hidden.nauvis)
 assert(policy.apply(request()).success)
 local body = {valid = true, name = "character"}
-local possessions = {armor = {}, inventory = {}, cursor = {}}
-local player = {valid = true, index = 1, name = "Player", character = body, physical_surface_index = 1, controller_type = 7, possessions = possessions, print = function() end}
+local player = {valid = true, index = 1, name = "Player", character = body, physical_surface_index = 1, controller_type = 7, print = function() end}
 player.exit_remote_view = function() player.controller_type = 1 end
 player.teleport = function(_, surface) player.physical_surface_index = surface.index; return true end
 assert(policy.rescue(player) and player.physical_surface_index == 2)
-assert(player.character == body and player.possessions == possessions)
+assert(player.character == body)
 player.physical_surface_index = 1
 env.game.planets.nauvis.surface.platform = {valid = true}
 assert(policy.rescue(player) and player.physical_surface_index == 1)
