@@ -44,9 +44,9 @@ of the Clusterio plugin's beta version.
 You can validate locally without a key:
 
 ```powershell
-$zip = 'docker/seed-data/mods/surfexp_gateways_0.6.6.zip'
+$zip = 'docker/seed-data/mods/surfexp_gateways_0.6.7.zip'
 $sha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
-python tools/release/publish-gateway-mod.py $zip --version 0.6.6 --sha256 $sha256
+python tools/release/publish-gateway-mod.py $zip --version 0.6.7 --sha256 $sha256
 ```
 
 The helper checks the archive's metadata, required Space Age dependency and hash. It
