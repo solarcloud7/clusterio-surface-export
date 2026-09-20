@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.7
+Date: 2026-09-20
+  Changes:
+    - Add the "Allow platform boarding" map setting: players may board another enabled platform at the
+      same space location on this instance through the Surface Export Clusterio plugin.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.6
 Date: 2026-09-13
   Changes:
