@@ -17,7 +17,7 @@ of the Clusterio deployment.
 
 ## Release availability
 
-Plugin `0.11.0-beta.2` is published under npm's `beta` tag and requires exactly
+Plugin `0.11.0-beta.3` is published under npm's `beta` tag and requires exactly
 Clusterio `2.0.0-alpha.27`. Its [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/runs/34970578220)
 passed package acceptance and integration checks before publication. The published
 archive matches the tested archive byte for byte.
@@ -36,8 +36,8 @@ Run these commands in the Clusterio installation directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@0.11.0-beta.2 peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.2
+npm view @solarcloud7/plugin-surface-export@0.11.0-beta.3 peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.3
 ```
 
 ### Accepted candidate archive
