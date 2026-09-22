@@ -27,7 +27,7 @@ Keep the checked-in image pin unless testing a deliberate upgrade.
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm ci
-docker volume create factorio-client-2117
+docker volume create factorio-client-2120
 ./tools/clusterio/build-plugin.ps1 -Target all
 ./tools/surface-export/build-gateway-mod.ps1 -SkipClientSync
 docker compose pull
@@ -54,12 +54,12 @@ the graphics needed to generate the web interface's icon spritesheets; the
 headless package does not. This is separate from the Steam client you use to play.
 
 The root Compose file sets `SKIP_CLIENT=false` on host 1 and mounts the external
-`factorio-client-2117` volume at `/opt/factorio-client`. Host 2 sets
+`factorio-client-2120` volume at `/opt/factorio-client`. Host 2 sets
 `SKIP_CLIENT=true`. Do not reuse or modify another cluster's client volume.
 
 Having the full client installed does not make a server process render the GUI.
 For UI screenshots, run the graphical client with a display and a disposable
-save. Factorio's [`take_screenshot` API](https://lua-api.factorio.com/2.1.17/classes/LuaGameScript.html#take_screenshot)
+save. Factorio's [`take_screenshot` API](https://lua-api.factorio.com/2.1.20/classes/LuaGameScript.html#take_screenshot)
 does nothing when Factorio runs headless.
 
 ## Connect a Steam client
