@@ -90,7 +90,7 @@ if (args[0] === "--analyze") {
       for (const host of [1, 2]) {
         assertLeaseClean(host, preflightState(host), "transfer-cleanup preflight");
         const world = probe(host, "world", prefix);
-        assert.equal(world.engine, "2.1.17", "re-certify for the new engine pin");
+        assert.equal(world.engine, "2.1.20", "re-certify for the new engine pin");
         report.versions[host] = world;
         worlds[host] = world.world;
         if (profiling) lua(host, `local profile=(function() ${profileCode} end)();return profile('arm','${prefix}',${args.includes("--large") ? 512 : 64} == 512 and 512 or nil)`);

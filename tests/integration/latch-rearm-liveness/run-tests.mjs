@@ -93,7 +93,7 @@ if(process.argv.includes('--analyze')){
     const fault=lua(2,construct.replace('p.apply_starter_pack()',"error('owned construction fault')"));
     assert.match(fault.error,/owned construction fault/); await cleanup(); report.failureCleanup=true;
     report.construction=lua(2,construct); assert.equal(report.construction.ok,true,JSON.stringify(report.construction));
-    assert.equal(report.construction.engine,'2.1.17');
+    assert.equal(report.construction.engine,'2.1.20');
     for(let i=0;i<20;i++){
       report.before=snapshot();
       if(report.before.items[0].status==='working')break;

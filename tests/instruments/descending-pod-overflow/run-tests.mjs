@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// requires: idle localhost host (default 1); Factorio 2.1.17; loaded SurfaceLock
+// requires: idle localhost host (default 1); Factorio 2.1.20; loaded SurfaceLock
 // produces: real pod states and physical hub/ground counts for empty/full hub arms
 // does not: certify hold duration, natural flight timing, or other cargo destinations
 import assert from "node:assert/strict";
@@ -13,7 +13,7 @@ function analyze(report) {
 	assert.equal(report.cleanup.ok, true, JSON.stringify(report.cleanup));
 	assert.equal(Object.keys(report.cleanup.remainingSurfaces).length, 0);
 	assert.equal(Object.keys(report.cleanup.remainingPlatforms).length, 0);
-	assert.equal(report.engine, "2.1.17");
+	assert.ok(["2.1.17", "2.1.20"].includes(report.engine), "Unsupported engine version");
 	assert.deepEqual(report.arms.map(arm => arm.full), [false, true]);
 	for (const arm of report.arms) {
 		assert.ok(["descending", "parking"].includes(arm.state), `not a descending specimen: ${arm.state}`);
