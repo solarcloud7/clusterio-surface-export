@@ -23,8 +23,8 @@ const groups = [
 
 const instanceSettings = [
 	{ title: "Batch sizes", debugOnly: false, help: "Control how much entity and belt work runs per batch. Each captured belt lane group is restored and checked together, so a large group can exceed the limit." },
-	{ title: "Belt trace", debugOnly: true, help: "Record belt item positions after a successful restore. Failed restores keep this evidence even when tracing is off." },
-	{ title: "Batch profiling", debugOnly: true, help: "Save individual timings for up to 2,000 batches per job. Stage totals are always recorded." },
+	{ title: "Belt trace", debugOnly: false, help: "Record belt item positions after a successful restore. Failed restores keep this evidence even when tracing is off." },
+	{ title: "Batch profiling", debugOnly: false, help: "Save individual timings for up to 2,000 batches per job. Stage totals are always recorded." },
 	{ title: "Full destination snapshots", debugOnly: true, help: "Save a full platform snapshot after successful validation. Requires debug mode and adds a scan that can pause the game. Transfer logs and failure diagnostics remain available when this is off." },
 ];
 

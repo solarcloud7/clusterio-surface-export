@@ -3,7 +3,8 @@ local BUTTON = "surfexp_selection_lab"
 local TOOL = "selection-lab-tool"
 
 local function enabled()
-	return storage.surface_export_config and storage.surface_export_config.debug_mode == true
+	return storage.surface_export_configuration_received == true
+		and storage.surface_export_config and storage.surface_export_config.debug_mode == true
 end
 
 function Controls.refresh(player)
@@ -23,7 +24,10 @@ function Controls.on_gui_click(event)
 	local player = game.get_player(event.player_index)
 	if not player then return end
 	if not enabled() then Controls.refresh(player); return end
-	if prototypes.item[TOOL] and player.clear_cursor() then player.cursor_stack.set_stack{name = TOOL} end
+	if prototypes.item[TOOL] and player.cursor_stack and player.cursor_stack.valid and player.clear_cursor() then
+		local cursor = player.cursor_stack
+		if cursor and cursor.valid then cursor.set_stack{name = TOOL} end
+	end
 end
 
 return Controls

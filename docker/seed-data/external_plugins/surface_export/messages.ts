@@ -848,8 +848,8 @@ export class InstanceListPlatformsRequest {
 	toJSON() { return { forceName: this.forceName }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
+		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" }, debugMode: { type: "boolean" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
 	};
 }
 

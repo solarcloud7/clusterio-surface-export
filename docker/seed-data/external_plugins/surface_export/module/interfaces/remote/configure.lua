@@ -37,6 +37,7 @@ local function configure(config)
   end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
+    storage.surface_export_configuration_received = true
     for _, player in pairs(game.players) do DebugControls.refresh(player) end
   end
   if config.debug_destination_snapshot ~= nil then

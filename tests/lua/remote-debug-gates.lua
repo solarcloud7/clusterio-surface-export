@@ -9,7 +9,7 @@ do
     end
     local player = {gui = {top = top}, set_shortcut_available = function(_, value) available = value end,
         clear_cursor = function() clears = clears + 1; return false end,
-        cursor_stack = {set_stack = function() grants = grants + 1 end}}
+        cursor_stack = {valid = true, set_stack = function() grants = grants + 1 end}}
     local ui_env = setmetatable({storage = {surface_export_config = {debug_mode = false}},
         prototypes = {shortcut = {["selection-lab-tool"] = {}}, item = {["selection-lab-tool"] = {}}},
         game = {get_player = function() return player end}}, {__index = _G})
@@ -18,9 +18,15 @@ do
     assert(not next(top, "add") and not available)
     ui_env.storage.surface_export_config.debug_mode = true
     controls.refresh(player)
+    assert(not top.surfexp_selection_lab, "default debug=true must not expose the lab before configuration arrives")
+    ui_env.storage.surface_export_configuration_received = true
+    controls.refresh(player)
     local button = assert(top.surfexp_selection_lab)
     controls.on_gui_click{element = button, player_index = 1}
     assert(clears == 1 and grants == 0, "a refused cursor clear must not overwrite possessions")
+    player.cursor_stack = nil
+    controls.on_gui_click{element = button, player_index = 1}
+    assert(clears == 1 and grants == 0, "a spectator without a cursor must not attempt to acquire the tool")
     ui_env.storage.surface_export_config.debug_mode = false
     controls.on_gui_click{element = button, player_index = 1}
     assert(not top.surfexp_selection_lab and grants == 0 and clears == 1, "a late click must respect debug off")
