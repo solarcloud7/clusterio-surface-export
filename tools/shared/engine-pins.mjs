@@ -12,6 +12,12 @@ export const contract = {
 const API_DIR = "docker/seed-data/external_plugins/surface_export/scripts";
 const VERSION = /^\d+\.\d+\.\d+$/;
 
+function compareVersions(a, b) {
+	const [x, y] = [a, b].map(value => String(value).split(".").map(Number));
+	for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+	return 0;
+}
+
 export function checkEnginePins(root = REPO_ROOT) {
 	const read = path => readFileSync(join(root, path), "utf8");
 	const seeds = seededInstances(root).map(h => ({ instance: h.instance,
@@ -40,12 +46,16 @@ export function checkEnginePins(root = REPO_ROOT) {
 
 	const index = JSON.parse(read(`${API_DIR}/factorio-api-index.json`));
 	if (index.application_version !== pin) problems.push(`factorio-api-index.json is for ${index.application_version}; expected ${pin}`);
-	return { pin, problems };
+	const floor = JSON.parse(read(`${API_DIR}/factorio-api-floor-index.json`));
+	if (!VERSION.test(floor.application_version || "") || compareVersions(floor.application_version, pin) > 0 || floor.api_version !== index.api_version) {
+		problems.push(`factorio-api-floor-index.json (${floor.application_version}, api ${floor.api_version}) must not be newer than ${pin} (api ${index.api_version})`);
+	}
+	return { pin, floor: floor.application_version, problems };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-	const { pin, problems } = checkEnginePins();
+	const { pin, floor, problems } = checkEnginePins();
 	for (const problem of problems) console.error(problem);
 	if (problems.length) process.exit(1);
-	console.log(`Engine pins agree on Factorio ${pin}`);
+	console.log(`Engine pins agree on Factorio ${pin}; API floor ${floor}`);
 }

@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// lint-api-names — every API member name read, written, probed or named as a string must exist at the pin.
-// requires: scripts/factorio-api-index.json (vendored; regenerate with extract-factorio-api-index.mjs),
-//           scripts/vendor/luaparse.cjs
+// lint-api-names — every API member name read, written, probed or named as a string must exist at the pin
+//           and at the oldest supported engine.
+// requires: scripts/factorio-api-index.json and scripts/factorio-api-floor-index.json (vendored;
+//           regenerate with extract-factorio-api-index.mjs), scripts/vendor/luaparse.cjs
 // produces: exit 0 with a per-receiver summary, or exit 1 listing each unknown name with file:line,
-//           whether it exists on another class, and the near-misses
+//           whether it exists on another class, the near-misses, or the floor it postdates
 // does not: infer receiver TYPES (a receiver is mapped to a class BY NAME, from module/ convention),
 //           check subclass availability, check write permission, follow past the first hop, or
 //           reach the network — the vendored index is the whole oracle
@@ -15,6 +16,7 @@ import { createRequire } from "node:module";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX_PATH = path.join(ROOT, "scripts", "factorio-api-index.json");
+const FLOOR_PATH = path.join(ROOT, "scripts", "factorio-api-floor-index.json");
 const luaparse = createRequire(import.meta.url)(path.join(ROOT, "scripts", "vendor", "luaparse.cjs"));
 
 export const BARE_RECEIVERS = {
@@ -129,7 +131,13 @@ function nearMisses(name, members) {
 	return candidates.slice(0, 4);
 }
 
-export function classifyReads(reads, index) {
+export function compareVersions(a, b) {
+	const [x, y] = [a, b].map(value => String(value).split(".").map(Number));
+	for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+	return 0;
+}
+
+export function classifyReads(reads, index, floor = null) {
 	const allMembers = new Set();
 	for (const members of Object.values(index.classes)) {
 		for (const name of Object.keys(members)) allMembers.add(name);
@@ -140,7 +148,11 @@ export function classifyReads(reads, index) {
 		const className = RECEIVER_CLASS[read.receiver];
 		const members = index.classes[className];
 		perReceiver.set(read.receiver, perReceiver.get(read.receiver) + 1);
-		if (members[read.name]) continue;
+		if (members[read.name]) {
+			if (!floor || floor.classes[className]?.[read.name]) continue;
+			failures.push({ ...read, className, floorVersion: floor.application_version, elsewhere: false, near: [] });
+			continue;
+		}
 		failures.push({
 			...read,
 			className,
@@ -174,6 +186,22 @@ function main() {
 			+ "refusing to lint against a broken oracle");
 		process.exit(1);
 	}
+	let floor;
+	try {
+		floor = JSON.parse(readFileSync(FLOOR_PATH, "utf8"));
+	} catch (err) {
+		console.error(`lint:api-names CONTROL FAILURE: the supported-floor index is unreadable (${err.message}). `
+			+ "Regenerate it with extract-factorio-api-index.mjs <version> --floor.");
+		process.exit(1);
+	}
+	const floorMissing = [...new Set(Object.values(RECEIVER_CLASS))].filter(name => !floor.classes?.[name]);
+	if (floorMissing.length || floor.api_version !== index.api_version
+		|| compareVersions(floor.application_version, index.application_version) > 0) {
+		console.error(`lint:api-names CONTROL FAILURE: the floor index (${floor.application_version}, api ${floor.api_version}) `
+			+ `must not be newer than the pin (${index.application_version}, api ${index.api_version}) and must carry `
+			+ `every mapped class${floorMissing.length ? `; missing ${floorMissing.join(", ")}` : ""}.`);
+		process.exit(1);
+	}
 
 	const reads = [];
 	for (const file of luaFiles(path.join(ROOT, "module"))) {
@@ -188,7 +216,7 @@ function main() {
 		}
 	}
 
-	const { checked, failures, perReceiver, knownMembers } = classifyReads(reads, index);
+	const { checked, failures, perReceiver, knownMembers } = classifyReads(reads, index, floor);
 
 	if (checked < MIN_CHECKED_READS) {
 		console.error(`lint:api-names CONTROL FAILURE: only ${checked} member reads found in module/, below the `
@@ -205,10 +233,15 @@ function main() {
 	}
 
 	if (failures.length) {
-		console.error(`lint:api-names — ${failures.length} unknown API name(s) at pin ${index.application_version}. `
-			+ "A bare read of an absent member THROWS; the same name behind safe_get or a pcall probe reads as nil "
-			+ "forever:");
+		console.error(`lint:api-names — ${failures.length} API name(s) unknown at pin ${index.application_version} `
+			+ `or supported floor ${floor.application_version}. A bare read of an absent member THROWS; the same name `
+			+ "behind safe_get or a pcall probe reads as nil forever:");
 		for (const failure of failures) {
+			if (failure.floorVersion) {
+				console.error(`  ${failure.file}:${failure.line}  [${failure.context}] ${failure.receiver}.`
+					+ `${failure.name} exists at pin ${index.application_version} but not at the supported floor ${failure.floorVersion}`);
+				continue;
+			}
 			const elsewhere = failure.elsewhere
 				? " (exists on ANOTHER class — wrong receiver, or this variable is not a "
 					+ `${failure.className} here)`
@@ -221,7 +254,8 @@ function main() {
 	}
 
 	const summary = [...perReceiver].map(([receiver, count]) => `${receiver}=${count}`).join(" ");
-	console.log(`lint:api-names — OK (${checked} member reads verified against ${index.application_version}, `
+	console.log(`lint:api-names — OK (${checked} member reads verified against ${index.application_version} `
+		+ `and floor ${floor.application_version}, `
 		+ `${knownMembers} known members; ${summary})`);
 }
 

@@ -8,6 +8,7 @@ import { REPO_ROOT, seededInstances } from "../../tools/shared/seeded-instances.
 
 const API_DIR = "docker/seed-data/external_plugins/surface_export/scripts";
 const COPIED = ["docker-compose.yml", ".github/workflows/ci.yml", ".env.example", `${API_DIR}/factorio-api-index.json`,
+	`${API_DIR}/factorio-api-floor-index.json`,
 	...seededInstances().map(h => `docker/seed-data/hosts/${h.host}/${h.instance}/instance.json`)];
 
 function fixture(t) {
@@ -39,6 +40,7 @@ for (const [name, path, change, expected] of [
 	["CI client volume", ".github/workflows/ci.yml", text => text.replace(/docker volume create factorio-client-\d+/, "docker volume create factorio-client-2199"), /ci\.yml creates factorio-client-2199/],
 	["example environment tag", ".env.example", text => `${text}\n# FACTORIO_CLIENT_TAG=2.1.17\n`, /\.env\.example sets FACTORIO_CLIENT_TAG/],
 	["API index", `${API_DIR}/factorio-api-index.json`, text => text.replace(/"application_version":"[^"]+"/, '"application_version":"2.1.99"'), /factorio-api-index\.json is for 2\.1\.99/],
+	["API floor newer than the pin", `${API_DIR}/factorio-api-floor-index.json`, text => text.replace(/"application_version":"[^"]+"/, '"application_version":"2.1.99"'), /factorio-api-floor-index\.json \(2\.1\.99/],
 ]) {
 	test(`a drifted ${name} is reported`, t => {
 		const { root, edit } = fixture(t);
