@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createSaveSession } from "./save-session.mjs";
+import { startPatchedSave } from "./start-patched-save.mjs";
 import { probeCluster, compareWorlds, evaluateRuntime, expectedModuleVersion } from "../../tools/tests/cluster-readiness.mjs";
 import { developmentCluster, CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
 import { fileURLToPath } from "node:url";
@@ -282,7 +283,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 			for (const [host, role, name] of [[1, "source", goldenSourceSave], [2, "destination", goldenDestSave]]) {
 				docker(["cp", `${REPO_ROOT}${manifest.saves[role].artifact}`,
 					`${HOSTS[host].container}:${instancePath(host, `saves/${name}`)}`], { timeout: 180000 });
-				ctl("instance", "start", HOSTS[host].instance, "--save", name);
+				startPatchedSave(ctl, HOSTS[host].instance, name);
 				await waitReady(host);
 				assertLeaseClean(host, preflightState(host), phase);
 			}

@@ -117,6 +117,21 @@ Do not create fresh worlds, delete volumes or rerun a development seed/reset scr
 to update the plugin. Fresh-install acceptance does not establish compatibility with
 every historical save or code rollback.
 
+When upgrading Factorio, scenario migrations can replace Clusterio's patched scripts.
+The first start may fail with `clusterio_private.update_instance` reporting that
+`clusterio_private` is nil. Clusterio documents a second instance start as the remedy
+in its [known issues](https://github.com/clusterio/clusterio#known-issues).
+After confirming the instance stopped, retry the same save once. Other failures,
+a repeated failure, or missing recovery state require investigation; do not delete
+`script.dat` or reset the world. Verify the plugin loaded and recovery completed.
+
+A disposable 2.1.17-to-2.1.20 gallery test with plugin 0.11.0-beta.3 and gateway mod
+0.6.7 reproduced this failure, then recovered on the second start. Captured physical
+inventories, belt-side contents, fluids, player state, research and platform identity
+records matched the old checkpoint through two further saved restarts. This does
+not establish compatibility for every save or third-party mod. Rehearse on copies
+of your deployment before upgrading it, and retain a coordinated pre-upgrade backup.
+
 The [consumer-install fixture](../../tests/manual/consumer-install/README.md) exercises
 Clusterio's published installer and plugin registration with a candidate npm tarball.
 Its recorded results identify exact tested versions. Docker-based backup and restart
