@@ -1,5 +1,9 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const {setImmediate: settle} = require("node:timers/promises");
 const { ControllerPlugin } = require("../dist/node/controller");
 
 function setup() {
@@ -48,5 +52,60 @@ test("announcement failure does not replay a completed arrival on another join e
 	await emit(2, "join");
 	await emit(2, "join");
 	assert.equal(attempts, 1);
+	await settle();
 	assert.match(warnings[0], /offline/);
+});
+
+for (const order of ["join-first", "leave-first"]) {
+	test(`persisted source survives controller restart and ${order}`, async t => {
+		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "se-travel-"));
+		t.after(() => fs.rm(directory, {recursive: true, force: true}));
+		const file = path.join(directory, "locations.json");
+		const first = setup();
+		await first.plugin.loadPlayerLocations(file);
+		await first.emit(1, "join");
+		const restarted = setup();
+		await restarted.plugin.loadPlayerLocations(file);
+		if (order === "leave-first") await restarted.emit(1, "leave");
+		await restarted.emit(2, "join");
+		if (order === "join-first") await restarted.emit(1, "leave");
+		await restarted.emit(2, "join");
+		assert.equal(restarted.sent.length, 1);
+		assert.equal(restarted.sent[0].request.sourceName, "fact1");
+		const again = setup();
+		await again.plugin.loadPlayerLocations(file);
+		await again.emit(2, "join");
+		assert.equal(again.sent.length, 0);
+		await again.emit(3, "join");
+		assert.equal(again.sent[0].request.sourceName, "fact2");
+	});
+}
+
+test("slow announcements cannot hold the player hook or manufacture a source from stale online records", async () => {
+	const {plugin, emit} = setup();
+	plugin.controller.users = {getByName: () => ({instances: new Set([99]), instanceStats: new Map([[99, {lastJoinAt: new Date(9999999999999)}]])})};
+	let sends = 0, resolve;
+	plugin.controller.sendTo = () => { sends++; return new Promise(done => {resolve = done;}); };
+	await emit(1, "join");
+	assert.equal(sends, 0);
+	await emit(2, "join");
+	assert.equal(sends, 1);
+	await emit(2, "join");
+	assert.equal(sends, 1);
+	resolve({success: true});
+});
+
+test("unreadable history is retained, and subsequent observations work without guessing a source", async t => {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "se-travel-"));
+	t.after(() => fs.rm(directory, {recursive: true, force: true}));
+	const file = path.join(directory, "locations.json");
+	await fs.writeFile(file, "broken history");
+	const {plugin, emit, sent, warnings} = setup();
+	await plugin.loadPlayerLocations(file);
+	await emit(1, "join");
+	assert.equal(sent.length, 0);
+	await emit(2, "join");
+	assert.equal(sent.length, 1);
+	assert.equal(await fs.readFile(file, "utf8"), "broken history");
+	assert.match(warnings[0], /history unavailable/);
 });

@@ -73,26 +73,56 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
 	private importCompletions = new Map<string, Promise<void>>();
 	private playerLocations = new Map<string, number>();
+	private playerLocationsPath?: string;
+
+	async loadPlayerLocations(file: string): Promise<void> {
+		this.playerLocationsPath = file;
+		this.playerLocations = new Map();
+		try {
+			const saved = JSON.parse(await fs.readFile(file, "utf8"));
+			if (saved?.version !== 1 || !Array.isArray(saved.locations) || saved.locations.some((entry: unknown) =>
+				!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string" || !entry[0]
+				|| !Number.isSafeInteger(entry[1]) || entry[1] < 0)) throw new Error("Invalid player location history");
+			this.playerLocations = new Map(saved.locations.map(([name, id]: [string, number]) => [name.toLowerCase(), id]));
+		} catch (error: unknown) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				this.playerLocationsPath = undefined;
+				this.logger.warn(`Player travel history unavailable: ${getErrorMessage(error)}`);
+			}
+		}
+	}
+
+	private async persistPlayerLocations(): Promise<void> {
+		const file = this.playerLocationsPath;
+		if (!file) return;
+		const payload = JSON.stringify({version: 1, locations: [...this.playerLocations]});
+		try { await enqueueWrite(file, () => lib.safeOutputFile(file, payload)); }
+		catch (error: unknown) { this.logger.warn(`Player travel history could not be saved: ${getErrorMessage(error)}`); }
+	}
 
 	override async onPlayerEvent(instance: InstanceRecord, event: lib.PlayerEvent): Promise<void> {
-		const previousId = this.playerLocations.get(event.name);
+		const playerKey = event.name.toLowerCase();
+		const previousId = this.playerLocations.get(playerKey);
 		if (event.type === "leave") {
-			if (previousId === undefined) this.playerLocations.set(event.name, instance.id);
+			if (previousId === undefined) {
+				this.playerLocations.set(playerKey, instance.id);
+				await this.persistPlayerLocations();
+			}
 			return;
 		}
 		if (event.type !== "join") return;
-		this.playerLocations.set(event.name, instance.id);
+		this.playerLocations.set(playerKey, instance.id);
+		if (previousId !== instance.id) await this.persistPlayerLocations();
 		if (previousId === undefined || previousId === instance.id) return;
 		const previous = this.c.instances.get(previousId);
 		if (!previous || previous.isDeleted || !instance.config.get("surface_export.load_plugin")) return;
-		try {
-			const result = await this.c.sendTo({ instanceId: instance.id }, new messages.AnnouncePlayerTravelRequest(
+		void Promise.resolve().then(() => this.c.sendTo({ instanceId: instance.id }, new messages.AnnouncePlayerTravelRequest(
 				event.name, String(previous.config.get("instance.name")), String(instance.config.get("instance.name")),
-			));
+			))).then(result => {
 			if (!result.success) this.logger.warn(`Player travel announcement skipped: ${result.error}`);
-		} catch (error: unknown) {
+		}).catch((error: unknown) => {
 			this.logger.warn(`Player travel announcement unavailable: ${getErrorMessage(error)}`);
-		}
+		});
 	}
 
 	override async init() {
@@ -131,6 +161,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_pending_transfers.json",
 		);
+		await this.loadPlayerLocations(path.join(path.dirname(this.pendingTransfersPath), "surface_export_player_locations.json"));
 
 		this.platformTree = new PlatformTree(this as unknown as IControllerPlugin, messages);
 		this.txLogger = new TransactionLogger(this as unknown as IControllerPlugin);
