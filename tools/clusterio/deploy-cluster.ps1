@@ -129,7 +129,8 @@ foreach ($volume in $externalVolumes) {
     Write-Host "External volume ready: $volume" -ForegroundColor Green
 }
 
-$ctlPrefix = @('exec', 'surface-export-controller', 'npx', 'clusterioctl', '--config', '/clusterio/tokens/config-control.json', '--log-level', 'error')
+$ctlPrefix = @('exec', 'surface-export-controller', 'timeout', '60', 'npx', 'clusterioctl', '--config', '/clusterio/tokens/config-control.json', '--log-level', 'error')
+$ctlStartPrefix = @('exec', 'surface-export-controller', 'timeout', '180', 'npx', 'clusterioctl', '--config', '/clusterio/tokens/config-control.json', '--log-level', 'error')
 $migratedInstances = @()
 if (-not $ResetData) {
     Write-Host "Starting the controller to compare retained instances with the engine pin ($pinnedFactorioVersion)..." -ForegroundColor Cyan
@@ -179,7 +180,7 @@ function Restart-MigratedInstance {
         throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read /clusterio/data/instances/$Name/factorio-current.log on $container. The cluster is NOT deployed."
     }
     Write-Host "  $Name hit Clusterio's documented first start after an engine change; starting it once more" -ForegroundColor Yellow
-    $startText = (docker @ctlPrefix instance start $Name 2>&1 | Out-String)
+    $startText = (docker @ctlStartPrefix instance start $Name 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Restarting $Name after the engine migration failed: $($startText.Trim()). The cluster is NOT deployed." }
 }
 
