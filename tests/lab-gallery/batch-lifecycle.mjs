@@ -186,12 +186,6 @@ export async function waitReady(host, timeoutMs = 180_000, read = lua) {
 	throw new Error(`host ${host} did not become RCON-ready: ${lastError?.message}`);
 }
 
-export async function assignSave(host, saveName) {
-	ctl("instance", "stop", HOSTS[host].instance);
-	ctl("instance", "start", HOSTS[host].instance, "--save", saveName);
-	return waitReady(host);
-}
-
 export function readContainerJson(host, path) {
 	return JSON.parse(docker(["exec", HOSTS[host].container, "cat", path]));
 }
@@ -373,7 +367,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		goldenSourceSave, goldenDestSave, markerPrefix,
 		CONTROLLER, CTL_CONFIG, HOSTS, FLUID_EPSILON, DOUBLE_EPSILON,
 		sleep, lastLine, docker, ctl, rcon, lua, instanceIds, instancePath,
-		preflightState, assertLeaseClean, loadedSave, waitReady, assignSave, readContainerJson,
+		preflightState, assertLeaseClean, loadedSave, waitReady, readContainerJson,
 		exportIdFloor, bumpExportIdCounter, recoveryEpoch,
 		sanitizePlatformName, makeExportJobId, canonicalTransferId,
 		predictCanonicalIds, fetchTransferSummaries, checkTransferIdCollisions,

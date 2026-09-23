@@ -3,13 +3,13 @@ import test from "node:test";
 import { startPatchedSave } from "./start-patched-save.mjs";
 
 const migration = "clusterio_private.update_instance: attempt to index global 'clusterio_private' (a nil value)";
-for (const [name, errors, status, starts] of [
-	["successful start", [], "stopped", 1],
-	["persisted scenario migration", [migration], "stopped", 2],
-	["repeated migration failure", [migration, migration], "stopped", 2],
-	["unrelated startup failure", ["invalid mod"], "stopped", 1],
-	["unconfirmed stop", [migration], "starting", 1],
-	["missing instance", [migration], null, 1],
+for (const [name, errors, status, starts, throws] of [
+	["successful start", [], "stopped", 1, false],
+	["persisted scenario migration", [migration], "stopped", 2, false],
+	["repeated migration failure", [migration, migration], "stopped", 2, true],
+	["unrelated startup failure", ["invalid mod"], "stopped", 1, true],
+	["unconfirmed stop", [migration], "starting", 1, true],
+	["missing instance", [migration], null, 1, true],
 ]) {
 	test(name, () => {
 		const calls = [];
@@ -20,7 +20,7 @@ for (const [name, errors, status, starts] of [
 			if (error) throw new Error(error);
 			return "started";
 		};
-		if (errors.length && !(errors.length === 1 && errors[0] === migration && status === "stopped")) {
+		if (throws) {
 			assert.throws(() => startPatchedSave(ctl, "fixture", "checkpoint.zip"));
 		} else {
 			assert.equal(startPatchedSave(ctl, "fixture", "checkpoint.zip"), "started");
