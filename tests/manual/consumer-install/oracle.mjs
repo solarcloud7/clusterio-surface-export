@@ -8,11 +8,14 @@ export function analyzeConsumer(report) {
   assert.equal(report.cleanup?.success, true, "cleanup unproven");
   const install = report.installation;
   assert.equal(install?.success, true);
-  assert.equal(install.installer, "2.0.0-alpha.27");
+  const clusterioVersion=install.runtime?.clusterioVersion ?? "2.0.0-alpha.27";
+  assert.equal(install.installer, clusterioVersion);
   assert.equal(install.unprivileged, true);
   assert.equal(install.runScripts, true);
-  assert.match(install.engine, /^Version: 2\.1\.17 .*linux64, full/);
-  for (const name of ["controller", "host", "ctl", "lib"]) assert.equal(install.peers[name], "2.0.0-alpha.27");
+  assert.equal(install.engine.match(/^Version: (\d+\.\d+\.\d+) /)?.[1], install.runtime?.factorioVersion ?? "2.1.17");
+  assert.match(install.engine, /linux64, full/);
+  if(install.runtime) assert.equal(install.packageVersion,install.runtime.pluginVersion);
+  for (const name of ["controller", "host", "ctl", "lib"]) assert.equal(install.peers[name], clusterioVersion);
   assert.ok(install.registration.some(([name, path]) => name === "surface_export" && path === "@solarcloud7/plugin-surface-export"));
   for (const name of ["package", "gateway", "runner", "lab", "bootstrap"]) assert.match(report.hashes[name], /^[a-f0-9]{64}$/);
   assert.deepEqual(report.freshSaves.map(s => s.host).sort(), [1, 2]);
@@ -21,7 +24,7 @@ export function analyzeConsumer(report) {
   assert.equal(new Set(report.gatewayMaps.map(s => s.instanceId)).size, 2);
   assert.deepEqual(report.gatewayMaps.map(s => s.instanceId).sort(), report.freshSaves.map(s => s.instanceId).sort());
   for (const state of report.gatewayMaps) {
-    assert.equal(state.layout, "one_gate"); verifyGatewayMap(state, { version: "0.6.5" });
+    assert.equal(state.layout, "one_gate"); verifyGatewayMap(state, { version: install.runtime?.gatewayVersion ?? "0.6.5" });
   }
   const b = report.browser;
   assert.equal(b?.success, true, "browser acceptance incomplete");

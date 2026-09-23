@@ -11,7 +11,6 @@ import { preservesInstalledCode } from "./mounts.mjs";
 import { readTable } from "./runtime/cli-table.mjs";
 
 export class ProductionLab extends DockerLab {
-  factorioVersion = pins.factorio;
   controlConfig = "/clusterio/tokens/config-control.json";
   command(args, timeout = 30_000) {
     return this.docker(["exec", "--user", "clusterio", this.controller, "npx", "--no-install", "clusterioctl",
@@ -19,6 +18,8 @@ export class ProductionLab extends DockerLab {
   }
   ctl(...args) { return this.command(args); }
   async boot(runtime, sourceClient) {
+    this.resolvedRuntime = Object.freeze({ factorioVersion: pins.factorio,
+      gatewayVersion: pins.gateway.version, pluginVersion: runtime.accepted.version });
     if (sourceClient) {
       assert.match(sourceClient, /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/);
       this.docker(["volume", "inspect", sourceClient]);

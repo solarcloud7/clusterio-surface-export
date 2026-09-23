@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { ROOT } from "./docker-lab.mjs";
+import { resolveImages } from "../../../tools/shared/runtime-profile.mjs";
 
 export const contract = {
   requires: ["pinned host image", "Docker"],
@@ -12,9 +10,7 @@ export const contract = {
 
 export async function checkpointCheck(lab, report, save) {
   const container=lab.hosts[2].container;
-  const tag=readFileSync(join(ROOT,".env.example"),"utf8").match(/^CLUSTERIO_IMAGE_TAG=(.+)$/m)?.[1].trim();
-  assert.match(tag || "",/^2\.0\.0-alpha\.\d+[.-]r\d+$/,"pinned host image required");
-  const image=`ghcr.io/solarcloud7/clusterio-docker-host:${tag}`;
+  const image=resolveImages(lab.runtimeOptions).hostImage;
   lab.docker(["run","-d","--name",container,"--label",`surface-export.manual-run=${lab.run}`,
     "--network","none","--entrypoint","/bin/sleep",image,"infinity"]);
   lab.containers.push(container);lab.assertOwned("container",container);
