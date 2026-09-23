@@ -146,14 +146,27 @@ local function assert_position(name, x, y)
 	assert(location[1] == x and location[2] == y, name .. " at " .. location[1] .. "," .. location[2] .. " expected " .. x .. "," .. y)
 end
 assert(ui_player.gui.screen[planets_name] and ui_player.gui.screen[boarding_name] and not ui_player.opened)
-assert_position(planets_name, 11, 264)
+assert_position(planets_name, 13, 266)
+assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen.surfexp_instance_title.visible)
+joined_panel.on_gui_click{player_index = 1, element = {valid = true, name = "surfexp_instance_toggle_planets"}}
+assert(ui_player.gui.screen[planets_name].visible and ui_player.gui.screen.surfexp_instance_title.visible)
+local saved_platforms = force.platforms
+force.platforms = {}
+force.is_space_platforms_unlocked = function() return false end
+force.get_surface_hidden = function() return false end
+ui_env.game.planets.nauvis = {surface = {}}
+panel.refresh_position(ui_player)
+assert_position(planets_name, 13, 178)
+force.platforms = saved_platforms
+ui_env.game.planets.nauvis = nil
+panel.refresh_position(ui_player)
 assert_position(boarding_name, 1333, 604)
 platform(3)
 panel.refresh_position(ui_player)
-assert_position(planets_name, 11, 292)
+assert_position(planets_name, 13, 294)
 force.platforms[3].scheduled_for_deletion = 60
 panel.refresh_position(ui_player)
-assert_position(planets_name, 11, 264)
+assert_position(planets_name, 13, 266)
 force.platforms[3] = nil
 ui_player.display_scale = 1.5
 ui_player.display_resolution = {width = 800, height = 600}
@@ -165,12 +178,12 @@ for _, name in ipairs({planets_name, boarding_name}) do
 end
 ui_player.display_scale, ui_player.display_resolution = 1.5, {width = 1280, height = 900}
 joined_panel.refresh_viewport{player_index = 1, tick = 6}
-assert_position(planets_name, 17, 396)
+assert_position(planets_name, 19, 398)
 assert_position(boarding_name, 879, 684)
 ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
 joined_panel.refresh_viewport{player_index = 1, tick = 7}
 assert_position(boarding_name, 1333, 604)
-assert_position(planets_name, 11, 264)
+assert_position(planets_name, 13, 266)
 ui_player.controller_type = 1
 joined_panel.refresh_visibility(ui_player)
 assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen[boarding_name].visible)
