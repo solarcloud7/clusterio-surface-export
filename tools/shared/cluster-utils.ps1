@@ -238,3 +238,17 @@ function Get-SeededInstances {
 function Get-SeededInstanceNames {
     return @(Get-SeededInstances | Select-Object -ExpandProperty Instance)
 }
+
+function Test-ScenarioMigrationFailure {
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Log,
+        [Parameter(Mandatory)][string]$Instance
+    )
+    $marker = "Error during auto startup for ${Instance}:"
+    $at = $Log.IndexOf($marker)
+    if ($at -lt 0) { return $false }
+    $next = $Log.IndexOf("Error during auto startup for ", $at + $marker.Length)
+    $detail = if ($next -lt 0) { $Log.Substring($at) } else { $Log.Substring($at, $next - $at) }
+    return $detail.Contains('clusterio_private.update_instance') -and
+        $detail.Contains("attempt to index global 'clusterio_private' (a nil value)")
+}

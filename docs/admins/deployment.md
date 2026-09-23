@@ -124,13 +124,8 @@ in its [known issues](https://github.com/clusterio/clusterio#known-issues).
 After confirming the instance stopped, retry the same save once. Other failures,
 a repeated failure, or missing recovery state require investigation; do not delete
 `script.dat` or reset the world. Verify the plugin loaded and recovery completed.
-
-A disposable 2.1.17-to-2.1.20 gallery test with plugin 0.11.0-beta.3 and gateway mod
-0.6.7 reproduced this failure, then recovered on the second start. Captured physical
-inventories, belt-side contents, fluids, player state, research and platform identity
-records matched the old checkpoint through two further saved restarts. This does
-not establish compatibility for every save or third-party mod. Rehearse on copies
-of your deployment before upgrading it, and retain a coordinated pre-upgrade backup.
+Rehearse the upgrade on a copy of your deployment and retain a coordinated
+pre-upgrade backup.
 
 The [consumer-install fixture](../../tests/manual/consumer-install/README.md) exercises
 Clusterio's published installer and plugin registration with a candidate npm tarball.

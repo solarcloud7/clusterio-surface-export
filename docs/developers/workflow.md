@@ -52,6 +52,15 @@ resets for disposable worlds. The older `-KeepSaves` and `-KeepData` switches st
 select preservation; combining them with a reset is rejected. `docker compose down -v`
 also deletes volumes.
 
+Cluster deployment compares each retained instance's `factorio.version` with the
+seed engine pin before starting the hosts, and refuses a mismatch. `-MigrateEngine`
+sets the pinned version on those instances. A save written by a newer engine cannot
+be loaded by an older one, so back up the volumes first. The first start after an
+engine change can fail with Clusterio's
+[known `clusterio_private` error](https://github.com/clusterio/clusterio#known-issues);
+deployment starts a migrated instance once more only when its host log shows that
+error.
+
 Public alpha, beta and release-candidate versions are selected explicitly. The
 deployment scripts refuse to increment them automatically. A save-preserving
 update does not change the version. For an intentional fixture reset at the same

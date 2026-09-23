@@ -132,6 +132,6 @@ volumes:
   surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
   surface-export-host-2-data:        # Host 2 persistent data
   surface-export-tokens:             # Token exchange between controller and hosts
-  factorio-client-2120:              # Factorio 2.1.20 experimental client (external — survives down -v).
+  factorio-client-2120:              # Full client at FACTORIO_CLIENT_TAG; the name tracks the seed engine (external — survives down -v).
     external: true                   # The old shared `factorio-client` volume (2.0.77) is untouched —
                                      # it is shared with the clusterio-docker/atlas project; never mutate it.
