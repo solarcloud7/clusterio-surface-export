@@ -144,6 +144,12 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
+	async announcePlayerTravel(request: { playerName: string; sourceName: string; targetName: string }): Promise<import("../messages").SimpleResponse> {
+		const args = [request.playerName, request.sourceName, request.targetName].map(value => `"${escapeString(value)}"`).join(", ");
+		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "announce_player_travel", ${args})))`);
+		return JSON.parse(raw.trim());
+	}
+
 	async exportPlatform(platformIndex: number, forceName: string, targetArg: string, operationId?: string, platformUid?: string): Promise<string> {
 		const uidArg = platformUid ? `"${escapeString(platformUid)}"` : "nil";
 		const operationArg = operationId ? `"${escapeString(operationId)}"` : "nil";

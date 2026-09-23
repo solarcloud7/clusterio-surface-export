@@ -5,7 +5,7 @@ import { timed, timedSync, timingContext } from "./lib/timing";
 import fs from "fs/promises";
 import path from "path";
 import { BaseControllerPlugin } from "@clusterio/controller";
-import type { Controller } from "@clusterio/controller";
+import type { Controller, InstanceRecord } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
 import { GatewayConfig } from "./lib/gateway-config";
 import { PlatformTree, instanceAddress } from "./lib/platform-tree";
@@ -72,6 +72,28 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	recoveryReservations = new Map<number, { epoch: string; mode: PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes: number[] }>();
 	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
 	private importCompletions = new Map<string, Promise<void>>();
+	private playerLocations = new Map<string, number>();
+
+	override async onPlayerEvent(instance: InstanceRecord, event: lib.PlayerEvent): Promise<void> {
+		const previousId = this.playerLocations.get(event.name);
+		if (event.type === "leave") {
+			if (previousId === undefined) this.playerLocations.set(event.name, instance.id);
+			return;
+		}
+		if (event.type !== "join") return;
+		this.playerLocations.set(event.name, instance.id);
+		if (previousId === undefined || previousId === instance.id) return;
+		const previous = this.c.instances.get(previousId);
+		if (!previous || previous.isDeleted || !instance.config.get("surface_export.load_plugin")) return;
+		try {
+			const result = await this.c.sendTo({ instanceId: instance.id }, new messages.AnnouncePlayerTravelRequest(
+				event.name, String(previous.config.get("instance.name")), String(instance.config.get("instance.name")),
+			));
+			if (!result.success) this.logger.warn(`Player travel announcement skipped: ${result.error}`);
+		} catch (error: unknown) {
+			this.logger.warn(`Player travel announcement unavailable: ${getErrorMessage(error)}`);
+		}
+	}
 
 	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");

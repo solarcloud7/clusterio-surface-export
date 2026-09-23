@@ -102,6 +102,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
+		this.i.handle(messages.AnnouncePlayerTravelRequest, request => this.lua.announcePlayerTravel(request));
 		this.i.handle(messages.ReadExportRequest, this.handleReadExportRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));

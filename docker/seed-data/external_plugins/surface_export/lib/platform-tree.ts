@@ -153,6 +153,7 @@ export class PlatformTree {
 			const rawGamePort = (instance as { gamePort?: number }).gamePort;
 			const gamePort = Number.isInteger(rawGamePort) ? rawGamePort as number : null;
 			const node: InstanceNodeModel = {
+				debugMode: instance.config.get("surface_export.debug_mode") === true,
 				instanceId,
 				instanceName: String(instance.config.get("instance.name") || ""),
 				hostId,

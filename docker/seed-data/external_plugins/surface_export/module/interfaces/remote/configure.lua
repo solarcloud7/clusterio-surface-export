@@ -36,6 +36,8 @@ local function configure(config)
   end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
+    local controls = require("modules/surface_export/interfaces/gui/debug-controls")
+    for _, player in pairs(game.players) do controls.refresh(player) end
   end
   if config.debug_destination_snapshot ~= nil then
     storage.surface_export_config.debug_destination_snapshot = config.debug_destination_snapshot == true

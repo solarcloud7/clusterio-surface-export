@@ -200,4 +200,33 @@ function TeleportGui.request_roster()
 	clusterio_api.send_json("surface_teleport_roster_request", {})
 end
 
+function TeleportGui.announce_arrival(player_name, source_name, target_name)
+	local player = game.get_player(player_name)
+	if not (player and player.valid and player.connected) then return {success = false, error = "Player is no longer connected"} end
+	if (storage.surface_export_pending_arrivals or {})[player.index] then
+		storage.surface_export_pending_announcements = storage.surface_export_pending_announcements or {}
+		storage.surface_export_pending_announcements[player_name] = {source = source_name, target = target_name}
+		return {success = true}
+	end
+	local surface = game.get_surface(player.physical_surface_index)
+	local location = surface and (surface.planet or (surface.platform and surface.platform.space_location))
+	local function text(value) return (value:gsub("%[", "("):gsub("%]", ")")) end
+	local message = {"", "[img=space-location/surfexp_gateway_hub] ", text(player.name), " moved from ", text(source_name), " to ", text(target_name)}
+	if location then
+		message[#message + 1] = " → [img=space-location/" .. location.name .. "] "
+		message[#message + 1] = prototypes.space_location[location.name].localised_name
+	end
+	game.print(message, {color = player.color})
+	return {success = true}
+end
+
+function TeleportGui.flush_announcements()
+	local pending = storage.surface_export_pending_announcements
+	if not pending then return end
+	storage.surface_export_pending_announcements = {}
+	for name, entry in pairs(pending) do
+		TeleportGui.announce_arrival(name, entry.source, entry.target)
+	end
+end
+
 return TeleportGui

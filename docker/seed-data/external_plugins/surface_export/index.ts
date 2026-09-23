@@ -191,6 +191,7 @@ export const plugin = {
 		messages.GetGatewayConfigRequest,
 		messages.RecoveryPolicyRequest,
 		messages.GetInstanceRosterRequest,
+		messages.AnnouncePlayerTravelRequest,
 		messages.PushGatewayConfigRequest,
 	],
 	ctlEntrypoint: "dist/node/control",

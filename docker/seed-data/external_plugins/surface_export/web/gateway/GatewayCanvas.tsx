@@ -45,6 +45,8 @@ import { NodeActionsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
 import {
 	GatewayDebugContext,
+	DEFAULT_DEBUG_STATE,
+	hasDebugInstance,
 	isMockEditKey,
 	isMockInstanceId,
 	loadDebugState,
@@ -199,12 +201,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		{ source: PlatformActionSource; presetTargetInstanceId: number | null } | null
 	>(null);
 	const [exportingKey, setExportingKey] = useState<string | null>(null);
-	const [debug, setDebugState] = useState<DebugState>(loadDebugState);
+	const debugAllowed = canEdit && hasDebugInstance(state?.tree);
+	const [savedDebug, setDebugState] = useState<DebugState>(loadDebugState);
+	const debug = debugAllowed ? savedDebug : DEFAULT_DEBUG_STATE;
 	const setDebug = useCallback((next: DebugState) => {
 		setDebugState(next);
 		saveDebugState(next);
 	}, []);
-	const [scenario, setScenario] = useState<DebugScenario | null>(null);
+	const [savedScenario, setScenario] = useState<DebugScenario | null>(null);
+	const scenario = debugAllowed ? savedScenario : null;
 	const [edgeShape, setEdgeShape] = useState<EdgeShape>(loadEdgeShape);
 	const changeEdgeShape = useCallback((shape: EdgeShape) => {
 		setEdgeShape(shape);
@@ -667,7 +672,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const liveRef = useRef({ debug, scenario, graph, mode, summaries: state?.transferSummaries });
 	liveRef.current = { debug, scenario, graph, mode, summaries: state?.transferSummaries };
-	useEffect(() => installCanvasDebugApi({
+	useEffect(() => debugAllowed ? installCanvasDebugApi({
 		getState: () => liveRef.current.debug,
 		setState: setDebug,
 		getScenario: () => liveRef.current.scenario,
@@ -687,7 +692,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				geometry: state.showGeometry,
 			};
 		},
-	}), [setDebug]);
+	}) : undefined, [setDebug, debugAllowed]);
 
 	if (loading && !nodes.length) {
 		return <Spin style={{ margin: "24px auto", display: "block" }} />;
@@ -741,13 +746,13 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						>
 							{locked ? <LockOutlined style={{ color: "#fa8c16" }} /> : <UnlockOutlined />}
 						</ControlButton>
-						<ControlButton
+						{debugAllowed && <ControlButton
 							onClick={() => setDebug({ ...debug, enabled: !debug.enabled })}
 							title={debug.enabled ? "Turn debug mode off" : "Turn debug mode on (also: surfaceExportCanvas.help())"}
 							aria-label="toggle debug mode"
 						>
 							<BugOutlined style={debug.enabled ? { color: "#b37feb" } : undefined} />
-						</ControlButton>
+						</ControlButton>}
 					</Controls>
 					<MiniMap
 						pannable

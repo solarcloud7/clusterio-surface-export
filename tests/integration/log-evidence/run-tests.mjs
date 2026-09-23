@@ -67,6 +67,9 @@ function connectHistory(socket) {
 		if (frame.type !== "response") return;
 		const request = pending.get(frame.dst[2]);
 		pending.delete(frame.dst[2]);
+		if (request?.name === "surface_export:GetPlatformTreeRequest") {
+			for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = true;
+		}
 		if (request?.name === "surface_export:ListTransactionLogsRequest") frame.data = history.map(entry => entry.row);
 		if (request?.name === "surface_export:GetTransactionLogRequest") {
 			const fixture = history.find(entry => entry.row.transferId === request.data.transferId);
@@ -327,6 +330,21 @@ try {
 	await page.getByRole("button", { name: "Close", exact: true }).click();
 	assert.equal(requests, beforePreview, "preview must not send plugin requests");
 	console.log("PASS preview verdicts, raw/thermal audit evidence, retained/expired reports, retry and stable detail updates");
+	const noDebugPage = await browser.newPage();
+	await noDebugPage.routeWebSocket(/api\/socket/, socket => {
+		const wire = connectHistory(socket);
+		wire.server.onMessage(raw => {
+			const frame = JSON.parse(String(raw));
+			wire.replace(frame);
+			if (frame.data?.hosts) for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = false;
+			socket.send(JSON.stringify(frame));
+		});
+	});
+	await signIn(noDebugPage);
+	await noDebugPage.getByTestId("operation-outcome").getByText("Arrived and verified", { exact: true }).waitFor();
+	assert.equal(await noDebugPage.getByRole("button", { name: "Preview logs", exact: true }).count(), 0);
+	await noDebugPage.close();
+	console.log("PASS debug-off history has no synthetic-log preview control");
 
 	mkdirSync("ci-artifacts/log-evidence", { recursive: true });
 	await page.screenshot({ path: "ci-artifacts/log-evidence/desktop.png", fullPage: true });

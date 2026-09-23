@@ -1,4 +1,30 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
+do
+    local top, grants, clears, available = {}, 0, 0, true
+    top.add = function(spec)
+        local button = {name = spec.name, valid = true}
+        button.destroy = function() top[spec.name] = nil end
+        top[spec.name] = button
+        return button
+    end
+    local player = {gui = {top = top}, set_shortcut_available = function(_, value) available = value end,
+        clear_cursor = function() clears = clears + 1; return false end,
+        cursor_stack = {set_stack = function() grants = grants + 1 end}}
+    local ui_env = setmetatable({storage = {surface_export_config = {debug_mode = false}},
+        prototypes = {shortcut = {["selection-lab-tool"] = {}}, item = {["selection-lab-tool"] = {}}},
+        game = {get_player = function() return player end}}, {__index = _G})
+    local controls = assert(loadfile(root .. "interfaces/gui/debug-controls.lua", "t", ui_env))()
+    controls.refresh(player)
+    assert(not next(top, "add") and not available)
+    ui_env.storage.surface_export_config.debug_mode = true
+    controls.refresh(player)
+    local button = assert(top.surfexp_selection_lab)
+    controls.on_gui_click{element = button, player_index = 1}
+    assert(clears == 1 and grants == 0, "a refused cursor clear must not overwrite possessions")
+    ui_env.storage.surface_export_config.debug_mode = false
+    controls.on_gui_click{element = button, player_index = 1}
+    assert(not top.surfexp_selection_lab and grants == 0 and clears == 1, "a late click must respect debug off")
+end
 local calls, registered = {}, nil
 local env = setmetatable({}, {__index = _G})
 env.remote = {add_interface = function(name, api) assert(name == "surface_export"); registered = api end}
@@ -9,6 +35,7 @@ local function spy(name)
     end
 end
 local table_modules = { ["core/source-recovery"] = true, ["interfaces/remote/test-runner"] = true,
+	["interfaces/gui/teleport-gui"] = true,
     ["interfaces/remote/configure-gateways"] = true, ["interfaces/remote/test-roster"] = true,
     ["interfaces/remote/lifecycle"] = true, ["interfaces/remote/upload-session"] = true }
 env.require = function(name)

@@ -6,6 +6,7 @@ local CLOSE = "surfexp_instance_close"
 local BOARD = "surfexp_instance_board"
 local PLANETS = "surfexp_instance_planets"
 local TITLE = "surfexp_instance_title"
+local TOGGLE = "surfexp_instance_toggle_planets"
 local WIDTH = 256
 local MARGIN = 11
 local ROW = 36
@@ -15,14 +16,15 @@ local UNAVAILABLE_INFO = "These planets are unavailable on this instance. They a
 local BOARDING_INFO = "Board another platform stopped at this location on this instance. Both ships must be enabled, at the same location and not transferring."
 
 local function estimate_left(player)
-	local rows = 0
+	local rows, platforms = 0, 0
 	for _, planet in pairs(game.planets) do
 		if planet.surface and not player.force.get_surface_hidden(planet.surface) then rows = rows + 1 end
 	end
 	for _, platform in pairs(player.force.platforms) do
-		if platform.valid and not platform.hidden and platform.scheduled_for_deletion == 0 then rows = rows + 1 end
+		if platform.valid and not platform.hidden and platform.scheduled_for_deletion == 0 then platforms = platforms + 1 end
 	end
-	return 40 + math.min(168 + 28 * rows, player.display_resolution.height / player.display_scale * 0.6)
+	local platform_controls = (platforms > 0 or player.force.is_space_platforms_unlocked()) and 60 or 0
+	return 40 + math.min(108 + platform_controls + 28 * (rows + platforms), player.display_resolution.height / player.display_scale * 0.6)
 end
 
 local function place(player, frame, x, y)
@@ -45,7 +47,7 @@ function Panel.refresh_position(player)
 		title.location = {math.floor((player.display_resolution.width - width * scale) / 2), math.floor(40 * scale)}
 	end
 	local planets = player.gui.screen[PLANETS]
-	if planets then place(player, planets, MARGIN, estimate_left(player)) end
+	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) + 2 / scale) end
 	local boarding = player.gui.screen[FRAME]
 	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, 604) end
 end
@@ -56,10 +58,14 @@ function Panel.refresh_viewport(event)
 end
 
 function Panel.refresh_visibility(player)
+	local remote_view = player.controller_type == defines.controllers.remote
+	local shown = remote_view and (storage.surface_export_planet_panel_visible or {})[player.index] == true
 	local frame = player.gui.screen[PLANETS]
-	if frame then frame.visible = player.controller_type == defines.controllers.remote end
+	if frame then frame.visible = shown end
 	local title = player.gui.screen[TITLE]
-	if title then title.visible = player.controller_type == defines.controllers.remote end
+	if title then title.visible = shown end
+	local toggle = player.gui.top[TOGGLE]
+	if toggle then toggle.visible = remote_view; toggle.toggled = shown end
 	local boarding = player.gui.screen[FRAME]
 	local source = Boarding.source(player)
 	local visible = player.controller_type == defines.controllers.remote and source and source.valid
@@ -155,6 +161,12 @@ function Panel.refresh_button(player)
 	local policy = storage.surface_export_planet_policy
 	local button = player.gui.top[OPEN]
 	if button then button.destroy() end
+	local toggle = player.gui.top[TOGGLE]
+	if policy and not toggle then
+		player.gui.top.add{type = "sprite-button", name = TOGGLE, sprite = "virtual-signal/signal-info", style = "mod_gui_button", auto_toggle = false,
+			tooltip = "Instance planets: show or hide this instance's name, default planet and unavailable planets."}
+	elseif not policy and toggle then toggle.destroy() end
+	Panel.refresh_visibility(player)
 	if not policy then Panel.close(player) end
 end
 
@@ -229,6 +241,15 @@ end
 function Panel.on_gui_click(event)
 	local element = event.element
 	if not (element and element.valid) then return end
+	if element.name == TOGGLE then
+		local player = game.get_player(event.player_index)
+		if not player then return end
+		storage.surface_export_planet_panel_visible = storage.surface_export_planet_panel_visible or {}
+		storage.surface_export_planet_panel_visible[player.index] = not storage.surface_export_planet_panel_visible[player.index]
+		Panel.refresh_visibility(player)
+		Panel.refresh_position(player)
+		return
+	end
 	if element.name ~= OPEN and element.name ~= CLOSE and element.name ~= BOARD then return end
 	local player = game.get_player(event.player_index)
 	if not player then return end

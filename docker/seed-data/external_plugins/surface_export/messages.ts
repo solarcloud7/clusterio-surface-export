@@ -1059,6 +1059,28 @@ export class GetInstanceRosterRequest {
 	};
 }
 
+export class AnnouncePlayerTravelRequest {
+	declare ["constructor"]: typeof AnnouncePlayerTravelRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { playerName: { type: "string" }, sourceName: { type: "string" }, targetName: { type: "string" } },
+		required: ["playerName", "sourceName", "targetName"], additionalProperties: false,
+	};
+	constructor(public playerName: string, public sourceName: string, public targetName: string) {}
+	toJSON() { return { playerName: this.playerName, sourceName: this.sourceName, targetName: this.targetName }; }
+	static fromJSON(json: { playerName: string; sourceName: string; targetName: string }) {
+		return new this(json.playerName, json.sourceName, json.targetName);
+	}
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
 export class PushGatewayConfigRequest {
 	declare ["constructor"]: typeof PushGatewayConfigRequest;
 	static plugin = PLUGIN_NAME;

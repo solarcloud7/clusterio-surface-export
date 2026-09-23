@@ -17,7 +17,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const recipe = fileURLToPath(new URL("client/", import.meta.url));
 const artifacts = join(root, "ci-artifacts/client");
 const label = "surface-export.client-run";
-const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding.png", "no-planets.png", "no-boarding.png"] };
+const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding.png", "no-planets.png", "no-boarding.png", "empty.png", "hidden.png", "debug.png"] };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const sha = data => createHash("sha256").update(data).digest("hex");
 const json = path => JSON.parse(readFileSync(path, "utf8"));
