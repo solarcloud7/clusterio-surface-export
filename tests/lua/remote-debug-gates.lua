@@ -24,6 +24,20 @@ do
     ui_env.storage.surface_export_config.debug_mode = false
     controls.on_gui_click{element = button, player_index = 1}
     assert(not top.surfexp_selection_lab and grants == 0 and clears == 1, "a late click must respect debug off")
+    local parsing = true
+    ui_env.game.players = {player}
+    ui_env.log = function() end
+    ui_env.require = function(name)
+        assert(parsing, "Require can't be used outside of control.lua parsing.")
+        if name == "modules/surface_export/interfaces/gui/debug-controls" then return controls end
+        return {}
+    end
+    local configure = assert(loadfile(root .. "interfaces/remote/configure.lua", "t", ui_env))()
+    parsing = false
+    configure{debug_mode = true}
+    assert(top.surfexp_selection_lab, "runtime debug enable must refresh the control")
+    configure{debug_mode = false}
+    assert(not top.surfexp_selection_lab, "runtime debug disable must remove the control")
 end
 local calls, registered = {}, nil
 local env = setmetatable({}, {__index = _G})

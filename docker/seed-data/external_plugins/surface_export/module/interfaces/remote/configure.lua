@@ -1,6 +1,7 @@
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
 local Gateway = require("modules/surface_export/core/gateway")
+local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
 
 local function configure(config)
   if not storage.surface_export_config then
@@ -36,8 +37,7 @@ local function configure(config)
   end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
-    local controls = require("modules/surface_export/interfaces/gui/debug-controls")
-    for _, player in pairs(game.players) do controls.refresh(player) end
+    for _, player in pairs(game.players) do DebugControls.refresh(player) end
   end
   if config.debug_destination_snapshot ~= nil then
     storage.surface_export_config.debug_destination_snapshot = config.debug_destination_snapshot == true
