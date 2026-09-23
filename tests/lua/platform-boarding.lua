@@ -151,6 +151,7 @@ assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.scre
 joined_panel.on_gui_click{player_index = 1, element = {valid = true, name = "surfexp_instance_toggle_planets"}}
 assert(ui_player.gui.screen[planets_name].visible and ui_player.gui.screen.surfexp_instance_title.visible)
 local saved_platforms = force.platforms
+local saved_unlocked, saved_hidden = force.is_space_platforms_unlocked, force.get_surface_hidden
 force.platforms = {}
 force.is_space_platforms_unlocked = function() return false end
 force.get_surface_hidden = function() return false end
@@ -158,6 +159,7 @@ ui_env.game.planets.nauvis = {surface = {}}
 panel.refresh_position(ui_player)
 assert_position(planets_name, 13, 178)
 force.platforms = saved_platforms
+force.is_space_platforms_unlocked, force.get_surface_hidden = saved_unlocked, saved_hidden
 ui_env.game.planets.nauvis = nil
 panel.refresh_position(ui_player)
 assert_position(boarding_name, 1333, 604)

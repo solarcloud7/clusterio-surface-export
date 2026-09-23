@@ -5,6 +5,16 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { resolveRuntimeProfile, resolveImages } from "../../tools/shared/runtime-profile.mjs";
 import { DockerLab } from "../manual/transfer-reliability/docker-lab.mjs";
+import { ConsumerLab, parseExportAssets } from "../manual/consumer-install/lab.mjs";
+import artifacts from "../manual/consumer-install/artifacts.cjs";
+
+test("consumer asset discovery excludes similarly indented mod settings", () => {
+	const details = "settings:\n  runtime-global:\n    surfexp-platform-boarding: true\nexportManifest:\n  assets:\n    prototypes: prototypes.123.json\n    spritesheet: spritesheet.456.png\nupdatedAtMs: 123\n";
+	for (const text of [details, details.replaceAll("\n", "\r\n")]) {
+		assert.deepEqual(parseExportAssets(text), {prototypes: "prototypes.123.json", spritesheet: "spritesheet.456.png"});
+	}
+	assert.throws(() => parseExportAssets("settings:\n  runtime-global:\n    prototypes: wrong.json\n"), /manifest missing/);
+});
 
 function fixture(t) {
 	const root = mkdtempSync(join(tmpdir(), "se-runtime-profile-"));
@@ -95,4 +105,33 @@ test("cold startup allowance does not lengthen ordinary control or RCON commands
 	lab.ctl("instance", "list");
 	lab.ctl("instance", "send-rcon", "fixture", "/sc rcon.print('ok')");
 	assert.deepEqual(limits, [180_000, 30_000, 30_000]);
+});
+
+test("consumer metadata is read from archive contents, including folder and engine compatibility", async () => {
+	const pkg = {name: "@solarcloud7/plugin-surface-export", version: "0.12.0-beta.1"};
+	const info = {name: "surfexp_gateways", version: "0.6.5", factorio_version: "2.1"};
+	const zip = (name, value) => ({files: {[name]: {}}, file: () => ({async: async () => JSON.stringify(value)})});
+	assert.deepEqual(await artifacts.inspectArtifacts(pkg, zip("surfexp_gateways_0.6.5/info.json", info)),
+		{pluginVersion: pkg.version, gatewayVersion: "0.6.5", gatewayFactorioVersion: "2.1"});
+	await assert.rejects(artifacts.inspectArtifacts(pkg, zip("surfexp_gateways_0.6.8/info.json", info)), /disagree/);
+	await assert.rejects(artifacts.inspectArtifacts({...pkg, name: "unrelated"}, zip("surfexp_gateways_0.6.5/info.json", info)), /unexpected/);
+});
+
+test("consumer installation compares independently read input and installed versions", async t => {
+	const {root} = fixture(t);
+	for (const installedVersion of ["0.12.0-beta.1", "0.9.0"]) {
+		const lab = new ConsumerLab("se-manual-profile-12345678", "unused", {runtime: {root}});
+		lab.docker = args => {
+			if (args[0] === "exec" && args.includes("/inspect-artifacts.cjs")) return JSON.stringify({pluginVersion: "0.12.0-beta.1", gatewayVersion: "0.6.5", gatewayFactorioVersion: "2.1"});
+			if (args[0] === "exec" && args.includes("/bootstrap.mjs")) return JSON.stringify({packageVersion: installedVersion});
+			if (args.includes("--version")) return "Version: 2.1.20 (linux64, full)";
+			return "";
+		};
+		if (installedVersion === "0.9.0") await assert.rejects(lab.install("inputs", "fixture-client"), /Installed plugin version mismatch/);
+		else {
+			const result = await lab.install("inputs", "fixture-client");
+			assert.equal(result.runtime.pluginVersion, "0.12.0-beta.1");
+			assert.equal(result.runtime.gatewayVersion, "0.6.5");
+		}
+	}
 });

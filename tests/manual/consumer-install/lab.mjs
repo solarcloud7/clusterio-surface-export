@@ -6,6 +6,12 @@ import { redactDiagnostic } from "../../../tools/shared/diagnostics.mjs";
 import { gatewayMapObserver, verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
 import { assertRuntimeVersion } from "../../../tools/shared/runtime-profile.mjs";
 
+export function parseExportAssets(details) {
+  const section = details.match(/^exportManifest:\r?\n  assets:\r?\n((?:    [^\r\n]*(?:\r?\n|$))*)/m)?.[1];
+  assert.ok(section, "exported asset manifest missing");
+  return Object.fromEntries([...section.matchAll(/^    ([\w-]+): ([\w.-]+)$/gm)].map(m => [m[1], m[2]]));
+}
+
 export class ConsumerLab extends DockerLab {
   mutateContainer(verb, name, extra = []) {
     if (name === this.controller && verb === "kill") {
@@ -56,6 +62,10 @@ export class ConsumerLab extends DockerLab {
       "--mount", `type=volume,src=${clientVolume},dst=/source-client,readonly`,
       "-v", `${this.clientVolume}:/opt/test-client`, "-v", `${this.installVolume}:/consumer`,
       "-v", `${inputs}:/inputs:ro`, "--entrypoint", "sleep", this.image, "infinity"]);
+    this.docker(["cp", join(ROOT, "tests/manual/consumer-install/artifacts.cjs"), `${helper}:/inspect-artifacts.cjs`]);
+    const artifacts = JSON.parse(this.docker(["exec", helper, "node", "/inspect-artifacts.cjs"]));
+    assert.equal(artifacts.gatewayFactorioVersion, this.runtimeProfile.factorioVersion.split(".").slice(0, 2).join("."), "companion targets a different engine series");
+    this.resolvedRuntime = Object.freeze({...this.runtimeProfile, pluginVersion: artifacts.pluginVersion, gatewayVersion: artifacts.gatewayVersion});
     this.docker(["exec", helper, "sh", "-c", "cp -a /source-client/. /opt/test-client/ && chown clusterio:clusterio /consumer"], { timeout: 120_000 });
     const engine = this.docker(["exec", helper, "/opt/test-client/bin/x64/factorio", "--version"]);
     assertRuntimeVersion(engine.match(/Version: (\d+\.\d+\.\d+)/)?.[1], this.runtimeProfile.factorioVersion, "Full client");
@@ -64,7 +74,7 @@ export class ConsumerLab extends DockerLab {
     console.log("Running the pinned upstream installer in an empty consumer directory");
     const installation = JSON.parse(this.docker(["exec", "--user", "clusterio", "-w", "/consumer", helper,
       "node", "/bootstrap.mjs", this.runtimeProfile.clusterioVersion], { timeout: 360_000 }));
-    this.resolvedRuntime = Object.freeze({...this.runtimeProfile, pluginVersion:installation.packageVersion});
+    assertRuntimeVersion(installation.packageVersion, this.runtimeProfile.pluginVersion, "Installed plugin");
     this.docker(["cp", join(inputs, "gateway.zip"), `${helper}:/consumer/gateway.zip`]);
     this.docker(["exec", helper, "chmod", "a+r", "/consumer/gateway.zip"]);
     this.installation = { ...installation, runtime:this.runtimeProfile, engine: engine.trim(), image: this.image };
@@ -115,7 +125,7 @@ export class ConsumerLab extends DockerLab {
     console.log("Exporting real game locale, prototypes, and icons through Clusterio");
     this.command(["instance", "export-data", this.hosts[1].instance], 180_000);
     this.exportDetails = this.ctl("mod-pack", "show", "consumer-acceptance");
-    this.assets = Object.fromEntries([...this.exportDetails.matchAll(/^    ([\w-]+): ([\w.-]+)$/gm)].map(m => [m[1], m[2]]));
+    this.assets = parseExportAssets(this.exportDetails);
     assert.ok(this.assets.prototypes, "export-data did not publish a prototype manifest");
     for (const n of [1, 2]) this.command(["instance", "start", this.hosts[n].instance], 120_000);
     await this.ready();

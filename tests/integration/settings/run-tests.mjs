@@ -29,6 +29,8 @@ try {
 		});
 		server.onMessage(raw => {
 			const frame = JSON.parse(String(raw));
+			const tree = frame.data?.tree || (frame.data?.hosts ? frame.data : null);
+			if (tree) for (const instance of [...tree.hosts.flatMap(host => host.instances), ...(tree.unassignedInstances || [])]) instance.debugMode = false;
 			if (frame.type === "ready" && mode !== "admin") {
 				frame.data.account.roles = [{ id: 99, name: "Browser test", permissions: ["surface_export.ui.view", ...(mode === "reader" ? ["core.controller.get_config"] : [])] }];
 			}
@@ -62,6 +64,10 @@ try {
 	assert.equal(await page.getByRole("region", { name: "Transfer recovery", exact: true }).count(), 1);
 	assert.ok(await page.getByRole("button", { name: "Save changes" }).isDisabled());
 	const batchHelp = page.locator(".se-settings-reference details").filter({ hasText: "Batch sizes" });
+	for (const title of ["Belt trace", "Batch profiling"]) {
+		assert.equal(await page.locator(".se-settings-reference summary").filter({hasText: title}).count(), 1, `${title} remains documented with debug off`);
+	}
+	assert.equal(await page.locator(".se-settings-reference summary").filter({hasText: "Full destination snapshots"}).count(), 0);
 	await batchHelp.locator("summary").focus();
 	await page.keyboard.press("Enter");
 	assert.ok(await batchHelp.locator("p").isVisible(), "Instance guidance opens from the keyboard");

@@ -50,7 +50,7 @@ const history = Array.from({ length: 16 }, (_, index) => {
 	fixture.detail.summary.operationType = fixture.row.operationType;
 	return fixture;
 });
-function connectHistory(socket) {
+function connectHistory(socket, debugMode = true) {
 	const server = socket.connectToServer(), pending = new Map();
 	socket.onMessage(raw => {
 		const frame = JSON.parse(String(raw));
@@ -58,6 +58,9 @@ function connectHistory(socket) {
 		server.send(raw);
 	});
 	return { server, replace(frame) {
+		if (frame.name === "surface_export:SurfaceExportTreeUpdateEvent") {
+			for (const instance of [...frame.data.tree.hosts.flatMap(host => host.instances), ...(frame.data.tree.unassignedInstances || [])]) instance.debugMode = debugMode;
+		}
 		// Initial subscriptions can replay real transfers from earlier suites. Keep this
 		// browser's fixture history isolated; explicit race-test pushes bypass this hook.
 		if (frame.type === "event" && ["surface_export:SurfaceExportTransferUpdateEvent", "surface_export:SurfaceExportLogUpdateEvent"].includes(frame.name)) {
@@ -68,7 +71,7 @@ function connectHistory(socket) {
 		const request = pending.get(frame.dst[2]);
 		pending.delete(frame.dst[2]);
 		if (request?.name === "surface_export:GetPlatformTreeRequest") {
-			for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = true;
+			for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = debugMode;
 		}
 		if (request?.name === "surface_export:ListTransactionLogsRequest") frame.data = history.map(entry => entry.row);
 		if (request?.name === "surface_export:GetTransactionLogRequest") {
@@ -331,17 +334,28 @@ try {
 	assert.equal(requests, beforePreview, "preview must not send plugin requests");
 	console.log("PASS preview verdicts, raw/thermal audit evidence, retained/expired reports, retry and stable detail updates");
 	const noDebugPage = await browser.newPage();
+	let pushDebugTree;
 	await noDebugPage.routeWebSocket(/api\/socket/, socket => {
-		const wire = connectHistory(socket);
+		const wire = connectHistory(socket, false);
 		wire.server.onMessage(raw => {
 			const frame = JSON.parse(String(raw));
 			wire.replace(frame);
-			if (frame.data?.hosts) for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = false;
+			const tree = frame.data?.tree || (frame.data?.hosts ? frame.data : null);
+			if (tree) pushDebugTree = () => {
+				const update = {type: "event", seq: frame.seq, src: frame.src, dst: frame.dst.slice(0, 2), name: "surface_export:SurfaceExportTreeUpdateEvent",
+					data: {revision: 1000000, generatedAt: Date.now(), forceName: "player", tree: structuredClone(tree)}};
+				for (const instance of update.data.tree.hosts.flatMap(host => host.instances)) instance.debugMode = true;
+				wire.replace(update);
+				socket.send(JSON.stringify(update));
+			};
 			socket.send(JSON.stringify(frame));
 		});
 	});
 	await signIn(noDebugPage);
 	await noDebugPage.getByTestId("operation-outcome").getByText("Arrived and verified", { exact: true }).waitFor();
+	assert.equal(typeof pushDebugTree, "function", "tree response was observed");
+	pushDebugTree();
+	await noDebugPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 	assert.equal(await noDebugPage.getByRole("button", { name: "Preview logs", exact: true }).count(), 0);
 	await noDebugPage.close();
 	console.log("PASS debug-off history has no synthetic-log preview control");

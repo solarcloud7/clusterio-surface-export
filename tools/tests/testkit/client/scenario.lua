@@ -103,9 +103,13 @@ script.on_event(defines.events.on_tick, function()
 				disabledPlanets = {"nauvis", "vulcanus", "gleba", "aquilo"}, instanceName = "fact3"}.success)
 			player.set_controller{type = defines.controllers.remote, surface = game.planets.fulgora.surface}
 			Panel.refresh_button(player)
-			storage.surface_export_config = {debug_mode = false}
+			storage.surface_export_config = {debug_mode = true}
+			storage.surface_export_configuration_received = nil
 			DebugControls.refresh(player)
 			assert(not player.gui.top.surfexp_selection_lab)
+			storage.surface_export_configuration_received = true
+			storage.surface_export_config.debug_mode = false
+			DebugControls.refresh(player)
 		end
 		if elapsed == 550 then
 			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
