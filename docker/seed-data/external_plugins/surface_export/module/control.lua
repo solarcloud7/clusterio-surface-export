@@ -87,6 +87,8 @@ SurfaceExportModule.events = {
 
 	[clusterio_api.events.on_server_startup] = function()
 		initialize_storage()
+		storage.surface_export_configuration_received = false
+		for _, player in pairs(game.players) do DebugControls.refresh(player) end
 		SourceRecovery.startup()
 		Gateway.discover_and_unlock()
 		TeleportGui.ensure_permission_group()

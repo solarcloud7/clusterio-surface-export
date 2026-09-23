@@ -42,6 +42,29 @@ do
     parsing = false
     configure{debug_mode = true}
     assert(top.surfexp_selection_lab, "runtime debug enable must refresh the control")
+    parsing = true
+    ui_env.defines = {events = setmetatable({}, {__index = function(_, name) return name end})}
+    ui_env.prototypes.custom_input = {}
+    local noop = function() end
+    local stub = setmetatable({}, {__index = function() return noop end})
+    ui_env.require = function(name)
+        assert(parsing, "Require can't be used outside of control.lua parsing.")
+        if name == "modules/clusterio/api" then return {events = {on_server_startup = "startup", on_instance_updated = "updated"}} end
+        if name == "modules/surface_export/interfaces/gui/debug-controls" then return controls end
+        return stub
+    end
+    local control = assert(loadfile(root .. "control.lua", "t", ui_env))()
+    parsing = false
+    for _ = 1, 2 do
+        control.events.startup()
+        assert(ui_env.storage.surface_export_configuration_received == false, "server restart must invalidate saved configuration readiness")
+        assert(ui_env.storage.surface_export_config.debug_mode == true, "startup must preserve the saved debug value")
+        assert(not top.surfexp_selection_lab, "server restart must remove the saved Selection Lab button")
+        controls.refresh(player)
+        assert(not top.surfexp_selection_lab, "missing configuration must keep the button hidden")
+        configure{debug_mode = true}
+        assert(top.surfexp_selection_lab, "acknowledged configuration must restore the button")
+    end
     configure{debug_mode = false}
     assert(not top.surfexp_selection_lab, "runtime debug disable must remove the control")
 end

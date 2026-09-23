@@ -335,17 +335,17 @@ try {
 	console.log("PASS preview verdicts, raw/thermal audit evidence, retained/expired reports, retry and stable detail updates");
 	const noDebugPage = await browser.newPage();
 	let pushDebugTree;
+	let debugTreeRevision = 1000000;
 	await noDebugPage.routeWebSocket(/api\/socket/, socket => {
 		const wire = connectHistory(socket, false);
 		wire.server.onMessage(raw => {
 			const frame = JSON.parse(String(raw));
 			wire.replace(frame);
 			const tree = frame.data?.tree || (frame.data?.hosts ? frame.data : null);
-			if (tree) pushDebugTree = () => {
+			if (tree) pushDebugTree = enabled => {
 				const update = {type: "event", seq: frame.seq, src: frame.src, dst: frame.dst.slice(0, 2), name: "surface_export:SurfaceExportTreeUpdateEvent",
-					data: {revision: 1000000, generatedAt: Date.now(), forceName: "player", tree: structuredClone(tree)}};
-				for (const instance of update.data.tree.hosts.flatMap(host => host.instances)) instance.debugMode = true;
-				wire.replace(update);
+					data: {revision: ++debugTreeRevision, generatedAt: Date.now(), forceName: "player", tree: structuredClone(tree)}};
+				for (const instance of [...update.data.tree.hosts.flatMap(host => host.instances), ...(update.data.tree.unassignedInstances || [])]) instance.debugMode = enabled;
 				socket.send(JSON.stringify(update));
 			};
 			socket.send(JSON.stringify(frame));
@@ -354,11 +354,14 @@ try {
 	await signIn(noDebugPage);
 	await noDebugPage.getByTestId("operation-outcome").getByText("Arrived and verified", { exact: true }).waitFor();
 	assert.equal(typeof pushDebugTree, "function", "tree response was observed");
-	pushDebugTree();
-	await noDebugPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-	assert.equal(await noDebugPage.getByRole("button", { name: "Preview logs", exact: true }).count(), 0);
+	const debugPreview = noDebugPage.getByRole("button", { name: "Preview logs", exact: true });
+	await debugPreview.waitFor({state: "detached"});
+	pushDebugTree(true);
+	await debugPreview.waitFor({state: "visible"});
+	pushDebugTree(false);
+	await debugPreview.waitFor({state: "detached"});
 	await noDebugPage.close();
-	console.log("PASS debug-off history has no synthetic-log preview control");
+	console.log("PASS history preview follows debug-off, debug-on and debug-off tree updates");
 
 	mkdirSync("ci-artifacts/log-evidence", { recursive: true });
 	await page.screenshot({ path: "ci-artifacts/log-evidence/desktop.png", fullPage: true });
