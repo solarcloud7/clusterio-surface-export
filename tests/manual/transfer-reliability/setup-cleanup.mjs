@@ -32,7 +32,7 @@ await withWorkflowLock(async () => {
     lab.deadline=Date.now()+300_000;
     report.controls=probe('controls',run);save();
     report.refusal=probe('fail',run);save();
-    assert.equal(report.refusal.engine,'2.1.17');
+    assert.equal(report.refusal.engine,lab.runtimeProfile.factorioVersion);
     report.checkpoint=await lab.checkpoint('manual-setup-cleanup',[1]);save();
     await lab.load(1,'manual-setup-cleanup');
     report.retry=probe('retry',report.refusal.job);save();

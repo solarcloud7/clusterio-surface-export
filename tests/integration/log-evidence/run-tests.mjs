@@ -50,7 +50,7 @@ const history = Array.from({ length: 16 }, (_, index) => {
 	fixture.detail.summary.operationType = fixture.row.operationType;
 	return fixture;
 });
-function connectHistory(socket) {
+function connectHistory(socket, debugMode = true) {
 	const server = socket.connectToServer(), pending = new Map();
 	socket.onMessage(raw => {
 		const frame = JSON.parse(String(raw));
@@ -58,6 +58,9 @@ function connectHistory(socket) {
 		server.send(raw);
 	});
 	return { server, replace(frame) {
+		if (frame.name === "surface_export:SurfaceExportTreeUpdateEvent") {
+			for (const instance of [...frame.data.tree.hosts.flatMap(host => host.instances), ...(frame.data.tree.unassignedInstances || [])]) instance.debugMode = debugMode;
+		}
 		// Initial subscriptions can replay real transfers from earlier suites. Keep this
 		// browser's fixture history isolated; explicit race-test pushes bypass this hook.
 		if (frame.type === "event" && ["surface_export:SurfaceExportTransferUpdateEvent", "surface_export:SurfaceExportLogUpdateEvent"].includes(frame.name)) {
@@ -67,6 +70,9 @@ function connectHistory(socket) {
 		if (frame.type !== "response") return;
 		const request = pending.get(frame.dst[2]);
 		pending.delete(frame.dst[2]);
+		if (request?.name === "surface_export:GetPlatformTreeRequest") {
+			for (const instance of [...frame.data.hosts.flatMap(host => host.instances), ...(frame.data.unassignedInstances || [])]) instance.debugMode = debugMode;
+		}
 		if (request?.name === "surface_export:ListTransactionLogsRequest") frame.data = history.map(entry => entry.row);
 		if (request?.name === "surface_export:GetTransactionLogRequest") {
 			const fixture = history.find(entry => entry.row.transferId === request.data.transferId);
@@ -327,6 +333,35 @@ try {
 	await page.getByRole("button", { name: "Close", exact: true }).click();
 	assert.equal(requests, beforePreview, "preview must not send plugin requests");
 	console.log("PASS preview verdicts, raw/thermal audit evidence, retained/expired reports, retry and stable detail updates");
+	const noDebugPage = await browser.newPage();
+	let pushDebugTree;
+	let debugTreeRevision = 1000000;
+	await noDebugPage.routeWebSocket(/api\/socket/, socket => {
+		const wire = connectHistory(socket, false);
+		wire.server.onMessage(raw => {
+			const frame = JSON.parse(String(raw));
+			wire.replace(frame);
+			const tree = frame.data?.tree || (frame.data?.hosts ? frame.data : null);
+			if (tree) pushDebugTree = enabled => {
+				const update = {type: "event", seq: frame.seq, src: frame.src, dst: frame.dst.slice(0, 2), name: "surface_export:SurfaceExportTreeUpdateEvent",
+					data: {revision: ++debugTreeRevision, generatedAt: Date.now(), forceName: "player", tree: structuredClone(tree)}};
+				for (const instance of [...update.data.tree.hosts.flatMap(host => host.instances), ...(update.data.tree.unassignedInstances || [])]) instance.debugMode = enabled;
+				socket.send(JSON.stringify(update));
+			};
+			socket.send(JSON.stringify(frame));
+		});
+	});
+	await signIn(noDebugPage);
+	await noDebugPage.getByTestId("operation-outcome").getByText("Arrived and verified", { exact: true }).waitFor();
+	assert.equal(typeof pushDebugTree, "function", "tree response was observed");
+	const debugPreview = noDebugPage.getByRole("button", { name: "Preview logs", exact: true });
+	await debugPreview.waitFor({state: "detached"});
+	pushDebugTree(true);
+	await debugPreview.waitFor({state: "visible"});
+	pushDebugTree(false);
+	await debugPreview.waitFor({state: "detached"});
+	await noDebugPage.close();
+	console.log("PASS history preview follows debug-off, debug-on and debug-off tree updates");
 
 	mkdirSync("ci-artifacts/log-evidence", { recursive: true });
 	await page.screenshot({ path: "ci-artifacts/log-evidence/desktop.png", fullPage: true });

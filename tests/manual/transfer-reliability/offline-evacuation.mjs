@@ -12,7 +12,7 @@ import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 
 const { values } = parseArgs({ options: { "package-dir": { type: "string" }, analyze: { type: "string" } } });
 function analyze(report) {
-  assert.equal(report.engine, "2.1.17");
+  assert.equal(report.engine, report.environment?.runtime?.factorioVersion ?? "2.1.17");
   assert.equal(report.arms.length, 2);
   assert.deepEqual(report.arms.map(arm => arm.remote_view), [false, true]);
   assert.deepEqual(report.arms.map(arm => arm.in_hub), [false, false]);

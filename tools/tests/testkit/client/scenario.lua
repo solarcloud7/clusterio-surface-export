@@ -1,9 +1,11 @@
 local run = require("run")
 local Panel
 local Policy
+local DebugControls
 if run.scenario ~= "smoke" then
 	Panel = require("modules/surface_export/interfaces/gui/instance-panel")
 	Policy = require("modules/surface_export/core/planet-policy")
+	DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
 end
 
 local function add_ships(count)
@@ -53,6 +55,8 @@ script.on_event(defines.events.on_tick, function()
 			assert(Policy.ensure_player(player, true))
 			assert(player.enter_space_platform(storage.ships[1]))
 			Panel.refresh_button(player)
+			assert(not player.gui.screen.surfexp_instance_planets.visible)
+			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
 			if run.scenario == "gui-anchors" then
 				local roots = {}
 				for _, name in ipairs({"left", "top", "screen", "relative"}) do
@@ -87,7 +91,37 @@ script.on_event(defines.events.on_tick, function()
 			Panel.refresh_button(player)
 		end
 		if elapsed == 430 then for i = 2, 3 do storage.ships[i].paused = true end end
-		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding", [420] = "no-planets", [460] = "no-boarding"})[elapsed]
+		if elapsed == 480 then
+			player.leave_space_platform()
+			player.exit_remote_view()
+			assert(player.teleport({0, 0}, game.planets.fulgora.surface))
+			for _, ship in pairs(storage.ships) do ship.destroy() end
+			for _, technology in pairs(player.force.technologies) do technology.researched = false end
+			player.force.lock_space_platforms()
+			player.force.unlock_space_location("surfexp_gateway_hub")
+			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora",
+				disabledPlanets = {"nauvis", "vulcanus", "gleba", "aquilo"}, instanceName = "fact3"}.success)
+			player.set_controller{type = defines.controllers.remote, surface = game.planets.fulgora.surface}
+			Panel.refresh_button(player)
+			storage.surface_export_config = {debug_mode = true}
+			storage.surface_export_configuration_received = nil
+			DebugControls.refresh(player)
+			assert(not player.gui.top.surfexp_selection_lab)
+			storage.surface_export_configuration_received = true
+			storage.surface_export_config.debug_mode = false
+			DebugControls.refresh(player)
+		end
+		if elapsed == 550 then
+			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
+			assert(not player.gui.screen.surfexp_instance_planets.visible)
+			assert(not player.gui.screen.surfexp_instance_title.visible)
+		end
+		if elapsed == 610 then
+			storage.surface_export_config.debug_mode = true
+			DebugControls.refresh(player)
+			assert(player.gui.top.surfexp_selection_lab)
+		end
+		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding", [420] = "no-planets", [460] = "no-boarding", [525] = "empty", [585] = "hidden", [645] = "debug"})[elapsed]
 	elseif elapsed == 45 then capture = "smoke" end
 	if capture then
 		local path = capture .. ".png"
@@ -103,7 +137,7 @@ script.on_event(defines.events.on_tick, function()
 			helpers.write_file(capture .. "-positions.json", helpers.table_to_json(state), false)
 		end
 	end
-	if elapsed == (run.scenario == "gui-anchors" and 150 or (Panel and 500 or 75)) then
+	if elapsed == (run.scenario == "gui-anchors" and 150 or (Panel and 680 or 75)) then
 		helpers.write_file("client-result.json", helpers.table_to_json({runId = run.id,
 			scenario = run.scenario, status = "captured", engineVersion = script.active_mods.base,
 			resolution = player.display_resolution, scale = player.display_scale, screenshots = storage.captures}), false)

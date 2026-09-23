@@ -31,13 +31,13 @@ if(mode==='--analyze') {
 } else await withWorkflowLock(async()=>{
   const run=`se-manual-${Date.now().toString(36)}-${randomUUID().slice(0,8)}`;
   const directory=join(ROOT,'ci-artifacts',run);mkdirSync(directory,{recursive:true});
-  const report={run,kind:'golden-settings',sectionedCodec,platforms:[],hashes:{},contract:{engine:'2.1.17',maxPlatforms:12,
+  const lab=new DockerLab(run,directory,{sameSourceSave:true,sectionedCodec});
+  const report={run,kind:'golden-settings',sectionedCodec,platforms:[],hashes:{},contract:{engine:lab.runtimeProfile.factorioVersion,maxPlatforms:12,
     maxEntitiesPerPlatform:12000,maxSeconds:1200,scope:'Native blueprint-visible configuration. Dynamic runtime state and physical cargo are not certified by this reader.',
     invariant:'Every blueprint-visible property and resolved wire endpoint survives the production transfer. Unblueprintable entities are explicitly uncovered.',
     controls:'Identical pinned golden save on two disposable instances; immutable direct reference read; renamed destination originals; no production exporter used by the oracle.'}};
   for(const file of ['settings-transfer.mjs','settings-observer.lua','settings-oracle.mjs','docker-lab.mjs'])report.hashes[file]=hash(new URL(file,import.meta.url));
   const file=join(directory,'result.json'),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');
-  const lab=new DockerLab(run,directory,{sameSourceSave:true,sectionedCodec});
   const code=readFileSync(new URL('./settings-observer.lua',import.meta.url),'utf8');
   const capture=(host,index,fail=false)=>lab.lua(host,`return (function() ${code} end)()(${index},${fail})`).result;
   save();

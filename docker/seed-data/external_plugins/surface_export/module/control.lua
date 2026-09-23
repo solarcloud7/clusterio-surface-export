@@ -13,12 +13,14 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
+local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
 
 local function refresh_player(event, use_default)
 	local player = game.get_player(event.player_index)
 	if not player then return end
 	PlanetPolicy.ensure_player(player, use_default)
 	InstancePanel.refresh_button(player)
+	DebugControls.refresh(player)
 end
 
 local SurfaceExportModule = {}
@@ -47,6 +49,7 @@ function SurfaceExportModule.on_configuration_changed(data)
 	SurfaceLock.ensure_index_keyed()
 	Gateway.discover_and_unlock()
 	for _, force in pairs(game.forces) do PlanetPolicy.enforce(force) end
+	for _, player in pairs(game.players) do DebugControls.refresh(player) end
 	log("[Surface Export] Configuration changed - module state initialized")
 end
 
@@ -70,6 +73,7 @@ SurfaceExportModule.events = {
 				if game.get_player(player_index) then refresh_player{player_index = player_index}
 				else storage.surface_export_pending_arrivals[player_index] = nil end
 			end
+			TeleportGui.flush_announcements()
 		end
 		if storage.source_recovery_ready == false then
 			AsyncProcessor.process_tick(true)
@@ -83,6 +87,8 @@ SurfaceExportModule.events = {
 
 	[clusterio_api.events.on_server_startup] = function()
 		initialize_storage()
+		storage.surface_export_configuration_received = false
+		for _, player in pairs(game.players) do DebugControls.refresh(player) end
 		SourceRecovery.startup()
 		Gateway.discover_and_unlock()
 		TeleportGui.ensure_permission_group()
@@ -194,6 +200,7 @@ SurfaceExportModule.events = {
 		GatewayTransferGui.on_gui_click(event)
 		TeleportGui.on_gui_click(event)
 		InstancePanel.on_gui_click(event)
+		DebugControls.on_gui_click(event)
 	end,
 
 	[e.on_gui_closed] = function(event)

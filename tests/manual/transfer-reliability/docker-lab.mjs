@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { seededInstances } from "../../../tools/shared/seeded-instances.mjs";
 import { runCommand } from "../../../tools/shared/command-evidence.mjs";
+import { resolveRuntimeProfile, assertRuntimeVersion } from "../../../tools/shared/runtime-profile.mjs";
+import { startPatchedSave } from "../../lab-gallery/start-patched-save.mjs";
+import { readConfigList } from "../../../tools/tests/clusterio-cli.mjs";
 
 export const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const PLUGIN = join(ROOT, "docker/seed-data/external_plugins/surface_export");
@@ -27,11 +30,12 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false} = {}) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false, runtime = {}} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
     this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
+    this.runtimeOptions = {...runtime, packageDirectory: packageDirectory || undefined};
     this.exposeHttp = exposeHttp;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
@@ -39,6 +43,9 @@ export class DockerLab {
     assert.equal(Object.keys(this.hosts).length, 2);
     this.containers = []; this.volumes = []; this.networkCreated = false;
     this.deadline = Date.now() + 600_000;
+  }
+  get runtimeProfile() {
+    return this.resolvedRuntime ??= resolveRuntimeProfile(this.runtimeOptions);
   }
   docker(args, options = {}) {
     if (!this.cleaning && this.cancelled) throw new Error("Manual lab interrupted");
@@ -77,7 +84,8 @@ export class DockerLab {
   }
   ctl(...args) {
     return this.docker(["exec", this.controller, "npx", "clusterioctl", "--log-level", "error",
-      "--config", "/clusterio/tokens/config-control.json", ...args]);
+      "--config", "/clusterio/tokens/config-control.json", ...args],
+      {timeout:args[0]==="instance" && args[1]==="start" ? 180_000 : 30_000});
   }
   lua(host, body) {
     const command = `/sc local ok,r=pcall(function() ${body} end);rcon.print(helpers.table_to_json(ok and r or {success=false,error=tostring(r)}))`;
@@ -94,24 +102,30 @@ export class DockerLab {
   async ready(seconds = 150) {
     return this.until(() => {
       for (const host of [1,2]) {
-        const {result} = this.lua(host, `return {success=true,engine=script.active_mods.base,
+        const {result} = this.lua(host, `return {success=true,engine=script.active_mods.base,gateway=script.active_mods.surfexp_gateways,
+          plugin=remote.interfaces.surface_export and remote.call('surface_export','get_module_version'),
           ready=remote.interfaces.surface_export~=nil,players=#game.connected_players,paused=game.tick_paused}`);
-        assert.equal(result.engine,this.factorioVersion || "2.1.17"); assert.equal(result.players,0); assert.equal(result.paused,false);
+        assertRuntimeVersion(result.engine,this.runtimeProfile.factorioVersion,"Factorio");
+        assertRuntimeVersion(result.gateway,this.runtimeProfile.gatewayVersion,"Companion mod");
+        assert.equal(result.players,0); assert.equal(result.paused,false);
         if (!result.ready) return false;
+        assertRuntimeVersion(result.plugin,this.runtimeProfile.pluginVersion,"Patched Lua");
       }
       return true;
     }, "both disposable instances ready", seconds);
   }
   async setup() {
     mkdirSync(this.directory,{recursive:true});
-    const tag = readFileSync(join(ROOT,".env.example"),"utf8").match(/^CLUSTERIO_IMAGE_TAG=(.+)$/m)?.[1].trim();
-    assert.ok(tag && !tag.includes("latest"));
-    this.image = `ghcr.io/solarcloud7/clusterio-docker-controller:${tag}`;
-    this.hostImage = `ghcr.io/solarcloud7/clusterio-docker-host:${tag}`;
+    const runtime = this.runtimeProfile;
+    writeFileSync(join(this.directory,"runtime.json"),JSON.stringify(runtime,null,2));
+    this.image = runtime.controllerImage;
+    this.hostImage = runtime.hostImage;
     const runtimeSource = this.packageDirectory || PLUGIN;
     for (const file of ["dist/node/index.js","dist/web/manifest.json"]) assert.ok(existsSync(join(runtimeSource,file)),"build or install plugin first");
     const seed = join(this.directory,"seed"), bundle = join(this.directory,"bundle/surface_export");
     mkdirSync(join(seed,"mods"),{recursive:true}); mkdirSync(bundle,{recursive:true});
+    const gatewayFile = `surfexp_gateways_${runtime.gatewayVersion}.zip`;
+    cpSync(join(ROOT,"docker/seed-data/mods",gatewayFile),join(seed,"mods",gatewayFile));
     // Runtime artifact only: no git checkout, live node_modules, tokens, or owner .env.
     if (this.packageDirectory) {
       // Deliberately no checkout fallback: missing files must fail package acceptance.
@@ -125,7 +139,8 @@ export class DockerLab {
       const source = join(ROOT,"docker/seed-data/hosts",h.host,h.instance), dest = join(seed,"hosts",h.host,h.instance);
       mkdirSync(dest,{recursive:true});
       const config = JSON.parse(readFileSync(join(source,"instance.json"),"utf8"));
-      config["instance.auto_start"] = true;
+      config["instance.auto_start"] = false;
+      config["factorio.version"] = runtime.factorioVersion;
       config["surface_export.sectioned_codec"] = this.sectionedCodec;
       config["factorio.settings"] = {...config["factorio.settings"], visibility:{public:false,lan:false},
         autosave_interval:0, auto_pause:false};
@@ -156,7 +171,7 @@ export class DockerLab {
       "-e","HOST_COUNT=2","-e","EXPORT_HOST=0","-e","INIT_CLUSTERIO_ADMIN=manual-lab","-e","DEFAULT_MOD_PACK=Space Age 2.0",
       "-e","SE_SKIP_PREPARE=1","-v",`${data}:/clusterio/data`,"-v",`${staticData}:/clusterio/static`,
       "-v",`${tokens}:/clusterio/tokens`,"-v",`${seedVolume}:/clusterio/seed-data:ro`,
-      "-v",`${join(ROOT,"docker/seed-data/mods")}:/clusterio/seed-data/mods:ro`,"-v",`${plugins}:/clusterio/external_plugins`,this.image]);
+      "-v",`${plugins}:/clusterio/external_plugins`,this.image]);
     this.containers.push(this.controller);
     this.refreshBrowserAddress();
     await this.until(() => this.docker(["exec",this.controller,"curl","-sf","http://localhost:8080/"]).length > 0,"controller HTTP",180);
@@ -165,25 +180,40 @@ export class DockerLab {
       this.docker([...common(h.container),"--hostname",h.host,"-e",`HOST_NAME=${h.host}`,"-e","SKIP_CLIENT=true",
         "-e","CONTROLLER_URL=http://clusterio-controller:8080/","-e","SE_SKIP_PREPARE=1","-e",`SE_MANUAL_RUN=${this.run}`,
         "-e","NODE_OPTIONS=--require=/lab/fault-hook.cjs","-v",`${volume(`host-${host}-data`)}:/clusterio/data`,
-        "-v",`${tokens}:/clusterio/tokens:ro`,"-v",`${join(ROOT,"docker/seed-data/mods")}:/clusterio/seed-mods:ro`,
+        "-v",`${tokens}:/clusterio/tokens:ro`,"--mount",`type=volume,src=${seedVolume},dst=/clusterio/seed-mods,volume-subpath=mods,readonly`,
         "-v",`${plugins}:/clusterio/external_plugins`,"-v",`${fileURLToPath(new URL("./",import.meta.url))}:/lab:ro`,this.hostImage]);
       this.containers.push(h.container);
     }
+    this.ids={};
+    for (const h of Object.values(this.hosts)) {
+      await this.until(()=>{
+        const out=this.ctl("instance","save","list",h.instance);
+        const id=Number(out.match(/^\s*(\d+)\s*\|/m)?.[1]);
+        if(!Number.isSafeInteger(id)||id<=0||!out.includes(h.seededSaves[0])) return false;
+        this.ids[h.hostNumber]=id;return true;
+      },"seed save uploaded",180);
+      startPatchedSave(this.ctl.bind(this),h.instance,h.seededSaves[0]);
+    }
     await this.ready(360);
+    for(const container of [this.controller,...Object.values(this.hosts).map(h=>h.container)]) {
+      const version=this.docker(["exec",container,"node","-p",
+        'require("/clusterio/external_plugins/surface_export/package.json").version']).trim();
+      assertRuntimeVersion(version,runtime.pluginVersion,"Plugin package");
+    }
     this.preflight={};
     for(const host of [1,2]) {
+      this.ctl("instance","config","set",this.hosts[host].instance,"instance.auto_start","true");
+      const configured=readConfigList(this.ctl("instance","config","list",this.hosts[host].instance),["instance.auto_start"]);
+      assert.equal(configured["instance.auto_start"],true,"lab auto-start must be restored after initial migration");
       this.lua(host,`assert(table_size(storage.async_jobs or {})==0,'active seed jobs');
         assert(table_size(storage.locked_platforms or {})==0,'seed locks');
         assert(table_size(storage.destination_holds or {})==0,'seed holds');return {success=true}`);
       this.preflight[host]=this.probe(host,"world",`transfer-cleanup-${this.run}-preflight`);
+      this.preflight[host].autoStart=configured["instance.auto_start"];
       this.preflight[host].config=this.lua(host,"return {success=true,config=storage.surface_export_config}").result.config;
     }
-    this.ids={};
-    for (const host of [1,2]) {
-      const out=this.ctl("instance","save","list",this.hosts[host].instance);
-      const id=Number(out.match(/^\s*(\d+)\s*\|/m)?.[1]); assert.ok(Number.isSafeInteger(id)&&id>0);this.ids[host]=id;
-    }
-    return {controllerImage:this.image,hostImage:this.hostImage,ids:this.ids,preflight:this.preflight,stagedHashes:this.stagedHashes,
+    await this.persistedAssignments();
+    return {runtime,controllerImage:this.image,hostImage:this.hostImage,ids:this.ids,preflight:this.preflight,stagedHashes:this.stagedHashes,
       images:JSON.parse(this.docker(["image","inspect",this.image,this.hostImage])).map(i=>({id:i.Id,digests:i.RepoDigests}))};
   }
   async persistedAssignments() {

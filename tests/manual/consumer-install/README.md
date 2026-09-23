@@ -8,7 +8,7 @@ must resolve inside the initially empty `/consumer/node_modules` installation.
 
 ## Contract and boundaries
 
-- Pin installer/core `2.0.0-alpha.27`, Factorio client `2.1.17`, gateway mod `0.6.5`.
+- Resolve installer/core and Factorio versions from the checked-in deployment pins; select plugin and companion versions from the supplied archives.
 - Supply a packaged plugin tarball and gateway ZIP. Never fill runtime gaps from checkout source.
 - Run the upstream installer as a non-root user. Verify npm-name registration; alpha.27's CLI
   auto-discovers an installed plugin when no plugin list exists. Add it only if absent.
@@ -34,10 +34,12 @@ missing measurements are not passes. A full run also requires cleanup before PAS
 
 ```powershell
 ./tools/surface-export/build-gateway-mod.ps1 -SkipClientSync
-node tests/manual/consumer-install/run.mjs --cleanup-proof --package <candidate.tgz> --gateway-zip docker/seed-data/mods/surfexp_gateways_0.6.5.zip --client-volume factorio-client-2117
-node tests/manual/consumer-install/run.mjs --run --package <candidate.tgz> --gateway-zip docker/seed-data/mods/surfexp_gateways_0.6.5.zip --client-volume factorio-client-2117
+node tests/manual/consumer-install/run.mjs --cleanup-proof --package <candidate.tgz> --gateway-zip <reviewed-gateway.zip> --client-volume <full-client-volume>
+node tests/manual/consumer-install/run.mjs --run --package <candidate.tgz> --gateway-zip <reviewed-gateway.zip> --client-volume <full-client-volume>
 ```
 
+Expected plugin and companion versions come from the supplied archives. The installed plugin
+and running game must match them. The client must match the repository's selected engine version.
 The client volume argument is machine-specific. A missing source volume is refused, never
 created. The harness uses a licensed client already installed by the operator; it does not
 download one or require their factorio.com credentials. Failed-run resource cleanup is also

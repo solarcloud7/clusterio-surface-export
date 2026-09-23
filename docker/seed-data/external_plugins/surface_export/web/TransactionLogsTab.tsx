@@ -7,6 +7,7 @@ import { formatMs } from "../shared/utils";
 import { duration, outcomeGroup, route, statusLabel } from "./logs/evidence";
 import TransferDetail from "./logs/TransferDetail";
 import LogPreview from "./logs/LogPreview";
+import { hasDebugInstance } from "./gateway/debug-mode";
 import ImportModal, { type RestoreSnapshot } from "./ImportModal";
 import "./logs/style.css";
 
@@ -15,6 +16,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const [restore, setRestore] = useState<RestoreSnapshot | null>(null);
 	const [search, setSearch] = useState(""), [outcome, setOutcome] = useState("all"), [operation, setOperation] = useState("all");
 	const [page, setPage] = useState(1), [preview, setPreview] = useState(false);
+	const debugAvailable = hasDebugInstance(state.tree);
+	useEffect(() => { if (!debugAvailable) setPreview(false); }, [debugAvailable]);
 	const [requests, setRequests] = useState<Record<string, { loading: boolean; error?: string }>>({});
 	const generations = useRef(new Map<string, number>());
 	const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
@@ -54,7 +57,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const request = selected ? requests[selected] : undefined;
 	return <div className="se-logs" data-testid="transfer-logs">
 		<div className="se-logs-heading"><div><h2>Transfer history</h2><p className="se-muted">Follow each operation. Inspect recorded step timings and item-by-item, fluid-by-fluid audit evidence.</p></div>
-			<Button aria-label="Preview logs" icon={<BugOutlined />} onClick={() => setPreview(true)}>Preview logs</Button></div>
+			{debugAvailable && <Button aria-label="Preview logs" icon={<BugOutlined />} onClick={() => setPreview(true)}>Preview logs</Button>}</div>
 		{state.liveStatus !== "live" && <Alert showIcon type="warning" message={state.liveStatus === "reconnecting" ? "Reconnecting — displayed history may be out of date" : "Live updates unavailable"} description={state.liveError || "Existing history remains available while the connection recovers."} />}
 		{state.treeError && <Alert type="error" showIcon message="Could not refresh loaded history" description={state.treeError}
 			action={plugin.refreshSnapshots && <Button onClick={() => void plugin.refreshSnapshots!()}>Retry history</Button>} />}
@@ -86,7 +89,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 			<div className="se-detail-panel">{row ? <TransferDetail row={row} detail={state.logDetails[row.transferId]} loading={state.liveStatus === "live" && (request?.loading ?? true)}
 				 error={request?.error} onRetry={() => load(row.transferId)} plugin={plugin} onRestore={setRestore} /> : <Empty description="Select an operation to inspect its evidence" />}</div>
 		</div>
-		{preview && <LogPreview onClose={() => setPreview(false)} />}
+		{debugAvailable && preview && <LogPreview onClose={() => setPreview(false)} />}
 		{restore && <ImportModal open onClose={() => setRestore(null)} plugin={plugin} state={state} snapshot={restore} />}
 	</div>;
 }

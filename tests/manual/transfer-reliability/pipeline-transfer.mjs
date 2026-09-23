@@ -56,7 +56,7 @@ else await withWorkflowLock(async()=>{
   const directory=join(ROOT,'ci-artifacts',run);mkdirSync(directory,{recursive:true});
   const lab=new DockerLab(run,directory,{sectionedCodec});
   const report={run,kind:'pipeline-overlap',fault,sectionedCodec,platforms:[],samples:[],hashes:{},contract:{capacity:2,luaStepsPerTick:1,
-    maxPlatforms:3,extraChestsPerPlatform:512,maxSeconds:600,engine:'2.1.17',
+    maxPlatforms:3,extraChestsPerPlatform:512,maxSeconds:600,engine:lab.runtimeProfile.factorioVersion,
     controls:'Disposable instances only; fixed independent cargo oracle; normal production controller admission; no edited verdicts or unlock assists.'}};
   for(const name of ['pipeline-transfer.mjs','docker-lab.mjs','performance.lua','oracle.mjs','fault-hook.cjs'])report.hashes[name]=hash(new URL(name,import.meta.url));
   const file=join(directory,'result.json'),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+'\n');

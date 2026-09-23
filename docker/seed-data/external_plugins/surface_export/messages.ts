@@ -848,8 +848,8 @@ export class InstanceListPlatformsRequest {
 	toJSON() { return { forceName: this.forceName }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
+		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" }, debugMode: { type: "boolean" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
 	};
 }
 
@@ -1056,6 +1056,28 @@ export class GetInstanceRosterRequest {
 		fromJSON(json: unknown) {
 			return json as { instances: RosterInstance[] };
 		},
+	};
+}
+
+export class AnnouncePlayerTravelRequest {
+	declare ["constructor"]: typeof AnnouncePlayerTravelRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { playerName: { type: "string" }, sourceName: { type: "string" }, targetName: { type: "string" } },
+		required: ["playerName", "sourceName", "targetName"], additionalProperties: false,
+	};
+	constructor(public playerName: string, public sourceName: string, public targetName: string) {}
+	toJSON() { return { playerName: this.playerName, sourceName: this.sourceName, targetName: this.targetName }; }
+	static fromJSON(json: { playerName: string; sourceName: string; targetName: string }) {
+		return new this(json.playerName, json.sourceName, json.targetName);
+	}
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
 	};
 }
 

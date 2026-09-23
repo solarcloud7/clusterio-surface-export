@@ -13,7 +13,7 @@ class StubListPlatformsRequest {
 	}
 }
 
-function makeInstance(id, hostId, status) {
+function makeInstance(id, hostId, status, debugMode) {
 	return {
 		id,
 		isDeleted: false,
@@ -23,23 +23,24 @@ function makeInstance(id, hostId, status) {
 			get(key) {
 				if (key === "instance.name") { return `instance-${id}`; }
 				if (key === "instance.assigned_host") { return hostId; }
+				if (key === "surface_export.debug_mode") { return debugMode; }
 				return undefined;
 			},
 		},
 	};
 }
 
-function makeTree(statuses) {
+function makeTree(statuses, appliedDebug = new Map()) {
 	const polled = [];
 	const hosts = new Map([[1, { id: 1, name: "host-1", connected: true, isDeleted: false }]]);
-	const instances = new Map(statuses.map(([id, status]) => [id, makeInstance(id, 1, status)]));
+	const instances = new Map(statuses.map(([id, status, debugMode]) => [id, makeInstance(id, 1, status, debugMode)]));
 	const plugin = {
 		controller: {
 			hosts,
 			instances,
 			async sendTo(target) {
 				polled.push(target.instanceId);
-				return { platforms: [] };
+				return { platforms: [], debugMode: appliedDebug.get(target.instanceId) };
 			},
 		},
 		activeTransfers: new Map(),
@@ -67,6 +68,13 @@ test("a running instance on a connected host is polled", async () => {
 	const { tree, polled } = makeTree([[20, "running"]]);
 	await tree.buildPlatformTree("player");
 	assert.deepEqual(polled, [20]);
+});
+
+test("the web tree exposes applied debug state rather than settings awaiting restart", async () => {
+	const { tree } = makeTree([[1, "running", true], [2, "running", false], [3, "stopped", true], [4, "running", true]],
+		new Map([[1, false], [2, true], [3, true]]));
+	const result = await tree.buildPlatformTree("player");
+	assert.deepEqual(result.hosts[0].instances.map(instance => instance.debugMode), [false, true, false, false]);
 });
 
 test("tree status joins the selected copy rather than a matching name or index", () => {
