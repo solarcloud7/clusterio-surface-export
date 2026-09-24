@@ -60,8 +60,14 @@ version, use `-Scope lua -ResetSaves -SkipIncrement` or
 requires `-ResetSaves`; preserving saves already preserves the version.
 
 Builds, deployments and integration browsers share `ci-artifacts/workflow.lock`.
+The lock records its owner's process, checkout, branch and commit.
 If it reports an owner, let that operation finish. After a crash, verify that the
 owner process has stopped before removing that specific lock.
+
+Deployment and restart tools run only from the checkout the development cluster
+was started from. With no cluster running, only the main checkout starts one.
+Other checkouts refuse before building or stopping anything. A linked worktree
+keeps its build dependencies in its own Docker volume.
 
 ## Serial verification and review evidence
 

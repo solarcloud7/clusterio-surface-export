@@ -144,6 +144,46 @@ function Assert-PluginArtifactsFresh {
     }
 }
 
+function Test-LinkedWorktree {
+    param([Parameter(Mandatory)][string]$Root)
+    $dirs = @(git -C $Root rev-parse --path-format=absolute --git-dir --git-common-dir)
+    if ($LASTEXITCODE -ne 0 -or $dirs.Count -ne 2) {
+        throw "Cannot tell whether $Root is the main checkout (git exit $LASTEXITCODE)."
+    }
+    return [IO.Path]::GetFullPath($dirs[0]) -ne [IO.Path]::GetFullPath($dirs[1])
+}
+
+function Get-BuildDependencyVolume {
+    param([Parameter(Mandatory)][string]$Root)
+    if (-not (Test-LinkedWorktree -Root $Root)) { return 'se_plugin_build_nm' }
+    $key = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($Root).TrimEnd('\', '/').ToLowerInvariant())
+    return 'se_plugin_build_nm_' + [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($key)).Substring(0, 12).ToLowerInvariant()
+}
+
+function Assert-DevelopmentClusterCheckout {
+    param([string]$Root = $script:RepoRoot)
+    $here = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $rows = @(docker ps -a --format '{{.Names}}|{{.Label "com.docker.compose.project.working_dir"}}')
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker ps failed (exit $LASTEXITCODE); cannot tell which checkout runs the development cluster. Nothing was changed."
+    }
+    $cluster = @($rows | ForEach-Object { $name, $dir = "$_" -split '\|', 2; [pscustomobject]@{ Name = $name; Dir = $dir } } |
+        Where-Object Name -in 'surface-export-controller', 'surface-export-host-1', 'surface-export-host-2')
+    foreach ($container in $cluster) {
+        if (-not $container.Dir) {
+            throw "$($container.Name) was not started by docker compose, so the checkout it mounts is unknown. Nothing was changed."
+        }
+        $source = [IO.Path]::GetFullPath($container.Dir).TrimEnd('\', '/')
+        if (-not [string]::Equals($source, $here, $(if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }))) {
+            throw ("The development cluster ($($container.Name)) runs from $source, not from this checkout ($here). " +
+                "Deploy and restart from $source; build-plugin.ps1 -OutputDirectory builds in isolation. Nothing was changed.")
+        }
+    }
+    if (-not $cluster.Count -and (Test-LinkedWorktree -Root $here)) {
+        throw "No development cluster exists and $here is a linked worktree. Start the cluster from the main checkout. Nothing was changed."
+    }
+}
+
 function Get-ControllerAdvertisedWebBundle {
     param([string]$Container = "surface-export-controller")
 

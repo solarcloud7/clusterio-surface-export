@@ -44,6 +44,7 @@ if ($rejected.Count -gt 0) {
 $here = $PSScriptRoot
 . (Join-Path $here '../shared/cluster-utils.ps1')
 . (Join-Path $here '../shared/workflow-lock.ps1')
+Assert-DevelopmentClusterCheckout
 
 Invoke-WorkflowLock {
 switch ($Scope) {

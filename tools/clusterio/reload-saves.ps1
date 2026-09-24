@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/../shared/cluster-utils.ps1"
 . "$PSScriptRoot/../shared/workflow-lock.ps1"
 . "$PSScriptRoot/../shared/version-utils.ps1"
+Assert-DevelopmentClusterCheckout
 
 Invoke-WorkflowLock {
 

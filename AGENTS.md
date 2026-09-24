@@ -15,7 +15,8 @@
   disposable Docker fixtures for destructive acceptance.
 - Keep unrelated changes and credentials out of commits. Leave lockfiles unchanged
   outside authorized dependency updates. Use `tools/check-pr-scope.ps1` before
-  editing and before preparing a PR.
+  editing and before preparing a PR. It compares with the open PR's base; pass
+  `-Base <branch>` for stacked work that has no PR yet.
 
 ## Build and deployment
 
@@ -67,7 +68,8 @@ into the login form, not an agent's captured shell output.
 | `node tools/tests/testkit/cli.mjs inspect`, `log`, `check --live` | Arguments shown by the selected subcommand; cluster for live queries | Payload/query-path evidence | Prove restoration from a field's presence; an invalid query is not an absent field. Live checks can export fixtures |
 
 Use `git config core.hooksPath .githooks` when setting up this checkout's hooks.
-The post-commit hook incrementally updates an existing graph; inspect
+The commit-msg hook refuses agent session links and attribution. The post-commit
+hook incrementally updates an existing graph; inspect
 `graphify-out/update.log` if it fails. The graph is a navigation aid, not evidence
 of current runtime behavior. Never use `|| fallback` for branch operations.
 

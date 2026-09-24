@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string]$Base)
 
 $ErrorActionPreference = 'Stop'
 
@@ -27,25 +27,40 @@ function Resolve-OptionalCommit {
     return '<missing>'
 }
 
+function Resolve-PullRequestBase {
+    # Deliberately quiet: existence probe for the optional GitHub CLI; without it the base is main.
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return 'main', 'default; gh is not installed' }
+    $output = & gh pr view --json 'number,baseRefName,state' 2>&1
+    if ($LASTEXITCODE -ne 0) { return 'main', "default; gh found no pull request for this branch: $(($output -join ' ').Trim())" }
+    $pullRequest = (@($output | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) -join "`n") | ConvertFrom-Json
+    if ($pullRequest.state -ne 'OPEN') { return 'main', "default; pull request #$($pullRequest.number) is $($pullRequest.state)" }
+    return $pullRequest.baseRefName, "pull request #$($pullRequest.number)"
+}
+
 try {
     $repository = Invoke-GitCapture @('rev-parse', '--show-toplevel')
     Invoke-GitCapture @('-C', $repository, 'fetch', '--prune', 'origin') | Out-Null
 
-    $head = Invoke-GitCapture @('-C', $repository, 'rev-parse', 'HEAD')
-    $localMain = Resolve-OptionalCommit -Repository $repository -Ref 'main'
-    $originMain = Resolve-OptionalCommit -Repository $repository -Ref 'origin/main'
-    if ($originMain -eq '<missing>') {
-        throw 'origin/main is missing after git fetch --prune origin'
-    }
-    $mergeBase = Invoke-GitCapture @('-C', $repository, 'merge-base', 'origin/main', 'HEAD')
+    $baseSource = 'given with -Base'
+    if (-not $Base) { $Base, $baseSource = Resolve-PullRequestBase }
+    $Base = $Base -replace '^origin/', ''
+    $originBase = "origin/$Base"
 
-    $commits = Invoke-GitCapture @('-C', $repository, 'log', '--oneline', 'origin/main..HEAD')
+    $head = Invoke-GitCapture @('-C', $repository, 'rev-parse', 'HEAD')
+    $localCommit = Resolve-OptionalCommit -Repository $repository -Ref $Base
+    $originCommit = Resolve-OptionalCommit -Repository $repository -Ref $originBase
+    if ($originCommit -eq '<missing>') {
+        throw "$originBase is missing after git fetch --prune origin"
+    }
+    $mergeBase = Invoke-GitCapture @('-C', $repository, 'merge-base', $originBase, 'HEAD')
+
+    $commits = Invoke-GitCapture @('-C', $repository, 'log', '--oneline', "$originBase..HEAD")
     if (-not $commits) { $commits = '(none)' }
-    $diffStat = Invoke-GitCapture @('-C', $repository, 'diff', '--stat', 'origin/main...HEAD')
+    $diffStat = Invoke-GitCapture @('-C', $repository, 'diff', '--stat', "$originBase...HEAD")
     if (-not $diffStat) { $diffStat = '(no changes)' }
 
     $lockPath = 'docker/seed-data/external_plugins/surface_export/package-lock.json'
-    & git -C $repository diff --quiet 'origin/main...HEAD' -- $lockPath
+    & git -C $repository diff --quiet "$originBase...HEAD" -- $lockPath
     $lockExit = $LASTEXITCODE
     if ($lockExit -gt 1) {
         throw 'git diff could not determine package-lock.json scope'
@@ -53,29 +68,30 @@ try {
     $lockDiffers = if ($lockExit -eq 1) { 'YES' } else { 'no' }
 
     Write-Output "Repository:    $repository"
+    Write-Output "Base:          $originBase ($baseSource)"
     Write-Output "HEAD:          $head"
-    Write-Output "Local main:    $localMain"
-    Write-Output "Origin main:   $originMain"
+    Write-Output ('{0,-14} {1}' -f "Local ${Base}:", $localCommit)
+    Write-Output ('{0,-14} {1}' -f "Origin ${Base}:", $originCommit)
     Write-Output "Merge base:    $mergeBase"
     Write-Output "package-lock.json differs: $lockDiffers"
     Write-Output ''
-    Write-Output 'Commits in origin/main..HEAD:'
+    Write-Output "Commits in $originBase..HEAD:"
     Write-Output $commits
     Write-Output ''
-    Write-Output 'Diff stat for origin/main...HEAD:'
+    Write-Output "Diff stat for $originBase...HEAD:"
     Write-Output $diffStat
 
-    & git -C $repository merge-base --is-ancestor origin/main HEAD
+    & git -C $repository merge-base --is-ancestor $originBase HEAD
     if ($LASTEXITCODE -eq 1) {
-        [Console]::Error.WriteLine('Scope check: FAIL - origin/main is not an ancestor of HEAD. Rebase or merge the freshly fetched base before opening the PR.')
+        [Console]::Error.WriteLine("Scope check: FAIL - $originBase is not an ancestor of HEAD. Rebase or merge the freshly fetched base before opening the PR.")
         exit 1
     }
     if ($LASTEXITCODE -ne 0) {
-        throw 'git merge-base --is-ancestor origin/main HEAD failed unexpectedly'
+        throw "git merge-base --is-ancestor $originBase HEAD failed unexpectedly"
     }
 
     Write-Output ''
-    Write-Output 'Scope check: PASS - origin/main is an ancestor of HEAD.'
+    Write-Output "Scope check: PASS - $originBase is an ancestor of HEAD."
     exit 0
 } catch {
     [Console]::Error.WriteLine("Scope check: ERROR - $($_.Exception.Message)")

@@ -8,6 +8,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($Upload) {
+	. "$PSScriptRoot/../shared/cluster-utils.ps1"
+	Assert-DevelopmentClusterCheckout
+}
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $SrcDir = Join-Path $RepoRoot "docker/seed-data/mods-src/surfexp_gateways"
 $ModsDir = Join-Path $RepoRoot "docker/seed-data/mods"

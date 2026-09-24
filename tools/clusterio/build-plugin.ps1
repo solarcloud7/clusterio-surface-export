@@ -9,8 +9,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot/../shared/cluster-utils.ps1"
 $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugins/surface_export").Path
-$DepsVolume = 'se_plugin_build_nm'
+$DepsVolume = Get-BuildDependencyVolume -Root (Resolve-Path "$PSScriptRoot/../..").Path
 $Image = 'node:24-bookworm-slim'
 $OutputMount = @()
 $PackageMount = @()
@@ -36,6 +37,7 @@ if ($OutputDirectory) {
     }
     New-Item -ItemType Directory -Force -Path $ResolvedOutput | Out-Null
 }
+if ($RestartController -or $RestartHosts) { Assert-DevelopmentClusterCheckout }
 
 . "$PSScriptRoot/../shared/workflow-lock.ps1"
 Invoke-WorkflowLock {
