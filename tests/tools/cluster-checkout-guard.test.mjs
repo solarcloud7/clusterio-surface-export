@@ -60,6 +60,24 @@ test("with no cluster, only the main checkout may start one", { skip }, () => {
 	assert.match(guard({ rows: [], gitExit: 128 }).error, /Cannot tell whether .* is the main checkout \(git exit 128\)/);
 });
 
+test("a gateway mod upload from another checkout refuses before building or syncing", { skip }, () => {
+	const command = `
+$global:calls = [Collections.Generic.List[string]]::new()
+function docker { $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE = 0; "surface-export-controller|$env:GUARD_ELSEWHERE" }
+function Copy-Item { $global:calls.Add('Copy-Item'); throw 'BUILD_STARTED' }
+$failure = $null
+try { & $env:GUARD_SCRIPT -Upload -SkipClientSync } catch { $failure = $_.Exception.Message }
+@{ error = $failure; calls = @($global:calls) } | ConvertTo-Json -Compress
+`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8", env: { ...process.env,
+		GUARD_ELSEWHERE: elsewhere,
+		GUARD_SCRIPT: fileURLToPath(new URL("../../tools/surface-export/build-gateway-mod.ps1", import.meta.url)) } });
+	assert.equal(result.status, 0, result.stderr);
+	const outcome = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+	assert.match(outcome.error, /runs from .*other, not from this checkout/);
+	assert.deepEqual(outcome.calls.map(call => call.split(" ").slice(0, 2).join(" ")), ["docker ps"]);
+});
+
 test("an unreadable Docker state is refused rather than treated as no cluster", { skip }, () => {
 	const result = guard({ dockerExit: 1 });
 	assert.match(result.error, /docker ps failed \(exit 1\)/);

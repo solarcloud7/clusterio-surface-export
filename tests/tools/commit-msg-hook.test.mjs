@@ -27,7 +27,7 @@ test("an ordinary message commits", t => {
 });
 
 for (const line of [
-	"Claude-Session: https://claude.ai/code/session_01AbCdEf",
+	"Claude-Session: 01AbCdEf",
 	"https://claude.ai/code/session_01AbCdEf",
 	"https://chatgpt.com/codex/tasks/task_e_0123456789",
 	"🤖 Generated with [Claude Code](https://claude.com/claude-code)",
