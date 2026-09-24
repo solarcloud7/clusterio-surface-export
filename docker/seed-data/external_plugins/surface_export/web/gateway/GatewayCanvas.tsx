@@ -43,6 +43,7 @@ import { gatewayColour } from "./gateway-colours";
 import type { ConnectRequest, GatewayEdits, PlatformLike } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
+import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
 import {
 	GatewayDebugContext,
 	DEFAULT_DEBUG_STATE,
@@ -833,6 +834,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								{entry.label}
 							</span>
 						))}
+						<span className="surface-export-legend-item surface-export-legend-autopause"
+							title="This server stops while no players are online; transfers, imports and exports are refused">
+							<AutoPauseIcon size={14} />
+							{AUTO_PAUSE_LABEL}
+						</span>
 					</Panel>
 					<Panel position="top-right">
 						<Space direction="vertical" size={4} align="end">

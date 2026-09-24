@@ -11,6 +11,7 @@ import PlatformRows from "./PlatformRows";
 import { useGatewayDebug } from "./debug-mode";
 import { PlanetIcon } from "../icons";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
+import AutoPauseIcon from "./AutoPauseIcon";
 
 const { Text } = Typography;
 
@@ -81,6 +82,7 @@ export type InstanceNodeData = {
 	instanceName: string;
 	address: string;
 	online: boolean;
+	autoPause?: boolean;
 	hostKey: string;
 	hostName: string;
 	platforms: PlatformLike[];
@@ -211,6 +213,8 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 					onPressed={list.holdUntilPointerUp}
 				/>
 			) : null}
+
+			{node.autoPause ? <span className="surface-export-autopause-badge"><AutoPauseIcon /></span> : null}
 
 			{showGeometry ? <GeometryOverlay /> : null}
 		</div>

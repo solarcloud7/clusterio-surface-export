@@ -18,6 +18,7 @@ export type InstanceLike = {
 	address?: string;
 	status?: string;
 	connected?: boolean;
+	autoPause?: boolean;
 	platforms?: PlatformLike[];
 };
 
@@ -401,6 +402,7 @@ export function buildGraph(
 					instanceName: instance.instanceName,
 					address: instance.address || "",
 					online: isOnline(instance),
+					autoPause: instance.autoPause === true,
 					hostKey: column.key,
 					hostName: column.name,
 					platforms,

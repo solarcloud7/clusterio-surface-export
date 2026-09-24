@@ -219,6 +219,7 @@ export type DebugScenario = {
 		name?: string;
 		host?: string;
 		online?: boolean;
+		autoPause?: boolean;
 		platforms?: Array<string | { name?: string; location?: string; status?: string; locked?: boolean }>;
 	}>;
 	links?: Array<[number, number]>;
@@ -250,6 +251,7 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 			address: `scenario:${34000 + index}`,
 			connected: spec.online !== false,
 			status: spec.online === false ? "stopped" : "running",
+			autoPause: spec.autoPause === true,
 			platforms,
 		});
 		byHost.set(host, list);

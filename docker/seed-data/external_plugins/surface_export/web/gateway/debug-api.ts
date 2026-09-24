@@ -39,7 +39,7 @@ A scenario is one object. Instances are referred to by index:
     instances: [
       { name: "hub", platforms: ["alpha", "beta"] },
       { name: "spoke-1", platforms: ["gamma"] },
-      { name: "spoke-2", online: false },
+      { name: "spoke-2", online: false, autoPause: true },
     ],
     links: [[0, 1], [0, 2]],
     ships: [{ from: 0, to: 1, status: "awaiting_validation" }],
