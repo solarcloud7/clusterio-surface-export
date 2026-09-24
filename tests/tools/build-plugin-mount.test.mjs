@@ -25,11 +25,20 @@ if ($env:BUILD_FAIL_CLEANUP -eq 'true') {
   Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $LiteralPath -Force:$Force -ErrorAction Stop
  }
 }
+function global:git {
+ $call = $args -join ' '
+ $global:LASTEXITCODE = 0
+ if ($call -match 'rev-parse --abbrev-ref HEAD$') { return 'fixture-branch' }
+ if ($call -match 'rev-parse --short=12 HEAD$') { return 'fixturecommit' }
+ if ($call -notmatch 'rev-parse --path-format=absolute --git-dir --git-common-dir$') { throw "unexpected git call: $call" }
+ if ($env:BUILD_LINKED -eq 'true') { '/fixture/.git/worktrees/other'; '/fixture/.git' } else { '/fixture/.git'; '/fixture/.git' }
+}
 function global:docker {
  $arguments = @($args)
  ConvertTo-Json -InputObject $arguments -Compress | Add-Content -LiteralPath $env:BUILD_CALLS
  $global:LASTEXITCODE = 0
  switch ($arguments[0]) {
+  'ps' { "surface-export-controller|$env:BUILD_CLUSTER_ROOT" }
   'version' { 'fixture server' }
   'run' {
    if ($env:BUILD_MUTATE_LOCK) {
@@ -47,12 +56,15 @@ if ($env:BUILD_FAIL -eq 'true') {
 } else {
  $extra = @{}
  if ($env:BUILD_PACKAGE) { $extra.PackageDirectory = $env:BUILD_PACKAGE; $extra.OutputDirectory = $env:BUILD_OUTPUT }
+ if ($env:BUILD_RESTART -eq 'true') { $extra.RestartController = $true; $extra.RestartHosts = $true }
  & $env:BUILD_SCRIPT $env:BUILD_TARGET @extra
 }
 exit $LASTEXITCODE
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
 		{ encoding: "utf8", timeout: 15000, cwd: options.cwd, env: { ...process.env,
+			BUILD_LINKED: String(options.linked || false), BUILD_RESTART: String(options.restart || false),
+			BUILD_CLUSTER_ROOT: options.clusterRoot || repo,
 			BUILD_SCRIPT: script, BUILD_TARGET: target, BUILD_PACKAGE: options.packageDirectory || "",
 			BUILD_MUTATE_LOCK: options.mutateLock || "",
 			BUILD_FAIL_CLEANUP: String(options.failCleanup || false),
@@ -84,7 +96,25 @@ test("a failed test container fails the wrapper without restarting the cluster",
 	const result = run(t, "test", true);
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /Plugin build failed/);
-	assert.deepEqual(result.calls.map(args => args[0]), ["version", "run"]);
+	assert.deepEqual(result.calls.map(args => args[0]), ["ps", "version", "run"]);
+});
+
+test("a linked worktree builds with its own dependency volume", { skip }, t => {
+	const result = run(t, "test", false, { linked: true });
+	assert.equal(result.status, 0, result.stderr || result.stdout);
+	const args = result.calls.find(call => call[0] === "run");
+	assert.match(args[args.indexOf("-v") + 1], /^se_plugin_build_nm_[0-9a-f]{12}:\/repo\/docker\/seed-data\/external_plugins\/surface_export\/node_modules$/);
+});
+
+test("a restart from a checkout the cluster does not run from refuses before building", { skip }, t => {
+	const elsewhere = join(tmpdir(), "another-checkout");
+	const result = run(t, "node", false, { restart: true, clusterRoot: elsewhere });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /runs from/);
+	assert.deepEqual(result.calls.map(args => args[0]), ["ps"]);
+	const isolated = run(t, "node", false, { clusterRoot: elsewhere });
+	assert.equal(isolated.status, 0, isolated.stderr || isolated.stdout);
+	assert.deepEqual(isolated.calls.map(args => args[0]), ["version", "run"]);
 });
 
 test("cleanup failure warns without replacing a build failure or changing a successful exit", { skip }, t => {
@@ -189,6 +219,8 @@ function global:docker {
  if (($args -join ' ') -match 'instance config list') {
   'factorio.enable_save_patching false'
   'instance.auto_start true'
+ } elseif ($args[0] -eq 'ps') {
+  "surface-export-controller|$env:RELOAD_ROOT"
  } elseif (($args -join ' ') -match 'instance list') {
   'header'; '-----'
   'clusterio-host-1-instance-1 | 1 | 1 | 34100 | running |'
@@ -200,7 +232,7 @@ try { & $env:RELOAD_SCRIPT }
 catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")],
-		{ encoding: "utf8", timeout: 15000, env: { ...process.env,
+		{ encoding: "utf8", timeout: 15000, env: { ...process.env, RELOAD_ROOT: repo,
 			RELOAD_SCRIPT: fileURLToPath(new URL("../../tools/clusterio/reload-saves.ps1", import.meta.url)) } });
 	assert.notEqual(result.status, 0);
 	assert.match(result.stderr, /save patching and auto-start must be enabled/);

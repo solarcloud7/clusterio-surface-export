@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { withWorkflowLock } from "../../tools/shared/workflow-lock.mjs";
@@ -53,6 +53,38 @@ test("PowerShell shares the browser lock and allows only an inherited deployment
 		assert.equal(inherited.status, 0, inherited.stderr); assert.match(inherited.stdout, /inherited/);
 		assert.ok(existsSync(path), "nested stage must not release its parent's lock");
 	}, path);
+});
+
+test("both lock writers name the checkout, branch and commit that own the lock", {
+	skip: spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0,
+}, async t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-owner-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	const repo = fileURLToPath(new URL("../../", import.meta.url));
+	const git = (...args) => spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" }).stdout.trim();
+	const expected = { branch: git("rev-parse", "--abbrev-ref", "HEAD"), commit: git("rev-parse", "--short=12", "HEAD") };
+	const check = owner => {
+		assert.equal(resolve(owner.checkout), resolve(repo));
+		assert.equal(owner.branch, expected.branch);
+		assert.equal(owner.commit, expected.commit);
+		assert.ok(Date.parse(owner.startedAt) <= Date.now(), owner.startedAt);
+	};
+	const env = { ...process.env, SE_WORKFLOW_TOKEN: "", LOCK_FIXTURE: path,
+		LOCK_HELPER: fileURLToPath(new URL("../../tools/shared/workflow-lock.ps1", import.meta.url)) };
+	await withWorkflowLock(async () => {
+		check(JSON.parse(readFileSync(path, "utf8")));
+		const blocked = spawnSync("pwsh", ["-NoProfile", "-Command",
+			"try { . $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action {} } catch { $_.Exception.Message }"],
+		{ encoding: "utf8", env });
+		assert.ok(blocked.stdout.includes(`branch ${expected.branch} at ${expected.commit}, started `), blocked.stdout);
+	}, path);
+	const written = spawnSync("pwsh", ["-NoProfile", "-Command",
+		". $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { Get-Content -LiteralPath $env:LOCK_FIXTURE -Raw }"],
+	{ encoding: "utf8", env });
+	assert.equal(written.status, 0, written.stderr);
+	check(JSON.parse(written.stdout));
+	assert.equal(existsSync(path), false);
 });
 
 test("a stale or absent controller bundle fails before browser element waits", async () => {

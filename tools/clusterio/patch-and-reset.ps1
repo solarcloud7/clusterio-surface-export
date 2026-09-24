@@ -48,6 +48,8 @@ Note: For code updates that preserve game state use deploy.ps1 -Scope plugin -Ke
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot/../shared/workflow-lock.ps1"
+. "$PSScriptRoot/../shared/cluster-utils.ps1"
+Assert-DevelopmentClusterCheckout
 Invoke-WorkflowLock {
 
 Write-Host "=== Patch and Reset Instances ===" -ForegroundColor Cyan

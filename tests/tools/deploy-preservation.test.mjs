@@ -12,6 +12,7 @@ function fixture(t, script) {
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 	const put = (name, text) => { mkdirSync(dirname(join(dir, name)), { recursive: true }); writeFileSync(join(dir, name), text); };
 	put("tools/shared/cluster-utils.ps1", `
+function Assert-DevelopmentClusterCheckout { $global:calls.Add('checkout'); if ($global:refuseCheckout) { throw 'CHECKOUT_REFUSED' } }
 function Assert-PluginArtifactsFresh { $global:calls.Add('fresh') }
 function Update-PackageLockVersion {}
 function Update-ModuleVersionStamp {}
@@ -71,6 +72,19 @@ test("cluster deployment forwards reset only on explicit request", { skip }, t =
 	assert.ok(reset.calls.some(c => c.includes("ResetData")));
 });
 
+test("every deployment entry point refuses from the wrong checkout before any work", { skip }, t => {
+	const cases = [
+		...["artifacts", "lua", "plugin", "cluster"].map(scope => ["deploy", ["-Scope", scope]]),
+		["reload-saves", []], ["patch-and-reset", ["-SkipIncrement"]], ["deploy-cluster", ["-SkipIncrement"]],
+	];
+	for (const [script, args] of cases) {
+		const { dir } = fixture(t, script);
+		const refused = run(dir, script, args, "$global:refuseCheckout = $true");
+		assert.equal(refused.error, "CHECKOUT_REFUSED", `${script} ${args.join(" ")}: ${JSON.stringify(refused)}`);
+		assert.deepEqual(refused.calls, ["checkout"], `${script} ${args.join(" ")}`);
+	}
+});
+
 test("direct cluster helper never deletes volumes without ResetData", { skip }, t => {
 	const { dir, put } = fixture(t, "deploy-cluster");
 	put("tools/clusterio/build-plugin.ps1", "throw 'fixture stopped after compose down'");
@@ -97,6 +111,7 @@ for (const stale of [false, true]) {
 		const { dir, put } = fixture(t, "deploy-cluster");
 		copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
 		put("tools/shared/cluster-utils.ps1", `
+function Assert-DevelopmentClusterCheckout {}
 function Update-PackageLockVersion {}
 function Update-ModuleVersionStamp {}
 function Update-ModuleBuildStamp { '${"a".repeat(32)}' }

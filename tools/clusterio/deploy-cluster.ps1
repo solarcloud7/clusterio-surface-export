@@ -25,6 +25,8 @@ if (-not $PluginPath) {
 $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
 . "$PSScriptRoot/../shared/version-utils.ps1"
+. "$PSScriptRoot/../shared/cluster-utils.ps1"
+Assert-DevelopmentClusterCheckout
 
 if ($ResetData -and -not $SkipIncrement) {
     Write-Host "Reading version..." -ForegroundColor Cyan
@@ -52,7 +54,6 @@ if ($ResetData -and -not $SkipIncrement) {
     Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
 }
 
-. "$PSScriptRoot/../shared/cluster-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
 $ModuleBuildId = Update-ModuleBuildStamp -ModuleDir (Join-Path $PluginPath "module")
