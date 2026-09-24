@@ -95,6 +95,10 @@ if ($clientTag -ne $pinnedFactorioVersion) {
 if ($envValues['FACTORIO_CLIENT_TAG'] -and $envValues['FACTORIO_CLIENT_TAG'] -ne $clientTag) {
     Write-Warning "Ignoring FACTORIO_CLIENT_TAG=$($envValues['FACTORIO_CLIENT_TAG']) in .env: docker-compose.yml pins the client host to $clientTag."
 }
+node (Join-Path $PSScriptRoot "seed-mods.mjs") verify
+if ($LASTEXITCODE -ne 0) {
+    throw "docker/seed-data/mods does not match docker/seed-data/seed-mods.json; run 'node tools/clusterio/seed-mods.mjs fetch --prune-superseded' (or 'refresh' after an engine bump). The cluster was not touched."
+}
 $exportHostNumber = if ($envValues['EXPORT_HOST']) { $envValues['EXPORT_HOST'] } else { '1' }
 $clientContainer = "surface-export-host-$exportHostNumber"
 
