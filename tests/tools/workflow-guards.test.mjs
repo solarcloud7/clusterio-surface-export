@@ -78,6 +78,11 @@ test("both lock writers name the checkout, branch and commit that own the lock",
 			"try { . $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action {} } catch { $_.Exception.Message }"],
 		{ encoding: "utf8", env });
 		assert.ok(blocked.stdout.includes(`branch ${expected.branch} at ${expected.commit}, started `), blocked.stdout);
+		const module = new URL("../../tools/shared/workflow-lock.mjs", import.meta.url).href;
+		const contender = spawnSync(process.execPath, ["--input-type=module", "-e",
+			`import { acquireWorkflowLock } from ${JSON.stringify(module)}; acquireWorkflowLock(${JSON.stringify(path)});`],
+		{ encoding: "utf8", env });
+		assert.ok(contender.stderr.includes(`branch ${expected.branch} at ${expected.commit}, started `), contender.stderr);
 	}, path);
 	const written = spawnSync("pwsh", ["-NoProfile", "-Command",
 		". $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { Get-Content -LiteralPath $env:LOCK_FIXTURE -Raw }"],

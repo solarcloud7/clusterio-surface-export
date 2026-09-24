@@ -46,7 +46,7 @@ for (const line of [
 
 test("a diff below the scissors line of an edited message is not part of the message", t => {
 	const result = commit(t, "Guard deployment tools\n# ------------------------ >8 ------------------------\n"
-		+ "+pattern='claude\\.ai/code/session_'\n", "--edit", "--cleanup=scissors");
+		+ "+  \"https://claude.ai/code/session_01AbCdEf\",\n", "--edit", "--cleanup=scissors");
 	assert.equal(result.status, 0, result.stderr);
 	assert.doesNotMatch(result.log, /session_/);
 });
