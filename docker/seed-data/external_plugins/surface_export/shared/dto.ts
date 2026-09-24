@@ -137,6 +137,7 @@ export interface PlatformModel {
 }
 export interface InstanceNodeModel {
 	debugMode?: boolean;
+	autoPause?: boolean;
 	recovery?: import("./recovery").InstanceRecoveryStatus;
 	configuredRecoveryMode?: import("./recovery").PlatformSourceOfTruth;
 	instanceId: number;

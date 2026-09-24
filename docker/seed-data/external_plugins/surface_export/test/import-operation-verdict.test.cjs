@@ -111,7 +111,8 @@ function makeControllerHarness() {
 		persistTransactionLog: async () => {},
 	};
 	plugin.subscriptions = { emitTransferUpdate() {}, queueTreeBroadcast() {} };
-	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}` };
+	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}`,
+		requestInstancePlatforms: async () => ({ platforms: [], autoPause: false, error: null }) };
 	plugin.orchestrator = { pruneOldTransfers() {} };
 	plugin.isInstanceOnline = () => true;
 	return { plugin, operation, logged };
@@ -613,4 +614,35 @@ test("an operation with no verdict is given none", async () => {
 	assert.equal(summary.validation, null,
 		"TransactionLogsTab gates on Boolean(validation) to show 'No validation data available yet'");
 	assert.equal(summary.sourceVerification, null);
+});
+
+test("the auto-pause refusal speaks only for a running server that reports auto-pause on", async () => {
+	const { plugin } = makeControllerHarness();
+	for (const [reply, refused] of [[{ autoPause: true }, true], [{ autoPause: false }, false], [{}, false], [{ error: "not running", platforms: [] }, false]]) {
+		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], error: null, ...reply });
+		const refusal = await plugin.autoPauseRefusal(2, "destination");
+		assert.equal(refusal !== null, refused, JSON.stringify(reply));
+		if (refused) assert.match(refusal, /destination instance "instance-2" \(2\) has auto-pause on/);
+	}
+});
+
+test("standalone export and import refuse an auto-paused instance before any record or dispatch", async () => {
+	for (const kind of ["export", "import"]) {
+		const { plugin } = makeControllerHarness();
+		plugin.recoveryReservations = new Map();
+		plugin.requireRecoveryReady = () => {};
+		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], autoPause: true, error: null });
+		plugin.platformTree.resolveTargetInstance = () => ({ id: 2, instance: {} });
+		let records = 0, sends = 0;
+		plugin.createOperationRecord = async () => { records++; throw new Error("no operation may be recorded"); };
+		plugin.controller = { instances: new Map([[1, { id: 1 }]]), sendTo: async () => { sends++; throw new Error("no dispatch"); } };
+		const result = kind === "export"
+			? await plugin.handleExportPlatformForDownloadRequestMeasured({ sourceInstanceId: 1, sourcePlatformIndex: 3 })
+			: await plugin.handleImportUploadedExportRequestMeasured({ targetInstanceId: 2, exportData: { platform: { force: "player" }, entities: [] } });
+		assert.equal(result.success, false, kind);
+		assert.match(result.error, kind === "export" ? /source instance "instance-1" \(1\) has auto-pause on.*Nothing was locked or exported/s
+			: /destination instance "instance-2" \(2\) has auto-pause on.*No platform was imported/s, kind);
+		assert.equal(records, 0, kind);
+		assert.equal(sends, 0, kind);
+	}
 });

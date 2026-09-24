@@ -71,6 +71,7 @@ export class PlatformTree {
 			return {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
 				debugMode: response?.debugMode === true,
+				autoPause: response?.autoPause === true,
 				recovery: response?.recovery,
 				error: null,
 			};
@@ -155,6 +156,7 @@ export class PlatformTree {
 			const gamePort = Number.isInteger(rawGamePort) ? rawGamePort as number : null;
 			const node: InstanceNodeModel = {
 				debugMode: false,
+				autoPause: false,
 				instanceId,
 				instanceName: String(instance.config.get("instance.name") || ""),
 				hostId,
@@ -178,8 +180,9 @@ export class PlatformTree {
 
 			if (host?.connected && node.status === "running") {
 				platformLoads.push((async () => {
-					const { platforms, error, recovery, debugMode } = await this.requestInstancePlatforms(instanceId, forceName);
+					const { platforms, error, recovery, debugMode, autoPause } = await this.requestInstancePlatforms(instanceId, forceName);
 					node.debugMode = debugMode === true;
+					node.autoPause = autoPause === true;
 					node.recovery = recovery;
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)
 						.sort((a, b) => a.platformName.localeCompare(b.platformName));

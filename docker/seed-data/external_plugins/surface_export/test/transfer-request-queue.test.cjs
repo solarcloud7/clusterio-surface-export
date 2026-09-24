@@ -163,7 +163,7 @@ test("duplicate admission returns the same request, competing destinations are r
 	const plugin = { logger: { info: noop, warn: noop, error: noop }, activeTransfers: new Map(), transactionLogs: new Map(),
 		persistedTransactionLogs: [], platformStorage: new Map(), pendingTransfers: new Map(),
 		controller: { instances: new Map([1, 2, 3].map(id => [id, { id, isDeleted: false }])) },
-		isInstanceOnline: () => true, platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: id => `instance-${id}` },
+		isInstanceOnline: () => true, autoPauseRefusal: async () => null, platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: id => `instance-${id}` },
 		subscriptions: { emitTransferUpdate: noop, queueTreeBroadcast: noop },
 		txLogger: { ...require("./timing-harness.cjs").makeTimingHarness(), logTransactionEvent: noop, persistTransactionLog: async () => {} } };
 	const orchestrator = new TransferOrchestrator(plugin, messages); t.after(() => orchestrator.requestQueue.stop());
@@ -201,4 +201,38 @@ test("rejection before queue admission retains observation without running expor
 	plugin.txLogger.rejectObservation = async () => { throw new Error("Telemetry unavailable"); };
 	assert.equal((await orchestrator.handleStartPlatformTransferRequest(request)).success, false);
 	assert.match(warnings[0], /Telemetry unavailable/);
+});
+
+test("an auto-paused source or destination is refused before queue admission, and again before export", async t => {
+	const noop = () => {};
+	const autoPaused = new Set(), sent = [];
+	const plugin = { logger: { info: noop, warn: noop, error: noop }, activeTransfers: new Map(), transactionLogs: new Map(),
+		persistedTransactionLogs: [], platformStorage: new Map(), pendingTransfers: new Map(),
+		controller: { instances: new Map([1, 2].map(id => [id, { id, isDeleted: false }])),
+			sendTo: async (_target, message) => { sent.push(message.constructor.name); return { success: false, error: "not reached" }; } },
+		isInstanceOnline: () => true,
+		autoPauseRefusal: async (id, role) => (autoPaused.has(id) ? `${role} instance-${id} has auto-pause on` : null),
+		platformTree: { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: id => `instance-${id}`,
+			resolveTargetInstance: id => ({ id, instance: {} }) },
+		subscriptions: { emitTransferUpdate: noop, queueTreeBroadcast: noop },
+		txLogger: { ...require("./timing-harness.cjs").makeTimingHarness(), logTransactionEvent: noop, persistTransactionLog: async () => {},
+			rejectObservation: async () => {} } };
+	const orchestrator = new TransferOrchestrator(plugin, messages); t.after(() => orchestrator.requestQueue.stop());
+	const request = { sourceInstanceId: 1, sourcePlatformIndex: 5, targetInstanceId: 2 };
+	for (const [paused, role] of [[1, "source"], [2, "destination"]]) {
+		autoPaused.clear(); autoPaused.add(paused);
+		const result = await orchestrator.handleStartPlatformTransferRequest(request);
+		assert.equal(result.success, false);
+		assert.match(result.error, new RegExp(`${role} instance-${paused} has auto-pause on`));
+		assert.match(result.error, /Nothing was locked or exported/);
+		assert.equal(orchestrator.requestQueue.entries.size, 0);
+		assert.equal(plugin.activeTransfers.size, 0);
+	}
+	for (const [paused, role] of [[1, "source"], [2, "destination"]]) {
+		autoPaused.clear(); autoPaused.add(paused);
+		const result = await orchestrator.handleStartPlatformTransferRequestMeasured(request, `request:${role}`);
+		assert.equal(result.success, false);
+		assert.match(result.error, new RegExp(`${role} instance-${paused} has auto-pause on`));
+	}
+	assert.deepEqual(sent, [], "no export request reaches an instance while either end is auto-paused");
 });

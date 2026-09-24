@@ -25,6 +25,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		persistPendingTransfers: async () => {},
 		removePendingTransfer: (id) => { calls.pendingRemoved = id; },
 		isInstanceOnline: (id) => (calls.offlineInstances ? !calls.offlineInstances.has(id) : true),
+		autoPauseRefusal: async (id, role) => (calls.autoPaused?.has(id) ? `${role} instance-${id} has auto-pause on` : null),
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
 		platformStorage: {
 			get: () => ({
@@ -986,6 +987,29 @@ test("preflight: an offline destination is refused BEFORE any record exists", as
 	calls.offlineInstances.clear();
 	await orch.transferPlatform("export_1", 2);
 	assert.equal(calls.importSends, 1, "back online, the preflight admits the transfer to the import send");
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+});
+
+test("preflight: an auto-paused destination is refused BEFORE any record exists", async () => {
+	const { orch, activeTransfers, calls } = makeHarness(() => {
+		throw new Error("import send must never be reached when the destination is auto-paused");
+	});
+	calls.autoPaused = new Set([2]);
+
+	const res = await orch.transferPlatform("export_1", 2);
+
+	assert.equal(res.success, false);
+	assert.match(String(res.error), /destination instance-2 has auto-pause on/);
+	assert.match(String(res.error), /unchanged/);
+	assert.equal(res.safeToUnlockSource, true, "nothing was sent, so the lock holder may release the source");
+	assert.equal(activeTransfers.size, 0);
+	assert.equal(calls.importSends, 0);
+	assert.equal(calls.unlockRouteTaken, 0);
+
+	calls.autoPaused.clear();
+	await orch.transferPlatform("export_1", 2);
+	assert.equal(calls.importSends, 1, "without auto-pause the same export reaches the import send");
 	const transfer = onlyTransfer(activeTransfers);
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
 });

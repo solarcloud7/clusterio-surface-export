@@ -452,6 +452,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!resolved || !resolvedInstance || resolvedInstance.isDeleted) {
 			return { success: false, error: `Target instance not found: ${targetInstanceId}` };
 		}
+		const pausedTarget = await this.autoPauseRefusal(resolved.id, "destination");
+		if (pausedTarget) return { success: false, error: `${pausedTarget} No platform was imported.` };
 
 		const importData: ExportData = { ...exportData };
 		const validateSnapshot = Boolean(snapshot || extracted.fromBlackBox || importData._transferId);
@@ -577,6 +579,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
 		}
+		const pausedSource = await this.autoPauseRefusal(sourceInstanceId, "source");
+		if (pausedSource) return { success: false, error: `${pausedSource} Nothing was locked or exported.` };
 		const platformUid = await this.platformTree.resolvePlatformUid(sourceInstanceId, sourcePlatformIndex, forceName, request.sourcePlatformUid);
 		const operation = await this.createOperationRecord("export", {
 			platformUid,
@@ -934,6 +938,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (this.pendingTransfers.delete(transferId)) {
 			void this.persistPendingTransfers();
 		}
+	}
+
+	async autoPauseRefusal(instanceId: number, role: "source" | "destination"): Promise<string | null> {
+		const { autoPause } = await this.platformTree.requestInstancePlatforms(instanceId);
+		if (autoPause !== true) return null;
+		const name = this.platformTree.resolveInstanceName(instanceId);
+		return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has auto-pause on, so it stops running while no players are online. `
+			+ "Platform transfers, imports and exports are refused there; turn off auto_pause in its factorio.settings and restart it.";
 	}
 
 	isInstanceOnline(instanceId: number): boolean {

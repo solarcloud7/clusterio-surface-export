@@ -30,7 +30,7 @@ function makeInstance(id, hostId, status, debugMode) {
 	};
 }
 
-function makeTree(statuses, appliedDebug = new Map()) {
+function makeTree(statuses, appliedDebug = new Map(), appliedAutoPause = new Map()) {
 	const polled = [];
 	const hosts = new Map([[1, { id: 1, name: "host-1", connected: true, isDeleted: false }]]);
 	const instances = new Map(statuses.map(([id, status, debugMode]) => [id, makeInstance(id, 1, status, debugMode)]));
@@ -40,7 +40,7 @@ function makeTree(statuses, appliedDebug = new Map()) {
 			instances,
 			async sendTo(target) {
 				polled.push(target.instanceId);
-				return { platforms: [], debugMode: appliedDebug.get(target.instanceId) };
+				return { platforms: [], debugMode: appliedDebug.get(target.instanceId), autoPause: appliedAutoPause.get(target.instanceId) };
 			},
 		},
 		activeTransfers: new Map(),
@@ -75,6 +75,13 @@ test("the web tree exposes applied debug state rather than settings awaiting res
 		new Map([[1, false], [2, true], [3, true]]));
 	const result = await tree.buildPlatformTree("player");
 	assert.deepEqual(result.hosts[0].instances.map(instance => instance.debugMode), [false, true, false, false]);
+});
+
+test("the web tree marks auto-pause only for a running server that reports it", async () => {
+	const { tree } = makeTree([[1, "running"], [2, "running"], [3, "stopped"], [4, "running"]], new Map(),
+		new Map([[1, true], [2, false], [3, true], [4, null]]));
+	const result = await tree.buildPlatformTree("player");
+	assert.deepEqual(result.hosts[0].instances.map(instance => instance.autoPause), [true, false, false, false]);
 });
 
 test("tree status joins the selected copy rather than a matching name or index", () => {
