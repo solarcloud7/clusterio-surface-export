@@ -42,6 +42,7 @@ function run(dir, script, args, setup = "") {
 $ErrorActionPreference='Stop'
 $global:calls=[Collections.Generic.List[string]]::new()
 function docker { $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0 }
+function node { $global:calls.Add('node ' + (Split-Path $args[0] -Leaf) + ' ' + $args[1]); $global:LASTEXITCODE = [int]$global:seedModsExit }
 ${setup}
 $failure=$null
 try { & $env:DEPLOY_SCRIPT ${args.map(s => s.startsWith("-") ? s : `'${s}'`).join(" ")} } catch { $failure=$_.Exception.Message }
@@ -186,6 +187,14 @@ for (const stale of [false, true]) {
 		assert.equal(result.calls.includes("docker compose down -v"), false);
 	});
 }
+
+test("a seed mod set that disagrees with the pin is refused before the cluster stops", { skip }, t => {
+	const { dir } = fixture(t, "deploy-cluster");
+	const result = run(dir, "deploy-cluster", ["-SkipIncrement"], "$global:seedModsExit = 1");
+	assert.match(result.error || "", /does not match docker\/seed-data\/seed-mods\.json/);
+	assert.ok(result.calls.includes("node seed-mods.mjs verify"), JSON.stringify(result.calls));
+	assert.equal(result.calls.some(c => c.startsWith("docker ")), false, JSON.stringify(result.calls));
+});
 
 test("a retained instance on another engine is refused before the hosts start", { skip }, t => {
 	const result = retainedCluster(t, { configured: "2.1.16" });
