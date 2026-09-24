@@ -2,12 +2,13 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { CAPTION_CLEARANCE, GATE_CENTRE_OFFSET_Y, floatingEdgeEndpoints, nodeCircle, nodeFootprint } = require("../dist/node/shared/edge-geometry");
+const { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, floatingEdgeEndpoints, nodeCircle, nodeFootprint } = require("../dist/node/shared/edge-geometry");
 
 const SIZE = { width: 150, height: 150 };
-const gateway = (x, y) => nodeFootprint({ x, y }, SIZE, 150, GATE_CENTRE_OFFSET_Y, CAPTION_CLEARANCE);
+const gateway = (x, y) => nodeFootprint({ x, y }, SIZE, 150, GATE_CENTRE_OFFSET_Y, CAPTION_CLEARANCE, CAPTION_WIDTH);
 const circle = (x, y) => nodeCircle({ x, y }, SIZE, 150, GATE_CENTRE_OFFSET_Y);
-const inside = (point, x, y) => point.x > x && point.x < x + 150 && point.y > y - CAPTION_CLEARANCE && point.y < y + 150;
+const inside = (point, x, y) => (point.x > x && point.x < x + 150 && point.y > y && point.y < y + 150)
+	|| (point.x > x + 75 - CAPTION_WIDTH / 2 && point.x < x + 75 + CAPTION_WIDTH / 2 && point.y > y - CAPTION_CLEARANCE && point.y < y);
 
 test("the circle endpoints put vertical links inside the gateway art and caption (control)", () => {
 	const ends = floatingEdgeEndpoints(circle(0, 0), circle(0, 300));
@@ -36,5 +37,13 @@ test("links at every angle start outside the source gateway and its caption", ()
 		const target = [Math.round(Math.cos(radians) * 600), Math.round(Math.sin(radians) * 600)];
 		const ends = floatingEdgeEndpoints(gateway(0, 0), gateway(...target));
 		assert.equal(inside({ x: ends.sourceX, y: ends.sourceY }, 0, 0), false, `${degrees}°: ${JSON.stringify(ends)}`);
+	}
+});
+
+test("links between gateways dragged close together fall back to the circle rather than crossing", () => {
+	for (const gap of [160, 190]) {
+		const ends = floatingEdgeEndpoints(gateway(0, 0), gateway(0, gap));
+		assert.ok(ends.sourceY < ends.targetY, `${gap}px: ${JSON.stringify(ends)}`);
+		assert.deepEqual(ends, floatingEdgeEndpoints(circle(0, 0), circle(0, gap)));
 	}
 });

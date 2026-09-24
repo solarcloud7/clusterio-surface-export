@@ -4,7 +4,7 @@ import {
 import type { EdgeProps, Position } from "@xyflow/react";
 
 import { NODE_DIAMETER } from "./gateway-graph";
-import { CAPTION_CLEARANCE, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle, nodeFootprint } from "../../shared/edge-geometry";
+import { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle, nodeFootprint } from "../../shared/edge-geometry";
 import type { NodeCircle } from "../../shared/edge-geometry";
 import { DEFAULT_GATEWAY_MODE } from "../../shared/dto";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
@@ -17,7 +17,7 @@ function gatewayShape(node: { internals?: { positionAbsolute?: { x: number; y: n
 	const mode = (node.data as { mode?: string } | undefined)?.mode || DEFAULT_GATEWAY_MODE;
 	return mode === "multi"
 		? nodeCircle(node.internals?.positionAbsolute, node.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y)
-		: nodeFootprint(node.internals?.positionAbsolute, node.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y, CAPTION_CLEARANCE);
+		: nodeFootprint(node.internals?.positionAbsolute, node.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y, CAPTION_CLEARANCE, CAPTION_WIDTH);
 }
 
 export default function FloatingEdge({

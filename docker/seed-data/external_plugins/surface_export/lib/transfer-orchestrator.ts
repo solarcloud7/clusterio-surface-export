@@ -386,9 +386,9 @@ export class TransferOrchestrator {
 				+ "transfer refused before starting. The source platform is unchanged; retry when the "
 				+ "destination is running." };
 		}
-		const pausedDestination = await this.plugin.autoPauseRefusal(targetInstanceId, "destination");
-		if (pausedDestination) {
-			return { success: false, safeToUnlockSource: true, error: `${pausedDestination} The source platform is unchanged.` };
+		for (const [instanceId, role] of [[exportData.instanceId, "source"], [targetInstanceId, "destination"]] as const) {
+			const refusal = await this.plugin.autoPauseRefusal(instanceId, role);
+			if (refusal) return { success: false, safeToUnlockSource: true, error: `${refusal} The source platform is unchanged.` };
 		}
 		const innerData = exportData.exportData;
 		timingContext.enterWith(this.txLogger.beginObservation(transferId));

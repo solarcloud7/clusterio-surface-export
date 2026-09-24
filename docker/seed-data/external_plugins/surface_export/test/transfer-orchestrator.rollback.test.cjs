@@ -1014,6 +1014,19 @@ test("preflight: an auto-paused destination is refused BEFORE any record exists"
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
 });
 
+test("preflight: an auto-paused source is refused before the import, with unlock authority", async () => {
+	const { orch, activeTransfers, calls } = makeHarness(() => {
+		throw new Error("import send must never be reached when the source is auto-paused");
+	});
+	calls.autoPaused = new Set([1]);
+	const res = await orch.transferPlatform("export_1", 2);
+	assert.equal(res.success, false);
+	assert.match(String(res.error), /source instance-1 has auto-pause on/);
+	assert.equal(res.safeToUnlockSource, true);
+	assert.equal(activeTransfers.size, 0);
+	assert.equal(calls.importSends, 0);
+});
+
 test("a throw AFTER the destination accepted must NOT authorize an unlock", async () => {
 	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }));
 	const plugin = orch.plugin;

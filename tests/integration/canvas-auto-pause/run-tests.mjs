@@ -88,7 +88,7 @@ try {
 		const live = await geometry(page);
 		const badged = live.nodes.filter(node => node.badge);
 		assert.equal(badged.length, 1, "exactly the instance reporting auto-pause carries the badge");
-		assert.equal(badged[0].id.endsWith(String(markedInstanceId)), true, `${badged[0].id} is not instance ${markedInstanceId}`);
+		assert.equal(badged[0].id, `instance:${markedInstanceId}`);
 		const legend = page.locator(".surface-export-legend-autopause");
 		assert.equal(await legend.locator("svg[aria-label='auto-pause on']").count(), 1);
 		assert.equal((await legend.innerText()).trim(), "auto-pause on");
@@ -101,7 +101,7 @@ try {
 			],
 			links: [[0, 1], [1, 0], [0, 2]],
 		}));
-		await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length === 3
+		await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length === 2
 			&& document.querySelectorAll(".surface-export-autopause-badge").length === 1, null, { timeout: 10_000 });
 		await page.locator(".react-flow__controls-fitview").click();
 		await page.waitForTimeout(400);

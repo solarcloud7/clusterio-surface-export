@@ -4,6 +4,8 @@ export const PORTAL_DIAMETER_FRACTION = 0.6;
 
 export const CAPTION_CLEARANCE = 45;
 
+export const CAPTION_WIDTH = 190;
+
 export const EDGE_END_GAP = 4;
 
 export type NodeCircle = {
@@ -11,6 +13,7 @@ export type NodeCircle = {
 	y: number;
 	radius: number;
 	bounds?: { left: number; right: number; top: number; bottom: number };
+	caption?: { left: number; right: number; top: number };
 };
 
 export type EdgeEndpoints = {
@@ -44,6 +47,7 @@ export function nodeFootprint(
 	fallbackDiameter: number,
 	offsetY = 0,
 	captionClearance = 0,
+	captionWidth = 0,
 ): NodeCircle | null {
 	const circle = nodeCircle(position, measured, fallbackDiameter, offsetY);
 	if (!circle || !position) {
@@ -56,8 +60,13 @@ export function nodeFootprint(
 		bounds: {
 			left: position.x,
 			right: position.x + width,
-			top: position.y - captionClearance - EDGE_END_GAP,
+			top: position.y,
 			bottom: position.y + height + EDGE_END_GAP,
+		},
+		caption: {
+			left: circle.x - Math.max(width, captionWidth) / 2,
+			right: circle.x + Math.max(width, captionWidth) / 2,
+			top: position.y - captionClearance - EDGE_END_GAP,
 		},
 	};
 }
@@ -69,7 +78,12 @@ function exitDistance(shape: NodeCircle, ux: number, uy: number): number {
 	const { left, right, top, bottom } = shape.bounds;
 	const alongX = ux > 0 ? (right - shape.x) / ux : ux < 0 ? (left - shape.x) / ux : Infinity;
 	const alongY = uy > 0 ? (bottom - shape.y) / uy : uy < 0 ? (top - shape.y) / uy : Infinity;
-	return Math.max(shape.radius, Math.min(alongX, alongY));
+	let exit = Math.min(alongX, alongY);
+	if (shape.caption && uy < 0 && alongY <= alongX) {
+		const captionX = ux > 0 ? (shape.caption.right - shape.x) / ux : ux < 0 ? (shape.caption.left - shape.x) / ux : Infinity;
+		exit = Math.min(captionX, (shape.caption.top - shape.y) / uy);
+	}
+	return Math.max(shape.radius, exit);
 }
 
 export function floatingEdgeEndpoints(source: NodeCircle, target: NodeCircle): EdgeEndpoints {
@@ -81,8 +95,12 @@ export function floatingEdgeEndpoints(source: NodeCircle, target: NodeCircle): E
 	}
 	const ux = dx / distance;
 	const uy = dy / distance;
-	const sourceDistance = exitDistance(source, ux, uy);
-	const targetDistance = exitDistance(target, -ux, -uy);
+	let sourceDistance = exitDistance(source, ux, uy);
+	let targetDistance = exitDistance(target, -ux, -uy);
+	if (sourceDistance + targetDistance >= distance) {
+		sourceDistance = source.radius;
+		targetDistance = target.radius;
+	}
 	return {
 		sourceX: source.x + ux * sourceDistance,
 		sourceY: source.y + uy * sourceDistance,
