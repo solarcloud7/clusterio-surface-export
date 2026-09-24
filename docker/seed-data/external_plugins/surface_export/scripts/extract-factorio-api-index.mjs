@@ -2,7 +2,9 @@
 // extract-factorio-api-index — derive the vendored API-name index from Wube's machine-readable docs.
 // requires: network access to lua-api.factorio.com (run at repin time, not in CI)
 // produces: scripts/factorio-api-index.json — every class's attribute/method names with read/write
-//          flags, plus per-attribute subclasses and first-sentence doc where upstream carries them
+//          flags, plus per-attribute subclasses and first-sentence doc where upstream carries them;
+//          with --floor, the same index for the oldest supported engine in
+//          scripts/factorio-api-floor-index.json
 // does not: run in CI, validate anything itself (lint-api-names.mjs consumes the output), or keep
 //          full descriptions — one sentence capped at 200 chars, so the index stays vendorable
 
@@ -10,9 +12,11 @@ import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const PIN = process.argv[2];
-if (!PIN) {
-	console.error("usage: node scripts/extract-factorio-api-index.mjs <factorio-version>   e.g. 2.1.17");
+const args = process.argv.slice(2);
+const floor = args.includes("--floor");
+const [PIN] = args.filter(arg => arg !== "--floor");
+if (!PIN || args.length !== (floor ? 2 : 1)) {
+	console.error("usage: node scripts/extract-factorio-api-index.mjs <factorio-version> [--floor]");
 	process.exit(1);
 }
 
@@ -86,7 +90,8 @@ const index = {
 	classes,
 };
 
-const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "factorio-api-index.json");
+const out = path.join(path.dirname(fileURLToPath(import.meta.url)),
+	floor ? "factorio-api-floor-index.json" : "factorio-api-index.json");
 writeFileSync(out, JSON.stringify(index));
 const classCount = Object.keys(classes).length;
 const memberCount = Object.values(classes).reduce((n, m) => n + Object.keys(m).length, 0);

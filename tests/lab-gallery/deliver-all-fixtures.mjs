@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
 	CONTROLLER, CTL_CONFIG, bumpExportIdCounter, docker, lastLine, lua, rcon, sleep,
 } from "./batch-lifecycle.mjs";
+import { startPatchedSave } from "./start-patched-save.mjs";
 
 const GALLERY_INSTANCE = "surface-export-lab-gallery";
 const GALLERY_INSTANCE_ID = 907164846;
@@ -184,7 +185,7 @@ async function main() {
 		displaced = true;
 		docker(["cp", `${REPO_ROOT}${goldenSource}`, `${HOST1_CONTAINER}:${HOST1_SAVES}/${DELIVER_SAVE}`],
 			{ timeout: 180_000 });
-		ctl("instance", "start", HOST1_INSTANCE, "--save", DELIVER_SAVE);
+		startPatchedSave(ctl, HOST1_INSTANCE, DELIVER_SAVE);
 		await waitHost1Ready();
 
 		summary.counterBumpedTo = bumpExportIdCounter(1);
@@ -201,7 +202,7 @@ async function main() {
 	} finally {
 		if (displaced) {
 			ctl("instance", "stop", HOST1_INSTANCE);
-			ctl("instance", "start", HOST1_INSTANCE, "--save", RESTORE_SAVE);
+			startPatchedSave(ctl, HOST1_INSTANCE, RESTORE_SAVE);
 			docker(["exec", HOST1_CONTAINER, "sh", "-c", `rm -f -- ${HOST1_SAVES}/${DELIVER_SAVE}`]);
 			docker(["exec", HOST1_CONTAINER, "test", "!", "-e", `${HOST1_SAVES}/${DELIVER_SAVE}`]);
 			summary.host1Restored = RESTORE_SAVE;

@@ -53,8 +53,9 @@ client on **host 1** for Clusterio's `instance export-data` operation. It includ
 the graphics needed to generate the web interface's icon spritesheets; the
 headless package does not. This is separate from the Steam client you use to play.
 
-The root Compose file sets `SKIP_CLIENT=false` on host 1 and mounts the external
-`factorio-client-2120` volume at `/opt/factorio-client`. Host 2 sets
+The root Compose file sets `SKIP_CLIENT=false` on host 1, pins its
+`FACTORIO_CLIENT_TAG` to the seed engine version and mounts an external client
+volume named for that version at `/opt/factorio-client`. Host 2 sets
 `SKIP_CLIENT=true`. Do not reuse or modify another cluster's client volume.
 
 Having the full client installed does not make a server process render the GUI.

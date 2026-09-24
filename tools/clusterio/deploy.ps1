@@ -15,7 +15,8 @@ param(
     [switch]$KeepData,
     [switch]$KeepSaves,
     [switch]$ResetSaves,
-    [switch]$ResetData
+    [switch]$ResetData,
+    [switch]$MigrateEngine
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,7 @@ $scopeParams = @{
     artifacts = @('Target', 'Fresh', 'RestartController', 'RestartHosts')
     lua       = @('KeepSaves', 'ResetSaves', 'SkipIncrement')
     plugin    = @('KeepSaves', 'ResetSaves', 'SkipIncrement')
-    cluster   = @('SkipIncrement', 'KeepData', 'ResetData')
+    cluster   = @('SkipIncrement', 'KeepData', 'ResetData', 'MigrateEngine')
 }
 $suppliedNames = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'Scope' -and $_ -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable') })
 $rejected = @($suppliedNames | Where-Object { $_ -notin $scopeParams[$Scope] })
@@ -75,6 +76,7 @@ switch ($Scope) {
         $childArgs = @{}
         if ($SkipIncrement) { $childArgs.SkipIncrement = $true }
         if ($ResetData) { $childArgs.ResetData = $true }
+        if ($MigrateEngine) { $childArgs.MigrateEngine = $true }
         & (Join-Path $here 'deploy-cluster.ps1') @childArgs
     }
 }

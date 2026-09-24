@@ -1,3 +1,9 @@
+export const contract = {
+	requires: ["a clusterioctl wrapper that throws with the command output", "a stopped instance owned by the caller"],
+	produces: ["the started save, retried once after Clusterio's documented clusterio_private scenario-migration failure"],
+	"does not": ["retry any other failure or an instance not confirmed stopped", "prove the migrated world kept its state"],
+};
+
 export function startPatchedSave(ctl, instance, save) {
 	const start = () => ctl("instance", "start", instance, "--save", save);
 	try {

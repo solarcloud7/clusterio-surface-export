@@ -1,14 +1,17 @@
 # requires: development compose stack and explicit ResetData for a disposable rebuild
 # produces: rebuilt containers with existing volumes retained by default
-# does not: accept stale Lua builds or deploy a production installation
+# does not: accept stale Lua builds, deploy a production installation, or move an existing world to
+#           another Factorio version without -MigrateEngine
 param (
     [switch]$SkipIncrement,
     [switch]$KeepData,
-    [switch]$ResetData
+    [switch]$ResetData,
+    [switch]$MigrateEngine
 )
 
 $ErrorActionPreference = "Stop"
 if ($KeepData -and $ResetData) { throw '-KeepData and -ResetData cannot be combined.' }
+if ($MigrateEngine -and $ResetData) { throw '-MigrateEngine applies to retained worlds; it cannot be combined with -ResetData.' }
 
 $WorkspaceRoot = Resolve-Path "$PSScriptRoot/../.."
 $PluginPathCandidates = @(
@@ -65,7 +68,7 @@ $EnvFile = Join-Path $WorkspaceRoot ".env"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "Creating .env from example..." -ForegroundColor Yellow
     Copy-Item (Join-Path $WorkspaceRoot ".env.example") $EnvFile
-    throw "Created .env from .env.example — set INIT_CLUSTERIO_ADMIN (and FACTORIO_CLIENT_TAG if the client downloads) and run again."
+    throw "Created .env from .env.example — set INIT_CLUSTERIO_ADMIN (and the Factorio credentials if the client downloads) and run again."
 }
 
 $envValues = @{}
@@ -80,11 +83,17 @@ $pinnedFactorioVersions = @($seeded | ForEach-Object {
 } | Sort-Object -Unique)
 if ($pinnedFactorioVersions.Count -ne 1) { throw "instance.json files disagree on factorio.version: $($pinnedFactorioVersions -join ', ')" }
 $pinnedFactorioVersion = $pinnedFactorioVersions[0]
-if ($envValues['FACTORIO_USERNAME'] -and $envValues['FACTORIO_TOKEN']) {
-    $clientTag = if ($envValues['FACTORIO_CLIENT_TAG']) { $envValues['FACTORIO_CLIENT_TAG'] } else { 'stable' }
-    if ($clientTag -ne $pinnedFactorioVersion) {
-        throw "FACTORIO_CLIENT_TAG is '$clientTag' but instance.json pins factorio.version $pinnedFactorioVersion — the client download would fill the client volume with the wrong engine. Set FACTORIO_CLIENT_TAG=$pinnedFactorioVersion in .env."
-    }
+$composeText = Get-Content (Join-Path $WorkspaceRoot "docker-compose.yml") -Raw
+$composeClientTags = @([regex]::Matches($composeText, '(?m)^\s*-\s*FACTORIO_CLIENT_TAG=(\S+)\s*$') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+if ($composeClientTags.Count -ne 1) {
+    throw "docker-compose.yml must pin exactly one FACTORIO_CLIENT_TAG for the client host; found: $($composeClientTags -join ', ')"
+}
+$clientTag = $composeClientTags[0]
+if ($clientTag -ne $pinnedFactorioVersion) {
+    throw "docker-compose.yml pins FACTORIO_CLIENT_TAG=$clientTag but instance.json pins factorio.version $pinnedFactorioVersion — the client host would install an engine that cannot run the seeded instances. Update docker-compose.yml."
+}
+if ($envValues['FACTORIO_CLIENT_TAG'] -and $envValues['FACTORIO_CLIENT_TAG'] -ne $clientTag) {
+    Write-Warning "Ignoring FACTORIO_CLIENT_TAG=$($envValues['FACTORIO_CLIENT_TAG']) in .env: docker-compose.yml pins the client host to $clientTag."
 }
 $exportHostNumber = if ($envValues['EXPORT_HOST']) { $envValues['EXPORT_HOST'] } else { '1' }
 $clientContainer = "surface-export-host-$exportHostNumber"
@@ -112,7 +121,6 @@ Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
 Write-Host "Pulling latest base images..." -ForegroundColor Cyan
 docker compose pull
 
-$composeText = Get-Content (Join-Path $WorkspaceRoot "docker-compose.yml") -Raw
 $externalVolumes = @([regex]::Matches($composeText, '(?m)^  ([A-Za-z0-9_.-]+):[^\r\n]*\r?\n\s+external:\s*true') | ForEach-Object { $_.Groups[1].Value })
 if ($externalVolumes.Count -eq 0) { throw "docker-compose.yml declares no external volume — the client-volume convention moved; update this script." }
 foreach ($volume in $externalVolumes) {
@@ -121,6 +129,62 @@ foreach ($volume in $externalVolumes) {
     Write-Host "External volume ready: $volume" -ForegroundColor Green
 }
 
+$ctlPrefix = @('exec', 'surface-export-controller', 'timeout', '60', 'npx', 'clusterioctl', '--config', '/clusterio/tokens/config-control.json', '--log-level', 'error')
+$ctlStartPrefix = @('exec', 'surface-export-controller', 'timeout', '180', 'npx', 'clusterioctl', '--config', '/clusterio/tokens/config-control.json', '--log-level', 'error')
+$migratedInstances = @()
+if (-not $ResetData) {
+    Write-Host "Starting the controller to compare retained instances with the engine pin ($pinnedFactorioVersion)..." -ForegroundColor Cyan
+    docker compose up -d surface-export-controller
+    if ($LASTEXITCODE -ne 0) { throw "docker compose up -d surface-export-controller failed (exit $LASTEXITCODE). The cluster is NOT deployed." }
+    $controllerWait = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        # Deliberately quiet: this is a POLL. The controller refuses control connections while it boots.
+        $listOut = docker @ctlPrefix instance list 2>$null
+        if ($LASTEXITCODE -eq 0 -and $listOut) { break }
+        if ($controllerWait.Elapsed.TotalSeconds -ge 180) {
+            throw "The controller did not answer clusterioctl within 180s, so retained instances were not compared with the engine pin. The cluster is NOT deployed."
+        }
+        Start-Sleep -Seconds 3
+    }
+    $listText = $listOut | Out-String
+    $engineMismatches = @()
+    foreach ($name in $expectedInstances) {
+        if ($listText -notmatch "(?m)^\s*$([regex]::Escape($name))\b") { continue }
+        $configText = (docker @ctlPrefix instance config list $name 2>&1 | Out-String)
+        $configured = [regex]::Match($configText, '(?m)^factorio\.version\s+"([^"]+)"\s*$')
+        if ($LASTEXITCODE -ne 0 -or -not $configured.Success) {
+            throw "Could not read factorio.version for retained instance ${name}: $($configText.Trim()). The cluster is NOT deployed."
+        }
+        if ($configured.Groups[1].Value -ne $pinnedFactorioVersion) {
+            $engineMismatches += [pscustomobject]@{ Name = $name; Version = $configured.Groups[1].Value }
+        }
+    }
+    if ($engineMismatches.Count -and -not $MigrateEngine) {
+        $summary = ($engineMismatches | ForEach-Object { "$($_.Name)=$($_.Version)" }) -join ', '
+        throw "Retained instance(s) $summary do not match the seed engine pin $pinnedFactorioVersion. The client host runs only the pinned engine, so they would not start there. A save written by the newer engine cannot be loaded by the older one: back up the data volumes, then rerun with -MigrateEngine to set factorio.version to $pinnedFactorioVersion. The cluster is NOT deployed."
+    }
+    foreach ($mismatch in $engineMismatches) {
+        $setText = (docker @ctlPrefix instance config set $mismatch.Name factorio.version $pinnedFactorioVersion 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) { throw "Could not set factorio.version on $($mismatch.Name): $($setText.Trim()). The cluster is NOT deployed." }
+        Write-Host "  $($mismatch.Name): factorio.version $($mismatch.Version) -> $pinnedFactorioVersion" -ForegroundColor Yellow
+        $migratedInstances += $mismatch.Name
+    }
+}
+
+function Restart-MigratedInstance {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Since)
+    $container = ($seeded | Where-Object { $_.Instance -eq $Name } | Select-Object -First 1).Container
+    $log = (docker logs --since $Since $container 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Could not read $container logs to diagnose ${Name}: $($log.Trim()). The cluster is NOT deployed." }
+    if (-not (Test-ScenarioMigrationFailure -Log $log -Instance $Name)) {
+        throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read /clusterio/data/instances/$Name/factorio-current.log on $container. The cluster is NOT deployed."
+    }
+    Write-Host "  $Name hit Clusterio's documented first start after an engine change; starting it once more" -ForegroundColor Yellow
+    $startText = (docker @ctlStartPrefix instance start $Name 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "Restarting $Name after the engine migration failed: $($startText.Trim()). The cluster is NOT deployed." }
+}
+
+$deployStartedUtc = [DateTime]::UtcNow.ToString('o')
 Write-Host "Starting cluster..." -ForegroundColor Cyan
 docker compose up -d
 if ($LASTEXITCODE -ne 0) { throw "docker compose up -d failed (exit $LASTEXITCODE) — refusing to report a started cluster." }
@@ -217,6 +281,7 @@ $stoppedFailFastS = 30
 $phaseStartS = $deploySw.Elapsed.TotalSeconds
 $lastStates = @{}
 $stoppedSince = @{}
+$migrationRestarted = @{}
 $instancesDone = $false
 
 while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) -lt $instanceTimeout) {
@@ -250,6 +315,12 @@ while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) 
             if (-not $stoppedSince.ContainsKey($name)) {
                 $stoppedSince[$name] = $nowS
             } elseif (($nowS - $stoppedSince[$name]) -ge $stoppedFailFastS -and $expectedInstances -contains $name) {
+                if ($migratedInstances -contains $name -and -not $migrationRestarted.ContainsKey($name)) {
+                    $migrationRestarted[$name] = $true
+                    Restart-MigratedInstance -Name $name -Since $deployStartedUtc
+                    $stoppedSince.Remove($name)
+                    continue
+                }
                 throw "$name has been 'stopped' for ${stoppedFailFastS}s — a save-load failure, not a slow boot. Read /clusterio/data/instances/$name/factorio-current.log on its host. The cluster is NOT deployed."
             }
         } else {

@@ -136,3 +136,25 @@ test("every bare receiver is genuinely checked", async () => {
 		assert.equal(failures.length, 1, `${receiver} is in the bare map but contributed no verdict`);
 	}
 });
+
+test("a member the pin has but the supported floor lacks fails, with the pin as its own floor as control", async () => {
+	const { collectReads, classifyReads } = await guard();
+	const reads = collectReads("local h = entity.health\n", "f.lua");
+	assert.deepEqual(classifyReads(reads, index, index).failures, []);
+	const floor = structuredClone(index);
+	floor.application_version = "0.0.1";
+	delete floor.classes.LuaEntity.health;
+	const { failures } = classifyReads(reads, index, floor);
+	assert.equal(failures.length, 1);
+	assert.equal(failures[0].name, "health");
+	assert.equal(failures[0].floorVersion, "0.0.1");
+});
+
+test("the vendored floor index carries every mapped class and is not newer than the pin", async () => {
+	const { RECEIVER_CLASS, compareVersions } = await guard();
+	const floor = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "scripts", "factorio-api-floor-index.json"), "utf8"));
+	assert.equal(floor.api_version, index.api_version);
+	assert.ok(compareVersions(floor.application_version, index.application_version) <= 0,
+		`floor ${floor.application_version} is newer than pin ${index.application_version}`);
+	for (const className of new Set(Object.values(RECEIVER_CLASS))) assert.ok(floor.classes[className], className);
+});
