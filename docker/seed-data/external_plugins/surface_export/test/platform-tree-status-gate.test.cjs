@@ -110,3 +110,11 @@ test("source UID survives request serialization and a delayed admission", async 
 	assert.deepEqual(polled, [], "a stale selection must not silently adopt the latest UID");
 	await assert.rejects(tree.resolvePlatformUid(20, 3, "player"), /identity is unavailable/);
 });
+
+test("platform status preserves unknown auto-pause rather than confirming it off", async () => {
+	const { tree } = makeTree([[1, "running"], [2, "running"], [3, "running"], [4, "running"]], new Map(),
+		new Map([[1, true], [2, false], [3, null]]));
+	for (const [id, expected] of [[1, true], [2, false], [3, null], [4, null]]) {
+		assert.equal((await tree.requestInstancePlatforms(id)).autoPause, expected);
+	}
+});

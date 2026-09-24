@@ -71,7 +71,7 @@ export class PlatformTree {
 			return {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
 				debugMode: response?.debugMode === true,
-				autoPause: response?.autoPause === true,
+				autoPause: typeof response?.autoPause === "boolean" ? response.autoPause : null,
 				recovery: response?.recovery,
 				error: null,
 			};

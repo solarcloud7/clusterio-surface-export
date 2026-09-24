@@ -941,9 +941,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async autoPauseRefusal(instanceId: number, role: "source" | "destination"): Promise<string | null> {
-		const { autoPause } = await this.platformTree.requestInstancePlatforms(instanceId);
-		if (autoPause !== true) return null;
+		const { autoPause, error } = await this.platformTree.requestInstancePlatforms(instanceId);
+		if (!error && autoPause === false) return null;
 		const name = this.platformTree.resolveInstanceName(instanceId);
+		if (error || autoPause !== true) {
+			return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has unavailable auto-pause status. `
+				+ "Work was not admitted; retry after the instance confirms auto_pause is off."
+				+ (error ? ` Status request failed: ${error}` : " Check the instance settings and restart it if needed.");
+		}
 		return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has auto-pause on, so it stops running while no players are online. `
 			+ "Platform transfers, imports and exports are refused there; turn off auto_pause in its factorio.settings and restart it.";
 	}
