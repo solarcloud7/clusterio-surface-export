@@ -4,12 +4,21 @@ import {
 import type { EdgeProps, Position } from "@xyflow/react";
 
 import { NODE_DIAMETER } from "./gateway-graph";
-import { GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
+import { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle, nodeFootprint } from "../../shared/edge-geometry";
+import type { NodeCircle } from "../../shared/edge-geometry";
+import { DEFAULT_GATEWAY_MODE } from "../../shared/dto";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
 import { DEFAULT_EDGE_SHAPE } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
 import type { ShipTransfer } from "./transfer-motion";
 import EdgeTransfers from "./EdgeTransfers";
+
+function gatewayShape(node: { internals?: { positionAbsolute?: { x: number; y: number } }; measured?: { width?: number; height?: number }; data?: unknown }): NodeCircle | null {
+	const mode = (node.data as { mode?: string } | undefined)?.mode || DEFAULT_GATEWAY_MODE;
+	return mode === "multi"
+		? nodeCircle(node.internals?.positionAbsolute, node.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y)
+		: nodeFootprint(node.internals?.positionAbsolute, node.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y, CAPTION_CLEARANCE, CAPTION_WIDTH);
+}
 
 export default function FloatingEdge({
 	id, source, target, markerStart, markerEnd, style, selected, data,
@@ -21,8 +30,8 @@ export default function FloatingEdge({
 		return null;
 	}
 
-	const sourceCircle = nodeCircle(sourceNode.internals?.positionAbsolute, sourceNode.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y);
-	const targetCircle = nodeCircle(targetNode.internals?.positionAbsolute, targetNode.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y);
+	const sourceCircle = gatewayShape(sourceNode);
+	const targetCircle = gatewayShape(targetNode);
 	if (!sourceCircle || !targetCircle) {
 		return null;
 	}

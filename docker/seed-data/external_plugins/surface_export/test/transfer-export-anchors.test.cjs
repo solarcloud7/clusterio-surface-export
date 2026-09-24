@@ -16,7 +16,7 @@ function makeHarness() {
 		logger: { error: noop, warn: noop, info: noop },
 		persistPendingTransfer: noop,
 		removePendingTransfer: noop,
-		isInstanceOnline: () => true,
+		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
 		platformStorage: {
 			get: () => ({

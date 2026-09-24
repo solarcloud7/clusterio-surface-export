@@ -111,7 +111,8 @@ function makeControllerHarness() {
 		persistTransactionLog: async () => {},
 	};
 	plugin.subscriptions = { emitTransferUpdate() {}, queueTreeBroadcast() {} };
-	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}` };
+	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}`,
+		requestInstancePlatforms: async () => ({ platforms: [], autoPause: false, error: null }) };
 	plugin.orchestrator = { pruneOldTransfers() {} };
 	plugin.isInstanceOnline = () => true;
 	return { plugin, operation, logged };
@@ -613,4 +614,41 @@ test("an operation with no verdict is given none", async () => {
 	assert.equal(summary.validation, null,
 		"TransactionLogsTab gates on Boolean(validation) to show 'No validation data available yet'");
 	assert.equal(summary.sourceVerification, null);
+});
+
+test("auto-pause admission requires a confirmed false value and a successful status request", async () => {
+	const { plugin } = makeControllerHarness();
+	for (const [reply, expected] of [
+		[{ autoPause: true }, /has auto-pause on/],
+		[{ autoPause: false }, null],
+		[{ autoPause: null }, /unavailable auto-pause status/],
+		[{}, /unavailable auto-pause status/],
+		[{ error: "RCON unavailable", autoPause: false }, /Status request failed: RCON unavailable/],
+	]) {
+		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], error: null, ...reply });
+		const refusal = await plugin.autoPauseRefusal(2, "destination");
+		if (expected) assert.match(refusal, expected, JSON.stringify(reply));
+		else assert.equal(refusal, null);
+	}
+});
+
+test("standalone export and import refuse an auto-paused instance before any record or dispatch", async () => {
+	for (const kind of ["export", "import"]) for (const state of [true, null, undefined, "error"]) {
+		const { plugin } = makeControllerHarness();
+		plugin.recoveryReservations = new Map();
+		plugin.requireRecoveryReady = () => {};
+		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], autoPause: state === "error" ? false : state, error: state === "error" ? "RCON unavailable" : null });
+		plugin.platformTree.resolveTargetInstance = () => ({ id: 2, instance: {} });
+		let records = 0, sends = 0;
+		plugin.createOperationRecord = async () => { records++; throw new Error("no operation may be recorded"); };
+		plugin.controller = { instances: new Map([[1, { id: 1 }]]), sendTo: async () => { sends++; throw new Error("no dispatch"); } };
+		const result = kind === "export"
+			? await plugin.handleExportPlatformForDownloadRequestMeasured({ sourceInstanceId: 1, sourcePlatformIndex: 3 })
+			: await plugin.handleImportUploadedExportRequestMeasured({ targetInstanceId: 2, exportData: { platform: { force: "player" }, entities: [] } });
+		assert.equal(result.success, false, kind);
+		assert.match(result.error, state === true ? /has auto-pause on/ : /unavailable auto-pause status/);
+		assert.match(result.error, kind === "export" ? /Nothing was locked or exported/ : /No platform was imported/);
+		assert.equal(records, 0, kind);
+		assert.equal(sends, 0, kind);
+	}
 });

@@ -171,7 +171,7 @@ function makeTransferHarness() {
 		persistPendingTransfer: () => {},
 		persistPendingTransfers: async () => {},
 		removePendingTransfer: () => {},
-		isInstanceOnline: () => true,
+		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
 		platformStorage: {
 			get: (id) => id === "1:001_test" ? stored : null,

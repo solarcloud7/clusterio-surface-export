@@ -848,8 +848,8 @@ export class InstanceListPlatformsRequest {
 	toJSON() { return { forceName: this.forceName }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" }, debugMode: { type: "boolean" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
+		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" }, debugMode: { type: "boolean" }, autoPause: { type: ["boolean", "null"] } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; autoPause?: boolean | null; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
 	};
 }
 
@@ -1659,6 +1659,7 @@ export interface IControllerPlugin {
 	persistPendingTransfers(requiredTransferId?: string): Promise<void>;
 	removePendingTransfer(transferId: string): void;
 	isInstanceOnline(instanceId: number): boolean;
+	autoPauseRefusal(instanceId: number, role: "source" | "destination"): Promise<string | null>;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
@@ -1681,7 +1682,7 @@ export interface IControllerPlugin {
 		resolveInstanceName: (instanceId: number) => string | null;
 		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
 		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
-		requestInstancePlatforms: (instanceId: number, forceName?: string) => Promise<{ platforms: Array<Record<string, unknown>>; error: string | null }>;
+		requestInstancePlatforms: (instanceId: number, forceName?: string) => Promise<{ platforms: Array<Record<string, unknown>>; autoPause?: boolean; error: string | null }>;
 	};
 	platformDepartureTimes: Map<string, number>;
 	activeTransfers: Map<string, ActiveTransfer>;

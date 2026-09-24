@@ -118,6 +118,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 	override async onStart() {
 		this.appliedDebugMode = false;
+		this.appliedAutoPause = await this.readAppliedAutoPause();
 		this.timingEpoch = randomUUID();
 		const epoch = this.timingEpoch;
 		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
@@ -201,6 +202,18 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	private appliedDebugMode = false;
+	private appliedAutoPause: boolean | null = null;
+
+	async readAppliedAutoPause(): Promise<boolean | null> {
+		try {
+			const settings = JSON.parse(await fs.promises.readFile(this.instance.server.writePath("server-settings.json"), "utf8"));
+			return typeof settings?.auto_pause === "boolean" ? settings.auto_pause : null;
+		} catch (err: unknown) {
+			this.logger.warn(`Could not read the auto_pause setting this server started with: ${getErrorMessage(err)}`);
+			return null;
+		}
+	}
+
 	async sendConfigurationToLua() {
 		try {
 			const batchSize = this.cfg<number>("surface_export.batch_size");
@@ -699,6 +712,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		const platforms = await this.listPlatforms(forceName);
 		return {
 			debugMode: this.appliedDebugMode === true,
+			autoPause: this.appliedAutoPause,
 			instanceId: this.i.id,
 			instanceName: this.i.config.get("instance.name"),
 			forceName,

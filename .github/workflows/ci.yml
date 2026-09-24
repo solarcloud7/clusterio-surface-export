@@ -399,6 +399,15 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      - name: Upload UI captures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-captures${{ matrix.suite == 'gallery' && '-gallery' || '' }}
+          path: ci-artifacts/ui-captures/
+          retention-days: 14
+          if-no-files-found: ignore
+
       - name: Collect logs on failure
         if: failure()
         run: |

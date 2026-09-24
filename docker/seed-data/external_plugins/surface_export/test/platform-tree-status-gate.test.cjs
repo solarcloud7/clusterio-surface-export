@@ -30,7 +30,7 @@ function makeInstance(id, hostId, status, debugMode) {
 	};
 }
 
-function makeTree(statuses, appliedDebug = new Map()) {
+function makeTree(statuses, appliedDebug = new Map(), appliedAutoPause = new Map()) {
 	const polled = [];
 	const hosts = new Map([[1, { id: 1, name: "host-1", connected: true, isDeleted: false }]]);
 	const instances = new Map(statuses.map(([id, status, debugMode]) => [id, makeInstance(id, 1, status, debugMode)]));
@@ -40,7 +40,7 @@ function makeTree(statuses, appliedDebug = new Map()) {
 			instances,
 			async sendTo(target) {
 				polled.push(target.instanceId);
-				return { platforms: [], debugMode: appliedDebug.get(target.instanceId) };
+				return { platforms: [], debugMode: appliedDebug.get(target.instanceId), autoPause: appliedAutoPause.get(target.instanceId) };
 			},
 		},
 		activeTransfers: new Map(),
@@ -77,6 +77,13 @@ test("the web tree exposes applied debug state rather than settings awaiting res
 	assert.deepEqual(result.hosts[0].instances.map(instance => instance.debugMode), [false, true, false, false]);
 });
 
+test("the web tree marks auto-pause only for a running server that reports it", async () => {
+	const { tree } = makeTree([[1, "running"], [2, "running"], [3, "stopped"], [4, "running"]], new Map(),
+		new Map([[1, true], [2, false], [3, true], [4, null]]));
+	const result = await tree.buildPlatformTree("player");
+	assert.deepEqual(result.hosts[0].instances.map(instance => instance.autoPause), [true, false, false, false]);
+});
+
 test("tree status joins the selected copy rather than a matching name or index", () => {
 	const { tree } = makeTree([[20, "running"]]);
 	tree.plugin.activeTransfers.set("20:job", {transferId: "20:job", sourceInstanceId: 20,
@@ -102,4 +109,12 @@ test("source UID survives request serialization and a delayed admission", async 
 	assert.equal(await tree.resolvePlatformUid(20, 3, "player", "selected"), "selected");
 	assert.deepEqual(polled, [], "a stale selection must not silently adopt the latest UID");
 	await assert.rejects(tree.resolvePlatformUid(20, 3, "player"), /identity is unavailable/);
+});
+
+test("platform status preserves unknown auto-pause rather than confirming it off", async () => {
+	const { tree } = makeTree([[1, "running"], [2, "running"], [3, "running"], [4, "running"]], new Map(),
+		new Map([[1, true], [2, false], [3, null]]));
+	for (const [id, expected] of [[1, true], [2, false], [3, null], [4, null]]) {
+		assert.equal((await tree.requestInstancePlatforms(id)).autoPause, expected);
+	}
 });

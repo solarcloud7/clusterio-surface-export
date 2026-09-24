@@ -1,3 +1,4 @@
+import { CAPTION_WIDTH } from "../../shared/edge-geometry";
 import type { GatewayLink, GatewayMode } from "../../shared/dto";
 import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
 import type { PlatformStatusFields } from "../platform-actions";
@@ -18,6 +19,7 @@ export type InstanceLike = {
 	address?: string;
 	status?: string;
 	connected?: boolean;
+	autoPause?: boolean;
 	platforms?: PlatformLike[];
 };
 
@@ -305,7 +307,7 @@ export function dirtyKeys(edits: GatewayEdits, baseline: GatewayEdits): string[]
 
 export const NODE_DIAMETER = 150;
 export const CAPTION_HEIGHT = 76;
-export const CAPTION_WIDTH = 190;
+export { CAPTION_WIDTH };
 export const INSTANCE_GAP = 70;
 export const COLUMN_GAP = 90;
 
@@ -401,6 +403,7 @@ export function buildGraph(
 					instanceName: instance.instanceName,
 					address: instance.address || "",
 					online: isOnline(instance),
+					autoPause: instance.autoPause === true,
 					hostKey: column.key,
 					hostName: column.name,
 					platforms,

@@ -94,6 +94,27 @@ body.surface-export-page .site-layout-content-container {
 @media (prefers-reduced-motion: reduce) {
 	.surface-export-ship { transition: none; }
 	.surface-export-ship-holding, .surface-export-ship-queued { animation: none; }
+	.surface-export-autopause-badge { animation: none; }
+}
+
+.surface-export-autopause-badge {
+	position: absolute;
+	left: 50%;
+	top: calc(50% - 16px);
+	transform: translate(-50%, -50%);
+	display: flex;
+	pointer-events: none;
+	z-index: 2;
+	filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 8px rgba(255, 59, 47, 0.55));
+	animation: surface-export-autopause-blink 1.4s steps(1, end) infinite;
+}
+
+@keyframes surface-export-autopause-blink {
+	50% { opacity: 0.35; }
+}
+
+.surface-export-legend-autopause .surface-export-autopause-icon {
+	filter: drop-shadow(0 0 3px rgba(255, 59, 47, 0.6));
 }
 
 .surface-export-legend {

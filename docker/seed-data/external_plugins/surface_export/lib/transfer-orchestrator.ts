@@ -386,6 +386,10 @@ export class TransferOrchestrator {
 				+ "transfer refused before starting. The source platform is unchanged; retry when the "
 				+ "destination is running." };
 		}
+		for (const [instanceId, role] of [[exportData.instanceId, "source"], [targetInstanceId, "destination"]] as const) {
+			const refusal = await this.plugin.autoPauseRefusal(instanceId, role);
+			if (refusal) return { success: false, safeToUnlockSource: true, error: `${refusal} The source platform is unchanged.` };
+		}
 		const innerData = exportData.exportData;
 		timingContext.enterWith(this.txLogger.beginObservation(transferId));
 		const { payloadMetrics, itemCounts, fluidCounts } = timedSync("Payload preparation", () => buildPayloadMetrics(innerData));
@@ -987,6 +991,10 @@ export class TransferOrchestrator {
 		if (!source || source.isDeleted || !target || target.isDeleted || source.id === target.id
 			|| coercePlatformIndex(request.sourcePlatformIndex) === null) return reject("Invalid source, destination or platform");
 		if (!this.plugin.isInstanceOnline(source.id) || !this.plugin.isInstanceOnline(target.id)) return reject("Both instances must be online to queue a transfer");
+		for (const [instanceId, role] of [[source.id, "source"], [target.id, "destination"]] as const) {
+			const refusal = await this.plugin.autoPauseRefusal(instanceId, role);
+			if (refusal) return reject(`${refusal} Nothing was locked or exported.`);
+		}
 		const existing = this.requestQueue.find(request);
 		if (existing) {
 			if (request.sourcePlatformUid && existing.request.sourcePlatformUid !== request.sourcePlatformUid) {
@@ -1100,6 +1108,10 @@ export class TransferOrchestrator {
 				`Destination instance ${name ? `"${name}" ` : ""}(${resolvedTarget.id}) is offline — `
 				+ "transfer refused before starting. Nothing was locked or exported; retry when the "
 				+ "destination is running." };
+		}
+		for (const [instanceId, role] of [[sourceInstanceId, "source"], [resolvedTarget.id, "destination"]] as const) {
+			const refusal = await this.plugin.autoPauseRefusal(instanceId, role);
+			if (refusal) return { success: false, error: `${refusal} Nothing was locked or exported.` };
 		}
 
 		let sourceJobId: string | undefined;
