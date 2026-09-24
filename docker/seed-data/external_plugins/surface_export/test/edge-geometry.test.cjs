@@ -32,18 +32,26 @@ test("horizontal links keep the endpoints they had on the circle", () => {
 });
 
 test("links at every angle start outside the source gateway and its caption", () => {
+	const targets = [[-600, -472], [600, -472]];
 	for (let degrees = 0; degrees < 360; degrees += 5) {
 		const radians = degrees * Math.PI / 180;
-		const target = [Math.round(Math.cos(radians) * 600), Math.round(Math.sin(radians) * 600)];
+		targets.push([Math.round(Math.cos(radians) * 600), Math.round(Math.sin(radians) * 600)]);
+	}
+	for (const target of targets) {
 		const ends = floatingEdgeEndpoints(gateway(0, 0), gateway(...target));
-		assert.equal(inside({ x: ends.sourceX, y: ends.sourceY }, 0, 0), false, `${degrees}°: ${JSON.stringify(ends)}`);
+		assert.equal(inside({ x: ends.sourceX, y: ends.sourceY }, 0, 0), false, `${target}: ${JSON.stringify(ends)}`);
 	}
 });
 
-test("links between gateways dragged close together fall back to the circle rather than crossing", () => {
-	for (const gap of [160, 190]) {
+test("links between gateways dragged close together shrink smoothly instead of crossing", () => {
+	let previous = null;
+	for (let gap = 260; gap >= 20; gap -= 1) {
 		const ends = floatingEdgeEndpoints(gateway(0, 0), gateway(0, gap));
 		assert.ok(ends.sourceY < ends.targetY, `${gap}px: ${JSON.stringify(ends)}`);
-		assert.deepEqual(ends, floatingEdgeEndpoints(circle(0, 0), circle(0, gap)));
+		if (previous) {
+			assert.ok(Math.abs(ends.sourceY - previous.sourceY) <= 1.5 && Math.abs(ends.targetY + 1 - previous.targetY) <= 1.5,
+				`${gap}px jumps from ${JSON.stringify(previous)} to ${JSON.stringify(ends)}`);
+		}
+		previous = ends;
 	}
 });

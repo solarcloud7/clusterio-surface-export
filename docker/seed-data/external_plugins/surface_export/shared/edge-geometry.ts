@@ -97,9 +97,11 @@ export function floatingEdgeEndpoints(source: NodeCircle, target: NodeCircle): E
 	const uy = dy / distance;
 	let sourceDistance = exitDistance(source, ux, uy);
 	let targetDistance = exitDistance(target, -ux, -uy);
-	if (sourceDistance + targetDistance >= distance) {
-		sourceDistance = source.radius;
-		targetDistance = target.radius;
+	const room = Math.max(0, distance - 2 * EDGE_END_GAP);
+	if (sourceDistance + targetDistance > room) {
+		const scale = room / (sourceDistance + targetDistance);
+		sourceDistance *= scale;
+		targetDistance *= scale;
 	}
 	return {
 		sourceX: source.x + ux * sourceDistance,
