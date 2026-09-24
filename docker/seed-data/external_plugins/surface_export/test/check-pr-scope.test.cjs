@@ -18,7 +18,7 @@ function run(t, overrides = {}) {
 	const config = path.join(root, "responses.json");
 	const calls = path.join(root, "calls.jsonl");
 	writeFileSync(config, JSON.stringify({ root, head: "a".repeat(40), local: "b".repeat(40),
-		origin: "c".repeat(40), lockExit: 0, ancestorExit: 0, fetchExit: 0, base: "main", pr: null, baseArg: null,
+		origin: "c".repeat(40), lockExit: 0, ancestorExit: 0, fetchExit: 0, base: "main", pr: null, prState: "OPEN", baseArg: null,
 		originMissing: false, ...overrides }));
 	const command = `
 $global:scopeResponses = Get-Content -LiteralPath $env:SCOPE_RESPONSES -Raw | ConvertFrom-Json
@@ -26,10 +26,10 @@ $global:scopeFetched = $false
 function global:gh {
  ConvertTo-Json -InputObject (@('gh') + @($args)) -Compress | Add-Content -LiteralPath $env:SCOPE_CALLS
  if (-not $global:scopeFetched) { throw 'pull request base was read before fetching origin' }
- if (($args -join ' ') -ne 'pr view --json number,baseRefName') { throw "unexpected gh call: $args" }
+ if (($args -join ' ') -ne 'pr view --json number,baseRefName,state') { throw "unexpected gh call: $args" }
  if ($global:scopeResponses.pr) {
   $global:LASTEXITCODE = 0
-  ConvertTo-Json -InputObject @{ number = 7; baseRefName = $global:scopeResponses.pr } -Compress
+  ConvertTo-Json -InputObject @{ number = 7; baseRefName = $global:scopeResponses.pr; state = $global:scopeResponses.prState } -Compress
  } else {
   $global:LASTEXITCODE = 1
   'no pull requests found for branch "fixture"'
@@ -90,10 +90,18 @@ test("scope check reports freshly fetched refs and invokes only its read/fetch c
 	assert.match(result.stdout, /Merge base:\s+c{40}/);
 	assert.match(result.stdout, /package-lock\.json differs:\s+no/i);
 	assert.match(result.stdout, /Scope check: PASS/);
-	assert.match(result.stdout, /Base:\s+origin\/main \(default; no pull request for this branch: no pull requests found/);
+	assert.match(result.stdout, /Base:\s+origin\/main \(default; gh found no pull request for this branch: no pull requests found/);
 	assert.equal(result.calls.length, 11);
 	assert.deepEqual(result.calls[1].slice(2), ["fetch", "--prune", "origin"]);
-	assert.deepEqual(result.calls[2], ["gh", "pr", "view", "--json", "number,baseRefName"]);
+	assert.deepEqual(result.calls[2], ["gh", "pr", "view", "--json", "number,baseRefName,state"]);
+});
+
+test("a merged or closed pull request no longer selects the base", { skip: toolSkip }, t => {
+	for (const prState of ["MERGED", "CLOSED"]) {
+		const result = run(t, { pr: "codex/factorio-2-1-20", prState, base: "main" });
+		assert.equal(result.status, 0, result.stderr || result.stdout);
+		assert.match(result.stdout, new RegExp(`Base:\\s+origin/main \\(default; pull request #7 is ${prState}\\)`));
+	}
 });
 
 test("scope check compares a stacked branch with its pull request's base", { skip: toolSkip }, t => {

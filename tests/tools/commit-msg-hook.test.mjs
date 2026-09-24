@@ -20,8 +20,9 @@ function commit(t, message, ...options) {
 	return { ...result, log: git("log", "--format=%B").stdout };
 }
 
-test("an ordinary message commits", t => {
-	const result = commit(t, "Guard deployment tools\n\nClaude and Codex sessions share this machine.\n");
+test("an ordinary message commits, including human co-authors", t => {
+	const result = commit(t, "Guard deployment tools\n\nClaude and Codex sessions share this machine.\n\n"
+		+ "Co-authored-by: Claudette Smith <claudette@example.com>\nCo-authored-by: Codexa Lee <codexa@example.com>\n");
 	assert.equal(result.status, 0, result.stderr);
 	assert.match(result.log, /Guard deployment tools/);
 });
@@ -32,6 +33,7 @@ for (const line of [
 	"https://chatgpt.com/codex/tasks/task_e_0123456789",
 	"🤖 Generated with [Claude Code](https://claude.com/claude-code)",
 	"Co-Authored-By: Claude <noreply@anthropic.com>",
+	"Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
 	"co-authored-by: Codex <codex@openai.com>",
 	"# https://claude.ai/code/session_01AbCdEf",
 ]) {

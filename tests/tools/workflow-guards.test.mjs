@@ -92,6 +92,31 @@ test("both lock writers name the checkout, branch and commit that own the lock",
 	assert.equal(existsSync(path), false);
 });
 
+test("both lock writers take the lock without git, recording no branch or commit", {
+	skip: spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0,
+}, t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-nogit-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	const env = { ...process.env, SE_WORKFLOW_TOKEN: "", LOCK_FIXTURE: path,
+		LOCK_HELPER: fileURLToPath(new URL("../../tools/shared/workflow-lock.ps1", import.meta.url)) };
+	const powershell = spawnSync("pwsh", ["-NoProfile", "-Command",
+		"$env:PATH = ''; . $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { Get-Content -LiteralPath $env:LOCK_FIXTURE -Raw }"],
+	{ encoding: "utf8", env });
+	assert.equal(powershell.status, 0, powershell.stderr);
+	const module = new URL("../../tools/shared/workflow-lock.mjs", import.meta.url).href;
+	const node = spawnSync(process.execPath, ["--input-type=module", "-e",
+		`import { readFileSync } from "node:fs"; import { withWorkflowLock } from ${JSON.stringify(module)};
+		await withWorkflowLock(async () => console.log(readFileSync(process.env.LOCK_FIXTURE, "utf8")), process.env.LOCK_FIXTURE);`],
+	{ encoding: "utf8", env: { ...env, PATH: "", Path: "" } });
+	assert.equal(node.status, 0, node.stderr);
+	for (const owner of [JSON.parse(powershell.stdout), JSON.parse(node.stdout)]) {
+		assert.equal(owner.branch, null); assert.equal(owner.commit, null);
+		assert.match(owner.token, /^[0-9a-f-]{36}$/);
+	}
+	assert.equal(existsSync(path), false);
+});
+
 test("a stale or absent controller bundle fails before browser element waits", async () => {
 	const fetcher = async () => ({ ok: true, json: async () => [{ name: "surface_export", web: { main: "static/old.js" } }] });
 	await assert.rejects(assertControllerBundle("http://localhost", { expected: "new.js", fetcher }), /advertised static\/old.js/);

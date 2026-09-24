@@ -1,6 +1,8 @@
 function Get-WorkflowLockSource {
     $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
     $source = [ordered]@{ checkout = $checkout; branch = $null; commit = $null; startedAt = [DateTime]::UtcNow.ToString('o') }
+    # Deliberately quiet: existence probe; a machine without git still takes the lock, recording no branch or commit.
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) { return $source }
     $branch = git -C $checkout rev-parse --abbrev-ref HEAD 2>$null
     if ($LASTEXITCODE -eq 0) { $source.branch = "$branch".Trim() }
     $commit = git -C $checkout rev-parse --short=12 HEAD 2>$null

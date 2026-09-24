@@ -30,9 +30,10 @@ function Resolve-OptionalCommit {
 function Resolve-PullRequestBase {
     # Deliberately quiet: existence probe for the optional GitHub CLI; without it the base is main.
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return 'main', 'default; gh is not installed' }
-    $output = & gh pr view --json 'number,baseRefName' 2>&1
-    if ($LASTEXITCODE -ne 0) { return 'main', "default; no pull request for this branch: $(($output -join ' ').Trim())" }
-    $pullRequest = ($output -join "`n") | ConvertFrom-Json
+    $output = & gh pr view --json 'number,baseRefName,state' 2>&1
+    if ($LASTEXITCODE -ne 0) { return 'main', "default; gh found no pull request for this branch: $(($output -join ' ').Trim())" }
+    $pullRequest = (@($output | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) -join "`n") | ConvertFrom-Json
+    if ($pullRequest.state -ne 'OPEN') { return 'main', "default; pull request #$($pullRequest.number) is $($pullRequest.state)" }
     return $pullRequest.baseRefName, "pull request #$($pullRequest.number)"
 }
 

@@ -14,9 +14,9 @@ function fixture(t, script) {
 	put("tools/shared/cluster-utils.ps1", `
 function Assert-DevelopmentClusterCheckout { $global:calls.Add('checkout'); if ($global:refuseCheckout) { throw 'CHECKOUT_REFUSED' } }
 function Assert-PluginArtifactsFresh { $global:calls.Add('fresh') }
-function Update-PackageLockVersion {}
-function Update-ModuleVersionStamp {}
-function Update-ModuleBuildStamp { 'fixture' }
+function Update-PackageLockVersion { $global:calls.Add('lock-version') }
+function Update-ModuleVersionStamp { $global:calls.Add('module-version') }
+function Update-ModuleBuildStamp { $global:calls.Add('build-stamp'); 'fixture' }
 function Get-SeededInstances { @(@{Host='one';Instance='world';Container='fixture-host'}) }
 `);
 	put("tools/shared/workflow-lock.ps1", "function Invoke-WorkflowLock { param([scriptblock]$Action) & $Action }");
