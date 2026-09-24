@@ -15,7 +15,8 @@
   disposable Docker fixtures for destructive acceptance.
 - Keep unrelated changes and credentials out of commits. Leave lockfiles unchanged
   outside authorized dependency updates. Use `tools/check-pr-scope.ps1` before
-  editing and before preparing a PR.
+  editing and before preparing a PR. It compares with the open PR's base; pass
+  `-Base <branch>` for stacked work that has no PR yet.
 
 ## Build and deployment
 
