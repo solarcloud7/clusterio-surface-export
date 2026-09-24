@@ -5,7 +5,7 @@ import { sample, start, summary, terminal } from "./cases.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 import { destinationRollbackBounds } from "./oracle.mjs";
 
-export const contract = { requires: ["owned disposable Docker lab", "Factorio 2.1.17"],
+export const contract = { requires: ["owned disposable Docker lab", "resolved runtime profile"],
   produces: ["latest-save control", "destination-only rollback observations", "checkpoint hashes and generation markers"],
   "does not": ["restore source or controller", "repair lost cargo", "prove off-host backup availability"] };
 const markerKey="surface_export_manual_checkpoint";

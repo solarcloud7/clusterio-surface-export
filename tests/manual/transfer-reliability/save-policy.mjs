@@ -5,7 +5,7 @@ import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 import { recoveryBrowser } from "./recovery-browser.mjs";
 
 export const contract = {
-  requires: ["owned disposable Docker lab", "Factorio 2.1.17", "verified pre-transfer checkpoint"],
+  requires: ["owned disposable Docker lab", "resolved runtime profile", "verified pre-transfer checkpoint"],
   produces: ["both save policies", "physical restored cargo", "fresh identities", "delayed-message observations"],
   "does not": ["mutate the development cluster", "automatically reconstruct missing platforms", "claim universal crash safety"],
 };

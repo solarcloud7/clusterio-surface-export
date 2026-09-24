@@ -1,6 +1,5 @@
 {
   "schemaVersion": 4,
-  "engine": "2.1.17",
   "invariants": [
     "At most one physically usable copy at each sampled boundary",
     "At least one copy retains the original per-item/quality, belt-side and fluid cargo",

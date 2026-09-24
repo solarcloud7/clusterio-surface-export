@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// requires: idle localhost instances, production transfer pipeline, Factorio 2.1.17 API
+// requires: idle localhost instances, production transfer pipeline, Factorio 2.1.20 API
 // produces: source/payload/inactive-destination/reactivated-destination readings and cleanup proof
 // does not: inject destination progress or queue records, reset saves, or touch pre-existing platforms
 import assert from "node:assert/strict";
@@ -76,7 +76,7 @@ try {
 return {success=true,engine=script.active_mods.base,mods=script.active_mods,
   module=remote.call('surface_export','get_module_version'),checkoutHash=M._checkout_hash,
   budget=M.MINING_PROGRESS_BUDGET_TICKS}`);
-	assert.equal(report.runtime.engine, "2.1.17", "re-certify the fixture for the new engine pin");
+	assert.equal(report.runtime.engine, "2.1.20", "re-certify the fixture for the new engine pin");
 	assert.ok(report.runtime.budget > 0 && report.runtime.budget <= 600);
 	constructed = true;
 	lua(1, `local p=game.forces.player.create_space_platform{name='${NAME}',planet='nauvis',

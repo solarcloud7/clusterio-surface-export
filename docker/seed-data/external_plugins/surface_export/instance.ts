@@ -102,6 +102,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
+		this.i.handle(messages.AnnouncePlayerTravelRequest, request => this.lua.announcePlayerTravel(request));
 		this.i.handle(messages.ReadExportRequest, this.handleReadExportRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
@@ -116,6 +117,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	override async onStart() {
+		this.appliedDebugMode = false;
 		this.timingEpoch = randomUUID();
 		const epoch = this.timingEpoch;
 		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
@@ -198,6 +200,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (quarantined) this.logger.warn(`${quarantined} retired source platform(s) restored from a save remain quarantined; matching pending transfers may retry deletion.`);
 	}
 
+	private appliedDebugMode = false;
 	async sendConfigurationToLua() {
 		try {
 			const batchSize = this.cfg<number>("surface_export.batch_size");
@@ -212,6 +215,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				debugDestinationSnapshot: this.cfg<boolean>("surface_export.debug_destination_snapshot"),
 				sectionedCodec: this.cfg<boolean>("surface_export.sectioned_codec"),
 				profileBatches: this.cfg<boolean>("surface_export.profile_batches") });
+			this.appliedDebugMode = debugMode === true;
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, max_export_cache_size=${maxExportCacheSize}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
@@ -694,6 +698,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		const forceName = request.forceName || "player";
 		const platforms = await this.listPlatforms(forceName);
 		return {
+			debugMode: this.appliedDebugMode === true,
 			instanceId: this.i.id,
 			instanceName: this.i.config.get("instance.name"),
 			forceName,

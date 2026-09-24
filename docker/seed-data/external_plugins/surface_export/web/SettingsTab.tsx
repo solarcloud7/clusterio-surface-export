@@ -6,6 +6,7 @@ import { Config, ConfigAccess, ControllerConfig, ControllerConfigGetRequest, Con
 import { getErrorMessage } from "./utils";
 import "./settings.css";
 import type { SurfaceExportState } from "./view-models";
+import { hasDebugInstance } from "./gateway/debug-mode";
 
 const fields = [
 	{ name: "surface_export.platform_source_of_truth", label: "Platform source of truth", group: "recovery", unit: "", help: "Choose how to handle platforms restored by loading an older save. Active and unresolved transfers remain protected in both modes.", applies: "Takes effect when each instance restarts.", min: 0 },
@@ -21,10 +22,10 @@ const groups = [
 ];
 
 const instanceSettings = [
-	{ title: "Batch sizes", help: "Control how much entity and belt work runs per batch. Each captured belt lane group is restored and checked together, so a large group can exceed the limit." },
-	{ title: "Belt trace", help: "Record belt item positions after a successful restore. Failed restores keep this evidence even when tracing is off." },
-	{ title: "Batch profiling", help: "Save individual timings for up to 2,000 batches per job. Stage totals are always recorded." },
-	{ title: "Full destination snapshots", help: "Save a full platform snapshot after successful validation. Requires debug mode and adds a scan that can pause the game. Transfer logs and failure diagnostics remain available when this is off." },
+	{ title: "Batch sizes", debugOnly: false, help: "Control how much entity and belt work runs per batch. Each captured belt lane group is restored and checked together, so a large group can exceed the limit." },
+	{ title: "Belt trace", debugOnly: false, help: "Record belt item positions after a successful restore. Failed restores keep this evidence even when tracing is off." },
+	{ title: "Batch profiling", debugOnly: false, help: "Save individual timings for up to 2,000 batches per job. Stage totals are always recorded." },
+	{ title: "Full destination snapshots", debugOnly: true, help: "Save a full platform snapshot after successful validation. Requires debug mode and adds a scan that can pause the game. Transfer logs and failure diagnostics remain available when this is off." },
 ];
 
 type Values = Record<string, ReturnType<ControllerConfig["get"]>>;
@@ -159,7 +160,7 @@ export default function SettingsTab({ active, state }: { active: boolean; state?
 				<p>Batch sizes and diagnostics are set separately on each instance.</p>
 				<Button href="/instances" icon={<SettingOutlined />}>Open instances</Button>
 				<div className="se-settings-reference">
-					{instanceSettings.map(setting => <details key={setting.title}>
+					{instanceSettings.filter(setting => !setting.debugOnly || hasDebugInstance(state?.tree)).map(setting => <details key={setting.title}>
 						<summary>{setting.title}<RightOutlined aria-hidden="true" /></summary>
 						<p>{setting.help}</p>
 					</details>)}

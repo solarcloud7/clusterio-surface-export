@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DockerLab, ROOT } from "../transfer-reliability/docker-lab.mjs";
 import { redactDiagnostic } from "../../../tools/shared/diagnostics.mjs";
 import { gatewayMapObserver, verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
+import { assertRuntimeVersion } from "../../../tools/shared/runtime-profile.mjs";
+
+export function parseExportAssets(details) {
+  const section = details.match(/^exportManifest:\r?\n  assets:\r?\n((?:    [^\r\n]*(?:\r?\n|$))*)/m)?.[1];
+  assert.ok(section, "exported asset manifest missing");
+  return Object.fromEntries([...section.matchAll(/^    ([\w-]+): ([\w.-]+)$/gm)].map(m => [m[1], m[2]]));
+}
 
 export class ConsumerLab extends DockerLab {
   mutateContainer(verb, name, extra = []) {
@@ -41,8 +48,7 @@ export class ConsumerLab extends DockerLab {
   async install(inputs, clientVolume) {
     assert.match(clientVolume, /^[a-zA-Z0-9][a-zA-Z0-9_.-]+$/, "expected an explicit source client volume");
     this.docker(["volume", "inspect", clientVolume]); // Refuse typos; docker -v would create an empty volume.
-    const tag = readFileSync(join(ROOT, ".env.example"), "utf8").match(/^CLUSTERIO_IMAGE_TAG=(.+)$/m)[1].trim();
-    this.image = `ghcr.io/solarcloud7/clusterio-docker-host:${tag}`;
+    this.image = this.runtimeProfile.hostImage;
     this.docker(["network", "create", "--label", `surface-export.manual-run=${this.run}`, this.run]);
     const volume = suffix => {
       const name = `${this.run}-${suffix}`;
@@ -56,17 +62,22 @@ export class ConsumerLab extends DockerLab {
       "--mount", `type=volume,src=${clientVolume},dst=/source-client,readonly`,
       "-v", `${this.clientVolume}:/opt/test-client`, "-v", `${this.installVolume}:/consumer`,
       "-v", `${inputs}:/inputs:ro`, "--entrypoint", "sleep", this.image, "infinity"]);
+    this.docker(["cp", join(ROOT, "tests/manual/consumer-install/artifacts.cjs"), `${helper}:/inspect-artifacts.cjs`]);
+    const artifacts = JSON.parse(this.docker(["exec", helper, "node", "/inspect-artifacts.cjs"]));
+    assert.equal(artifacts.gatewayFactorioVersion, this.runtimeProfile.factorioVersion.split(".").slice(0, 2).join("."), "companion targets a different engine series");
+    this.resolvedRuntime = Object.freeze({...this.runtimeProfile, pluginVersion: artifacts.pluginVersion, gatewayVersion: artifacts.gatewayVersion});
     this.docker(["exec", helper, "sh", "-c", "cp -a /source-client/. /opt/test-client/ && chown clusterio:clusterio /consumer"], { timeout: 120_000 });
     const engine = this.docker(["exec", helper, "/opt/test-client/bin/x64/factorio", "--version"]);
-    assert.match(engine, /Version: 2\.1\.17/);
+    assertRuntimeVersion(engine.match(/Version: (\d+\.\d+\.\d+)/)?.[1], this.runtimeProfile.factorioVersion, "Full client");
     this.docker(["exec", helper, "test", "-d", "/opt/test-client/data/core/graphics"]);
     this.docker(["cp", join(ROOT, "tests/manual/consumer-install/bootstrap.mjs"), `${helper}:/bootstrap.mjs`]);
     console.log("Running the pinned upstream installer in an empty consumer directory");
     const installation = JSON.parse(this.docker(["exec", "--user", "clusterio", "-w", "/consumer", helper,
-      "node", "/bootstrap.mjs"], { timeout: 360_000 }));
+      "node", "/bootstrap.mjs", this.runtimeProfile.clusterioVersion], { timeout: 360_000 }));
+    assertRuntimeVersion(installation.packageVersion, this.runtimeProfile.pluginVersion, "Installed plugin");
     this.docker(["cp", join(inputs, "gateway.zip"), `${helper}:/consumer/gateway.zip`]);
     this.docker(["exec", helper, "chmod", "a+r", "/consumer/gateway.zip"]);
-    this.installation = { ...installation, engine: engine.trim(), image: this.image };
+    this.installation = { ...installation, runtime:this.runtimeProfile, engine: engine.trim(), image: this.image };
     return this.installation;
   }
   async start() {
@@ -87,8 +98,10 @@ export class ConsumerLab extends DockerLab {
     }
     await this.until(() => { const list = this.ctl("host", "list"); return [1, 2].every(n => list.includes(`clusterio-host-${n}`)); }, "both upstream hosts", 90);
     this.ctl("mod", "upload", "/consumer/gateway.zip");
-    this.ctl("mod-pack", "create", "consumer-acceptance", "2.1.17", "--mods", "base:2.1.17", "space-age:2.1.17",
-      "quality:2.1.17", "elevated-rails:2.1.17", "recycler:2.1.17", "surfexp_gateways:0.6.5");
+    const {factorioVersion,gatewayVersion}=this.runtimeProfile;
+    this.ctl("mod-pack", "create", "consumer-acceptance", factorioVersion, "--mods",
+      ...["base","space-age","quality","elevated-rails","recycler"].map(name=>`${name}:${factorioVersion}`),
+      `surfexp_gateways:${gatewayVersion}`);
     this.modPackId = Number(this.ctl("mod-pack", "show", "consumer-acceptance").match(/^id: (\d+)$/m)?.[1]);
     assert.ok(Number.isSafeInteger(this.modPackId), "mod-pack ID unavailable");
     this.ctl("controller", "config", "set", "controller.default_mod_pack_id", String(this.modPackId));
@@ -97,7 +110,7 @@ export class ConsumerLab extends DockerLab {
     for (const n of [1, 2]) {
       const name = this.hosts[n].instance;
       this.ctl("instance", "create", name);
-      for (const [key, value] of Object.entries({ "factorio.version": "2.1.17", "factorio.mod_pack_id": this.modPackId,
+      for (const [key, value] of Object.entries({ "factorio.version": factorioVersion, "factorio.mod_pack_id": this.modPackId,
         "factorio.settings": JSON.stringify({ visibility: { public: false, lan: false }, auto_pause: false, autosave_interval: 0 }),
         "surface_export.debug_mode": true })) {
         this.ctl("instance", "config", "set", name, key, String(value));
@@ -112,7 +125,7 @@ export class ConsumerLab extends DockerLab {
     console.log("Exporting real game locale, prototypes, and icons through Clusterio");
     this.command(["instance", "export-data", this.hosts[1].instance], 180_000);
     this.exportDetails = this.ctl("mod-pack", "show", "consumer-acceptance");
-    this.assets = Object.fromEntries([...this.exportDetails.matchAll(/^    ([\w-]+): ([\w.-]+)$/gm)].map(m => [m[1], m[2]]));
+    this.assets = parseExportAssets(this.exportDetails);
     assert.ok(this.assets.prototypes, "export-data did not publish a prototype manifest");
     for (const n of [1, 2]) this.command(["instance", "start", this.hosts[n].instance], 120_000);
     await this.ready();
@@ -120,7 +133,7 @@ export class ConsumerLab extends DockerLab {
     for (const n of [1, 2]) {
       const state = this.lua(n, `local result=(function() ${gatewayMapObserver} end)();result.success=true;return result`).result;
       state.instance = this.hosts[n].instance; state.instanceId = this.ids[n]; state.platforms = Object.values(state.platforms);
-      verifyGatewayMap(state, { version: "0.6.5" }); this.gatewayMaps.push(state);
+      verifyGatewayMap(state, { version: gatewayVersion }); this.gatewayMaps.push(state);
     }
   }
 }

@@ -323,3 +323,32 @@ test("background recovery visits all 500 identities before finish and reports a 
 		}
 	}
 });
+
+test("debug configuration requires an applied Lua acknowledgement", async () => {
+	const cfg = {batchSize: 10, maxConcurrentJobs: 1, showProgress: false, debugMode: true, maxExportCacheSize: 5};
+	for (const reply of ["", "script error", "null", "{}", '{"configured":false,"debugMode":true}', '{"configured":true,"debugMode":false}']) {
+		const lua = new LuaInterface({sendRcon: async () => reply});
+		await assert.rejects(lua.configure(cfg));
+	}
+	await new LuaInterface({sendRcon: async () => '{"configured":true,"debugMode":true}'}).configure(cfg);
+});
+
+test("platform status retains applied debug mode until successful reconfiguration", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	let configured = true;
+	plugin.cfg = key => key === "surface_export.debug_mode" ? configured : 10;
+	plugin.lua = {configure: async () => {}};
+	plugin.instance = {id: 1, config: {get: () => "fact1"}};
+	plugin.listPlatforms = async () => [];
+	plugin.logger = noopLogger;
+	assert.equal((await plugin.handleInstanceListPlatformsRequest({})).debugMode, false);
+	await plugin.sendConfigurationToLua();
+	configured = false;
+	assert.equal((await plugin.handleInstanceListPlatformsRequest({})).debugMode, true);
+	plugin.lua.configure = async () => {throw Error("not applied");};
+	await plugin.sendConfigurationToLua();
+	assert.equal((await plugin.handleInstanceListPlatformsRequest({})).debugMode, true);
+	plugin.lua.configure = async () => {};
+	await plugin.sendConfigurationToLua();
+	assert.equal((await plugin.handleInstanceListPlatformsRequest({})).debugMode, false);
+});

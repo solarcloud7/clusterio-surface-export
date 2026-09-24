@@ -20,6 +20,15 @@ const packageIndex=args.indexOf("--package-dir");
 const packageArgument=packageIndex<0?null:args.splice(packageIndex,2)[1];
 if(packageIndex>=0&&!packageArgument) throw new Error("--package-dir requires a staged runtime directory");
 const packageDirectory=packageArgument?resolve(ROOT,packageArgument):null;
+const runtime = {};
+const runtimeArgs = [];
+for (const [flag,key] of [["--factorio-version","factorioVersion"],["--image-tag","imageTag"],["--gateway-version","gatewayVersion"]]) {
+  const index=args.indexOf(flag);
+  if(index<0) continue;
+  const value=args.splice(index,2)[1];
+  if(!value || value.startsWith("--") || args.includes(flag)) throw new Error(`${flag} requires one explicit value`);
+  runtime[key]=value;runtimeArgs.push(flag,value);
+}
 if(packageDirectory) {
   const within=relative(join(ROOT,"ci-artifacts"),packageDirectory);
   if(!within||within.startsWith("..")||isAbsolute(within)) throw new Error("Candidate runtime must be under ci-artifacts");
@@ -29,11 +38,12 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
   for(const c of contract.cases) console.log(`${c.id}: ${c.purpose}`);
   console.log("\nTool check: --check checkpoints (pinned Node/JSZip only; no Factorio or plugin build required)");
   console.log("Candidate runtime: --package-dir ci-artifacts/<package> (built plugin, module and package metadata)");
+  console.log("Version overrides: --factorio-version X.Y.Z --gateway-version X.Y.Z --image-tag <immutable revision>. Defaults come from seeds, companion metadata and .env.example.");
   console.log("\nAll cases sequentially: --all (continues after STOP, stops on HARNESS_ERROR).\nEach case creates and removes its own Docker cluster. No live-cluster mode.\nOffline: --analyze <result.json>\nAfter runner interruption: --cleanup <run-id>\nCleanup exercise: --case <id> --fail-after-setup\nExit: 0 PASS, 2 STOP (observed violation), 1 HARNESS_ERROR.");
 } else if(args[0]==="--all"&&args.length===1) {
   for(const c of contract.cases) {
     const code=await new Promise((resolve,reject)=>{
-      const child=spawn(process.execPath,[fileURLToPath(import.meta.url),"--case",c.id,...(sectionedCodec?["--sectioned"]:[]),...(packageDirectory?["--package-dir",packageDirectory]:[])],{stdio:"inherit"});
+      const child=spawn(process.execPath,[fileURLToPath(import.meta.url),"--case",c.id,...runtimeArgs,...(sectionedCodec?["--sectioned"]:[]),...(packageDirectory?["--package-dir",packageDirectory]:[])],{stdio:"inherit"});
       child.on("error",reject);child.on("exit",resolve);
     });
     if(code!==0&&code!==2) {process.exitCode=1;break;}
@@ -66,6 +76,8 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
     for(const file of checkpoint?["run.mjs","docker-lab.mjs","lifecycle.mjs","checkpoint-check.mjs"]:["run.mjs","docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs","destination-rollback.mjs","save-policy.mjs","recovery-browser.mjs"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
     if(checkpoint) report.hashes[".env.example"]=hash(join(ROOT,".env.example"));
+    report.hashes["runtime-profile"]=hash(join(ROOT,"tools/shared/runtime-profile.mjs"));
+    if(!checkpoint) report.hashes["start-patched-save"]=hash(join(ROOT,"tests/lab-gallery/start-patched-save.mjs"));
     for(const file of checkpoint?[]:["dist/node/controller.js","dist/node/instance.js","module/core/import-completion.lua","module/utils/transfer-receipts.lua"])
       report.hashes[`plugin/${file}`]=hash(join(packageDirectory||PLUGIN,file));
     if(!checkpoint) {
@@ -73,10 +85,11 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
       report.hashes["physical-contract"]=hash(join(ROOT,"tests/integration/transfer-cleanup/oracle.mjs"));
     }
     const file=join(directory,"result.json"),save=()=>writeFileSync(file,JSON.stringify(report,null,2)+"\n");save();
-    const lab=new DockerLab(run,directory,{sectionedCodec,packageDirectory,exposeHttp:chosen.id.startsWith("save-policy-")||chosen.id==="snapshot-recovery"});
+    const lab=new DockerLab(run,directory,{sectionedCodec,packageDirectory,runtime,exposeHttp:chosen.id.startsWith("save-policy-")||chosen.id==="snapshot-recovery"});
     process.exitCode=await runLab({lab,report,save,work:async()=>{
       console.log(`Starting disposable Docker run ${run}: ${chosen.id}`);
       if(checkpoint) {await checkpointCheck(lab,report,save);return;}
+      report.runtime=lab.runtimeProfile;report.contract={...contract,engine:lab.runtimeProfile.factorioVersion};save();
       report.environment=await lab.setup();save();console.log("Disposable instances ready; executing contract");
       if(failAfterSetup) throw new Error("Intentional harness failure after setup; verify cleanup.success");
       lab.deadline=Date.now()+contract.bounds.caseSeconds*1000;

@@ -98,16 +98,6 @@ data:extend({
 		alt_reverse_select = lab_select({ r = 1, g = 0.3, b = 0.3 }),
 	},
 	{
-		type = "shortcut",
-		name = "selection-lab-tool",
-		action = "spawn-item",
-		item_to_spawn = "selection-lab-tool",
-		icon = "__base__/graphics/icons/blueprint.png",
-		icon_size = 64,
-		small_icon = "__base__/graphics/icons/blueprint.png",
-		small_icon_size = 64,
-	},
-	{
 		type = "custom-input",
 		name = "selection-lab-undo",
 		key_sequence = "CONTROL + ALT + Z",

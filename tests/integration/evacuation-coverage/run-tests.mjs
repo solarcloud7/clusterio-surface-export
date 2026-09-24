@@ -42,7 +42,7 @@ try {
 	check(asArray(debug.denied).length === 3 && asArray(debug.denied).every(value => value === true),
 		"registered debug commands refuse while debug is off");
 	check(debug.enabled && debug.restored, "debug command works when enabled and original setting is restored");
-	check(debug.engine === "2.1.17", "pinned Factorio 2.1.17 runtime", debug.engine);
+	check(debug.engine === "2.1.20", "pinned Factorio 2.1.20 runtime", debug.engine);
 	const setup = rconJson(
 		`(function() local p=game.forces.player.create_space_platform{name='${PROBE}', planet='nauvis', starter_pack='space-platform-starter-pack'} `
 		+ `p.apply_starter_pack() `

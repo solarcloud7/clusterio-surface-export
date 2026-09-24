@@ -59,9 +59,12 @@ export class LuaInterface {
 			`debug_destination_snapshot=${cfg.debugDestinationSnapshot === true}, ` +
 			`profile_batches=${cfg.profileBatches === true}, sectioned_codec=${this.sectionedCodec}, ` +
 			`max_export_cache_size=${cfg.maxExportCacheSize}` +
-			`}) ` +
+			`}); rcon.print(helpers.table_to_json({configured=storage.surface_export_configuration_received == true, debugMode=storage.surface_export_config.debug_mode == true})) ` +
 			`end`;
-		await this.host.sendRcon(script, true);
+		const response = JSON.parse((await this.host.sendRcon(script)).trim());
+		if (response?.configured !== true || response.debugMode !== (cfg.debugMode === true)) {
+			throw new Error("Lua debug configuration acknowledgement does not match");
+		}
 	}
 
 	async configureGateways(gatewaysJson: string, activeGatewaysJson?: string): Promise<{ gateways: number }> {
@@ -142,6 +145,12 @@ export class LuaInterface {
 			);
 		}
 		await this.host.sendRcon(script, true);
+	}
+
+	async announcePlayerTravel(request: { playerName: string; sourceName: string; targetName: string }): Promise<import("../messages").SimpleResponse> {
+		const args = [request.playerName, request.sourceName, request.targetName].map(value => `"${escapeString(value)}"`).join(", ");
+		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "announce_player_travel", ${args})))`);
+		return JSON.parse(raw.trim());
 	}
 
 	async exportPlatform(platformIndex: number, forceName: string, targetArg: string, operationId?: string, platformUid?: string): Promise<string> {

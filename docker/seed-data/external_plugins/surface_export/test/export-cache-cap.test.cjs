@@ -19,7 +19,7 @@ function code(rel) {
 
 function captureConfigureScript(cfg) {
 	const sent = [];
-	const host = { sendRcon: async (script) => { sent.push(script); return ""; } };
+	const host = { sendRcon: async (script) => { sent.push(script); return '{"configured":true,"debugMode":false}'; } };
 	const logger = { verbose: () => {} };
 	const lua = new LuaInterface(host, logger);
 	return lua.configure(cfg).then(() => {

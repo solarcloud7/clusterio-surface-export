@@ -1,6 +1,6 @@
 // snapshot-model.test — the walk roster, the pairing key, and the generated walker
 //
-// requires: the vendored scripts/factorio-api-index.json at the 2.1.17 pin
+// requires: the vendored scripts/factorio-api-index.json at the 2.1.20 pin
 // produces: pins on the readable-attribute roster, the cell states, the hash constants the emitted
 //           Lua must carry, and the fingerprint's sensitivity to what was walked
 // does not: execute the emitted Lua (no Lua runtime offline) — the constants are pinned in one
@@ -18,7 +18,7 @@ import {
 
 test("the LuaEntity walk roster is the READABLE attributes, and both counts are pinned", () => {
 	const roster = walkableAttributes("LuaEntity");
-	assert.equal(roster.pin, "2.1.17");
+	assert.equal(roster.pin, "2.1.20");
 	assert.equal(roster.total, 313,
 		"LuaEntity carries 313 merged attributes at this pin (+2 vs the 2.1.11 index: local_effect, potential_effects)");
 	assert.ok(roster.readable.includes("local_effect") && roster.readable.includes("potential_effects"),

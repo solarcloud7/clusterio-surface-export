@@ -5,7 +5,7 @@ const base = { batchSize: 50, maxConcurrentJobs: 3, showProgress: false, debugMo
 
 test("belt batching configuration is separate from entity batching and expensive trace is opt-in", async () => {
 	const calls = [];
-	const lua = new LuaInterface({ sendRcon: async command => { calls.push(command); return ""; } }, {});
+	const lua = new LuaInterface({ sendRcon: async command => { calls.push(command); return '{"configured":true,"debugMode":true}'; } }, {});
 	await lua.configure(base);
 	assert.match(calls[0], /batch_size=50,/);
 	assert.match(calls[0], /belt_batch_size=500, belt_trace=false,/);
@@ -24,7 +24,7 @@ test("invalid belt budgets never reach RCON", async () => {
 
 test("general debug does not implicitly enable destination snapshots over RCON", async () => {
 	const calls = [];
-	const lua = new LuaInterface({ sendRcon: async command => { calls.push(command); return ""; } }, {});
+	const lua = new LuaInterface({ sendRcon: async command => { calls.push(command); return '{"configured":true,"debugMode":true}'; } }, {});
 	await lua.configure(base);
 	await lua.configure({ ...base, debugDestinationSnapshot: true });
 	await lua.configure({ ...base, debugDestinationSnapshot: false });

@@ -72,6 +72,7 @@ jobs:
           lua5.2 tests/lua/planet-policy.lua
           lua5.2 tests/lua/platform-boarding.lua
           lua5.2 tests/lua/remote-debug-gates.lua
+          lua5.2 tests/lua/player-travel.lua
           lua5.2 tests/lua/export-cache-protection.lua
           lua5.2 tests/lua/sync-mode-gate.lua
           lua5.2 tests/lua/source-recovery.lua
@@ -171,7 +172,7 @@ jobs:
       - name: Create external factorio-client volume
         run: |
           # compose declares this volume `external`, so `up` fails unless it already exists.
-          docker volume create factorio-client-2117
+          docker volume create factorio-client-2120
 
       - name: Pull Docker images
         run: |

@@ -6,6 +6,12 @@ import { parseEditKey } from "./gateway-graph";
 import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
 import type { TransferSummary } from "../view-models";
+import type { PlatformTreeState } from "../view-models";
+
+export function hasDebugInstance(tree: PlatformTreeState | null | undefined): boolean {
+	return [...(tree?.hosts.flatMap(host => host.instances) ?? []), ...(tree?.unassignedInstances ?? [])]
+		.some(instance => instance.debugMode === true);
+}
 
 const STORAGE_KEY = "surface_export.gateway_debug";
 
