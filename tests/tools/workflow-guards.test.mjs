@@ -101,7 +101,7 @@ test("both lock writers take the lock without git, recording no branch or commit
 	const env = { ...process.env, SE_WORKFLOW_TOKEN: "", LOCK_FIXTURE: path,
 		LOCK_HELPER: fileURLToPath(new URL("../../tools/shared/workflow-lock.ps1", import.meta.url)) };
 	const powershell = spawnSync("pwsh", ["-NoProfile", "-Command",
-		"$env:PATH = ''; . $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { Get-Content -LiteralPath $env:LOCK_FIXTURE -Raw }"],
+		"$ErrorActionPreference = 'Stop'; $env:PATH = ''; . $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { Get-Content -LiteralPath $env:LOCK_FIXTURE -Raw }"],
 	{ encoding: "utf8", env });
 	assert.equal(powershell.status, 0, powershell.stderr);
 	const module = new URL("../../tools/shared/workflow-lock.mjs", import.meta.url).href;
