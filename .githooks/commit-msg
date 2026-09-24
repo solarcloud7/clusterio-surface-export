@@ -1,0 +1,10 @@
+#!/bin/sh
+# commit-msg — refuse agent session links and agent attribution in commit messages.
+# requires: git passing the commit message file as $1; this checkout's hooksPath set to .githooks
+# produces: a refused commit naming the offending lines; text after git's scissors line is ignored
+# does not: check pull request bodies, rewrite the message, or inspect commits already made
+
+pattern='claude\.ai/code/session_|^claude-session:|chatgpt\.com/codex/tasks/|generated with \[?claude code|^co-authored-by: *(claude|codex)'
+matches=$(sed -E '/^. -+ >8 -+$/,$d' "$1" | grep -Ei "$pattern") || exit 0
+printf 'commit-msg: refused; remove the agent session link or attribution:\n%s\n' "$matches" >&2
+exit 1
