@@ -30,8 +30,8 @@ try { Assert-DevelopmentClusterCheckout -Root $fixture.root } catch { $failure =
 	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
 }
 
-test("the checkout the cluster runs from may deploy, whatever its path spelling", { skip }, () => {
-	for (const spelling of [here, `${here.toUpperCase()}${process.platform === "win32" ? "\\" : "/"}`]) {
+test("the checkout the cluster runs from may deploy with a trailing separator", { skip }, () => {
+	for (const spelling of [here, `${here}${process.platform === "win32" ? "\\" : "/"}`]) {
 		const result = guard({ rows: ["atlas-controller|/elsewhere", `surface-export-controller|${spelling}`,
 			`surface-export-host-1|${here}`, `surface-export-host-2|${here}`] });
 		assert.equal(result.error, null, spelling);
@@ -82,4 +82,10 @@ test("an unreadable Docker state is refused rather than treated as no cluster", 
 	const result = guard({ dockerExit: 1 });
 	assert.match(result.error, /docker ps failed \(exit 1\)/);
 	assert.ok(!result.calls.some(call => call.startsWith("git")));
+});
+
+test("checkout path case follows the operating system", { skip }, () => {
+	const result = guard({ rows: [`surface-export-controller|${here.toUpperCase()}`] });
+	if (process.platform === "win32") assert.equal(result.error, null);
+	else assert.match(result.error, /runs from .*not from this checkout/);
 });

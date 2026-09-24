@@ -174,7 +174,7 @@ function Assert-DevelopmentClusterCheckout {
             throw "$($container.Name) was not started by docker compose, so the checkout it mounts is unknown. Nothing was changed."
         }
         $source = [IO.Path]::GetFullPath($container.Dir).TrimEnd('\', '/')
-        if ($source -ne $here) {
+        if (-not [string]::Equals($source, $here, $(if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }))) {
             throw ("The development cluster ($($container.Name)) runs from $source, not from this checkout ($here). " +
                 "Deploy and restart from $source; build-plugin.ps1 -OutputDirectory builds in isolation. Nothing was changed.")
         }
