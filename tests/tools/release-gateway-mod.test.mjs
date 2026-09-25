@@ -20,17 +20,23 @@ function repo(t) {
 	return root;
 }
 
-function fakeGh({ mainBlob = "blob-a", failWatch = [] } = {}) {
+function fakeGh({ mainBlob = "blob-a", failWatch = [], competing = [] } = {}) {
 	const calls = [];
 	const dispatches = [];
+	const requestIds = [];
 	const run = (cmd, args, { allowFailure = false } = {}) => {
 		calls.push(`${cmd} ${args.join(" ")}`);
 		if (cmd === "git" && args[0] === "fetch") return "";
 		if (cmd === "git" && args[0] === "hash-object") return "blob-a";
 		if (cmd === "git" && args[0] === "rev-parse") return mainBlob;
-		if (args[0] === "workflow") { dispatches.push(args.find(a => a.startsWith("publish=")).slice(8)); return ""; }
+		if (args[0] === "workflow") {
+			dispatches.push(args.find(a => a.startsWith("publish=")).slice(8));
+			requestIds.push(args.find(a => a.startsWith("request_id=")).slice(11));
+			return "";
+		}
 		if (args[0] === "run" && args[1] === "list") {
-			return JSON.stringify([{ databaseId: 100 + dispatches.length, createdAt: new Date().toISOString(), event: "workflow_dispatch" }]);
+			const own = requestIds.map((id, i) => ({ databaseId: 101 + i, displayTitle: `Gateway mod release 0.6.9 ${id}`, event: "workflow_dispatch" }));
+			return JSON.stringify([...competing, ...own].reverse());
 		}
 		if (args[0] === "run" && args[1] === "watch") {
 			if (failWatch.includes(Number(args[2]))) { assert.ok(allowFailure); return null; }
@@ -84,14 +90,33 @@ test("a portal release with different bytes is reported as a failure", async t =
 		portalRelease: async () => ({ version: "0.6.9", sha1: "0".repeat(40) }) }), /does not match the local ZIP/);
 });
 
-test("the dispatched run is the oldest one created after the dispatch", () => {
-	const at = Date.parse("2026-09-25T00:10:00Z");
+test("a competing successful run does not stand in for the dispatched run's failure", async t => {
+	const gh = fakeGh({ failWatch: [101], competing: [
+		{ databaseId: 90, displayTitle: "Gateway mod release 0.6.9 other-caller", event: "workflow_dispatch" },
+		{ databaseId: 91, displayTitle: "Gateway mod release 0.6.9 ", event: "workflow_dispatch" },
+	] });
+	await assert.rejects(release({ root: repo(t), run: gh.run, publish: true, ...quiet }), /validate-only run 101 failed/);
+	assert.deepEqual(gh.dispatches, ["false"]);
+	assert.ok(!gh.calls.some(c => /run watch (90|91) /.test(c)), gh.calls.join("\n"));
+});
+
+test("each dispatch carries its own request id", async t => {
+	const gh = fakeGh();
+	const ids = ["id-validate", "id-publish"];
+	await release({ root: repo(t), run: gh.run, publish: true, ...quiet, newRequestId: () => ids.shift(),
+		portalRelease: async () => ({ version: "0.6.9", sha1 }) });
+	assert.ok(gh.calls.some(c => c.includes("publish=false -f request_id=id-validate")), gh.calls.join("\n"));
+	assert.ok(gh.calls.some(c => c.includes("publish=true -f request_id=id-publish")), gh.calls.join("\n"));
+	assert.ok(gh.calls.some(c => /run watch 101 /.test(c)) && gh.calls.some(c => /run watch 102 /.test(c)), gh.calls.join("\n"));
+});
+
+test("run selection matches the whole request id token, never a timestamp or substring", () => {
 	const runs = [
-		{ databaseId: 1, createdAt: "2026-09-25T00:00:00Z", event: "workflow_dispatch" },
-		{ databaseId: 3, createdAt: "2026-09-25T00:10:09Z", event: "workflow_dispatch" },
-		{ databaseId: 2, createdAt: "2026-09-25T00:10:02Z", event: "workflow_dispatch" },
-		{ databaseId: 4, createdAt: "2026-09-25T00:10:01Z", event: "push" },
+		{ databaseId: 1, displayTitle: "Gateway mod release 0.6.9 abcd", event: "workflow_dispatch" },
+		{ databaseId: 2, displayTitle: "Gateway mod release 0.6.9 abc", event: "workflow_dispatch" },
+		{ databaseId: 3, displayTitle: "Gateway mod release 0.6.9 abc", event: "push" },
 	];
-	assert.equal(pickDispatchedRun(runs, at).databaseId, 2);
-	assert.equal(pickDispatchedRun(runs.slice(0, 1), at), null);
+	assert.equal(pickDispatchedRun(runs, "abc").databaseId, 2);
+	assert.equal(pickDispatchedRun(runs, "ab"), null);
+	assert.throws(() => pickDispatchedRun([...runs, { ...runs[1], databaseId: 4 }], "abc"), /2 runs carry request id abc/);
 });

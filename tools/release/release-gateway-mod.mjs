@@ -6,7 +6,7 @@
 //           passed publish run and a Mod Portal release whose sha1 matches the local ZIP; exit 1 on any refusal
 // does not: build or commit the ZIP, bump the version, sync clients, or deploy servers
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,10 +33,10 @@ export function publishCommand(version, sha256) {
 	return `gh workflow run ${WORKFLOW} --ref main -f version=${version} -f sha256=${sha256} -f publish=true`;
 }
 
-export function pickDispatchedRun(runs, dispatchedAtMs) {
-	return runs
-		.filter(r => r.event === "workflow_dispatch" && Date.parse(r.createdAt) >= dispatchedAtMs - 5000)
-		.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0] ?? null;
+export function pickDispatchedRun(runs, requestId) {
+	const matches = runs.filter(r => r.event === "workflow_dispatch" && (r.displayTitle ?? "").split(/\s+/).includes(requestId));
+	if (matches.length > 1) throw new Error(`${matches.length} runs carry request id ${requestId}: ${matches.map(r => r.databaseId).join(", ")}`);
+	return matches[0] ?? null;
 }
 
 function defaultRun(cmd, args, { cwd, allowFailure = false } = {}) {
@@ -47,16 +47,16 @@ function defaultRun(cmd, args, { cwd, allowFailure = false } = {}) {
 	throw new Error(`${cmd} ${args.join(" ")} failed (exit ${result.status}): ${result.stderr.trim()}`);
 }
 
-async function dispatchAndWait({ run, sleep, root, version, sha256, publish }) {
-	const dispatchedAtMs = Date.now();
+async function dispatchAndWait({ run, sleep, root, version, sha256, publish, newRequestId }) {
+	const requestId = newRequestId();
 	run("gh", ["workflow", "run", WORKFLOW, "--ref", "main", "-f", `version=${version}`, "-f", `sha256=${sha256}`,
-		"-f", `publish=${publish}`], { cwd: root });
+		"-f", `publish=${publish}`, "-f", `request_id=${requestId}`], { cwd: root });
 	let found = null;
 	for (let attempt = 0; attempt < 20 && !found; attempt++) {
 		await sleep(3000);
-		const runs = JSON.parse(run("gh", ["run", "list", "--workflow", WORKFLOW, "--limit", "10",
-			"--json", "databaseId,createdAt,event"], { cwd: root }));
-		found = pickDispatchedRun(runs, dispatchedAtMs);
+		const runs = JSON.parse(run("gh", ["run", "list", "--workflow", WORKFLOW, "--event", "workflow_dispatch",
+			"--limit", "50", "--json", "databaseId,displayTitle,event"], { cwd: root }));
+		found = pickDispatchedRun(runs, requestId);
 	}
 	if (!found) throw new Error(`the ${publish ? "publish" : "validate-only"} run did not appear within 60s`);
 	const watched = run("gh", ["run", "watch", String(found.databaseId), "--exit-status", "--interval", "5"],
@@ -66,7 +66,8 @@ async function dispatchAndWait({ run, sleep, root, version, sha256, publish }) {
 }
 
 export async function release({ root = REPO_ROOT, version, publish = false, run = defaultRun,
-	sleep = ms => new Promise(r => setTimeout(r, ms)), portalRelease = fetchPortalRelease, log = console.log } = {}) {
+	sleep = ms => new Promise(r => setTimeout(r, ms)), portalRelease = fetchPortalRelease, log = console.log,
+	newRequestId = randomUUID } = {}) {
 	const zip = gatewayZip(root, version);
 	run("git", ["fetch", "--quiet", "origin", "main"], { cwd: root });
 	const refusal = checkCommitted({
@@ -80,13 +81,13 @@ export async function release({ root = REPO_ROOT, version, publish = false, run 
 	const sha256 = createHash("sha256").update(bytes).digest("hex");
 	const sha1 = createHash("sha1").update(bytes).digest("hex");
 	log(`surfexp_gateways ${zip.version} sha256=${sha256}`);
-	const validated = await dispatchAndWait({ run, sleep, root, version: zip.version, sha256, publish: false });
+	const validated = await dispatchAndWait({ run, sleep, root, version: zip.version, sha256, publish: false, newRequestId });
 	log(`validate-only run ${validated}: passed`);
 	if (!publish) {
 		log(`publish with:\n  ${publishCommand(zip.version, sha256)}\nor rerun this tool with --publish`);
 		return { version: zip.version, sha256, published: false };
 	}
-	const published = await dispatchAndWait({ run, sleep, root, version: zip.version, sha256, publish: true });
+	const published = await dispatchAndWait({ run, sleep, root, version: zip.version, sha256, publish: true, newRequestId });
 	log(`publish run ${published}: passed`);
 	let portal = null;
 	for (let attempt = 0; attempt < 12 && !portal; attempt++) {
