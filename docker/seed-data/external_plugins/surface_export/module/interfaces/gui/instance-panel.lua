@@ -7,6 +7,7 @@ local BOARD = "surfexp_instance_board"
 local PLANETS = "surfexp_instance_planets"
 local TITLE = "surfexp_instance_title"
 local TOGGLE = "surfexp_instance_toggle_planets"
+local NOTIFY = "surfexp_boarding_notify"
 local WIDTH = 256
 local MARGIN = 11
 local ROW = 36
@@ -48,8 +49,30 @@ function Panel.refresh_position(player)
 	end
 	local planets = player.gui.screen[PLANETS]
 	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) + 2 / scale) end
-	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, 604) end
+end
+
+local function own_hub_open(player)
+	local source = Boarding.source(player)
+	local opened = player.opened
+	return player.opened_gui_type == defines.gui_type.entity and opened ~= nil and opened.valid
+		and source ~= nil and source.valid and source.hub ~= nil and source.hub.valid and opened == source.hub
+end
+
+local function refresh_notify(player)
+	local button = player.gui.top[NOTIFY]
+	local count = 0
+	if storage.surface_export_planet_policy and player.controller_type == defines.controllers.remote then
+		count = #Boarding.targets(player)
+	end
+	if count == 0 then
+		if button then button.destroy() end
+		return
+	end
+	if not button then
+		button = player.gui.top.add{type = "sprite-button", name = NOTIFY, sprite = "entity/space-platform-hub", style = "mod_gui_button"}
+	end
+	button.number = count
+	button.tooltip = {"", count == 1 and "1 platform" or (count .. " platforms"), " here can be boarded. Click to open this platform's hub."}
 end
 
 function Panel.refresh_viewport(event)
@@ -66,11 +89,9 @@ function Panel.refresh_visibility(player)
 	if title then title.visible = shown end
 	local toggle = player.gui.top[TOGGLE]
 	if toggle then toggle.visible = remote_view; toggle.toggled = shown end
-	local boarding = player.gui.screen[FRAME]
-	local source = Boarding.source(player)
-	local visible = player.controller_type == defines.controllers.remote and source and source.valid
-	if boarding then boarding.visible = visible == true
-	elseif visible and storage.surface_export_planet_policy then Panel.open(player) end
+	local legacy = player.gui.screen[FRAME]
+	if legacy then legacy.destroy() end
+	refresh_notify(player)
 end
 
 local function section_heading(parent, caption, tooltip)
@@ -171,23 +192,26 @@ function Panel.refresh_button(player)
 end
 
 function Panel.close(player)
-	local frame = player.gui.screen[FRAME]
+	local frame = player.gui.relative[FRAME]
 	if frame then frame.destroy() end
+	local legacy = player.gui.screen[FRAME]
+	if legacy then legacy.destroy() end
 	if storage.surface_export_boarding_selections then storage.surface_export_boarding_selections[player.index] = nil end
 end
 
 function Panel.open(player)
 	Panel.close(player)
 	local policy = storage.surface_export_planet_policy
-	if not policy then return end
-	local frame = player.gui.screen.add{type = "frame", name = FRAME, direction = "vertical"}
+	if not policy or not own_hub_open(player) then return end
+	local frame = player.gui.relative.add{type = "frame", name = FRAME, direction = "vertical",
+		anchor = {gui = defines.relative_gui_type.space_platform_hub_gui, position = defines.relative_gui_position.right}}
 	frame.style.width = WIDTH
 	frame.style.padding = 8
 	section_heading(frame, "Boarding", BOARDING_INFO)
 	local content = inset(frame)
 	local targets = Boarding.targets(player)
 	local list_height = ROW * math.min(VISIBLE_ROWS, math.max(1, #targets)) + 8
-	frame.tags = {panel_height = 64 + math.max(64, list_height), boarding_enabled = Boarding.enabled()}
+	frame.tags = {boarding_enabled = Boarding.enabled()}
 	storage.surface_export_boarding_selections = storage.surface_export_boarding_selections or {}
 	storage.surface_export_boarding_selections[player.index] = targets
 	if not Boarding.enabled() then
@@ -217,7 +241,6 @@ function Panel.open(player)
 			button.style.minimal_width = 64
 		end
 	end
-	Panel.refresh_position(player)
 end
 
 function Panel.refresh(player)
@@ -226,8 +249,12 @@ function Panel.refresh(player)
 	Panel.refresh_visibility(player)
 	if player.controller_type ~= defines.controllers.remote then return end
 	Panel.refresh_position(player)
-	local frame = player.gui.screen[FRAME]
-	if not frame or not frame.visible then return end
+	local frame = player.gui.relative[FRAME]
+	if frame and not own_hub_open(player) then Panel.close(player); return end
+	if not frame then
+		if own_hub_open(player) then Panel.open(player) end
+		return
+	end
 	local targets = Boarding.targets(player)
 	local previous = (storage.surface_export_boarding_selections or {})[player.index] or {}
 	local changed = #targets ~= #previous or frame.tags.boarding_enabled ~= Boarding.enabled()
@@ -250,26 +277,45 @@ function Panel.on_gui_click(event)
 		Panel.refresh_position(player)
 		return
 	end
-	if element.name ~= OPEN and element.name ~= CLOSE and element.name ~= BOARD then return end
+	if element.name ~= OPEN and element.name ~= CLOSE and element.name ~= BOARD and element.name ~= NOTIFY then return end
 	local player = game.get_player(event.player_index)
 	if not player then return end
-	if element.name == OPEN then Panel.open(player)
+	if element.name == NOTIFY then
+		local source = Boarding.source(player)
+		if source and source.valid and source.hub and source.hub.valid then
+			player.opened = source.hub
+			Panel.open(player)
+		end
+	elseif element.name == OPEN then Panel.open(player)
 	elseif element.name == CLOSE then Panel.close(player)
 	else
-		local frame = player.gui.screen[FRAME]
+		local frame = player.gui.relative[FRAME]
 		local selections = storage.surface_export_boarding_selections or {}
 		local index = element.tags and element.tags.choice
 		local choice = frame and index and (selections[player.index] or {})[index]
 		if not choice then player.print("Refresh the instance panel before boarding."); Panel.open(player); return end
 		local ok, reason = Boarding.board(player, choice)
-		if ok then Panel.close(player) else player.print(reason); Panel.open(player) end
+		if ok then
+			Panel.close(player)
+			if player.opened_gui_type == defines.gui_type.entity then player.opened = nil end
+			refresh_notify(player)
+		else player.print(reason); Panel.open(player) end
 	end
 end
 
+function Panel.on_gui_opened(event)
+	if event.gui_type ~= defines.gui_type.entity or not (event.entity and event.entity.valid) then return end
+	if event.entity.type ~= "space-platform-hub" then return end
+	local player = game.get_player(event.player_index)
+	if player then Panel.open(player) end
+end
+
 function Panel.on_gui_closed(event)
-	if event.element and event.element.valid and event.element.name == FRAME then
-		local player = game.get_player(event.player_index)
-		if player then Panel.close(player) end
+	local player = game.get_player(event.player_index)
+	if not player then return end
+	if (event.entity and event.entity.valid and event.entity.type == "space-platform-hub")
+		or (event.element and event.element.valid and event.element.name == FRAME) then
+		Panel.close(player)
 	end
 end
 

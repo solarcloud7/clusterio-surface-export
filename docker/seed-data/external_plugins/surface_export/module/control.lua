@@ -203,6 +203,8 @@ SurfaceExportModule.events = {
 		DebugControls.on_gui_click(event)
 	end,
 
+	[e.on_gui_opened] = InstancePanel.on_gui_opened,
+
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
 		GatewayTransferGui.on_gui_closed(event)
