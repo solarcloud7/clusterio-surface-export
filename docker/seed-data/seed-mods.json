@@ -1,0 +1,10 @@
+{
+	"engine": "2.1.20",
+	"mods": [
+		{ "name": "FluidMustFlow", "version": "1.5.0", "sha1": "6c576d8d354cf930a64d79819af8f9b002583792" },
+		{ "name": "maraxsis", "version": "1.39.4", "sha1": "18de3e1fcca2df06c8180d56b81fba09dc739bc1" },
+		{ "name": "PlanetsLib", "version": "2.0.1", "sha1": "2bc1b9a592e610a33a6c3ddfc90b104774442916" },
+		{ "name": "SpidertronEnhancements", "version": "1.11.0", "sha1": "293e1fda6c88523913f776083d444dcce5579d4a" },
+		{ "name": "SpidertronPatrols", "version": "2.7.0", "sha1": "e05fb50107a0e3fa793fced4f65468180948ba0f" }
+	]
+}
