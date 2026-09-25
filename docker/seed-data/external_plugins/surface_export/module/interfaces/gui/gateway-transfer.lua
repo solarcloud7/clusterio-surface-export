@@ -89,7 +89,7 @@ local function build_frame(player, state)
 	frame.auto_center = true
 	titlebar(frame)
 	local body = frame.add{type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical"}
-	body.style.width = WIDTH
+	body.style.minimal_width = WIDTH
 	local content = body.add{type = "flow", direction = "vertical"}
 	content.style.vertical_spacing = 8
 
