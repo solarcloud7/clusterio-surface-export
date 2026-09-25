@@ -41,7 +41,7 @@ local function place(player, frame, x, y)
 end
 
 local function boarding_top(player)
-	return player.render_mode == defines.render_mode.game and 753 or 440
+	return player.render_mode == defines.render_mode.chart and 440 or 562
 end
 
 function Panel.refresh_position(player)
