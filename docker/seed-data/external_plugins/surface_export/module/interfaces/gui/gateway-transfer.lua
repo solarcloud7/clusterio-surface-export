@@ -162,7 +162,7 @@ local function build_frame(player, state)
 	pusher.style.horizontally_stretchable = true
 	pusher.style.height = 32
 	local transfer = footer.add{type = "button", name = PREFIX .. "transfer", caption = "Transfer", style = "confirm_button"}
-	transfer.enabled = platform ~= nil and not state.departed and state.selected ~= nil and decision.allowed == true
+	transfer.enabled = platform ~= nil and state.selected ~= nil and decision.allowed == true
 	if not transfer.enabled then
 		transfer.tooltip = state.departed and "The platform left the gateway."
 			or in_flight and "This platform is already transferring."
