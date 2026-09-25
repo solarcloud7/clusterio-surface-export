@@ -159,7 +159,6 @@ function Panel.refresh_planets(player)
 	local frame = player.gui.screen.add{type = "frame", name = PLANETS, direction = "vertical"}
 	frame.style.width = WIDTH
 	frame.style.padding = 6
-	frame.style.vertical_spacing = 4
 	local planets = section(frame, PLANET_SECTION)
 	section_heading(planets, "Default Planet", DEFAULT_INFO)
 	planet_row(inset(planets), policy.default_planet, false)
