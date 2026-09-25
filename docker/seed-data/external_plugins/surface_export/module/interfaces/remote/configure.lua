@@ -2,6 +2,7 @@ local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
 local Gateway = require("modules/surface_export/core/gateway")
 local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
+local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
 
 local function configure(config)
   if not storage.surface_export_config then
@@ -86,6 +87,7 @@ local function configure(config)
       local n = 0
       for _ in pairs(decoded) do n = n + 1 end
       log(string.format("[FactorioSurfaceExport] Gateway config updated: %d gateway(s)", n))
+      GatewayTransferGui.refresh_open()
     else
       log("[FactorioSurfaceExport] configure: gateways_json did not decode to a table")
     end
