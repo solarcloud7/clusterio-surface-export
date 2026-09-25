@@ -58,8 +58,8 @@ sets the pinned version on those instances. A save written by a newer engine can
 be loaded by an older one, so back up the volumes first. The first start after an
 engine change can fail with Clusterio's
 [known `clusterio_private` error](https://github.com/clusterio/clusterio#known-issues);
-deployment starts a migrated instance once more only when its host log shows that
-error.
+deployment starts an instance once more only when its host log shows that error,
+including an instance migrated by an earlier deployment that stopped before it started.
 
 Public alpha, beta and release-candidate versions are selected explicitly. The
 deployment scripts refuse to increment them automatically. A save-preserving

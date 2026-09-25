@@ -146,7 +146,11 @@ test("preserving cluster volumes also preserves the selected version", { skip },
 	assert.equal(JSON.parse(readFileSync(join(dir, "docker/seed-data/external_plugins/surface_export/package.json"))).version, "1.0.0");
 });
 
-function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [] } = {}) {
+const psQuote = s => `'${s.replace(/'/g, "''")}'`;
+const scenarioDetector = /function Test-ScenarioMigrationFailure \{[\s\S]*?\r?\n\}/.exec(
+	readFileSync(new URL("../../tools/shared/cluster-utils.ps1", import.meta.url), "utf8"))[0];
+
+function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [], stoppedLog = null, recovers = true } = {}) {
 	const { dir, put } = fixture(t, "deploy-cluster");
 	copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
 	put("tools/shared/cluster-utils.ps1", `
@@ -155,20 +159,25 @@ function Update-PackageLockVersion {}
 function Update-ModuleVersionStamp {}
 function Update-ModuleBuildStamp { '${"a".repeat(32)}' }
 function Get-SeededInstances { @(@{Host='one';Instance='clusterio-host-1-instance-1';Container='fixture-host'}) }
+${scenarioDetector}
 `);
 	put("docker/seed-data/hosts/one/clusterio-host-1-instance-1/instance.json", '{"factorio.version":"2.1.17"}');
 	put("tools/clusterio/sync-client-mods.ps1", "$global:calls.Add('sync-client')");
-	return run(dir, "deploy-cluster", ["-SkipIncrement", ...flags], `
+	const failFast = stoppedLog === null ? [] : ["-StoppedFailFastS", "0"];
+	return run(dir, "deploy-cluster", ["-SkipIncrement", ...failFast, ...flags], `
 function Start-Sleep {}
 function Start-Job { 1 }
 function Receive-Job { 'Seeding complete' }
 function Stop-Job {}
 function Remove-Job {}
+$global:started = ${stoppedLog === null ? "$true" : "$false"}
 function docker {
  $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0
  if ($args[0] -eq 'inspect') { return 'healthy' }
+ if ($args[0] -eq 'logs') { return ${psQuote(stoppedLog ?? "")} }
+ if (($args -join ' ') -match 'instance start') { $global:started = ${recovers ? "$true" : "$false"}; return }
  if (($args -join ' ') -match 'instance config list') { return 'factorio.version "${configured}"' }
- if (($args -join ' ') -match 'instance list') { return 'clusterio-host-1-instance-1 running' }
+ if (($args -join ' ') -match 'instance list') { return 'clusterio-host-1-instance-1 ' + $(if ($global:started) { 'running' } else { 'stopped' }) }
  if (($args -join ' ') -match 'send-rcon') { return '{"version":"1.0.0","buildId":"${(stale ? "b" : "a").repeat(32)}"}' }
 }
 `);
@@ -210,6 +219,33 @@ test("-MigrateEngine sets the pinned version before the hosts start", { skip }, 
 	const set = result.calls.findIndex(c => /instance config set clusterio-host-1-instance-1 factorio\.version 2\.1\.17$/.test(c));
 	const hosts = result.calls.indexOf("docker compose up -d");
 	assert.ok(set >= 0 && hosts > set, JSON.stringify(result.calls));
+});
+
+const scenarioFailure = "[ERROR] Error during auto startup for clusterio-host-1-instance-1:\nError: Expected empty response but got \"Cannot execute command. Error: [string \"clusterio_private.update_instance(836570928, ...\"]:1: attempt to index global 'clusterio_private' (a nil value)\n\"";
+const startCall = c => /instance start clusterio-host-1-instance-1$/.test(c);
+
+test("an instance migrated by an earlier interrupted run is started once more on the documented error", { skip }, t => {
+	const result = retainedCluster(t, { stoppedLog: scenarioFailure });
+	assert.equal(result.error, null, JSON.stringify(result));
+	assert.equal(result.calls.filter(startCall).length, 1, JSON.stringify(result.calls));
+});
+
+test("the documented-error restart is attempted only once", { skip }, t => {
+	const result = retainedCluster(t, { stoppedLog: scenarioFailure, recovers: false });
+	assert.match(result.error || "", /has been 'stopped' for 0s — a save-load failure/);
+	assert.equal(result.calls.filter(startCall).length, 1, JSON.stringify(result.calls));
+});
+
+test("a stopped instance without the documented error is refused, not restarted", { skip }, t => {
+	const result = retainedCluster(t, { stoppedLog: "[ERROR] Error during auto startup for clusterio-host-1-instance-1:\nError: save is corrupt" });
+	assert.match(result.error || "", /has been 'stopped' for 0s — a save-load failure/);
+	assert.equal(result.calls.some(startCall), false, JSON.stringify(result.calls));
+});
+
+test("an instance migrated in this run without the documented error names -MigrateEngine", { skip }, t => {
+	const result = retainedCluster(t, { configured: "2.1.16", flags: ["-MigrateEngine"], stoppedLog: "" });
+	assert.match(result.error || "", /stopped after -MigrateEngine without Clusterio's documented scenario-migration error/);
+	assert.equal(result.calls.some(startCall), false, JSON.stringify(result.calls));
 });
 
 test("-MigrateEngine leaves instances already on the pin unchanged", { skip }, t => {
