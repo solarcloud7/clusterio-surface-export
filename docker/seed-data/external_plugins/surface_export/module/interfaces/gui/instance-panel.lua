@@ -8,6 +8,7 @@ local PLANETS = "surfexp_instance_planets"
 local TITLE = "surfexp_instance_title"
 local TOGGLE = "surfexp_instance_toggle_planets"
 local WIDTH = 256
+local BOARDING_WIDTH = 248
 local MARGIN = 11
 local ROW = 24
 local PLANET_ROW = 26
@@ -40,7 +41,7 @@ local function place(player, frame, x, y)
 end
 
 local function boarding_top(player)
-	return player.render_mode == defines.render_mode.game and 604 or 440
+	return player.render_mode == defines.render_mode.game and 753 or 440
 end
 
 function Panel.refresh_position(player)
@@ -52,9 +53,9 @@ function Panel.refresh_position(player)
 		title.location = {math.floor((player.display_resolution.width - width * scale) / 2), math.floor(40 * scale)}
 	end
 	local planets = player.gui.screen[PLANETS]
-	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) + 2 / scale) end
+	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) - 6 + 2 / scale) end
 	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, boarding_top(player)) end
+	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH + 2, boarding_top(player)) end
 end
 
 local function boarding_visible(player)
@@ -196,7 +197,7 @@ function Panel.open(player)
 	local policy = storage.surface_export_planet_policy
 	if not policy then return end
 	local frame = player.gui.screen.add{type = "frame", name = FRAME, direction = "vertical"}
-	frame.style.width = WIDTH
+	frame.style.width = BOARDING_WIDTH
 	frame.style.padding = 6
 	section_heading(frame, "Boarding", BOARDING_INFO)
 	local content = inset(frame)
@@ -222,7 +223,7 @@ function Panel.open(player)
 		for index, target in ipairs(targets) do
 			local row = list.add{type = "flow", direction = "horizontal"}
 			row.style.height = ROW
-			row.style.width = 200
+			row.style.width = 192
 			row.style.vertical_align = "center"
 			local label = row.add{type = "label", caption = target.name}
 			label.style.single_line = false
