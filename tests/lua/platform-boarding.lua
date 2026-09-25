@@ -201,8 +201,12 @@ local function contains(element, kind, caption)
 end
 ui_player.controller_type = 2
 ui_targets = {}
+ui_player.gui.screen.add{type = "frame", name = "surfexp_instance_panel"}
 joined_panel.refresh_visibility(ui_player)
 assert(not frame[boarding_section], "zero eligible platforms should remove the Boarding section")
+assert(not ui_player.gui.screen.surfexp_instance_panel, "the retired right-hand frame should be removed even with nothing to board")
+joined_panel.open(ui_player)
+assert(not frame[boarding_section], "opening with zero eligible platforms should not build an empty Boarding section")
 ui_targets = {choice, second_choice}
 joined_panel.refresh_visibility(ui_player)
 assert(frame[boarding_section] and contains(frame[boarding_section], "button", "Board"), "eligible platforms should render Board buttons")
