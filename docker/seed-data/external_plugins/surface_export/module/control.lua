@@ -111,6 +111,10 @@ SurfaceExportModule.events = {
 		local player = game.get_player(event.player_index)
 		if player then InstancePanel.refresh_visibility(player) end
 	end,
+	[e.on_selected_entity_changed] = function(event)
+		local player = game.get_player(event.player_index)
+		if player then InstancePanel.refresh_visibility(player) end
+	end,
 	[e.on_player_display_resolution_changed] = InstancePanel.refresh_viewport,
 	[e.on_player_display_scale_changed] = InstancePanel.refresh_viewport,
 
@@ -202,8 +206,6 @@ SurfaceExportModule.events = {
 		InstancePanel.on_gui_click(event)
 		DebugControls.on_gui_click(event)
 	end,
-
-	[e.on_gui_opened] = InstancePanel.on_gui_opened,
 
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
