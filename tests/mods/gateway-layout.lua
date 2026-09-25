@@ -36,7 +36,8 @@ for _, mode in ipairs(setting.allowed_values) do
     links = links + 1
     local destination = assert(locations[connection.to])
     assert(destination.hidden == false, connection.name .. " connects an inactive gateway")
-    assert(connection.length == 3000)
+    assert(connection.length == (connection.from == "aquilo" and 30001 or 15001),
+      connection.name .. " should be one longer than the planet's own route")
     if not connection.hidden then visible_links = visible_links + 1 end
     if connection.to == "surfexp_gateway_hub" then
       assert(not hub_planets[connection.from], "duplicate hub route")
@@ -65,3 +66,30 @@ for _, mode in ipairs(setting.allowed_values) do
   assert(visible_links == (mode == "one_gate" and 5 or 4))
   print(mode .. ": PASS (visible=" .. visible .. ", retained locations=" .. count .. ", connections=" .. links .. ")")
 end
+
+local template = {space_dust_background = {animation_speed = 1}, platform_backdrop = {radius = 1}}
+local function deepcopy(value)
+  if type(value) ~= "table" then return value end
+  local copy = {}
+  for key, inner in pairs(value) do copy[key] = deepcopy(inner) end
+  return copy
+end
+util = {table = {deepcopy = deepcopy}}
+data = {raw = {
+  planet = {nauvis = {platform_surface_render_parameters = template}},
+  ["space-location"] = {surfexp_gateway_hub = {}, surfexp_gateway_1 = {}, ["solar-system-edge"] = {}},
+}}
+dofile(root .. "data-updates.lua")
+for _, name in ipairs({"surfexp_gateway_hub", "surfexp_gateway_1"}) do
+  local parameters = assert(data.raw["space-location"][name].platform_surface_render_parameters, name .. " backdrop")
+  assert(parameters.space_dust_background.animation_speed == 1, name .. " should keep the planets' space dust")
+  local backdrop = parameters.platform_backdrop
+  assert(backdrop ~= template.platform_backdrop and backdrop.planet_emission)
+  for _, key in ipairs({"planet_surface", "planet_normal", "planet_reflectivity", "planet_emission"}) do
+    local file = assert(io.open(root .. backdrop[key].filename:gsub("__surfexp_gateways__/", ""), "rb"), key .. " artwork")
+    file:close()
+  end
+end
+assert(not data.raw["space-location"]["solar-system-edge"].platform_surface_render_parameters, "other locations keep their backdrop")
+assert(template.platform_backdrop.radius == 1, "the planet template should not be modified")
+print("backdrop: PASS (gateways drawn under parked platforms)")

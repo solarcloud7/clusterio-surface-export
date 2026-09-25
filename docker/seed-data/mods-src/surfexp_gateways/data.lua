@@ -31,7 +31,7 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 			from = "nauvis",
 			to = name,
 			order = "z[surfexp-gateway]-" .. i,
-			length = 3000,
+			length = 15001,
 		}
 	end
 end
@@ -65,7 +65,7 @@ if not multi then
 			from = planet,
 			to = HUB_NAME,
 			order = "z[surfexp-gateway]-0-" .. planet,
-			length = 3000,
+			length = planet == "aquilo" and 30001 or 15001,
 		}
 	end
 end
