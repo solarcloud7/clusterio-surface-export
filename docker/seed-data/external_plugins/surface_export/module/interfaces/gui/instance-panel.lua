@@ -5,10 +5,11 @@ local OPEN = "surfexp_instance_open"
 local CLOSE = "surfexp_instance_close"
 local BOARD = "surfexp_instance_board"
 local PLANETS = "surfexp_instance_planets"
+local PLANET_SECTION = "surfexp_planet_section"
+local BOARDING_SECTION = "surfexp_boarding_section"
 local TITLE = "surfexp_instance_title"
 local TOGGLE = "surfexp_instance_toggle_planets"
 local WIDTH = 256
-local BOARDING_WIDTH = 248
 local MARGIN = 11
 local ROW = 24
 local PLANET_ROW = 26
@@ -40,10 +41,6 @@ local function place(player, frame, x, y)
 	frame.location = {x, y}
 end
 
-local function boarding_top(player)
-	return player.render_mode == defines.render_mode.chart and 440 or 562
-end
-
 function Panel.refresh_position(player)
 	local title = player.gui.screen[TITLE]
 	local scale = player.display_scale
@@ -54,22 +51,6 @@ function Panel.refresh_position(player)
 	end
 	local planets = player.gui.screen[PLANETS]
 	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) - 6 + 2 / scale) end
-	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH + 2, boarding_top(player)) end
-end
-
-local function boarding_visible(player)
-	if player.controller_type ~= defines.controllers.remote or player.selected then return false end
-	local source = Boarding.source(player)
-	return source ~= nil and source.valid and #Boarding.targets(player) > 0
-end
-
-function Panel.refresh_render_mode(player)
-	storage.surface_export_render_modes = storage.surface_export_render_modes or {}
-	local modes = storage.surface_export_render_modes
-	if modes[player.index] == player.render_mode then return end
-	modes[player.index] = player.render_mode
-	Panel.refresh_position(player)
 end
 
 function Panel.refresh_viewport(event)
@@ -77,19 +58,39 @@ function Panel.refresh_viewport(event)
 	if player then Panel.refresh_position(player) end
 end
 
+local function boarding_wanted(player)
+	if player.controller_type ~= defines.controllers.remote then return false end
+	local source = Boarding.source(player)
+	return source ~= nil and source.valid and #Boarding.targets(player) > 0
+end
+
+local function update_height(frame)
+	local planets = frame[PLANET_SECTION]
+	local boarding = frame[BOARDING_SECTION]
+	local tags = frame.tags
+	tags.panel_height = 12 + (planets and planets.visible and (tags.planet_height or 0) or 0)
+		+ (boarding and (tags.boarding_height or 0) or 0)
+	frame.tags = tags
+end
+
 function Panel.refresh_visibility(player)
 	local remote_view = player.controller_type == defines.controllers.remote
 	local shown = remote_view and (storage.surface_export_planet_panel_visible or {})[player.index] == true
-	local frame = player.gui.screen[PLANETS]
-	if frame then frame.visible = shown end
 	local title = player.gui.screen[TITLE]
 	if title then title.visible = shown end
 	local toggle = player.gui.top[TOGGLE]
 	if toggle then toggle.visible = remote_view; toggle.toggled = shown end
-	local boarding = player.gui.screen[FRAME]
-	local visible = boarding_visible(player)
-	if boarding then boarding.visible = visible
-	elseif visible and storage.surface_export_planet_policy then Panel.open(player) end
+	local legacy = player.gui.screen[FRAME]
+	if legacy then legacy.destroy() end
+	local frame = player.gui.screen[PLANETS]
+	if not frame then return end
+	local wanted = boarding_wanted(player)
+	if wanted and not frame[BOARDING_SECTION] and storage.surface_export_planet_policy then Panel.open(player)
+	elseif not wanted and frame[BOARDING_SECTION] then Panel.close(player) end
+	local planets = frame[PLANET_SECTION]
+	if planets then planets.visible = shown end
+	frame.visible = remote_view and (shown or frame[BOARDING_SECTION] ~= nil)
+	update_height(frame)
 end
 
 local function section_heading(parent, caption, tooltip)
@@ -104,6 +105,13 @@ local function inset(parent)
 	frame.style.padding = 4
 	frame.style.horizontally_stretchable = true
 	return frame
+end
+
+local function section(parent, name)
+	local flow = parent.add{type = "flow", name = name, direction = "vertical"}
+	flow.style.vertical_spacing = 4
+	flow.style.horizontally_stretchable = true
+	return flow
 end
 
 local function planet_row(parent, name, disabled)
@@ -138,6 +146,8 @@ function Panel.refresh_planets(player)
 	local old_title = player.gui.screen[TITLE]
 	if old_title then old_title.destroy() end
 	storage.surface_export_panel_positions = nil
+	storage.surface_export_render_modes = nil
+	if storage.surface_export_boarding_selections then storage.surface_export_boarding_selections[player.index] = nil end
 	local policy = storage.surface_export_planet_policy
 	if not policy then return end
 	local title = player.gui.screen.add{type = "frame", name = TITLE, direction = "horizontal"}
@@ -146,17 +156,18 @@ function Panel.refresh_planets(player)
 	label.style.horizontally_stretchable = true
 	label.style.horizontal_align = "center"
 	label.style.single_line = false
-	Panel.refresh_position(player)
 	local frame = player.gui.screen.add{type = "frame", name = PLANETS, direction = "vertical"}
 	frame.style.width = WIDTH
 	frame.style.padding = 6
-	section_heading(frame, "Default Planet", DEFAULT_INFO)
-	planet_row(inset(frame), policy.default_planet, false)
+	frame.style.vertical_spacing = 4
+	local planets = section(frame, PLANET_SECTION)
+	section_heading(planets, "Default Planet", DEFAULT_INFO)
+	planet_row(inset(planets), policy.default_planet, false)
 	local names = {}
 	for name in pairs(policy.disabled) do names[#names + 1] = name end
 	table.sort(names)
-	section_heading(frame, "Unavailable Planets", UNAVAILABLE_INFO)
-	local content = inset(frame).add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never"}
+	section_heading(planets, "Unavailable Planets", UNAVAILABLE_INFO)
+	local content = inset(planets).add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never"}
 	content.style.maximal_height = PLANET_ROW * 8
 	content.style.horizontally_stretchable = true
 	for _, name in ipairs(names) do planet_row(content, name, true) end
@@ -166,13 +177,12 @@ function Panel.refresh_planets(player)
 		none.style.vertical_align = "center"
 		none.add{type = "label", caption = "None"}
 	end
-	frame.tags = {panel_height = 120 + math.min(PLANET_ROW * 8, PLANET_ROW * math.max(1, #names))}
-	Panel.refresh_position(player)
+	frame.tags = {planet_height = 108 + math.min(PLANET_ROW * 8, PLANET_ROW * math.max(1, #names))}
 	Panel.refresh_visibility(player)
+	Panel.refresh_position(player)
 end
 
 function Panel.refresh_button(player)
-	Panel.close(player)
 	Panel.refresh_planets(player)
 	local policy = storage.surface_export_planet_policy
 	local button = player.gui.top[OPEN]
@@ -183,59 +193,59 @@ function Panel.refresh_button(player)
 			tooltip = "Instance planets: show or hide this instance's name, default planet and unavailable planets."}
 	elseif not policy and toggle then toggle.destroy() end
 	Panel.refresh_visibility(player)
-	if not policy then Panel.close(player) end
 end
 
 function Panel.close(player)
-	local frame = player.gui.screen[FRAME]
-	if frame then frame.destroy() end
+	local legacy = player.gui.screen[FRAME]
+	if legacy then legacy.destroy() end
+	local frame = player.gui.screen[PLANETS]
+	local section_frame = frame and frame[BOARDING_SECTION]
+	if section_frame then
+		section_frame.destroy()
+		local tags = frame.tags
+		tags.boarding_height = nil
+		frame.tags = tags
+		update_height(frame)
+	end
 	if storage.surface_export_boarding_selections then storage.surface_export_boarding_selections[player.index] = nil end
 end
 
 function Panel.open(player)
 	Panel.close(player)
-	local policy = storage.surface_export_planet_policy
-	if not policy then return end
-	local frame = player.gui.screen.add{type = "frame", name = FRAME, direction = "vertical"}
-	frame.style.width = BOARDING_WIDTH
-	frame.style.padding = 6
-	section_heading(frame, "Boarding", BOARDING_INFO)
-	local content = inset(frame)
+	local frame = player.gui.screen[PLANETS]
+	if not frame or not storage.surface_export_planet_policy then return end
 	local targets = Boarding.targets(player)
-	local list_height = ROW * math.min(VISIBLE_ROWS, math.max(1, #targets)) + 4
-	frame.tags = {panel_height = 44 + list_height, boarding_enabled = Boarding.enabled()}
+	if #targets == 0 then return end
+	local boarding = section(frame, BOARDING_SECTION)
+	section_heading(boarding, "Boarding", BOARDING_INFO)
+	local content = inset(boarding)
+	local list_height = ROW * math.min(VISIBLE_ROWS, #targets) + 4
+	local list = content.add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never", vertical_scroll_policy = "auto"}
+	list.style.minimal_height = list_height
+	list.style.maximal_height = ROW * VISIBLE_ROWS + 4
+	list.style.horizontally_stretchable = true
+	for index, target in ipairs(targets) do
+		local row = list.add{type = "flow", direction = "horizontal"}
+		row.style.height = ROW
+		row.style.horizontally_stretchable = true
+		row.style.vertical_align = "center"
+		local label = row.add{type = "label", caption = target.name}
+		label.style.single_line = false
+		label.style.maximal_width = 150
+		row.add{type = "empty-widget"}.style.horizontally_stretchable = true
+		local button = row.add{type = "button", name = BOARD, caption = "Board", tags = {choice = index}}
+		button.style.minimal_width = 56
+		button.style.height = ROW - 2
+		button.style.top_padding = 0
+		button.style.bottom_padding = 0
+	end
+	local tags = frame.tags
+	tags.boarding_height = 36 + list_height
+	tags.boarding_enabled = Boarding.enabled()
+	frame.tags = tags
 	storage.surface_export_boarding_selections = storage.surface_export_boarding_selections or {}
 	storage.surface_export_boarding_selections[player.index] = targets
-	if not Boarding.enabled() then
-		local label = content.add{type = "label", caption = "Boarding is disabled in map settings, or the companion mod needs updating."}
-		label.style.single_line = false
-		label.style.maximal_width = 228
-	elseif #targets == 0 then
-		local none = content.add{type = "flow", direction = "horizontal"}
-		none.style.height = ROW
-		none.style.vertical_align = "center"
-		none.add{type = "label", caption = "None"}
-	else
-		local list = content.add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never", vertical_scroll_policy = "auto"}
-		list.style.minimal_height = list_height
-		list.style.maximal_height = ROW * VISIBLE_ROWS + 4
-		list.style.horizontally_stretchable = true
-		for index, target in ipairs(targets) do
-			local row = list.add{type = "flow", direction = "horizontal"}
-			row.style.height = ROW
-			row.style.width = 192
-			row.style.vertical_align = "center"
-			local label = row.add{type = "label", caption = target.name}
-			label.style.single_line = false
-			label.style.maximal_width = 128
-			row.add{type = "empty-widget"}.style.horizontally_stretchable = true
-			local button = row.add{type = "button", name = BOARD, caption = "Board", tags = {choice = index}}
-			button.style.minimal_width = 56
-			button.style.height = ROW - 2
-			button.style.top_padding = 0
-			button.style.bottom_padding = 0
-		end
-	end
+	update_height(frame)
 	Panel.refresh_position(player)
 end
 
@@ -244,9 +254,8 @@ function Panel.refresh(player)
 	if not player.gui.screen[PLANETS] then Panel.refresh_button(player) end
 	Panel.refresh_visibility(player)
 	if player.controller_type ~= defines.controllers.remote then return end
-	Panel.refresh_position(player)
-	local frame = player.gui.screen[FRAME]
-	if not frame or not frame.visible then return end
+	local frame = player.gui.screen[PLANETS]
+	if not (frame and frame[BOARDING_SECTION]) then return end
 	local targets = Boarding.targets(player)
 	local previous = (storage.surface_export_boarding_selections or {})[player.index] or {}
 	local changed = #targets ~= #previous or frame.tags.boarding_enabled ~= Boarding.enabled()
@@ -254,7 +263,7 @@ function Panel.refresh(player)
 		local old = previous[i]
 		if not old or old.uid ~= target.uid or old.source_uid ~= target.source_uid or old.name ~= target.name then changed = true; break end
 	end
-	if changed then Panel.open(player) end
+	if changed then Panel.open(player); Panel.refresh_visibility(player) end
 end
 
 function Panel.on_gui_click(event)
@@ -275,14 +284,17 @@ function Panel.on_gui_click(event)
 	if element.name == OPEN then Panel.open(player)
 	elseif element.name == CLOSE then Panel.close(player)
 	else
-		local frame = player.gui.screen[FRAME]
+		local frame = player.gui.screen[PLANETS]
 		local selections = storage.surface_export_boarding_selections or {}
 		local index = element.tags and element.tags.choice
-		local choice = frame and index and (selections[player.index] or {})[index]
+		local choice = frame and frame[BOARDING_SECTION] and index and (selections[player.index] or {})[index]
 		if not choice then player.print("Refresh the instance panel before boarding."); Panel.open(player); return end
 		local ok, reason = Boarding.board(player, choice)
-		if ok then Panel.close(player) else player.print(reason); Panel.open(player) end
+		if not ok then player.print(reason) end
+		Panel.open(player)
+		Panel.refresh_visibility(player)
 	end
+	Panel.refresh_visibility(player)
 end
 
 function Panel.on_gui_closed(event)
