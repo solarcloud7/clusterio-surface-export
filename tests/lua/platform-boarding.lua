@@ -113,15 +113,18 @@ local function gui(parent, values)
 	end
 	return element
 end
+target.hub.position = {x = 3, y = 4}
 local ui_player = {index = 1, gui = {top = gui(), left = gui(), screen = gui()},
 	display_scale = 1, display_resolution = {width = 1600, height = 1000}, force = force, controller_type = 2}
+local controller_moves = {}
+ui_player.set_controller = function(spec) controller_moves[#controller_moves + 1] = spec end
 local ui_calls = 0
-local second_choice = {name = choice.name, uid = "another-target", source_uid = choice.source_uid}
+local second_choice = {name = choice.name, uid = "another-target", source_uid = choice.source_uid, force = "player", index = target.index}
 local ui_targets = {choice, second_choice}
 local ui_env = setmetatable({storage = {surface_export_planet_policy = {default_planet = "nauvis", disabled = {}, instance_name = "One"}},
 	prototypes = {space_location = {nauvis = {localised_name = "Nauvis"}}},
 	defines = {controllers = {remote = 2}},
-	game = {tick = 100, planets = {}, get_player = function() return ui_player end},
+	game = {tick = 100, planets = {}, forces = {player = force}, get_player = function() return ui_player end},
 	require = function()
 		return {source = function() return source end, enabled = function() return true end, targets = function() return ui_targets end, board = function(_, selected)
 			assert(selected.uid == second_choice.uid and selected.source_uid == choice.source_uid)
@@ -131,25 +134,31 @@ local ui_env = setmetatable({storage = {surface_export_planet_policy = {default_
 	end}, {__index = _G})
 local panel_path = root .. "interfaces/gui/instance-panel.lua"
 local panel = assert(loadfile(panel_path, "t", ui_env))()
-panel.open(ui_player)
+local planets_name, boarding_section = "surfexp_instance_planets", "surfexp_boarding_section"
+ui_player.gui.screen.add{type = "frame", name = "surfexp_instance_panel"}
+panel.refresh_planets(ui_player)
+local frame = ui_player.gui.screen[planets_name]
+assert(frame and frame[boarding_section], "boarding targets should add the Boarding section to the instance panel")
+assert(not ui_player.gui.screen.surfexp_instance_panel, "the retired right-hand Boarding frame should be removed")
 assert(ui_env.storage.surface_export_boarding_selections[1][1].uid == choice.uid)
 local joined_panel = assert(loadfile(panel_path, "t", ui_env))()
 joined_panel.on_gui_click{player_index = 1, element = {valid = true, name = "surfexp_instance_board", tags = {choice = 2}}}
 assert(ui_calls == 1, "panel reload lost the selected persistent identity")
-assert(ui_env.storage.surface_export_boarding_selections[1] == nil)
-print("PASS boarding rows preserve distinct identities for matching names across module reload")
+assert(#controller_moves == 1 and controller_moves[1].type == 2 and controller_moves[1].surface == target.surface
+	and controller_moves[1].position == target.hub.position, "boarding should move the remote view to the target hub")
+assert(ui_env.storage.surface_export_boarding_selections[1][2].uid == second_choice.uid, "the Boarding list should be rebuilt after boarding")
+print("PASS boarding rows preserve distinct identities across module reload and boarding moves the remote view to the target hub")
 
-panel.refresh_planets(ui_player)
-local planets_name, boarding_name = "surfexp_instance_planets", "surfexp_instance_panel"
 local function assert_position(name, x, y)
 	local location = ui_player.gui.screen[name].location
 	assert(location[1] == x and location[2] == y, name .. " at " .. location[1] .. "," .. location[2] .. " expected " .. x .. "," .. y)
 end
-assert(ui_player.gui.screen[planets_name] and ui_player.gui.screen[boarding_name] and not ui_player.opened)
-assert_position(planets_name, 13, 266)
-assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen.surfexp_instance_title.visible)
+frame = ui_player.gui.screen[planets_name]
+assert(frame.visible and not frame.surfexp_planet_section.visible and not ui_player.gui.screen.surfexp_instance_title.visible,
+	"with the toggle off only the Boarding section should show")
+assert_position(planets_name, 13, 260)
 joined_panel.on_gui_click{player_index = 1, element = {valid = true, name = "surfexp_instance_toggle_planets"}}
-assert(ui_player.gui.screen[planets_name].visible and ui_player.gui.screen.surfexp_instance_title.visible)
+assert(frame.surfexp_planet_section.visible and ui_player.gui.screen.surfexp_instance_title.visible)
 local saved_platforms = force.platforms
 local saved_unlocked, saved_hidden = force.is_space_platforms_unlocked, force.get_surface_hidden
 force.platforms = {}
@@ -157,39 +166,32 @@ force.is_space_platforms_unlocked = function() return false end
 force.get_surface_hidden = function() return false end
 ui_env.game.planets.nauvis = {surface = {}}
 panel.refresh_position(ui_player)
-assert_position(planets_name, 13, 178)
+assert_position(planets_name, 13, 172)
 force.platforms = saved_platforms
 force.is_space_platforms_unlocked, force.get_surface_hidden = saved_unlocked, saved_hidden
 ui_env.game.planets.nauvis = nil
-panel.refresh_position(ui_player)
-assert_position(boarding_name, 1333, 604)
 platform(3)
 panel.refresh_position(ui_player)
-assert_position(planets_name, 13, 294)
+assert_position(planets_name, 13, 288)
 force.platforms[3].scheduled_for_deletion = 60
 panel.refresh_position(ui_player)
-assert_position(planets_name, 13, 266)
+assert_position(planets_name, 13, 260)
 force.platforms[3] = nil
 ui_player.display_scale = 1.5
 ui_player.display_resolution = {width = 800, height = 600}
 joined_panel.refresh_viewport{player_index = 1, tick = 5}
-for _, name in ipairs({planets_name, boarding_name}) do
-	local frame = ui_player.gui.screen[name]
-	assert(frame.location[1] >= 0 and frame.location[1] <= 800 - 256 * 1.5)
-	assert(frame.location[2] >= 0 and frame.location[2] < 600)
-end
+assert(frame.location[1] >= 0 and frame.location[1] <= 800 - 255 * 1.5)
+assert(frame.location[2] >= 0 and frame.location[2] < 600)
 ui_player.display_scale, ui_player.display_resolution = 1.5, {width = 1280, height = 900}
 joined_panel.refresh_viewport{player_index = 1, tick = 6}
-assert_position(planets_name, 19, 398)
-assert_position(boarding_name, 879, 684)
+assert_position(planets_name, 19, 389)
 ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
 joined_panel.refresh_viewport{player_index = 1, tick = 7}
-assert_position(boarding_name, 1333, 604)
-assert_position(planets_name, 13, 266)
+assert_position(planets_name, 13, 260)
 ui_player.controller_type = 1
 joined_panel.refresh_visibility(ui_player)
-assert(not ui_player.gui.screen[planets_name].visible and not ui_player.gui.screen[boarding_name].visible)
-print("PASS panels follow the estimated sidebar height, skip platforms pending deletion, clamp to the viewport and hide outside Remote View")
+assert(not frame.visible, "the instance panel should hide outside Remote View")
+print("PASS the instance panel follows the estimated sidebar height, skips platforms pending deletion, clamps to the viewport and hides outside Remote View")
 
 local function contains(element, kind, caption)
 	for _, child in ipairs(element.children) do
@@ -199,16 +201,15 @@ local function contains(element, kind, caption)
 end
 ui_player.controller_type = 2
 ui_targets = {}
-joined_panel.open(ui_player)
-local empty = ui_player.gui.screen[boarding_name]
-assert(contains(empty, "label", "None") and not contains(empty, "button", "Board"), "zero eligible platforms should render None without Board buttons")
+joined_panel.refresh_visibility(ui_player)
+assert(not frame[boarding_section], "zero eligible platforms should remove the Boarding section")
 ui_targets = {choice, second_choice}
-joined_panel.open(ui_player)
-local listed = ui_player.gui.screen[boarding_name]
-assert(contains(listed, "button", "Board") and not contains(listed, "label", "None"), "eligible platforms should render Board buttons without None")
-assert(contains(ui_player.gui.screen[planets_name], "label", "None"), "no unavailable planets should render None")
+joined_panel.refresh_visibility(ui_player)
+assert(frame[boarding_section] and contains(frame[boarding_section], "button", "Board"), "eligible platforms should render Board buttons")
+assert(contains(frame.surfexp_planet_section, "label", "None"), "no unavailable planets should render None")
 ui_env.storage.surface_export_planet_policy.disabled = {nauvis = true}
 joined_panel.refresh_planets(ui_player)
-assert(not contains(ui_player.gui.screen[planets_name], "label", "None"), "an unavailable planet should replace None")
+frame = ui_player.gui.screen[planets_name]
+assert(not contains(frame.surfexp_planet_section, "label", "None"), "an unavailable planet should replace None")
 ui_env.storage.surface_export_planet_policy.disabled = {}
-print("PASS the Boarding panel renders None with zero eligible platforms and Board buttons otherwise; Unavailable Planets renders None only when empty")
+print("PASS the Boarding section appears only with eligible platforms; Unavailable Planets renders None only when empty")
