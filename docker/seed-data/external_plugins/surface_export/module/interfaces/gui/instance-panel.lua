@@ -9,7 +9,8 @@ local TITLE = "surfexp_instance_title"
 local TOGGLE = "surfexp_instance_toggle_planets"
 local WIDTH = 256
 local MARGIN = 11
-local ROW = 36
+local ROW = 24
+local PLANET_ROW = 26
 local VISIBLE_ROWS = 8
 local DEFAULT_INFO = "Players arrive here when this instance needs to return them to a planet, including after their platform transfers to another server."
 local UNAVAILABLE_INFO = "These planets are unavailable on this instance. They are hidden from the surface list and cannot be selected for new journeys."
@@ -38,6 +39,10 @@ local function place(player, frame, x, y)
 	frame.location = {x, y}
 end
 
+local function boarding_top(player)
+	return player.render_mode == defines.render_mode.game and 604 or 440
+end
+
 function Panel.refresh_position(player)
 	local title = player.gui.screen[TITLE]
 	local scale = player.display_scale
@@ -49,13 +54,21 @@ function Panel.refresh_position(player)
 	local planets = player.gui.screen[PLANETS]
 	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) + 2 / scale) end
 	local boarding = player.gui.screen[FRAME]
-	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, 604) end
+	if boarding then place(player, boarding, (player.display_resolution.width - math.floor(MARGIN * scale + 0.5)) / scale - WIDTH, boarding_top(player)) end
 end
 
 local function boarding_visible(player)
 	if player.controller_type ~= defines.controllers.remote or player.selected then return false end
 	local source = Boarding.source(player)
 	return source ~= nil and source.valid and #Boarding.targets(player) > 0
+end
+
+function Panel.refresh_render_mode(player)
+	storage.surface_export_render_modes = storage.surface_export_render_modes or {}
+	local modes = storage.surface_export_render_modes
+	if modes[player.index] == player.render_mode then return end
+	modes[player.index] = player.render_mode
+	Panel.refresh_position(player)
 end
 
 function Panel.refresh_viewport(event)
@@ -87,6 +100,7 @@ end
 
 local function inset(parent)
 	local frame = parent.add{type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical"}
+	frame.style.padding = 4
 	frame.style.horizontally_stretchable = true
 	return frame
 end
@@ -94,18 +108,18 @@ end
 local function planet_row(parent, name, disabled)
 	local proto = prototypes.space_location[name]
 	local row = parent.add{type = "flow", direction = "horizontal"}
-	row.style.height = 32
+	row.style.height = PLANET_ROW
 	row.style.vertical_align = "center"
 	row.style.horizontal_spacing = 6
 	local icon = row.add{type = "flow", direction = "horizontal"}
 	icon.style.horizontal_spacing = 0
 	local planet = icon.add{type = "sprite", sprite = "space-location/" .. name}
-	planet.style.size = 24
+	planet.style.size = 20
 	planet.style.stretch_image_to_widget_size = true
 	if disabled then
 		local deny = icon.add{type = "sprite", sprite = "virtual-signal/signal-deny"}
-		deny.style.size = 20
-		deny.style.left_margin = -22
+		deny.style.size = 16
+		deny.style.left_margin = -18
 		deny.style.top_margin = 2
 		deny.style.stretch_image_to_widget_size = true
 	end
@@ -134,7 +148,7 @@ function Panel.refresh_planets(player)
 	Panel.refresh_position(player)
 	local frame = player.gui.screen.add{type = "frame", name = PLANETS, direction = "vertical"}
 	frame.style.width = WIDTH
-	frame.style.padding = 8
+	frame.style.padding = 6
 	section_heading(frame, "Default Planet", DEFAULT_INFO)
 	planet_row(inset(frame), policy.default_planet, false)
 	local names = {}
@@ -142,16 +156,16 @@ function Panel.refresh_planets(player)
 	table.sort(names)
 	section_heading(frame, "Unavailable Planets", UNAVAILABLE_INFO)
 	local content = inset(frame).add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never"}
-	content.style.maximal_height = 224
+	content.style.maximal_height = PLANET_ROW * 8
 	content.style.horizontally_stretchable = true
 	for _, name in ipairs(names) do planet_row(content, name, true) end
 	if #names == 0 then
 		local none = content.add{type = "flow", direction = "horizontal"}
-		none.style.height = 32
+		none.style.height = PLANET_ROW
 		none.style.vertical_align = "center"
 		none.add{type = "label", caption = "None"}
 	end
-	frame.tags = {panel_height = 148 + math.min(224, 32 * math.max(1, #names))}
+	frame.tags = {panel_height = 120 + math.min(PLANET_ROW * 8, PLANET_ROW * math.max(1, #names))}
 	Panel.refresh_position(player)
 	Panel.refresh_visibility(player)
 end
@@ -183,12 +197,12 @@ function Panel.open(player)
 	if not policy then return end
 	local frame = player.gui.screen.add{type = "frame", name = FRAME, direction = "vertical"}
 	frame.style.width = WIDTH
-	frame.style.padding = 8
+	frame.style.padding = 6
 	section_heading(frame, "Boarding", BOARDING_INFO)
 	local content = inset(frame)
 	local targets = Boarding.targets(player)
-	local list_height = ROW * math.min(VISIBLE_ROWS, math.max(1, #targets)) + 8
-	frame.tags = {panel_height = 64 + math.max(64, list_height), boarding_enabled = Boarding.enabled()}
+	local list_height = ROW * math.min(VISIBLE_ROWS, math.max(1, #targets)) + 4
+	frame.tags = {panel_height = 44 + list_height, boarding_enabled = Boarding.enabled()}
 	storage.surface_export_boarding_selections = storage.surface_export_boarding_selections or {}
 	storage.surface_export_boarding_selections[player.index] = targets
 	if not Boarding.enabled() then
@@ -203,7 +217,7 @@ function Panel.open(player)
 	else
 		local list = content.add{type = "scroll-pane", direction = "vertical", horizontal_scroll_policy = "never", vertical_scroll_policy = "auto"}
 		list.style.minimal_height = list_height
-		list.style.maximal_height = ROW * VISIBLE_ROWS + 8
+		list.style.maximal_height = ROW * VISIBLE_ROWS + 4
 		list.style.horizontally_stretchable = true
 		for index, target in ipairs(targets) do
 			local row = list.add{type = "flow", direction = "horizontal"}
@@ -215,7 +229,10 @@ function Panel.open(player)
 			label.style.maximal_width = 128
 			row.add{type = "empty-widget"}.style.horizontally_stretchable = true
 			local button = row.add{type = "button", name = BOARD, caption = "Board", tags = {choice = index}}
-			button.style.minimal_width = 64
+			button.style.minimal_width = 56
+			button.style.height = ROW - 2
+			button.style.top_padding = 0
+			button.style.bottom_padding = 0
 		end
 	end
 	Panel.refresh_position(player)

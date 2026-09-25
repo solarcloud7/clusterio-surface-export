@@ -67,6 +67,9 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
+		if game.tick % 10 == 0 then
+			for _, player in pairs(game.connected_players) do InstancePanel.refresh_render_mode(player) end
+		end
 		if game.tick % 60 == 0 then
 			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
 			for player_index in pairs(storage.surface_export_pending_arrivals or {}) do
