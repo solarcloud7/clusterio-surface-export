@@ -9,7 +9,7 @@ local PLANET_SECTION = "surfexp_planet_section"
 local BOARDING_SECTION = "surfexp_boarding_section"
 local TITLE = "surfexp_instance_title"
 local TOGGLE = "surfexp_instance_toggle_planets"
-local WIDTH = 256
+local WIDTH = 255
 local MARGIN = 11
 local ROW = 24
 local PLANET_ROW = 26
@@ -289,7 +289,13 @@ function Panel.on_gui_click(event)
 		local choice = frame and frame[BOARDING_SECTION] and index and (selections[player.index] or {})[index]
 		if not choice then player.print("Refresh the instance panel before boarding."); Panel.open(player); return end
 		local ok, reason = Boarding.board(player, choice)
-		if not ok then player.print(reason) end
+		if not ok then player.print(reason) else
+			local force = game.forces[choice.force]
+			local target = force and force.platforms[choice.index]
+			if target and target.valid and target.hub and target.hub.valid then
+				player.set_controller{type = defines.controllers.remote, surface = target.surface, position = target.hub.position}
+			end
+		end
 		Panel.open(player)
 		Panel.refresh_visibility(player)
 	end
