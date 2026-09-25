@@ -3,6 +3,7 @@ local Gateway = require("modules/surface_export/core/gateway")
 local GatewayGuard = require("modules/surface_export/core/gateway-guard")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui")
 
 local GatewayTransferGui = {}
 
@@ -99,6 +100,15 @@ local function build_frame(player, state)
 	if not platform then
 		note(content, "This platform is no longer available.", COLOR_WARN)
 	else
+		local aboard_players, char_count = Gateway.collect_passengers(platform)
+		in_flight = SurfaceLock.is_locked(platform.index)
+		decision = GatewayGuard.evaluate{
+			docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
+			in_flight = in_flight,
+			aboard_players = aboard_players,
+			aboard_characters = char_count,
+		}
+
 		local header = content.add{type = "flow", direction = "horizontal"}
 		header.style.vertical_align = "center"
 		header.style.horizontal_spacing = 8
@@ -111,23 +121,19 @@ local function build_frame(player, state)
 		names.add{type = "label", caption = platform.name, style = "bold_label"}
 		local where = names.add{type = "label", caption = {"", state.departed and "Left " or "Parked at ", location_name(state.gateway_name)}}
 		where.style.font_color = COLOR_MUTED
+		if decision.passenger_count > 0 then
+			header.add{type = "empty-widget"}.style.horizontally_stretchable = true
+			local tip = decision.passenger_count == 1 and "1 player aboard" or (decision.passenger_count .. " players aboard")
+			local who = header.add{type = "sprite", name = PREFIX .. "aboard_icon", sprite = "entity/character", tooltip = tip}
+			who.style.size = 24
+			who.style.stretch_image_to_widget_size = true
+			header.add{type = "label", name = PREFIX .. "aboard_count", caption = "× " .. decision.passenger_count, style = "bold_label", tooltip = tip}
+		end
 
-		local aboard_players, char_count = Gateway.collect_passengers(platform)
-		in_flight = SurfaceLock.is_locked(platform.index)
-		decision = GatewayGuard.evaluate{
-			docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
-			in_flight = in_flight,
-			aboard_players = aboard_players,
-			aboard_characters = char_count,
-		}
 		if state.departed then
 			note(content, "The platform left the gateway. This window will close.", COLOR_MUTED)
 		elseif in_flight then
 			note(content, "This platform is already transferring.", COLOR_WARN)
-		end
-		if decision.passenger_count > 0 and not state.departed then
-			note(content, {"", "[img=utility/warning_icon] ", decision.passenger_count == 1 and "1 player is" or (decision.passenger_count .. " players are"),
-				" aboard. They will be returned to a planet when the platform transfers."}, COLOR_WARN)
 		end
 
 		content.add{type = "label", caption = "Destination", style = "bold_label"}
@@ -163,6 +169,9 @@ local function build_frame(player, state)
 	local pusher = footer.add{type = "empty-widget", style = "draggable_space", ignored_by_interaction = true}
 	pusher.style.horizontally_stretchable = true
 	pusher.style.height = 32
+	if TeleportGui.is_allowed(player) then
+		footer.add{type = "button", name = PREFIX .. "teleport", caption = "Teleport…", tooltip = "Connect to another instance without the platform."}
+	end
 	local transfer = footer.add{type = "button", name = PREFIX .. "transfer", caption = "Transfer", style = "confirm_button"}
 	transfer.enabled = platform ~= nil and state.selected ~= nil and decision.allowed == true
 	if not transfer.enabled then
@@ -208,6 +217,10 @@ function GatewayTransferGui.offer(player)
 	local state = dialogs()[player.index]
 	if state and state.platform_index == platform.index and player.gui.screen[FRAME] then return true end
 	return GatewayTransferGui.open(player, platform, gateway_name)
+end
+
+function GatewayTransferGui.is_open(player)
+	return player.gui.screen[FRAME] ~= nil
 end
 
 function GatewayTransferGui.close(player)
@@ -262,6 +275,15 @@ function GatewayTransferGui.on_gui_click(event)
 
 	local player = game.get_player(event.player_index)
 	local state = dialogs()[event.player_index]
+
+	if element.name == PREFIX .. "teleport" then
+		GatewayTransferGui.close(player)
+		if TeleportGui.is_allowed(player) then
+			TeleportGui.request_roster()
+			TeleportGui.open(player)
+		end
+		return
+	end
 
 	if element.name == PREFIX .. "cancel" or element.name == PREFIX .. "close" or not state then
 		GatewayTransferGui.close(player)
