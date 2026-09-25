@@ -6,7 +6,8 @@ param (
     [switch]$SkipIncrement,
     [switch]$KeepData,
     [switch]$ResetData,
-    [switch]$MigrateEngine
+    [switch]$MigrateEngine,
+    [ValidateRange(0, 600)][int]$StoppedFailFastS = 30
 )
 
 $ErrorActionPreference = "Stop"
@@ -175,17 +176,21 @@ if (-not $ResetData) {
     }
 }
 
-function Restart-MigratedInstance {
-    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Since)
+function Restart-AfterScenarioMigration {
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Since, [switch]$Migrated)
     $container = ($seeded | Where-Object { $_.Instance -eq $Name } | Select-Object -First 1).Container
     $log = (docker logs --since $Since $container 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Could not read $container logs to diagnose ${Name}: $($log.Trim()). The cluster is NOT deployed." }
     if (-not (Test-ScenarioMigrationFailure -Log $log -Instance $Name)) {
-        throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read /clusterio/data/instances/$Name/factorio-current.log on $container. The cluster is NOT deployed."
+        if ($Migrated) {
+            throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read /clusterio/data/instances/$Name/factorio-current.log on $container. The cluster is NOT deployed."
+        }
+        return $false
     }
     Write-Host "  $Name hit Clusterio's documented first start after an engine change; starting it once more" -ForegroundColor Yellow
     $startText = (docker @ctlStartPrefix instance start $Name 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Restarting $Name after the engine migration failed: $($startText.Trim()). The cluster is NOT deployed." }
+    return $true
 }
 
 $deployStartedUtc = [DateTime]::UtcNow.ToString('o')
@@ -281,7 +286,6 @@ while ($true) {
 
 Write-Host "Expecting $($expectedInstances.Count) instance(s): $($expectedInstances -join ', ')" -ForegroundColor Cyan
 $instanceTimeout = 300
-$stoppedFailFastS = 30
 $phaseStartS = $deploySw.Elapsed.TotalSeconds
 $lastStates = @{}
 $stoppedSince = @{}
@@ -319,11 +323,12 @@ while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) 
             if (-not $stoppedSince.ContainsKey($name)) {
                 $stoppedSince[$name] = $nowS
             } elseif (($nowS - $stoppedSince[$name]) -ge $stoppedFailFastS -and $expectedInstances -contains $name) {
-                if ($migratedInstances -contains $name -and -not $migrationRestarted.ContainsKey($name)) {
+                if (-not $migrationRestarted.ContainsKey($name)) {
                     $migrationRestarted[$name] = $true
-                    Restart-MigratedInstance -Name $name -Since $deployStartedUtc
-                    $stoppedSince.Remove($name)
-                    continue
+                    if (Restart-AfterScenarioMigration -Name $name -Since $deployStartedUtc -Migrated:($migratedInstances -contains $name)) {
+                        $stoppedSince.Remove($name)
+                        continue
+                    }
                 }
                 throw "$name has been 'stopped' for ${stoppedFailFastS}s — a save-load failure, not a slow boot. Read /clusterio/data/instances/$name/factorio-current.log on its host. The cluster is NOT deployed."
             }
