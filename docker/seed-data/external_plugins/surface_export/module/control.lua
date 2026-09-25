@@ -67,8 +67,11 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
-		if game.tick % 60 == 0 then
+		for _, player in pairs(game.connected_players) do InstancePanel.refresh_position(player) end
+		if game.tick % 10 == 0 then
 			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
+		end
+		if game.tick % 60 == 0 then
 			for player_index in pairs(storage.surface_export_pending_arrivals or {}) do
 				if game.get_player(player_index) then refresh_player{player_index = player_index}
 				else storage.surface_export_pending_arrivals[player_index] = nil end
