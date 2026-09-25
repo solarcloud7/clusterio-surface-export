@@ -145,8 +145,10 @@ local function build_frame(player, state)
 			local radio = row.add{type = "radiobutton", name = PREFIX .. "target_" .. idx, state = state.selected == idx,
 				caption = target.instanceName or ("instance " .. tostring(target.instanceId)), tags = {gw_target_idx = idx}}
 			radio.enabled = online and not state.departed
-			local arrival = row.add{type = "label", caption = {"", "→ ", location_name(target.targetGateway or state.gateway_name)}}
-			arrival.style.font_color = COLOR_MUTED
+			if target.targetGateway and target.targetGateway ~= state.gateway_name then
+				local arrival = row.add{type = "label", caption = {"", "→ ", location_name(target.targetGateway)}}
+				arrival.style.font_color = COLOR_MUTED
+			end
 			row.add{type = "empty-widget"}.style.horizontally_stretchable = true
 			local status = row.add{type = "sprite", sprite = online and "utility/status_working" or "utility/status_not_working"}
 			status.style.size = 16

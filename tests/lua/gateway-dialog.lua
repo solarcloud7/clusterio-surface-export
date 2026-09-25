@@ -93,6 +93,14 @@ dialog.refresh_open()
 frame = player.gui.screen[FRAME]
 assert(named(frame, "surfexp_gw_target_1").enabled and named(frame, "surfexp_gw_target_2").state == true,
 	"a status push should enable the returning destination and keep the current selection")
+assert(not captioned(frame, "→"), "a destination arriving at the same gateway should not repeat it")
+gateway_targets[2].targetGateway = "surfexp_gateway_2"
+dialog.refresh_open()
+frame = player.gui.screen[FRAME]
+assert(captioned(frame, "→ surfexp_gateway_2"), "a destination arriving at a different gateway should name it")
+gateway_targets[2].targetGateway = "surfexp_gateway_hub"
+dialog.refresh_open()
+frame = player.gui.screen[FRAME]
 print("PASS status pushes refresh the open dialog, disable offline destinations and keep the selection")
 
 dialog.on_gui_click{player_index = 1, element = named(frame, "surfexp_gw_target_1")}
