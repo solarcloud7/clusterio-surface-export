@@ -7,7 +7,7 @@ local function fixture(fault, deletion)
     local modules, platform = {}, nil
     local stub = setmetatable({}, {__index = function() return noop end})
     local env = setmetatable({storage = {async_jobs = {}, async_job_results = {}, async_job_id_counter = 0},
-        log = noop, game = {tick = 10, print = noop, forces = {player = force}},
+        log = noop, game = {tick = 10, print = noop, forces = {player = force}, connected_players = {}},
         defines = {inventory = {hub_main = 1},events=setmetatable({}, {__index=function(_, key) return key end})}}, {__index = _G})
     force.create_space_platform = function(options)
         created = created + 1
