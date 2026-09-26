@@ -9,6 +9,7 @@ local function grid()
 	local g = {valid = true, equipment = {}}
 	g.clear = function() g.equipment = {} end
 	g.put = function(spec)
+		if spec.name == "missing-equipment" then error("Unknown equipment name: missing-equipment") end
 		local equipment = {name = spec.name, position = spec.position, quality = spec.quality}
 		g.equipment[#g.equipment + 1] = equipment
 		return equipment
@@ -52,6 +53,8 @@ local platform = {valid = true, index = 3, name = "Ship", uid = "uid:3", surface
 	end}}
 force.platforms[3] = platform
 local nauvis = {valid = true, index = 1, name = "nauvis"}
+nauvis.find_entities_filtered = function() return {} end
+nauvis.find_non_colliding_position = function(_, anchor) return anchor end
 
 local created = 0
 local function character_entity(main_items)
@@ -76,7 +79,11 @@ local function new_player(index, name, body)
 		p.controller_type = spec.type
 	end
 	p.exit_remote_view = function() p.controller_type = controllers.character end
-	p.teleport = function(_, target) p.physical_surface_index = target.index; return true end
+	p.teleport = function(_, target)
+		if p.teleport_refused then return false end
+		p.physical_surface_index = target.index
+		return true
+	end
 	p.enter_space_platform = function(target)
 		assert(p.character, "boarding needs a character")
 		p.physical_surface_index = target.surface.index
@@ -85,6 +92,7 @@ local function new_player(index, name, body)
 	end
 	p.create_character = function()
 		created = created + 1
+		p.created_on = p.physical_surface_index
 		p.character = character_entity()
 		p.controller_type = controllers.character
 		return true
@@ -98,10 +106,11 @@ end
 local uid = "uid:3"
 local connected = {}
 local decoded = {}
+local logged = {}
 local env = setmetatable({
 	storage = {},
 	defines = {controllers = controllers, inventory = inventory_ids},
-	log = noop,
+	log = function(message) logged[#logged + 1] = message end,
 	helpers = {json_to_table = function(text) return decoded[text] end},
 	game = {tick = 5000, forces = {player = force}, print = noop, connected_players = connected},
 }, {__index = _G})
@@ -116,6 +125,7 @@ local deserializer = assert(loadfile(root .. "core/deserializer.lua", "t", env))
 env.require = function(name)
 	if name:find("core/deserializer", 1, true) then return deserializer end
 	if name:find("platform-identity", 1, true) then return function(p) return p.valid and uid or nil end end
+	if name:find("planet-policy", 1, true) then return {default_surface = function() return nauvis end} end
 	if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
 	if name:find("game-utils", 1, true) then return {ACTIVATABLE_ENTITY_TYPES = {}} end
 	if name:find("core/gateway", 1, true) then return {} end
@@ -275,3 +285,66 @@ staged_result = {{name = "alice"}}
 assert(destination_remote("go_live", "tx").success and remote_calls[1][2] == staged_result and remote_calls[2] == "process",
 	"go-live should pass the staged passengers and then serve connected arrivals")
 print("PASS the go-live remote hands the staged manifest to the hold and serves connected players")
+
+local function late_record(id, items)
+	return {[id] = {transfer_id = id, force_name = "player", platform_index = 3, surface_index = 80,
+		platform_uid = "uid:3", created_tick = 1, boarding_expires_tick = 0, items = items}}
+end
+local function count_named(entity, name)
+	local n = 0
+	for _, inv in pairs(entity.inventories) do
+		for i = 1, #inv do if inv[i].valid_for_read and inv[i].name == name then n = n + inv[i].count end end
+	end
+	for i = 1, #hub_inventory do if hub_inventory[i].valid_for_read and hub_inventory[i].name == name then n = n + hub_inventory[i].count end end
+	return n
+end
+env.game.tick = 7000
+env.storage.surface_export_passengers = {}
+local hana = new_player(8, "hana", character_entity())
+hub_inventory = inventory(1)
+env.storage.surface_export_arrivals.hana = late_record("tx-20", {{name = "power-armor", count = 1, quality = "normal",
+	inventory = "armor", grid = {equipment = {{name = "missing-equipment", position = {x = 0, y = 0}, quality = "normal"}}}}})
+arrival.process(hana)
+arrival.process(hana)
+assert(count_named(hana.character, "power-armor") == 1, "armor whose grid cannot be restored must be delivered exactly once")
+assert(not env.storage.surface_export_arrivals.hana, "a placed stack with degraded properties counts as delivered")
+print("PASS a stack whose properties fail to restore is delivered once, not again on every retry")
+
+local ian_body = character_entity()
+local ian = new_player(9, "ian", ian_body)
+local ian_inventory = ian_body.get_inventory
+ian_body.get_inventory = function(id)
+	if id == inventory_ids.character_guns and ian_body.broken then error("injected inventory failure") end
+	return ian_inventory(id)
+end
+ian_body.broken = true
+env.storage.surface_export_arrivals.ian = late_record("tx-21", {
+	{name = "iron-plate", count = 50, quality = "normal", inventory = "main"},
+	{name = "pistol", count = 1, quality = "normal", inventory = "guns"}})
+arrival.process(ian)
+ian_body.broken = false
+arrival.process(ian)
+assert(count_named(ian_body, "iron-plate") == 50 and count_named(ian_body, "pistol") == 1,
+	"items placed before a delivery error must not be delivered again")
+print("PASS delivery progress is kept per item across an error")
+
+local kim = new_player(10, "kim", nil)
+kim.controller_type, kim.physical_surface_index = controllers.spectator, ship_surface.index
+env.storage.surface_export_arrivals.kim = late_record("tx-22", {})
+arrival.process(kim)
+assert(kim.created_on == nauvis.index, "a created body should start on the default planet, not at the old view")
+local lou = new_player(11, "lou", nil)
+lou.controller_type, lou.stashed_controller_type = controllers.editor, controllers.remote
+env.storage.surface_export_arrivals.lou = late_record("tx-23", {})
+local before = created
+arrival.process(lou)
+assert(created == before and not lou.character, "an editor player with any stashed controller that can hold a character gets no new body")
+print("PASS a created body starts on the default planet and editor players with a stash are left alone")
+
+local mo = new_player(12, "mo", nil)
+mo.associated = {character_entity()}
+mo.teleport_refused = true
+env.storage.surface_export_arrivals.mo = late_record("tx-24", {})
+arrival.process(mo)
+assert(not mo.character and created == before, "a refused teleport must not attach or create a character")
+print("PASS a refused teleport to an existing character stops the reattach")

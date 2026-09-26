@@ -1387,10 +1387,16 @@ function Deserializer.place_stack(stack, item, item_state)
     if stack.valid_for_read then stack.clear() end
     return false, "the slot did not take the whole stack"
   end
-  if item.export_string then
-    restore_export_string_stack(stack, item, item_state)
-  else
-    restore_item_properties(stack, item, item_state)
+  local restored, restore_err = pcall(function()
+    if item.export_string then
+      restore_export_string_stack(stack, item, item_state)
+    else
+      restore_item_properties(stack, item, item_state)
+    end
+  end)
+  if not restored then
+    log(string.format("[Deserializer] '%s' was placed but its properties were not fully restored: %s",
+      tostring(item.name), tostring(restore_err)))
   end
   return true
 end

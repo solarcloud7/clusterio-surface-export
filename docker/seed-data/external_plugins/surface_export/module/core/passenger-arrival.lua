@@ -1,5 +1,6 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local platform_identity = require("modules/surface_export/utils/platform-identity")
+local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 
 local Arrival = {}
 
@@ -84,18 +85,29 @@ local function ensure_body(player)
 	if character and character.valid then return true end
 	local controller = player.controller_type
 	if controller == defines.controllers.cutscene then return false end
-	if controller == defines.controllers.editor and player.stashed_controller_type == defines.controllers.character then
+	if controller == defines.controllers.editor and player.stashed_controller_type ~= nil
+		and player.stashed_controller_type ~= defines.controllers.god
+		and player.stashed_controller_type ~= defines.controllers.spectator then
 		return false
 	end
 	for _, associated in pairs(player.get_associated_characters()) do
 		if associated.valid then
 			if controller ~= defines.controllers.god then player.set_controller{type = defines.controllers.god} end
-			player.teleport(associated.position, associated.surface)
+			if not player.teleport(associated.position, associated.surface) then
+				error("player teleport to the existing character was refused")
+			end
 			player.set_controller{type = defines.controllers.character, character = associated}
 			return player.character ~= nil and player.character.valid
 		end
 	end
 	if controller ~= defines.controllers.god then player.set_controller{type = defines.controllers.god} end
+	local surface = PlanetPolicy.default_surface()
+	if not (surface and surface.valid) then error("the default planet surface is unavailable") end
+	local anchor = {x = 0, y = 0}
+	local pads = surface.find_entities_filtered{type = "cargo-landing-pad", force = player.force}
+	if pads[1] and pads[1].valid then anchor = pads[1].position end
+	local position = surface.find_non_colliding_position("character", anchor, 64, 0.5) or anchor
+	if not player.teleport(position, surface) then error("player teleport to the default planet was refused") end
 	log(string.format("[Passenger] '%s' arrived without a character; creating one", tostring(player.name)))
 	return player.create_character() and player.character ~= nil and player.character.valid
 end
@@ -127,15 +139,20 @@ local function deliver(player, record)
 	for _, item in ipairs(record.items) do
 		if item.inventory ~= "armor" then ordered[#ordered + 1] = item end
 	end
-	local remaining = {}
 	for _, item in ipairs(ordered) do
 		local target = TARGETS[item.inventory]
 		local placed = (target and place_into(character.get_inventory(defines.inventory[target]), item))
 			or place_into(character.get_inventory(defines.inventory.character_main), item)
 			or place_into(hub, item)
-		if not placed then remaining[#remaining + 1] = item end
+		if placed then
+			for index, pending in ipairs(record.items) do
+				if pending == item then
+					table.remove(record.items, index)
+					break
+				end
+			end
+		end
 	end
-	record.items = remaining
 end
 
 local function board(player, record)
