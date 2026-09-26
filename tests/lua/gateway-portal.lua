@@ -1,5 +1,6 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
-local BUTTON = "surfexp_gateway_portal"
+local GATEWAY = "surfexp_gateway_portal"
+local TELEPORT = "surfexp_teleport_portal"
 
 local function top()
 	local element = {}
@@ -17,7 +18,7 @@ local platform = {valid = true, index = 7}
 local surface = {platform = platform}
 local player = {index = 1, valid = true, physical_surface_index = 70, gui = {top = top()}}
 local calls = {}
-local dialog_open = false
+local dialog_open, teleport_open = false, false
 
 local env = setmetatable({
 	game = {get_player = function() return player end, get_surface = function(index) return index == 70 and surface or nil end},
@@ -25,9 +26,11 @@ local env = setmetatable({
 }, {__index = _G})
 env.require = function(name)
 	if name:find("teleport-gui", 1, true) then
-		return {is_allowed = function() return allowed end,
+		return {ICON = "space-location/surfexp_gateway_3", is_allowed = function() return allowed end,
+			is_open = function() return teleport_open end,
+			close = function() teleport_open = false; calls[#calls + 1] = "teleport-close" end,
 			request_roster = function() calls[#calls + 1] = "roster" end,
-			open = function() calls[#calls + 1] = "teleport" end}
+			open = function() teleport_open = true; calls[#calls + 1] = "teleport" end}
 	end
 	if name:find("gateway-transfer", 1, true) then
 		return {is_open = function() return dialog_open end,
@@ -42,43 +45,46 @@ end
 local portal = assert(loadfile(root .. "interfaces/gui/gateway-portal.lua", "t", env))()
 
 portal.refresh(player)
-assert(not player.gui.top[BUTTON], "a player away from a gateway without teleport permission should not see the portal")
+assert(not player.gui.top[GATEWAY] and not player.gui.top[TELEPORT], "a player away from a gateway without teleport permission should see neither button")
 allowed = true
 portal.refresh(player)
-local button = player.gui.top[BUTTON]
-assert(button and button.sprite == "space-location/surfexp_gateway_hub" and button.style == "mod_gui_button",
-	"a player allowed to teleport should see the gateway portal")
-assert(button.tooltip:find("Teleport", 1, true) and not button.tooltip:find("Gateway", 1, true))
+local teleport = player.gui.top[TELEPORT]
+assert(teleport and teleport.sprite == "space-location/surfexp_gateway_3" and teleport.style == "mod_gui_button",
+	"a player allowed to teleport should see the orange teleport button")
+assert(not player.gui.top[GATEWAY], "the gateway button should need a parked platform")
 allowed = false
 portal.refresh(player)
-assert(not player.gui.top[BUTTON], "losing teleport permission away from a gateway should remove the portal")
-print("PASS the portal is shown to players allowed to teleport")
+assert(not player.gui.top[TELEPORT], "losing teleport permission should remove the teleport button")
+print("PASS the orange teleport button is shown only to players allowed to teleport")
 
 parked = "surfexp_gateway_hub"
 portal.refresh(player)
-button = player.gui.top[BUTTON]
-assert(button and button.tooltip:find("Gateway", 1, true), "a player aboard a platform parked at a gateway should see the portal")
+local gateway = player.gui.top[GATEWAY]
+assert(gateway and gateway.sprite == "space-location/surfexp_gateway_hub" and not player.gui.top[TELEPORT],
+	"a player aboard a platform parked at a gateway should see only the gateway button")
 targets = {}
 portal.refresh(player)
-assert(not player.gui.top[BUTTON], "a gateway without destinations should not show the portal")
+assert(not player.gui.top[GATEWAY], "a gateway without destinations should not show the gateway button")
 targets = {{instanceId = 2, online = true}}
 player.physical_surface_index = 71
 portal.refresh(player)
-assert(not player.gui.top[BUTTON], "a player not aboard the parked platform should not see the portal")
+assert(not player.gui.top[GATEWAY], "a player not aboard the parked platform should not see the gateway button")
 player.physical_surface_index = 70
-print("PASS the portal is shown aboard a platform parked at a gateway with destinations")
+print("PASS the gateway button is shown aboard a platform parked at a gateway with destinations")
 
+allowed = true
 portal.refresh(player)
-portal.on_gui_click{player_index = 1, element = player.gui.top[BUTTON]}
-assert(calls[#calls] == "gateway:7:surfexp_gateway_hub" and dialog_open, "clicking at a gateway should open the gateway dialog")
-portal.on_gui_click{player_index = 1, element = player.gui.top[BUTTON]}
+portal.on_gui_click{player_index = 1, element = player.gui.top[GATEWAY]}
+assert(calls[#calls] == "gateway:7:surfexp_gateway_hub" and dialog_open, "the gateway button should open the gateway dialog")
+portal.on_gui_click{player_index = 1, element = player.gui.top[GATEWAY]}
 assert(calls[#calls] == "close" and not dialog_open, "clicking again should close the gateway dialog")
-parked, allowed = nil, true
-portal.on_gui_click{player_index = 1, element = player.gui.top[BUTTON]}
-assert(calls[#calls - 1] == "roster" and calls[#calls] == "teleport", "clicking away from a gateway should open the teleport window")
+portal.on_gui_click{player_index = 1, element = player.gui.top[TELEPORT]}
+assert(calls[#calls - 1] == "roster" and calls[#calls] == "teleport" and not dialog_open,
+	"the teleport button should open the teleport window, not the gateway dialog")
+portal.on_gui_click{player_index = 1, element = player.gui.top[TELEPORT]}
+assert(calls[#calls] == "teleport-close" and not teleport_open, "clicking again should close the teleport window")
 local before = #calls
 allowed = false
-portal.on_gui_click{player_index = 1, element = player.gui.top[BUTTON]}
-assert(#calls == before, "a player without permission away from a gateway should not get the teleport window")
-assert(not player.gui.top[BUTTON], "the click should remove a portal the player can no longer use")
-print("PASS clicking the portal opens the gateway dialog at a gateway and the teleport window elsewhere")
+portal.on_gui_click{player_index = 1, element = player.gui.top[TELEPORT]}
+assert(#calls == before and not player.gui.top[TELEPORT], "a player who lost permission should not get the window and loses the button")
+print("PASS each button opens and closes its own window")

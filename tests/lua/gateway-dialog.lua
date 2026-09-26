@@ -43,7 +43,6 @@ local platform = {valid = true, index = 7, name = "Ship", force = {name = "playe
 local force = {name = "player", platforms = {[7] = platform}}
 platform.surface = {platform = platform}
 local started = {}
-local teleport_allowed, teleports = false, {}
 local player = {index = 1, valid = true, connected = true, physical_surface_index = 70, gui = {screen = gui()}, printed = {}}
 player.print = function(message) player.printed[#player.printed + 1] = message end
 
@@ -65,11 +64,6 @@ env.require = function(name)
 		return {start = function(_, index, instance, gateway) started[#started + 1] = {index, instance, gateway}; return true end}
 	end
 	if name:find("surface-lock", 1, true) then return {is_locked = function() return locked end} end
-	if name:find("teleport-gui", 1, true) then
-		return {is_allowed = function() return teleport_allowed end,
-			request_roster = function() teleports[#teleports + 1] = "roster" end,
-			open = function() teleports[#teleports + 1] = "open" end}
-	end
 	return {
 		get_gateway_config = function() return {targets = gateway_targets} end,
 		parked_at_gateway = function() return parked end,
@@ -86,7 +80,6 @@ assert(named(frame, "surfexp_gw_transfer").enabled, "Transfer should be enabled 
 assert(named(frame, "surfexp_gw_aboard_count").caption == "× 1" and named(frame, "surfexp_gw_aboard_icon").sprite == "entity/character",
 	"players aboard should be shown as a character icon and count")
 assert(not captioned(frame, "returned to a planet"), "the dialog should not carry the old passenger warning")
-assert(not named(frame, "surfexp_gw_teleport"), "players without teleport permission should not see Teleport")
 print("PASS the dialog preselects the only online destination and shows the players aboard")
 
 gateway_targets = {
@@ -165,11 +158,3 @@ gateway_targets = {{instanceId = 2, instanceName = "Two", online = true}}
 assert(not dialog.offer(player), "a player not aboard a platform should not be offered")
 print("PASS joining aboard a parked platform offers the dialog only when a transfer is possible")
 
-teleport_allowed = true
-assert(dialog.open(player, platform, "surfexp_gateway_hub"))
-assert(dialog.is_open(player))
-dialog.on_gui_click{player_index = 1, element = named(player.gui.screen[FRAME], "surfexp_gw_teleport")}
-assert(not dialog.is_open(player) and teleports[1] == "roster" and teleports[2] == "open",
-	"Teleport should close the dialog, request the roster and open the teleport window")
-teleport_allowed = false
-print("PASS players allowed to teleport can switch from the gateway dialog to the teleport window")

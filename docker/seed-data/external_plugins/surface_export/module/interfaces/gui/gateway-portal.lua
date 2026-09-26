@@ -4,9 +4,9 @@ local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gatewa
 
 local Portal = {}
 
-local BUTTON = "surfexp_gateway_portal"
-local SPRITE = "space-location/surfexp_gateway_hub"
-local FALLBACK_SPRITE = "entity/space-platform-hub"
+local GATEWAY_BUTTON = "surfexp_gateway_portal"
+local TELEPORT_BUTTON = "surfexp_teleport_portal"
+local GATEWAY_SPRITE = "space-location/surfexp_gateway_hub"
 
 local function parked(player)
 	local surface = game.get_surface(player.physical_surface_index)
@@ -18,42 +18,40 @@ local function parked(player)
 	return platform, gateway_name
 end
 
-local function tooltip(at_gateway, allowed)
-	if at_gateway and allowed then return "Gateway: choose where this platform goes, or teleport to another instance." end
-	if at_gateway then return "Gateway: choose where this platform goes." end
-	return "Teleport: connect to another instance."
+local function show(player, name, wanted, sprite, fallback, tooltip)
+	local button = player.gui.top[name]
+	if not wanted then
+		if button then button.destroy() end
+	elseif not button then
+		player.gui.top.add{type = "sprite-button", name = name, style = "mod_gui_button", tooltip = tooltip,
+			sprite = helpers.is_valid_sprite_path(sprite) and sprite or fallback}
+	end
 end
 
 function Portal.refresh(player)
 	if not (player and player.valid) then return end
-	local at_gateway = parked(player) ~= nil
-	local allowed = TeleportGui.is_allowed(player)
-	local button = player.gui.top[BUTTON]
-	if not (at_gateway or allowed) then
-		if button then button.destroy() end
-		return
-	end
-	local tip = tooltip(at_gateway, allowed)
-	if not button then
-		player.gui.top.add{type = "sprite-button", name = BUTTON, style = "mod_gui_button", tooltip = tip,
-			sprite = helpers.is_valid_sprite_path(SPRITE) and SPRITE or FALLBACK_SPRITE}
-	elseif button.tooltip ~= tip then
-		button.tooltip = tip
-	end
+	show(player, GATEWAY_BUTTON, parked(player) ~= nil, GATEWAY_SPRITE, "entity/space-platform-hub",
+		"Gateway: choose where this platform goes.")
+	show(player, TELEPORT_BUTTON, TeleportGui.is_allowed(player), TeleportGui.ICON, "utility/character_running_speed_modifier_icon",
+		"Teleport: connect to another instance.")
 end
 
 function Portal.on_gui_click(event)
 	local element = event.element
-	if not (element and element.valid and element.name == BUTTON) then return end
+	if not (element and element.valid) then return end
+	local name = element.name
+	if name ~= GATEWAY_BUTTON and name ~= TELEPORT_BUTTON then return end
 	local player = game.get_player(event.player_index)
 	if not player then return end
-	if GatewayTransferGui.is_open(player) then
-		GatewayTransferGui.close(player)
-		return
-	end
-	local platform, gateway_name = parked(player)
-	if platform then
-		GatewayTransferGui.open(player, platform, gateway_name)
+	if name == GATEWAY_BUTTON then
+		if GatewayTransferGui.is_open(player) then
+			GatewayTransferGui.close(player)
+		else
+			local platform, gateway_name = parked(player)
+			if platform then GatewayTransferGui.open(player, platform, gateway_name) end
+		end
+	elseif TeleportGui.is_open(player) then
+		TeleportGui.close(player)
 	elseif TeleportGui.is_allowed(player) then
 		TeleportGui.request_roster()
 		TeleportGui.open(player)

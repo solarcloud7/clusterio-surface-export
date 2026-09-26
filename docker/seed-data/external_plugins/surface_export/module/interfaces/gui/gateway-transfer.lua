@@ -3,7 +3,6 @@ local Gateway = require("modules/surface_export/core/gateway")
 local GatewayGuard = require("modules/surface_export/core/gateway-guard")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
-local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui")
 
 local GatewayTransferGui = {}
 
@@ -169,9 +168,6 @@ local function build_frame(player, state)
 	local pusher = footer.add{type = "empty-widget", style = "draggable_space", ignored_by_interaction = true}
 	pusher.style.horizontally_stretchable = true
 	pusher.style.height = 32
-	if TeleportGui.is_allowed(player) then
-		footer.add{type = "button", name = PREFIX .. "teleport", caption = "Teleport…", tooltip = "Connect to another instance without the platform."}
-	end
 	local transfer = footer.add{type = "button", name = PREFIX .. "transfer", caption = "Transfer", style = "confirm_button"}
 	transfer.enabled = platform ~= nil and state.selected ~= nil and decision.allowed == true
 	if not transfer.enabled then
@@ -275,15 +271,6 @@ function GatewayTransferGui.on_gui_click(event)
 
 	local player = game.get_player(event.player_index)
 	local state = dialogs()[event.player_index]
-
-	if element.name == PREFIX .. "teleport" then
-		GatewayTransferGui.close(player)
-		if TeleportGui.is_allowed(player) then
-			TeleportGui.request_roster()
-			TeleportGui.open(player)
-		end
-		return
-	end
 
 	if element.name == PREFIX .. "cancel" or element.name == PREFIX .. "close" or not state then
 		GatewayTransferGui.close(player)
