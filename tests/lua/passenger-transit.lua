@@ -41,6 +41,7 @@ local function surface(name, index)
 	end
 	s.request_to_generate_chunks = noop
 	s.force_generate_chunk_requests = noop
+	s.set_tiles = function(tiles) s.tiles = tiles end
 	surfaces[index], surfaces_by_name[name] = s, s
 	return s
 end
@@ -238,7 +239,8 @@ local target = {instanceId = 2, instanceName = "Two", address = "10.0.0.2:34197"
 local function gear(opts)
 	opts = opts or {}
 	local armor = stack("power-armor", 1, {type = "armor", bonus = opts.bonus or 0})
-	armor.grid = {valid = true, equipment = {{name = "battery-equipment", position = {x = 0, y = 0}, quality = {name = "normal"}}}}
+	armor.grid = {valid = true, equipment = {{name = "battery-equipment", position = {x = 0, y = 0}, quality = {name = "normal"},
+		inventory_bonus = opts.equipment_bonus or 0}}}
 	local main_items = {}
 	for slot = 1, opts.filled or 2 do main_items[slot] = stack(slot == 1 and "iron-plate" or "copper-plate", 50) end
 	return {
@@ -265,6 +267,11 @@ local bob = new_player(2, "bob", false, bob_body)
 local parked = transit.park(platform, target, "surfexp_gateway_hub", {alice, bob})
 local hold = env.game.get_surface("surfexp_passenger_hold")
 assert(hold and force.hidden.surfexp_passenger_hold == true and hold.no_enemies_mode, "the hold surface should exist, hidden and without enemies")
+local solid = {}
+for _, tile in ipairs(hold.tiles or {}) do
+	if tile.name == "lab-dark-1" then solid[tile.position.x .. "," .. tile.position.y] = true end
+end
+assert(solid["0,0"] and solid["-16,-16"] and solid["15,15"], "the hold should have solid ground around 0,0")
 assert(#parked == 2 and parked[1] == 1 and parked[2] == 2, "both passengers should be parked")
 local a = env.storage.surface_export_passengers[1]
 assert(a.state == "in_transit" and a.body == alice_body and a.destination_address == "10.0.0.2:34197" and a.platform_uid == "uid:7")
@@ -520,6 +527,51 @@ local join = find(ona.gui.screen[window.FRAME], window.JOIN)
 assert(join and not join.enabled and join.tooltip and #ona.connects == 0, "Join is disabled with a reason when the destination has no address")
 print("PASS Join is disabled when the destination has no address")
 
+local pia_body = character(nil, gear({equipment_bonus = 10, main = 90, filled = 0}))
+local pia_main = pia_body.inventories[inventory_ids.character_main]
+pia_main[85] = stack("wood", 10)
+local pia = new_player(16, "pia", true, pia_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {pia})
+transit.assign_job(parked, "job-16")
+manifest = transit.depart("job-16")
+assert(#manifest[1].items == 0 and pia_body.inventories[inventory_ids.character_armor][1].valid_for_read,
+	"armor whose equipment adds inventory slots that are in use should stay")
+assert(pia_main[85].valid_for_read and not pia_main.sorted, "the passenger's inventory is not reordered")
+print("PASS armor stays when a slot its equipment provides is in use, without reordering the inventory")
+
+local quin_body = character(nil, gear())
+quin_body.inventories[inventory_ids.character_armor][1].name = "cursed-armor"
+local quin = new_player(17, "quin", true, quin_body)
+local rex_body = character(nil, gear())
+local rex = new_player(18, "rex", true, rex_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {quin, rex})
+transit.assign_job(parked, "job-17")
+local extract = scanner.extract_item_properties
+scanner.extract_item_properties = function(item_stack)
+	if item_stack.name == "cursed-armor" then error("injected extraction failure") end
+	return extract(item_stack)
+end
+local departed_ok, departed = pcall(transit.depart, "job-17")
+scanner.extract_item_properties = extract
+assert(departed_ok and #departed == 2, "one passenger's extraction failure must not block the departure")
+local by = {}
+for _, entry in ipairs(departed) do by[entry.name] = entry end
+assert(#by.quin.items == 0 and quin_body.inventories[inventory_ids.character_armor][1].valid_for_read,
+	"a passenger whose gear cannot be read keeps it on their body")
+assert(#by.rex.items == 1 and env.storage.surface_export_passengers[17].state == "departed", "the other passenger still carries their gear")
+print("PASS a gear extraction failure for one passenger leaves their gear on the body and departs everyone")
+
+local sal = new_player(19, "sal", true, character(nil, gear()))
+parked = transit.park(platform, target, "surfexp_gateway_hub", {sal})
+transit.assign_job(parked, "job-18")
+env.storage.locked_platforms = {[7] = {kind = "transfer", phase = "committed", transfer_job_id = "job-18"}}
+transit.on_gui_click{player_index = 19, element = {valid = true, name = window.ABORT}}
+assert(transit.owns(sal) and env.storage.surface_export_passengers[19].state == "in_transit" and sal.character == nil,
+	"Abort is refused while the source is held under a committed lock for this transfer")
+assert(sal.printed[#sal.printed]:find("reconciled", 1, true), "the passenger is told the transfer is being reconciled")
+env.storage.locked_platforms = nil
+print("PASS Abort is refused while a committed source lock is reconciled")
+
 local lock_env = setmetatable({storage = {source_recovery_ready = true, locked_platforms = {}}, log = noop,
 	game = {forces = {player = force}}}, {__index = _G})
 local released = {}
@@ -547,10 +599,19 @@ lock("transfer", "job-9")
 assert(surface_lock.unlock_platform(7, nil, nil, nil, "job-9") and released[1] == "job-9", "a transfer unlock should return that job's passengers")
 lock("export", "job-10")
 assert(surface_lock.unlock_platform(7) and #released == 1, "an export unlock has no passengers")
+lock("transfer", "job-19")
+lock_env.storage.locked_platforms[7].phase = "committed"
+lock_env.storage.source_recovery_ready, lock_env.storage.source_recovery_mode = false, "save_game"
+lock_env.storage.source_recovery_allow_adoption = true
+local before_accept = #released
+assert(surface_lock.accept_restored_source(7, "job-19") and released[#released] == "job-19" and #released == before_accept + 1,
+	"accepting a restored source returns that transfer's passengers")
+lock_env.storage.source_recovery_ready, lock_env.storage.source_recovery_mode = true, nil
+lock_env.storage.source_recovery_allow_adoption = nil
 lock("transfer", "job-15")
 lock_env.storage.locked_platforms[7].force_name = "ghost"
 assert(not surface_lock.unlock_platform(7) and released[#released] == "job-15", "a lock cleared for a missing force returns its passengers")
 lock("transfer", "job-11")
 lock_env.storage.locked_platforms[7].phase = "committed"
-assert(not surface_lock.unlock_platform(7) and #released == 2, "a committed source keeps its passengers in transit")
+assert(not surface_lock.unlock_platform(7) and #released == 3, "a committed source keeps its passengers in transit")
 print("PASS the transfer unlock returns its job's passengers after the lock is released")

@@ -52,6 +52,11 @@ function Transit.hold_surface()
 		surface.peaceful_mode = true
 		surface.request_to_generate_chunks({0, 0}, 1)
 		surface.force_generate_chunk_requests()
+		local tiles = {}
+		for x = -16, 15 do
+			for y = -16, 15 do tiles[#tiles + 1] = {name = "lab-dark-1", position = {x = x, y = y}} end
+		end
+		surface.set_tiles(tiles)
 	end
 	for _, force in pairs(game.forces) do force.set_surface_hidden(surface, true) end
 	return surface
@@ -263,6 +268,11 @@ end
 function Transit.abort(player)
 	local record = Transit.record(player)
 	if not (record and record.state == "in_transit") then return false end
+	local lock = storage.locked_platforms and storage.locked_platforms[record.platform_index]
+	if lock and lock.kind == "transfer" and lock.phase == "committed" and lock.transfer_job_id == record.job_id then
+		player.print("This transfer is being reconciled by an administrator. You stay held until it is resolved.")
+		return false
+	end
 	record.state = "aborted"
 	return Transit.restore(player, record, "landing")
 end
@@ -274,11 +284,18 @@ local function armor_fits(body)
 	local bonus = 0
 	for slot = 1, #armor do
 		local stack = armor[slot]
-		if stack.valid_for_read then bonus = bonus + (stack.prototype.get_inventory_size_bonus(stack.quality) or 0) end
+		if stack.valid_for_read then
+			bonus = bonus + (stack.prototype.get_inventory_size_bonus(stack.quality) or 0)
+			local grid = stack.grid
+			for _, equipment in ipairs(grid and grid.equipment or {}) do bonus = bonus + (equipment.inventory_bonus or 0) end
+		end
 	end
 	if bonus == 0 then return true end
-	main.sort_and_merge()
-	return #main - main.count_empty_stacks() <= #main - bonus
+	local highest = 0
+	for slot = 1, #main do
+		if main[slot].valid_for_read then highest = slot end
+	end
+	return highest <= #main - bonus
 end
 
 local function carried_stacks(body, carry)
@@ -306,11 +323,18 @@ function Transit.depart(job_id)
 			local player = game.get_player(index)
 			local entry = {name = player and player.name or record.player_name, items = {}}
 			local stacks, kept_armor = {}, false
-			if record.body and record.body.valid then stacks, kept_armor = carried_stacks(record.body, carry) end
-			for _, carried in ipairs(stacks) do
-				local item = InventoryScanner.extract_item_properties(carried.stack)
-				item.inventory = carried.key
-				entry.items[#entry.items + 1] = item
+			local read, read_err = pcall(function()
+				if record.body and record.body.valid then stacks, kept_armor = carried_stacks(record.body, carry) end
+				for _, carried in ipairs(stacks) do
+					local item = InventoryScanner.extract_item_properties(carried.stack)
+					item.inventory = carried.key
+					entry.items[#entry.items + 1] = item
+				end
+			end)
+			if not read then
+				log(string.format("[Passenger] reading the carried gear of '%s' failed; it stays on the body: %s",
+					tostring(entry.name), tostring(read_err)))
+				stacks, kept_armor, entry.items = {}, false, {}
 			end
 			record.state = "departed"
 			record.departed_tick = game.tick
