@@ -8,9 +8,9 @@ import { DEVELOPMENT, withCluster } from "../shared/remote-cluster.mjs";
 const READ_ONLY = [
 	["instance", "list"],
 	["instance", "config", "list"],
-	["instance", "config", "get"],
 	["instance", "save", "list"],
 	["host", "list"],
+	["host", "config", "list"],
 	["mod-pack", "list"],
 	["mod-pack", "show"],
 	["mod", "list"],
@@ -19,6 +19,9 @@ const READ_ONLY = [
 	["user", "list"],
 	["user", "show"],
 	["role", "list"],
+	["surface-export", "gateways"],
+	["surface-export", "list"],
+	["surface-export", "list-transfers"],
 ];
 
 const LOCAL_ONLY = new Set(["control-config", "plugin"]);

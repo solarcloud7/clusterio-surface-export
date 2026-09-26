@@ -1,0 +1,103 @@
+{
+	"modPack": {
+		"name": "Space Age 2.1.20 - Surface Export 0.6.12",
+		"factorioVersion": "2.1.20",
+		"mods": {
+			"base": "2.1.20",
+			"space-age": "2.1.20",
+			"quality": "2.1.20",
+			"elevated-rails": "2.1.20",
+			"recycler": "2.1.20",
+			"surfexp_gateways": "0.6.12",
+			"PlanetsLib": "2.0.1",
+			"maraxsis": "1.39.4",
+			"FluidMustFlow": "1.5.0",
+			"SpidertronEnhancements": "1.11.0",
+			"SpidertronPatrols": "2.7.0"
+		},
+		"sha1": {
+			"surfexp_gateways": "a96c8f968f260f7c6aff1880e7394bdb1853f75d",
+			"PlanetsLib": "2bc1b9a592e610a33a6c3ddfc90b104774442916",
+			"maraxsis": "18de3e1fcca2df06c8180d56b81fba09dc739bc1",
+			"FluidMustFlow": "6c576d8d354cf930a64d79819af8f9b002583792",
+			"SpidertronEnhancements": "293e1fda6c88523913f776083d444dcce5579d4a",
+			"SpidertronPatrols": "e05fb50107a0e3fa793fced4f65468180948ba0f"
+		},
+		"settings": {
+			"startup": {
+				"surfexp-gateway-layout": "one_gate"
+			},
+			"runtime-global": {
+				"surfexp-platform-boarding": true
+			}
+		}
+	},
+	"controller": {
+		"surface_export.gateway_mode": "one_gate",
+		"surface_export.platform_source_of_truth": "plugin_history"
+	},
+	"instances": {
+		"fact1": {
+			"factorio.version": "2.1.20",
+			"surface_export.debug_mode": false,
+			"surface_export.default_planet": "nauvis",
+			"surface_export.disabled_planets": "vulcanus,fulgora,gleba,aquilo"
+		},
+		"fact2": {
+			"factorio.version": "2.1.20",
+			"surface_export.debug_mode": false,
+			"surface_export.default_planet": "vulcanus",
+			"surface_export.disabled_planets": "nauvis,fulgora,gleba,aquilo,maraxsis"
+		},
+		"fact3": {
+			"factorio.version": "2.1.20",
+			"surface_export.debug_mode": false,
+			"surface_export.default_planet": "fulgora",
+			"surface_export.disabled_planets": "nauvis,vulcanus,gleba,aquilo,maraxsis"
+		},
+		"fact4": {
+			"factorio.version": "2.1.20",
+			"surface_export.debug_mode": false,
+			"surface_export.default_planet": "gleba",
+			"surface_export.disabled_planets": "nauvis,vulcanus,fulgora,maraxsis"
+		}
+	},
+	"hosts": {
+		"clusterio-host-1": {
+			"host.public_address": "fact1.cloudstack.software"
+		},
+		"clusterio-host-2": {
+			"host.public_address": "fact3.cloudstack.software"
+		}
+	},
+	"gatewayLinks": {
+		"fact1": {
+			"surfexp_gateway_hub": [
+				"fact2",
+				"fact3",
+				"fact4"
+			]
+		},
+		"fact2": {
+			"surfexp_gateway_hub": [
+				"fact1",
+				"fact3",
+				"fact4"
+			]
+		},
+		"fact3": {
+			"surfexp_gateway_hub": [
+				"fact1",
+				"fact2",
+				"fact4"
+			]
+		},
+		"fact4": {
+			"surfexp_gateway_hub": [
+				"fact1",
+				"fact2",
+				"fact3"
+			]
+		}
+	}
+}
