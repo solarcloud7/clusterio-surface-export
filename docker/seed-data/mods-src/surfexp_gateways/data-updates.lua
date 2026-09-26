@@ -15,7 +15,7 @@ for name, location in pairs(data.raw["space-location"]) do
 			position = {-680, 601},
 			parallax_strength = {0.95, 0.95},
 			rotation_seconds = 90,
-			planet_axis = {0.0, 90.0},
+			planet_axis = {90.0, 0.0},
 			planet_axis_deviation_amplitude = {2.0, 2.0},
 			planet_axis_deviation_seconds = {890.5, 753.7},
 			light_direction = {-0.2, 0.2, 1.0},

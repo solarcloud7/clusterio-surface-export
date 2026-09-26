@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.6.9
+Version: 0.6.10
   Changes:
     - Draw the gateway beneath platforms parked there, like a planet.
     - Make gateway routes one unit longer than the planet routes so platforms no longer take the gateway as a shortcut.
