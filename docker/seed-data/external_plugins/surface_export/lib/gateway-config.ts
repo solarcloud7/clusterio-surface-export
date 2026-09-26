@@ -169,14 +169,17 @@ export class GatewayConfig {
 		if (this.gatewayMode() !== "one_gate") {
 			return { destinations, unroutableInstances };
 		}
-		for (const inst of this.liveInstances()) {
+		const candidates = this.liveInstances().map(inst => {
 			const configured = inst.config?.get("instance.name");
 			const instanceName = typeof configured === "string" ? configured : "";
-			const gatewayName = messages.instanceGatewayName(instanceName);
-			if (gatewayName) {
-				destinations.push({ gatewayName, instanceId: inst.id, instanceName });
+			return { instanceId: inst.id, instanceName, gatewayName: messages.instanceGatewayName(instanceName) };
+		});
+		for (const candidate of candidates) {
+			const shared = candidates.filter(other => other.instanceName === candidate.instanceName).length > 1;
+			if (candidate.gatewayName && !shared) {
+				destinations.push({ gatewayName: candidate.gatewayName, instanceId: candidate.instanceId, instanceName: candidate.instanceName });
 			} else {
-				unroutableInstances.push(instanceName);
+				unroutableInstances.push(candidate.instanceName);
 			}
 		}
 		return { destinations, unroutableInstances };
@@ -305,6 +308,10 @@ export class GatewayConfig {
 			}
 			if (!gatewayName || !activeNames.includes(gatewayName)) {
 				return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
+			}
+			const destinationTarget = (entry.targets || []).find(t => t.targetGateway && messages.isInstanceGatewayName(t.targetGateway));
+			if (destinationTarget) {
+				return { success: false, error: `${destinationTarget.targetGateway} is a server destination; links arrive at a gateway` };
 			}
 			if (normalized.has(gatewayName)) {
 				return { success: false, error: `Gateway '${gatewayName}' appears twice in one request` };

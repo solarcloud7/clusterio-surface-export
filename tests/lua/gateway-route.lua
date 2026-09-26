@@ -6,6 +6,7 @@ local env = setmetatable({defines = {space_platform_state = states}, prototypes 
 	storage = {}, log = function() end}, {__index = _G})
 env.require = function(name)
 	if name:find("core/gateway", 1, true) and not name:find("gateway-route", 1, true) then return env.Gateway end
+	if name:find("surface-lock", 1, true) then return {destination_hold_owns_surface = function(_, p) return p.held == true end} end
 	return {}
 end
 env.Gateway = assert(loadfile(root .. "core/gateway.lua", "t", env))()
@@ -48,6 +49,11 @@ assert(#calls == 1 and calls[1].paused == true, "the platform is paused before t
 assert(calls[1].target.instanceId == 22 and calls[1].target.targetGateway == "surfexp_gateway_hub" and calls[1].initiator == nil)
 assert(#printed == 0)
 
+local held = platform("surfexp_gateway_i_fact2", {"surfexp_gateway_i_fact2"}, 1)
+held.held = true
+assert(Route.on_arrival(held, start({started = true})) == false and held.paused == false and #calls == 1,
+	"a platform owned by a destination hold is never paused or exported by the trigger")
+
 local passing = platform("surfexp_gateway_hub", {"surfexp_gateway_i_fact2"}, 1)
 assert(Route.on_arrival(passing, start({started = true})) == false and passing.paused == false and #calls == 1,
 	"a platform passing the hub keeps flying")
@@ -71,22 +77,32 @@ print("PASS arrival pauses in the same tick and starts one guarded transfer; off
 
 local unlocked = {surfexp_gateway_i_fact1 = true, surfexp_gateway_i_fact2 = false}
 local force = {is_space_location_unlocked = function(name) return unlocked[name] ~= false end}
-local loop = {current = 1, records = {{station = "surfexp_gateway_i_fact2"}, {station = "nauvis"}, {station = "surfexp_gateway_i_fact1"}, {station = "vulcanus"}},
+local function records(...)
+	local list = {}
+	for i, station in ipairs({...}) do list[i] = {station = station} end
+	return list
+end
+local loop = {current = 1, records = records("surfexp_gateway_i_fact2", "nauvis", "surfexp_gateway_i_fact1", "vulcanus"),
 	interrupts = {{name = "refuel"}}, group = "loop"}
-local advanced, resume = Gateway.advance_past_arrival(loop, force)
-assert(advanced.current == 2 and resume == true, "the route continues at the stop after the destination")
+local advanced = Gateway.advance_past_arrival(loop, force)
+assert(advanced.current == 2 and Gateway.can_resume(advanced, force), "the route continues at the stop after this server's destination")
 assert(#advanced.records == 4 and advanced.records[1].station == "surfexp_gateway_i_fact2", "every stop is kept so the loop survives each hop")
 assert(advanced.interrupts[1].name == "refuel" and advanced.group == "loop")
-loop.current = 3
-advanced, resume = Gateway.advance_past_arrival(loop, force)
-assert(advanced.current == 4 and resume == true)
 loop.current = 4
-loop.records[4] = {station = "surfexp_gateway_i_fact1"}
-loop.records[1] = {station = "surfexp_gateway_i_fact2"}
-advanced, resume = Gateway.advance_past_arrival(loop, force)
-assert(advanced.current == 1 and resume == false, "a next stop at this server's own destination holds instead of looping on no_path")
-assert(Gateway.advance_past_arrival({current = 1, records = {{station = "surfexp_gateway_i_fact2"}}}, force) == nil,
+loop.records = records("nauvis", "surfexp_gateway_i_fact1", "vulcanus", "surfexp_gateway_i_fact2")
+advanced = Gateway.advance_past_arrival(loop, force)
+assert(advanced.current == 1, "the route wraps from the last stop to the first")
+assert(Gateway.advance_past_arrival({current = 3, records = records("surfexp_gateway_i_fact2", "nauvis", "surfexp_gateway_i_fact1")}, force) == nil,
+	"a current stop at another server's destination is not an arrival here, so a manual transfer keeps the legacy strip")
+assert(not Gateway.can_resume({current = 1, records = records("surfexp_gateway_i_fact2", "nauvis")}, force),
+	"a next stop at this server's own destination holds instead of flying to no_path")
+assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_i_fact2")}, force) == nil,
 	"a lone destination stop keeps the legacy park")
-assert(Gateway.advance_past_arrival({current = 1, records = {{station = "surfexp_gateway_hub"}, {station = "nauvis"}}}, force) == nil,
+assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_hub", "nauvis")}, force) == nil,
 	"a manual hub transfer keeps the legacy strip")
-print("PASS the destination advances past the reached stop, keeps every record and holds before its own destination")
+print("PASS the destination advances past its own destination, keeps every record and holds before its own destination")
+
+env.storage.surface_export_config = nil
+assert(not Gateway.is_active_gateway("surfexp_gateway_i_fact1") and Gateway.is_active_gateway("surfexp_gateway_hub"),
+	"before the first config push, server destinations stay locked while legacy gateways keep their default")
+print("PASS server destinations stay locked until the controller lists them")

@@ -89,7 +89,14 @@ platform.paused = true
 assert(holds.stage("parked", platform, force, true))
 assert(holds.go_live("parked"))
 assert(platform.paused == true, "a hub arrival without a continuing route stays parked")
-print("PASS a continuing route resumes only at release; other gateway arrivals stay parked")
+force.print = noop
+platform.paused = true
+local _, passenger_hold = holds.stage("route-passengers", platform, force, true)
+passenger_hold.resume_route = true
+assert(holds.go_live("route-passengers", nil, {{name = "Solar", items = {}}}))
+assert(platform.paused == true, "a continuing route waits for its passengers to board instead of leaving them behind")
+env.storage.surface_export_arrivals = nil
+print("PASS a continuing route resumes only at release and never without its passengers; other gateway arrivals stay parked")
 
 assert(holds.stage("print-failure", platform, force, true))
 local print_notice = env.game.print

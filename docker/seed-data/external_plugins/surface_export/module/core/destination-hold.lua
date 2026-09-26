@@ -310,10 +310,18 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		platform.hidden = hold.original_platform_hidden
 	end
 	platform.paused = hold.original_paused == true
-	if hold.resume_route then
-		local resumed, resume_error = pcall(function() platform.paused = false end)
-		log(string.format("[Gateway] Route continues for '%s' toward record %s: %s", platform.name,
-			tostring(resumed and platform.get_schedule().current), resumed and "unpaused" or tostring(resume_error)))
+	if hold.resume_route and arrivals > 0 then
+		local told, tell_error = pcall(function()
+			log(string.format("[Gateway] Route paused for '%s': %d passenger(s) still to board", platform.name, arrivals))
+			force.print({"", platform.name, " is holding at the Transfer Gateway until its passengers board; unpause it to continue the route."})
+		end)
+		if not told then log("[Gateway] Route hold notice failed: " .. tostring(tell_error)) end
+	elseif hold.resume_route then
+		local resumed, resume_error = pcall(function()
+			platform.paused = false
+			log(string.format("[Gateway] Route continues for '%s' toward record %s", platform.name, tostring(platform.get_schedule().current)))
+		end)
+		if not resumed then log("[Gateway] Route resume failed for '" .. platform.name .. "': " .. tostring(resume_error)) end
 	end
 	Receipts.put("destination_live", transfer_id, {
 		transfer_id = transfer_id, platform_index = hold.platform_index,

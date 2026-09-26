@@ -22,7 +22,7 @@ end
 function Gateway.is_active_gateway(name)
 	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
 	if type(active) ~= "table" then
-		return true
+		return not Gateway.is_instance_gateway(name)
 	end
 	for _, active_name in ipairs(active) do
 		if active_name == name then
@@ -223,23 +223,28 @@ function Gateway.reached_instance_gateway(platform)
 	return location.name
 end
 
+local function own_destination(station, force)
+	return Gateway.is_instance_gateway(station) and not force.is_space_location_unlocked(station)
+end
+
 function Gateway.advance_past_arrival(schedule_payload, force)
 	local records = schedule_payload.records or {}
 	local current = schedule_payload.current
 	local reached = type(current) == "number" and records[current]
-	if not (type(reached) == "table" and Gateway.is_instance_gateway(reached.station)) or #records < 2 then
+	if not (type(reached) == "table" and own_destination(reached.station, force)) or #records < 2 then
 		return nil
 	end
-	local next_index = current % #records + 1
-	local next_station = records[next_index].station
-	local resume = not (Gateway.is_instance_gateway(next_station) and force
-		and not force.is_space_location_unlocked(next_station))
 	return {
-		current = next_index,
+		current = current % #records + 1,
 		records = records,
 		interrupts = schedule_payload.interrupts or {},
 		group = schedule_payload.group,
-	}, resume
+	}
+end
+
+function Gateway.can_resume(schedule_payload, force)
+	local record = schedule_payload and (schedule_payload.records or {})[schedule_payload.current]
+	return type(record) == "table" and type(record.station) == "string" and not own_destination(record.station, force)
 end
 
 function Gateway.strip_gateway_records(schedule_payload)

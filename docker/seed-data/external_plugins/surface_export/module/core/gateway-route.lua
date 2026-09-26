@@ -1,4 +1,5 @@
 local Gateway = require("modules/surface_export/core/gateway")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local GatewayRoute = {}
 
@@ -12,6 +13,7 @@ end
 function GatewayRoute.on_arrival(platform, start_transfer)
 	local gateway_name = Gateway.reached_instance_gateway(platform)
 	if not gateway_name then return false end
+	if SurfaceLock.destination_hold_owns_surface(platform.surface, platform) then return false end
 	platform.paused = true
 	local cfg = Gateway.get_gateway_config(gateway_name)
 	local target = cfg and cfg.targets and cfg.targets[1]

@@ -363,3 +363,15 @@ test("a server destination cannot be given manual links", async t => {
 	assert.match(result.error, /always leads to its own server/);
 	assert.equal(plugin.gatewayLinks.size, 0);
 });
+
+test("instances sharing a name get no destination, and links cannot arrive at a server destination", async t => {
+	const { plugin } = destinationFixture(t, ["fact1", "fact1", "fact3"]);
+	const listing = await plugin.handleGetGatewaysRequest({});
+	assert.deepEqual(listing.destinations.map(entry => entry.instanceId), [3]);
+	assert.deepEqual(listing.unroutableInstances, ["fact1", "fact1"]);
+	const { plugin: linked } = await fixture(t);
+	const result = await linked.handleSetGatewayLinkRequest(request(1, [target(2, "surfexp_gateway_i_fact2")]));
+	assert.equal(result.success, false);
+	assert.match(result.error, /is a server destination/);
+	assert.equal(linked.gatewayLinks.size, 0);
+});

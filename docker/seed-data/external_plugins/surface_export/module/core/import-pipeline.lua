@@ -413,6 +413,12 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 				tostring(gateway_target)))
 			gateway_target = nil
 		end
+		if gateway_target and Gateway.is_instance_gateway(gateway_target) then
+			local hub = Gateway.PREFIX .. "hub"
+			log(string.format("[Gateway] gateway_target '%s' is a server destination; arriving at '%s' instead",
+				gateway_target, hub))
+			gateway_target = Gateway.is_gateway(hub) and hub or nil
+		end
 		local park_target = requested_park or gateway_target
 
 		if park_target then
@@ -435,16 +441,14 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 		Timing.stop(job_id, "platform_parking")
 		Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
-		local resume_route = false
-		local advanced, resume = nil, false
+		local route_arrival, resume_route = false, false
+		local advanced = nil
 		if park_target and Gateway.is_gateway(park_target) and imported_schedule then
-			advanced, resume = Gateway.advance_past_arrival(imported_schedule, force)
+			advanced = Gateway.advance_past_arrival(imported_schedule, force)
 		end
 		if advanced then
-			log(string.format("[Gateway] Route arrival at '%s' — continuing the schedule at record %d of %d (%s)",
-				park_target, advanced.current, #advanced.records, resume and "resumes at go-live" or "next stop is this server; holding"))
 			imported_schedule = advanced
-			resume_route = resume
+			route_arrival = true
 		elseif park_target and Gateway.is_gateway(park_target) and imported_schedule then
 			local stripped = Gateway.strip_gateway_records(imported_schedule)
 			if stripped then
@@ -468,6 +472,12 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 						#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
 					imported_schedule = filtered_schedule
 				end
+			end
+			if route_arrival then
+				resume_route = Gateway.can_resume(imported_schedule, force)
+				log(string.format("[Gateway] Route arrival at '%s' — continuing the schedule at record %s of %d (%s)",
+					park_target, tostring(imported_schedule.current), #(imported_schedule.records or {}),
+					resume_route and "resumes at go-live" or "next stop is this server; holding"))
 			end
 			local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
 			if not schedule_apply_ok then
