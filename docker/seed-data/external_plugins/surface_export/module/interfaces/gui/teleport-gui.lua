@@ -219,9 +219,8 @@ function TeleportGui.on_gui_click(event)
 			return
 		end
 		player.connect_to_server{ address = entry.address, name = entry.name }
-		player.print(string.format(
-			"Connect prompt sent for %s (%s) — accept the dialog to switch servers.",
-			entry.name, entry.address))
+		log(string.format("[Teleport] connect prompt sent to '%s' for %s (%s)",
+			player.name, entry.name, entry.address))
 		close(event.player_index)
 	end
 end
@@ -248,11 +247,8 @@ function TeleportGui.announce_arrival(player_name, source_name, target_name)
 	local surface = game.get_surface(player.physical_surface_index)
 	local location = surface and (surface.planet or (surface.platform and surface.platform.space_location))
 	local function text(value) return (value:gsub("%[", "("):gsub("%]", ")")) end
-	local message = {"", "[img=space-location/surfexp_gateway_hub] ", text(player.name), " moved from ", text(source_name), " to ", text(target_name)}
-	if location then
-		message[#message + 1] = " → [img=space-location/" .. location.name .. "] "
-		message[#message + 1] = prototypes.space_location[location.name].localised_name
-	end
+	local message = text(player.name) .. " → " .. text(target_name)
+	if location then message = message .. " [img=space-location/" .. location.name .. "]" end
 	game.print(message, {color = player.color})
 	return {success = true}
 end

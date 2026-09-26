@@ -16,19 +16,16 @@ local env = setmetatable({
 local gui = assert(loadfile("docker/seed-data/external_plugins/surface_export/module/interfaces/gui/teleport-gui.lua", "t", env))()
 assert(gui.announce_arrival("Solar", "fact1", "fact3").success)
 assert(prints[1].options.color == color)
-assert(prints[1].message[2]:find("surfexp_gateway_hub", 1, true))
-assert(prints[1].message[5] == "fact1" and prints[1].message[7] == "fact3")
-assert(prints[1].message[8]:find("space-location/fulgora", 1, true))
-assert(prints[1].message[9][1] == "space-location-name.fulgora")
+assert(prints[1].message == "Solar → fact3 [img=space-location/fulgora]", prints[1].message)
 player.connected = false
 assert(not gui.announce_arrival("Solar", "fact1", "fact3").success and #prints == 1)
 player.connected = true
 surface = {platform = {space_location = {name = "fulgora"}}}
-assert(gui.announce_arrival("Solar", "[img=item/iron-plate]", "fact3").success)
-assert(prints[2].message[5] == "(img=item/iron-plate)")
+assert(gui.announce_arrival("Solar", "fact1", "[img=item/iron-plate]").success)
+assert(prints[2].message == "Solar → (img=item/iron-plate) [img=space-location/fulgora]", prints[2].message)
 surface = {}
 assert(gui.announce_arrival("Solar", "fact1", "fact3").success)
-assert(#prints[3].message == 7)
+assert(prints[3].message == "Solar → fact3", prints[3].message)
 storage.surface_export_pending_arrivals = {[1] = true}
 assert(gui.announce_arrival("Solar", "fact1", "fact3").success)
 gui.flush_announcements()
@@ -36,7 +33,7 @@ assert(#prints == 3)
 storage.surface_export_pending_arrivals[1] = nil
 surface = {planet = {name = "fulgora"}}
 gui.flush_announcements()
-assert(#prints == 4 and prints[4].message[8]:find("space-location/fulgora", 1, true))
+assert(#prints == 4 and prints[4].message == "Solar → fact3 [img=space-location/fulgora]")
 gui.flush_announcements()
 assert(#prints == 4)
 storage.surface_export_pending_arrivals[1] = true
