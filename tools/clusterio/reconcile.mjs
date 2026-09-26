@@ -144,7 +144,9 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	}
 	const existing = live.packs.find(pack => pack.name === want?.name);
 	const packDetail = existing ? live.packDetails[existing.id] : null;
-	errors.push(...destinationsSettingErrors(want?.settings?.startup?.[DESTINATIONS_SETTING], Object.values(live.instanceIds || {})));
+	const destinationsValue = want?.settings?.startup?.[DESTINATIONS_SETTING] ?? packDetail?.settings?.startup?.[DESTINATIONS_SETTING];
+	errors.push(...destinationsSettingErrors(destinationsValue, Object.values(live.instanceIds || {})));
+	if (desired.serverDestinations && !want) errors.push("serverDestinations needs a modPack to write the setting into");
 
 	const modSpecs = [];
 	for (const [name, version] of Object.entries(want?.mods || {})) {

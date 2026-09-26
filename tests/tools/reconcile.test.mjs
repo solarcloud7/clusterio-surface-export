@@ -222,4 +222,8 @@ test("server destinations are keyed by instance id; the desired state names serv
 	const bad = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge, Inc", fact9: "Ghost" } }, live(), { modFile });
 	assert.match(bad.errors.join("; "), /label for fact1/);
 	assert.match(bad.errors.join("; "), /fact9 is not an instance/);
+	const stale = live();
+	stale.packDetails[7].settings.startup["surfexp-gateway-instances"] = "fact1=Forge";
+	assert.match(planChanges(structuredClone(desired), stale, { modFile }).errors.join("; "), /must be an instance id/,
+		"a name-based value already on the pack blocks the plan even when the desired file does not set it");
 });
