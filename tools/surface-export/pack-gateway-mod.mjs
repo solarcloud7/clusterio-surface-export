@@ -14,7 +14,7 @@ const EXCLUDED = new Set(["README.md"]);
 
 export function collectFiles(root, relative = "") {
 	const files = [];
-	for (const name of readdirSync(path.join(root, relative)).sort()) {
+	for (const name of readdirSync(path.join(root, relative))) {
 		const rel = relative ? `${relative}/${name}` : name;
 		if (!relative && EXCLUDED.has(name)) continue;
 		const full = path.join(root, rel);
