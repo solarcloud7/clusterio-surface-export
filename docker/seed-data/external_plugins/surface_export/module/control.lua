@@ -10,6 +10,7 @@ local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gatewa
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
 local GatewayRoute = require("modules/surface_export/core/gateway-route")
+local RouteAlerts = require("modules/surface_export/core/route-alerts")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
@@ -76,6 +77,9 @@ SurfaceExportModule.events = {
 		for _, player in pairs(game.connected_players) do InstancePanel.refresh_position(player) end
 		if game.tick % 10 == 0 then
 			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
+		end
+		if game.tick % 600 == 0 then
+			GameUtils.pcall_warn("[Gateway] route alert refresh", RouteAlerts.refresh)
 		end
 		if game.tick % 60 == 0 then
 			for player_index in pairs(storage.surface_export_pending_arrivals or {}) do
@@ -151,6 +155,11 @@ SurfaceExportModule.events = {
 		end
 
 		local sps = defines.space_platform_state
+		if platform.state == sps.on_the_path then
+			GameUtils.pcall_warn("[Gateway] route alert clear", function() RouteAlerts.clear(platform) end)
+		elseif platform.state == sps.no_path then
+			GameUtils.pcall_warn("[Gateway] route no_path alert", function() GatewayRoute.on_no_path(platform) end)
+		end
 
 		storage.platform_flight_data = storage.platform_flight_data or {}
 		if platform.state == sps.on_the_path then

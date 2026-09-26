@@ -82,11 +82,11 @@ local function load_layout(mode, instances)
   return locations, connections
 end
 
-local locations, connections = load_layout("one_gate", " fact1=Forge , fact2,fact3 = Cinder Hall ,")
+local locations, connections = load_layout("one_gate", " 11=Forge , 22,33 = Cinder Hall ,")
 local hub = locations.surfexp_gateway_hub
 local angle = hub.orientation * 2 * math.pi
 local hub_x, hub_y = hub.distance * math.sin(angle), -hub.distance * math.cos(angle)
-local labels = {fact1 = "Forge", fact2 = "fact2", fact3 = "Cinder Hall"}
+local labels = {["11"] = "Forge", ["22"] = "Server 22", ["33"] = "Cinder Hall"}
 local orientations = {}
 for name, label in pairs(labels) do
   local location = assert(locations["surfexp_gateway_i_" .. name], name .. " destination")
@@ -105,11 +105,11 @@ end
 local extra = 0
 for name in pairs(locations) do if name:find("^surfexp_gateway_i_") then extra = extra + 1 end end
 assert(extra == 3)
-locations = load_layout("one_gate", "solo")
-assert(locations.surfexp_gateway_i_solo.orientation == locations.surfexp_gateway_hub.orientation, "a single destination sits straight out from the hub")
-locations, connections = load_layout("multi", "fact1=Forge")
-assert(not locations.surfexp_gateway_i_fact1 and not connections.surfexp_gateway_link_i_fact1, "the four-gateway layout has no hub to route from")
-for _, bad in ipairs({"fact 1", "=Forge", "fact1,fact1=Again", "fact.1", "a/b"}) do
+locations = load_layout("one_gate", "44=Solo")
+assert(locations.surfexp_gateway_i_44.orientation == locations.surfexp_gateway_hub.orientation, "a single destination sits straight out from the hub")
+locations, connections = load_layout("multi", "11=Forge")
+assert(not locations.surfexp_gateway_i_11 and not connections.surfexp_gateway_link_i_11, "the four-gateway layout has no hub to route from")
+for _, bad in ipairs({"fact1=Forge", "=Forge", "11,11=Again", "0=Zero", "1.5", "-3"}) do
   local ok, err = pcall(load_layout, "one_gate", bad)
   assert(not ok and tostring(err):find("surfexp-gateway-instances", 1, true), "should refuse " .. bad .. ": " .. tostring(err))
 end

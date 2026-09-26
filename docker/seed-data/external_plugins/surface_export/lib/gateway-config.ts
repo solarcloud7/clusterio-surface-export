@@ -163,26 +163,17 @@ export class GatewayConfig {
 		return [...this.controller.instances.values()].filter(inst => !inst.isDeleted);
 	}
 
-	destinations(): { destinations: messages.InstanceDestination[]; unroutableInstances: string[] } {
-		const destinations: messages.InstanceDestination[] = [];
-		const unroutableInstances: string[] = [];
+	destinations(): { destinations: messages.InstanceDestination[] } {
 		if (this.gatewayMode() !== "one_gate") {
-			return { destinations, unroutableInstances };
+			return { destinations: [] };
 		}
-		const candidates = this.liveInstances().map(inst => {
-			const configured = inst.config?.get("instance.name");
-			const instanceName = typeof configured === "string" ? configured : "";
-			return { instanceId: inst.id, instanceName, gatewayName: messages.instanceGatewayName(instanceName) };
-		});
-		for (const candidate of candidates) {
-			const shared = candidates.filter(other => other.instanceName === candidate.instanceName).length > 1;
-			if (candidate.gatewayName && !shared) {
-				destinations.push({ gatewayName: candidate.gatewayName, instanceId: candidate.instanceId, instanceName: candidate.instanceName });
-			} else {
-				unroutableInstances.push(candidate.instanceName);
-			}
-		}
-		return { destinations, unroutableInstances };
+		return {
+			destinations: this.liveInstances().map(inst => ({
+				gatewayName: messages.instanceGatewayName(inst.id),
+				instanceId: inst.id,
+				instanceName: this.context.resolveInstanceName(inst.id) ?? String(inst.id),
+			})),
+		};
 	}
 
 	activeGatewayNamesFor(sourceInstanceId: number): string[] {

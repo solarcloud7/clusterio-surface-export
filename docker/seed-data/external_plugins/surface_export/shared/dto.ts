@@ -20,10 +20,8 @@ export function gatewayNamesFor(mode: GatewayMode): string[] {
 }
 
 export const INSTANCE_GATEWAY_PREFIX = `${GATEWAY_PREFIX}i_`;
-export const INSTANCE_GATEWAY_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
-
-export function instanceGatewayName(instanceName: string): string | null {
-	return INSTANCE_GATEWAY_NAME_PATTERN.test(instanceName) ? `${INSTANCE_GATEWAY_PREFIX}${instanceName}` : null;
+export function instanceGatewayName(instanceId: number): string {
+	return `${INSTANCE_GATEWAY_PREFIX}${instanceId}`;
 }
 
 export function isInstanceGatewayName(name: string): boolean {

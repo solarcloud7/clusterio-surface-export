@@ -582,12 +582,14 @@ function ImportCompletion.run_phase2(job, batch_size)
 				if not job.park_target and job.target_platform and job.target_platform.valid then
 					local tp = job.target_platform
 					local captured_paused = job.platform_data.platform.paused == true
-					local ok_captured, err_captured = pcall(function() tp.paused = captured_paused end)
+					local settled_paused = captured_paused or job.platform_data._standaloneImport == true
+					local ok_captured, err_captured = pcall(function() tp.paused = settled_paused end)
 					result.sourcePaused = captured_paused
 					result.sourcePausedApplied = ok_captured == true
 					if ok_captured then
-						log(string.format("[Import] Platform %s settled at the CAPTURED paused=%s (tick %d)",
-							job.platform_name, tostring(captured_paused), game.tick))
+						log(string.format("[Import] Platform %s settled at paused=%s (captured %s%s, tick %d)",
+							job.platform_name, tostring(settled_paused), tostring(captured_paused),
+							settled_paused ~= captured_paused and "; manual imports arrive paused" or "", game.tick))
 					else
 						log(string.format("[Import] Captured pause write failed for %s (captured %s): %s",
 							job.platform_name, tostring(captured_paused), tostring(err_captured)))
@@ -595,7 +597,10 @@ function ImportCompletion.run_phase2(job, batch_size)
 				end
 				local held, hold_or_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id)
 				assert(held, hold_or_error)
-				if job.resume_route and job.park_target and job.platform_data._standaloneImport ~= true then hold_or_error.resume_route = true end
+				if job.park_target and job.platform_data._standaloneImport ~= true then
+					if job.resume_route then hold_or_error.resume_route = true end
+					if job.route_hold then hold_or_error.route_hold = true end
+				end
 				result.destinationHeld = true
 				LatchRearm.schedule(job)
 				if job.platform_data._standaloneImport == true then

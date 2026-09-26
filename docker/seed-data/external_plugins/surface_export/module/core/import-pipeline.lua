@@ -553,6 +553,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			imported_schedule = imported_schedule,
 			park_target = park_target,
 			resume_route = resume_route,
+			route_hold = route_arrival and not resume_route,
 
 			metrics = {
 				delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,

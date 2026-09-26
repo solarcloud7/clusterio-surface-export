@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.7.0
+Version: 0.7.1
   Features:
-    - Add the "Server destinations" startup setting: each listed Clusterio instance gets its own destination beside
+    - Add the "Server destinations" startup setting: each listed Clusterio instance id gets its own destination beside
       the Transfer Gateway, labelled with a friendly name, that platform schedules can stop at.
 ---------------------------------------------------------------------------------------------------
 Version: 0.6.12

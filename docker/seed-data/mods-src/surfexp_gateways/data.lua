@@ -70,14 +70,14 @@ local function parse_instances(value)
 			local name, label = entry:match("^([^=]*)=(.*)$")
 			name = (name or entry):match("^%s*(.-)%s*$")
 			label = label and label:match("^%s*(.-)%s*$") or ""
-			if not name:match("^[A-Za-z0-9_-]+$") then
-				error("surfexp-gateway-instances: instance name '" .. name .. "' must use only letters, digits, '_' and '-' and match the Clusterio instance name exactly")
+			if not name:match("^[1-9]%d*$") then
+				error("surfexp-gateway-instances: '" .. name .. "' must be a Clusterio instance id (digits only); the label after '=' is the name players see")
 			end
 			if seen[name] then
-				error("surfexp-gateway-instances: instance '" .. name .. "' is listed twice")
+				error("surfexp-gateway-instances: instance id " .. name .. " is listed twice")
 			end
 			seen[name] = true
-			entries[#entries + 1] = { name = name, label = label ~= "" and label or name }
+			entries[#entries + 1] = { name = name, label = label ~= "" and label or ("Server " .. name) }
 		end
 	end
 	return entries

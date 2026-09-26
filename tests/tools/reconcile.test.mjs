@@ -200,18 +200,26 @@ test("restart-only controller fields restart instances, empty values block, and 
 	assert.ok(changed.actions[0].argv.join(" ").includes(`--color-setting startup tint ${JSON.stringify(colour)}`));
 });
 
-test("server destinations must name real instances in the grammar the mod accepts", () => {
-	const plan = value => {
+test("server destinations are keyed by instance id; the desired state names servers and the reconciler resolves ids", () => {
+	const live = () => {
+		const state = liveWith({ instanceIds: { fact1: 11, fact2: 22 } });
+		state.packDetails[7].mods.FluidMustFlow.enabled = true;
+		return state;
+	};
+	const raw = value => {
 		const want = structuredClone(desired);
 		want.modPack.settings.startup["surfexp-gateway-instances"] = value;
-		const live = liveWith({ instanceIds: { fact1: 11, fact2: 22 } });
-		live.packDetails[7].mods.FluidMustFlow.enabled = true;
-		return planChanges(want, live, { modFile });
+		return planChanges(want, live(), { modFile });
 	};
-	const good = plan(" fact1=Forge , fact2,");
-	assert.deepEqual(good.errors, []);
-	assert.ok(good.actions.some(action => action.argv.includes("surfexp-gateway-instances")), "a valid value is applied through the pack edit");
-	for (const [value, reason] of [["fact 1", /only letters/], ["=Forge", /only letters/], ["fact1,fact1=Again", /listed twice/], ["fact9=Ghost", /not an instance/]]) {
-		assert.match(plan(value).errors.join("\n"), reason, value);
+	assert.deepEqual(raw(" 11=Forge , 22=Cinder,").errors, []);
+	for (const [value, reason] of [["fact1=Forge", /must be an instance id/], ["=Forge", /must be an instance id/], ["11,11=Again", /listed twice/], ["99=Ghost", /not an instance/]]) {
+		assert.match(raw(value).errors.join("; "), reason, value);
 	}
+	const named = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge", fact2: "Cinder Hall" } }, live(), { modFile });
+	assert.deepEqual(named.errors, []);
+	const edit = named.actions.find(action => action.argv.includes("surfexp-gateway-instances"));
+	assert.equal(edit.argv[edit.argv.indexOf("surfexp-gateway-instances") + 1], "11=Forge,22=Cinder Hall", "names become ids; labels stay what players see");
+	const bad = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge, Inc", fact9: "Ghost" } }, live(), { modFile });
+	assert.match(bad.errors.join("; "), /label for fact1/);
+	assert.match(bad.errors.join("; "), /fact9 is not an instance/);
 });

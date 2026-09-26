@@ -27,6 +27,7 @@ env.require = function(name)
         if evacuation == "missing" then return nil end
         return {success = evacuation == "success", failures = evacuation == "success" and 0 or 1}
     end} end
+    if name:find("route-alerts", 1, true) then return {raise = function(p, kind, icon, reason) env.route_alert = {platform = p, kind = kind, icon = icon, reason = reason} end} end
     if name:find("platform-identity", 1, true) then return function() return uid end end
     if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
     if name:find("game-utils", 1, true) then return {
@@ -89,6 +90,12 @@ platform.paused = true
 assert(holds.stage("parked", platform, force, true))
 assert(holds.go_live("parked"))
 assert(platform.paused == true, "a hub arrival without a continuing route stays parked")
+assert(env.route_alert == nil, "an ordinary gateway arrival raises no route alert")
+platform.paused = true
+local _, blocked_hold = holds.stage("route-blocked", platform, force, true)
+blocked_hold.route_hold = true
+assert(holds.go_live("route-blocked"))
+assert(platform.paused == true and env.route_alert and env.route_alert.icon == "surfexp_gateway_hub", "an arrival that cannot continue stays parked and raises an alert")
 force.print = noop
 platform.paused = true
 local _, passenger_hold = holds.stage("route-passengers", platform, force, true)

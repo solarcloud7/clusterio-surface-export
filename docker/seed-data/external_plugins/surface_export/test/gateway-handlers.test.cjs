@@ -54,10 +54,10 @@ test("registered gateway handlers persist, reload and resolve recovery-aware ava
 	const view = await call(messages.GetGatewayConfigRequest, {instanceId: 1});
 	assert.deepEqual(view.gateways[0].targets, [{instanceId: 2, instanceName: "Destination",
 		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]);
-	assert.deepEqual(view.gateways[1], {gatewayName: "surfexp_gateway_i_fact2", targets: [{instanceId: 2, instanceName: "Destination",
+	assert.deepEqual(view.gateways[1], {gatewayName: "surfexp_gateway_i_2", targets: [{instanceId: 2, instanceName: "Destination",
 		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the other server's destination leads to its hub");
 	assert.equal(view.gateways.length, 2, "a server has no destination leading to itself");
-	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME, "surfexp_gateway_i_fact2"]);
+	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME, "surfexp_gateway_i_2"]);
 	assert.deepEqual(sends[0].message.activeGatewayNames, view.activeGatewayNames);
 	assert.deepEqual(view.passengerCarry, {armor: true, inventory: false});
 	assert.deepEqual(sends[0].message.passengerCarry, {armor: true, inventory: false});

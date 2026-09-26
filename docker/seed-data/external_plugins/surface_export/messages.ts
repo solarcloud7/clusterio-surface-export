@@ -955,7 +955,6 @@ export class GetGatewaysRequest {
 						additionalProperties: false,
 					},
 				},
-				unroutableInstances: { type: "array", items: { type: "string" } },
 			},
 			required: ["gatewayNames", "links"],
 		} as JsonSchema,
@@ -964,7 +963,6 @@ export class GetGatewaysRequest {
 				gatewayNames: string[];
 				links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }>;
 				destinations?: InstanceDestination[];
-				unroutableInstances?: string[];
 			};
 		},
 	};
