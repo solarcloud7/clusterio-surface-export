@@ -37,11 +37,19 @@ in the arrival dialog. An administrator can also open the chooser with
 Use `/list-platforms` for current indexes. An instance ID is not a host number;
 platform names are labels, and indexes are local locators, not persistent identity.
 
-Passengers do not travel to the other server with the platform. Before deleting
-the source, the plugin attempts to evacuate passengers and abandoned character
-bodies to the instance's configured default planet (Nauvis by default). Failed
-evacuation prevents deletion and requires recovery. Server switching is a separate
-action through the teleport interface.
+Players aboard travel with the platform. When Transfer is pressed, your character
+is held and you watch the platform from the map. The transfer window offers
+**Abort**, which keeps you on this instance's default planet. On success you get the
+connect prompt for the destination. Join it to board the platform there with your
+carried gear. Armor is carried by default. If you stay, you land on the default
+planet, and your carried gear waits for you on the destination. If the transfer
+fails, you are put back aboard. See [passenger transfer](../admins/passenger-transfer.md)
+for every outcome and the gear settings.
+
+Abandoned character bodies left aboard are evacuated to the instance's configured
+default planet (Nauvis by default) before the source is deleted. Failed evacuation
+prevents deletion and requires recovery. Switching servers alone, without a
+platform, uses the teleport button.
 
 ## Board another platform on this server
 
