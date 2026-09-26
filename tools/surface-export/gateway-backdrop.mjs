@@ -47,42 +47,45 @@ function fbm(x, y, z, seed, octaves) {
 	return sum / total;
 }
 
-const RINGS = [
-	[0.0, 0.0, 1.0],
-	[0.62, 0.0, 0.78],
-	[-0.31, 0.54, 0.78],
-	[-0.31, -0.54, 0.78],
-].map(([x, y, z]) => {
-	const length = Math.hypot(x, y, z);
-	return [x / length, y / length, z / length];
-});
+const RIM_LIGHTS = 12;
 
 function sample(u, v) {
 	const lon = u * 2 * Math.PI;
 	const lat = (0.5 - v) * Math.PI;
 	const px = Math.cos(lat) * Math.cos(lon), py = Math.cos(lat) * Math.sin(lon), pz = Math.sin(lat);
-
-	const plates = fbm(px * 3 + 11, py * 3 + 7, pz * 3 + 5, 3, 4);
-	const grime = fbm(px * 14, py * 14, pz * 14, 17, 3);
+	const r = Math.cos(Math.abs(lat));
 	const fraction = value => value - Math.floor(value);
-	const seamLat = Math.abs(fraction((lat / Math.PI) * 18) - 0.5);
-	const seamLon = Math.abs(fraction(u * 36) - 0.5);
-	const seam = Math.max(seamLat, seamLon) > 0.47 ? 1 : 0;
 
-	let ring = 0;
-	for (const [nx, ny, nz] of RINGS) {
-		const distance = Math.abs(px * nx + py * ny + pz * nz);
-		ring = Math.max(ring, Math.exp(-(distance * distance) / 0.00035));
+	const grime = fbm(px * 14, py * 14, pz * 14, 17, 3);
+	const plates = fbm(px * 3 + 11, py * 3 + 7, pz * 3 + 5, 3, 4);
+	const vein = 1 - Math.abs(2 * fbm(px * 6 + 31, py * 6 + 29, pz * 6 + 23, 41, 5) - 1);
+
+	let surface, emission, reflectivity;
+	if (r < 0.7) {
+		const depth = Math.max(0, Math.min(1, (r - 0.06) / 0.64));
+		const spiral = Math.pow(0.5 + 0.5 * Math.cos(7 * lon + 9 * Math.log(Math.max(r, 0.02))), 10);
+		const web = Math.pow(vein, 22) * 1.2;
+		const glow = Math.min(1, (spiral * 0.9 + web) * depth + Math.pow(Math.max(0, (r - 0.6) / 0.1), 3));
+		const core = 1 - depth;
+		surface = [18 + 30 * depth, 8 + 12 * depth, 40 + 60 * depth];
+		emission = [150 * glow + 60 * glow * glow, 70 * glow + 60 * glow * glow, 255 * glow];
+		emission = emission.map(value => value * (1 - core * 0.85));
+		reflectivity = 30;
+	} else if (r < 0.84) {
+		const band = (r - 0.7) / 0.14;
+		const metal = 58 + plates * 30 + grime * 16 - (Math.abs(band - 0.5) > 0.44 ? 22 : 0);
+		surface = [metal * 1.05, metal * 0.95, metal * 0.85];
+		const light = Math.abs(fraction(lon / (2 * Math.PI) * RIM_LIGHTS) - 0.5) < 0.035 && Math.abs(band - 0.5) < 0.12 ? 1 : 0;
+		emission = [255 * light, 140 * light, 40 * light];
+		reflectivity = 110 + plates * 60;
+	} else {
+		const seam = Math.abs(fraction(u * 48) - 0.5) > 0.46 ? 1 : 0;
+		const metal = 30 + plates * 24 + grime * 10 - seam * 12;
+		surface = [metal * 0.95, metal * 0.9, metal * 1.05];
+		emission = [0, 0, 0];
+		reflectivity = seam ? 20 : 60;
 	}
-	const vein = 1 - Math.abs(2 * fbm(px * 5 + 31, py * 5 + 29, pz * 5 + 23, 41, 5) - 1);
-	const energy = Math.min(1, ring + Math.pow(vein, 40) * 1.2);
-
-	const metal = 34 + plates * 38 + grime * 14 - seam * 18;
-	return {
-		surface: [metal * 0.92, metal * 0.88, metal * 1.08 + energy * 30],
-		emission: [150 * energy, 70 * energy, 255 * energy],
-		reflectivity: seam ? 20 : 70 + plates * 60,
-	};
+	return {surface, emission, reflectivity};
 }
 
 function render() {

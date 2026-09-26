@@ -74,7 +74,7 @@ local function deepcopy(value)
   for key, inner in pairs(value) do copy[key] = deepcopy(inner) end
   return copy
 end
-util = {table = {deepcopy = deepcopy}}
+package.preload.util = function() return {table = {deepcopy = deepcopy}} end
 data = {raw = {
   planet = {nauvis = {platform_surface_render_parameters = template}},
   ["space-location"] = {surfexp_gateway_hub = {}, surfexp_gateway_1 = {}, ["solar-system-edge"] = {}},

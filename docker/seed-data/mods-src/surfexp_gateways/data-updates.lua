@@ -1,3 +1,5 @@
+local util = require("util")
+
 local template = data.raw.planet.nauvis and data.raw.planet.nauvis.platform_surface_render_parameters
 if not template then return end
 
@@ -12,13 +14,13 @@ for name, location in pairs(data.raw["space-location"]) do
 			radius = 600,
 			position = {-680, 601},
 			parallax_strength = {0.95, 0.95},
-			rotation_seconds = -420,
-			planet_axis = {-20.0, 8.0},
-			planet_axis_deviation_amplitude = {6.0, 6.0},
+			rotation_seconds = 90,
+			planet_axis = {0.0, 90.0},
+			planet_axis_deviation_amplitude = {2.0, 2.0},
 			planet_axis_deviation_seconds = {890.5, 753.7},
-			light_direction = {-0.42, 0.23, 0.67},
+			light_direction = {-0.2, 0.2, 1.0},
 			light_radius = 8.9,
-			light_intensity_contrast = 0.3,
+			light_intensity_contrast = 0.15,
 			cloudiness = 0,
 			specular_intensity = 0.6,
 			atmosphere_color = {0.16, 0.07, 0.3, 0.12},
