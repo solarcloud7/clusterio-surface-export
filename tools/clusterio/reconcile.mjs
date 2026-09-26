@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
-// produces: `plan`: the exact clusterioctl commands that bring mods, the mod pack, controller config and instance config to the desired state; `apply --yes`: runs them in order, stops on the first failure and re-plans
-// does not: delete stored mods, mod packs or instances, touch mod packs other than the desired one (whose unlisted mods it removes), remove settings, restart instances unless --restart is given, manage gateway links, or authorize a change on a shared cluster
+// produces: `plan`: the exact clusterioctl commands that bring mods, the mod pack, controller, host and instance config, and gateway links to the desired state; `apply --yes`: runs them in order, stops on the first failure and re-plans
+// does not: delete stored mods, mod packs or instances, touch mod packs other than the desired one (whose unlisted mods it removes), remove settings, restart instances unless --restart is given, restart hosts, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -157,6 +157,35 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 			}
 		}
 	}
+
+	for (const [host, fields] of Object.entries(desired.hosts || {})) {
+		const config = live.hosts?.[host];
+		if (!config) { errors.push(`host ${host} is not connected, so its config cannot be read`); continue; }
+		for (const [field, value] of Object.entries(fields)) {
+			if (JSON.stringify(config[field]) !== JSON.stringify(value)) {
+				actions.push({ describe: `${host} ${field}: ${JSON.stringify(config[field])} -> ${JSON.stringify(value)}`,
+					argv: ["host", "config", "set", host, field, configValue(value)] });
+			}
+		}
+	}
+
+	if (desired.gatewayLinks) {
+		const ids = live.instanceIds || {};
+		const current = new Map((live.gateways?.links || []).map(link =>
+			[`${link.sourceInstanceId}:${link.gatewayName}`, link.targets.map(target => `${target.targetInstanceId}:${target.targetGateway}`).sort().join(",")]));
+		for (const [source, gateways] of Object.entries(desired.gatewayLinks)) {
+			if (!Number.isInteger(ids[source])) { errors.push(`gateway source ${source} is not an instance on the cluster`); continue; }
+			for (const [gatewayName, targets] of Object.entries(gateways)) {
+				const unknown = targets.filter(target => !Number.isInteger(ids[target]));
+				if (unknown.length) { errors.push(`gateway targets not on the cluster: ${unknown.join(", ")}`); continue; }
+				const wanted = targets.map(target => `${ids[target]}:${gatewayName}`).sort().join(",");
+				if ((current.get(`${ids[source]}:${gatewayName}`) || "") !== wanted) {
+					actions.push({ describe: `${source} ${gatewayName} links -> ${targets.join(", ") || "none"}`,
+						argv: ["surface-export", "set-gateway-links", String(ids[source]), gatewayName, ...targets.map(target => String(ids[target]))] });
+				}
+			}
+		}
+	}
 	return { actions, errors, restart: [...restart], exportNeeded: actions.some(action => action.packChanged) };
 }
 
@@ -168,11 +197,19 @@ export function readLive(transport, desired) {
 	const mods = new Set(parseTable(transport.ctl("mod", "list")).map(row => `${row.name}_${row.version}`));
 	const controller = parseConfigList(transport.ctl("controller", "config", "list"));
 	const instances = {};
-	const names = new Set(parseTable(transport.ctl("instance", "list")).map(row => row.name));
+	const instanceRows = parseTable(transport.ctl("instance", "list"));
+	const names = new Set(instanceRows.map(row => row.name));
+	const instanceIds = Object.fromEntries(instanceRows.map(row => [row.name, Number(row.id)]));
 	for (const instance of Object.keys(desired.instances || {})) {
 		if (names.has(instance)) instances[instance] = parseConfigList(transport.ctl("instance", "config", "list", instance));
 	}
-	return { packs, packDetails, mods, controller, instances };
+	const hosts = {};
+	const connected = new Set(parseTable(transport.ctl("host", "list")).filter(row => row.connected === "true").map(row => row.name));
+	for (const host of Object.keys(desired.hosts || {})) {
+		if (connected.has(host)) hosts[host] = parseConfigList(transport.ctl("host", "config", "list", host));
+	}
+	const gateways = desired.gatewayLinks ? JSON.parse(transport.ctl("surface-export", "gateways").trim().split(/\r?\n/).at(-1)) : undefined;
+	return { packs, packDetails, mods, controller, instances, instanceIds, hosts, gateways };
 }
 
 function printPlan(result, out) {

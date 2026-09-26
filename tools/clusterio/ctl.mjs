@@ -11,6 +11,7 @@ const READ_ONLY = [
 	["instance", "config", "get"],
 	["instance", "save", "list"],
 	["host", "list"],
+	["host", "config", "list"],
 	["mod-pack", "list"],
 	["mod-pack", "show"],
 	["mod", "list"],
@@ -19,6 +20,9 @@ const READ_ONLY = [
 	["user", "list"],
 	["user", "show"],
 	["role", "list"],
+	["surface-export", "gateways"],
+	["surface-export", "list"],
+	["surface-export", "list-transfers"],
 ];
 
 export function isReadOnly(args) {

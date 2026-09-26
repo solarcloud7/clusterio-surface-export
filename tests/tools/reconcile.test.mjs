@@ -121,3 +121,29 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 	assert.deepEqual(state.calls.find(call => call[2] === "set"), ["instance", "config", "set", "fact1", "factorio.mod_pack_id", "9"]);
 	assert.match(out.text, /the cluster now matches the desired state/);
 });
+
+test("host config and gateway links are planned by name and only where they differ", () => {
+	const withHosts = {
+		...desired,
+		hosts: { "clusterio-host-1": { "host.public_address": "fact1.example" } },
+		gatewayLinks: { fact1: { surfexp_gateway_hub: ["fact2", "fact3"] }, fact2: { surfexp_gateway_hub: ["fact1"] } },
+	};
+	const enabled = liveWith({
+		instanceIds: { fact1: 11, fact2: 22, fact3: 33 },
+		hosts: { "clusterio-host-1": { "host.public_address": "localhost" } },
+		gateways: { links: [
+			{ sourceInstanceId: 22, gatewayName: "surfexp_gateway_hub", targets: [{ targetInstanceId: 11, targetGateway: "surfexp_gateway_hub" }] },
+		] },
+	});
+	enabled.packDetails[7].mods.FluidMustFlow.enabled = true;
+	const result = planChanges(withHosts, enabled, { modFile });
+	assert.deepEqual(result.errors, []);
+	assert.deepEqual(result.actions.map(action => action.argv), [
+		["host", "config", "set", "clusterio-host-1", "host.public_address", "fact1.example"],
+		["surface-export", "set-gateway-links", "11", "surfexp_gateway_hub", "22", "33"],
+	], "fact2 already links to fact1, so only host 1 and fact1's links change");
+	const missing = planChanges({ ...withHosts, gatewayLinks: { fact1: { surfexp_gateway_hub: ["fact9"] } } },
+		liveWith({ instanceIds: { fact1: 11 }, hosts: {} }), { modFile });
+	assert.match(missing.errors.join("\n"), /host clusterio-host-1 is not connected/);
+	assert.match(missing.errors.join("\n"), /gateway targets not on the cluster: fact9/);
+});
