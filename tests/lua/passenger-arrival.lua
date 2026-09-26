@@ -71,7 +71,9 @@ end
 local players = {}
 local function new_player(index, name, body)
 	local p = {index = index, name = name, valid = true, connected = true, character = body,
-		controller_type = body and controllers.character or controllers.god, physical_surface_index = nauvis.index, boarded = 0}
+		controller_type = body and controllers.character or controllers.god, physical_surface_index = nauvis.index, boarded = 0,
+		printed = {}}
+	p.print = function(message) p.printed[#p.printed + 1] = message end
 	p.set_controller = function(spec)
 		if spec.type == controllers.god then p.character = nil end
 		if spec.type == controllers.character then p.character = spec.character end
@@ -303,12 +305,15 @@ env.storage.surface_export_passengers = {}
 local hana = new_player(8, "hana", character_entity())
 hub_inventory = inventory(1)
 env.storage.surface_export_arrivals.hana = late_record("tx-20", {{name = "power-armor", count = 1, quality = "normal",
-	inventory = "armor", grid = {equipment = {{name = "missing-equipment", position = {x = 0, y = 0}, quality = "normal"}}}}})
-arrival.process(hana)
-arrival.process(hana)
-assert(count_named(hana.character, "power-armor") == 1, "armor whose grid cannot be restored must be delivered exactly once")
-assert(not env.storage.surface_export_arrivals.hana, "a placed stack with degraded properties counts as delivered")
-print("PASS a stack whose properties fail to restore is delivered once, not again on every retry")
+	inventory = "armor", grid = {equipment = {{name = "missing-equipment", position = {x = 0, y = 0}, quality = "normal"}}}},
+	{name = "iron-plate", count = 50, quality = "normal", inventory = "main"}})
+for _ = 1, 3 do arrival.process(hana) end
+assert(count_named(hana.character, "power-armor") == 0, "armor whose grid cannot be restored must not be inserted degraded or twice")
+assert(count_named(hana.character, "iron-plate") == 50, "the other gear is delivered exactly once")
+local kept = env.storage.surface_export_arrivals.hana["tx-20"]
+assert(kept and #kept.items == 1 and kept.items[1].name == "power-armor", "the armor that cannot be restored stays in the record")
+assert(#hana.printed == 1 and hana.printed[1]:find("power-armor", 1, true), "the player is told once that the item is kept")
+print("PASS a stack whose properties cannot be restored stays in the record, and the rest is delivered once")
 
 local ian_body = character_entity()
 local ian = new_player(9, "ian", ian_body)
@@ -348,3 +353,14 @@ env.storage.surface_export_arrivals.mo = late_record("tx-24", {})
 arrival.process(mo)
 assert(not mo.character and created == before, "a refused teleport must not attach or create a character")
 print("PASS a refused teleport to an existing character stops the reattach")
+
+local logs_before = #logged
+env.game.tick = 8000
+assert(holds.stage("tx-30", platform, force, true, nil, "import-30"))
+assert(holds.go_live("tx-30", "import-30", {{name = "pat", items = {{name = "iron-plate"}, {count = 3},
+	{name = "stone", count = 2, quality = "normal", inventory = "main"}}}}))
+assert(#env.storage.surface_export_arrivals.pat["tx-30"].items == 1, "only well-formed items are recorded")
+local dropped = 0
+for i = logs_before + 1, #logged do if logged[i]:find("malformed", 1, true) then dropped = dropped + 1 end end
+assert(dropped == 2, "each dropped malformed item is logged")
+print("PASS malformed arrival items are logged when dropped")

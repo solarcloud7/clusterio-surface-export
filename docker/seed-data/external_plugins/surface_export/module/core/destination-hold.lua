@@ -277,6 +277,9 @@ local function record_arrivals(transfer_id, hold, passengers)
 				for _, item in ipairs(type(entry.items) == "table" and entry.items or {}) do
 					if type(item) == "table" and type(item.name) == "string" and type(item.count) == "number" then
 						items[#items + 1] = item
+					else
+						log(string.format("[DestinationHold] dropped a malformed passenger item for '%s' in transfer %s: name=%s count=%s",
+							entry.name, transfer_id, tostring(type(item) == "table" and item.name), tostring(type(item) == "table" and item.count)))
 					end
 				end
 				by_player[transfer_id] = {

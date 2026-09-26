@@ -120,7 +120,11 @@ local function place_into(inventory, item)
 		if not stack.valid_for_read then
 			-- intentional probe; an item or quality missing on this instance stays in the arrival record
 			local probed, accepted = pcall(function() return stack.can_set_stack(params) end)
-			if probed and accepted and Deserializer.place_stack(stack, item) then return true end
+			if probed and accepted then
+				local placed, err, unrestorable = Deserializer.place_stack(stack, item)
+				if placed then return true end
+				if unrestorable then return false, err end
+			end
 		end
 	end
 	return false
@@ -141,9 +145,21 @@ local function deliver(player, record)
 	end
 	for _, item in ipairs(ordered) do
 		local target = TARGETS[item.inventory]
-		local placed = (target and place_into(character.get_inventory(defines.inventory[target]), item))
-			or place_into(character.get_inventory(defines.inventory.character_main), item)
-			or place_into(hub, item)
+		local placed, unrestorable = false, nil
+		for _, inventory in ipairs({
+			target and character.get_inventory(defines.inventory[target]) or false,
+			character.get_inventory(defines.inventory.character_main) or false,
+			hub or false,
+		}) do
+			if inventory then placed, unrestorable = place_into(inventory, item) end
+			if placed or unrestorable then break end
+		end
+		if unrestorable and not item.unrestorable_notified then
+			item.unrestorable_notified = true
+			log(string.format("[Passenger] '%s' for '%s' is kept in the arrival record: %s",
+				tostring(item.name), tostring(player.name), unrestorable))
+			player.print(tostring(item.name) .. " could not be restored on this server; it is kept for you.")
+		end
 		if placed then
 			for index, pending in ipairs(record.items) do
 				if pending == item then

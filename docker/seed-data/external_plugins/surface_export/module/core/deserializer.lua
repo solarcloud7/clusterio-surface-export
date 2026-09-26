@@ -1394,11 +1394,14 @@ function Deserializer.place_stack(stack, item, item_state)
       restore_item_properties(stack, item, item_state)
     end
   end)
-  if not restored then
-    log(string.format("[Deserializer] '%s' was placed but its properties were not fully restored: %s",
+  if restored then return true end
+  stack.clear()
+  if stack.valid_for_read then
+    log(string.format("[Deserializer] '%s' could not be fully restored and its stack could not be removed; keeping it: %s",
       tostring(item.name), tostring(restore_err)))
+    return true
   end
-  return true
+  return false, "properties could not be restored: " .. tostring(restore_err), true
 end
 
 return Deserializer
