@@ -45,6 +45,7 @@ local function surface(name, index)
 	return s
 end
 local nauvis = surface("nauvis", 1)
+local default_surface = nauvis
 local ship_surface = surface("platform-7", 70)
 
 local function stack(name, count, extra)
@@ -214,7 +215,7 @@ local scanner = assert(loadfile(root .. "export_scanners/inventory-scanner.lua",
 env.require = function(name)
 	if name:find("core/gateway", 1, true) then return {PASSENGER_HOLD = "surfexp_passenger_hold"} end
 	if name:find("planet-policy", 1, true) then
-		return {default_surface = function() return nauvis end, default_planet = function() return "nauvis" end}
+		return {default_surface = function() return default_surface end, default_planet = function() return "nauvis" end}
 	end
 	if name:find("inventory-scanner", 1, true) then return scanner end
 	if name:find("transfer-receipts", 1, true) then return receipts end
@@ -299,6 +300,17 @@ nauvis.pads = {}
 parked = transit.park(platform, target, "surfexp_gateway_hub", {alice})
 transit.assign_job(parked, "job-1b")
 assert(transit.abort(alice) and alice.position.x == 0 and alice.position.y == 0, "without a landing pad Abort should land at 0,0")
+parked = transit.park(platform, target, "surfexp_gateway_hub", {alice})
+transit.assign_job(parked, "job-1c")
+default_surface = nil
+assert(not transit.abort(alice) and env.storage.surface_export_passengers[1].state == "aborted",
+	"an Abort that cannot land yet stays pending")
+assert(#transit.depart("job-1c") == 0 and env.storage.surface_export_passengers[1].state == "aborted",
+	"a pending Abort is still excluded from the manifest")
+default_surface = nauvis
+transit.on_tick()
+assert(not transit.owns(alice) and alice.character == alice_body and alice.physical_surface_index == nauvis.index,
+	"a pending Abort lands the passenger once the planet is available")
 print("PASS Abort lands the passenger at the landing pad or 0,0 and excludes them from the manifest")
 
 alice.physical_surface_index, alice.in_hub, alice.controller_type = ship_surface.index, true, controllers.remote
