@@ -14,7 +14,10 @@ From the repository root:
 ```
 
 The builder reads the version from `info.json` and writes the corresponding ZIP
-under `docker/seed-data/mods/`. Without `-SkipClientSync` it also attempts local
+under `docker/seed-data/mods/`. Packing is byte-reproducible: unchanged source
+gives an identical ZIP. The builder refuses to replace an existing ZIP of the same
+version with different bytes, because hosts and clients cache mods by version.
+Any change to the mod needs a new version. Without `-SkipClientSync` it also attempts local
 client synchronization. `-Upload` changes the configured mod pack and restarts
 hosts; schedule this as a deployment, not a compile-only check. Inspect its
 `-ModPack` argument if the installation does not use the development pack.
