@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container; for --cluster <name> other than dev, an entry in tools/clusterio/remote-clusters.local.json
 // produces: clusterioctl output from the development cluster or a named remote cluster
-// does not: run a command outside the read-only list unless --write is given, print tokens, or bypass the controller's own permissions
+// does not: run a command outside the read-only list unless --write is given, accept clusterioctl global options, run control-config or plugin commands against a remote cluster, print tokens, or bypass the controller's own permissions; note that instance config list can show game settings such as a server password
 import url from "node:url";
 import { DEVELOPMENT, withCluster } from "../shared/remote-cluster.mjs";
 
@@ -24,8 +24,20 @@ const READ_ONLY = [
 	["surface-export", "list-transfers"],
 ];
 
+const LOCAL_ONLY = new Set(["control-config", "plugin"]);
+const GLOBAL_OPTIONS = ["--config", "--plugin-list", "--log-level", "--bypass-lock-file"];
+
 export function isReadOnly(args) {
 	return READ_ONLY.some(prefix => prefix.every((word, index) => args[index] === word));
+}
+
+export function refusal(cluster, args) {
+	const option = args.find(arg => GLOBAL_OPTIONS.some(name => arg === name || arg.startsWith(`${name}=`)));
+	if (option) return `Refusing ${option.split("=")[0]}: the wrapper sets clusterioctl's global options itself.`;
+	if (cluster !== DEVELOPMENT && LOCAL_ONLY.has(args[0])) {
+		return `Refusing "${args[0]}" on ${cluster}: it runs against the temporary control config and would print or change the remote token.`;
+	}
+	return null;
 }
 
 export function parseArgs(argv) {
@@ -58,6 +70,8 @@ export async function main(argv, { run = withCluster, out = process.stdout, err 
 	try { options = parseArgs(argv); }
 	catch (error) { return report(err, `${USAGE}\n\n`, error, 2); }
 	if (options.help || options.args.length === 0) { out.write(`${USAGE}\n`); return options.help ? 0 : 2; }
+	const refused = refusal(options.cluster, options.args);
+	if (refused) { err.write(`${refused}\n`); return 2; }
 	if (!options.write && !isReadOnly(options.args)) {
 		err.write(`Refusing "${options.args.slice(0, 3).join(" ")}" without --write: it is not on the read-only list.\n`);
 		return 2;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseInstanceList, readRemoteCluster, withCluster } from "../../tools/shared/remote-cluster.mjs";
+import { parseInstanceList, readRemoteCluster, REMOTE_SCRIPT, withCluster } from "../../tools/shared/remote-cluster.mjs";
 import { isReadOnly, main as ctlMain } from "../../tools/clusterio/ctl.mjs";
 import { diffSnapshots, snapshotLua, takeSnapshot } from "../../tools/surface-export/player-state.mjs";
 
@@ -21,21 +21,48 @@ test("remote cluster config reads a token file and names the missing file withou
 		{ url: "https://vm.example/", token: TOKEN }, "a copied control config supplies the token, even with a byte-order mark");
 });
 
-test("a remote cluster call writes a private temporary config, never passes the token as an argument, and removes it", async () => {
+test("a remote call writes, uses and removes its private config inside one container shell, with the token only on stdin", async () => {
 	const calls = [];
 	const exec = (program, args, options) => { calls.push({ program, args, options }); return "name | status\nfact1 | running\n"; };
 	const read = () => JSON.stringify({ vm: { url: "https://vm.example/", token: TOKEN } });
 	const output = await withCluster("vm", transport => transport.ctl("instance", "list"), { exec, controller: "local-controller", read });
 	assert.match(output, /fact1/);
-	const [write, request, remove] = calls;
-	assert.match(write.args.at(-1), /^umask 077 && cat > \/tmp\/remote-vm-/);
-	assert.match(write.options.input, new RegExp(TOKEN));
-	const file = write.args.at(-1).split("> ")[1];
-	assert.deepEqual(request.args.slice(0, 8), ["exec", "local-controller", "npx", "clusterioctl", "--log-level", "error", "--config", file]);
-	assert.deepEqual(remove.args, ["exec", "local-controller", "rm", "-f", file]);
-	for (const call of calls) assert.ok(!call.args.join(" ").includes(TOKEN), "the token never appears in a command line");
-	await assert.rejects(withCluster("vm", () => { throw new Error("boom"); }, { exec, controller: "local-controller", read }), /boom/);
-	assert.deepEqual(calls.at(-1).args.slice(0, 4), ["exec", "local-controller", "rm", "-f"], "the temporary config is removed after a failure");
+	assert.equal(calls.length, 1, "no separate write or cleanup call can be skipped by an interrupt");
+	const [call] = calls;
+	assert.deepEqual(call.args.slice(0, 5), ["exec", "-i", "local-controller", "sh", "-c"]);
+	assert.equal(call.args[5], REMOTE_SCRIPT);
+	assert.match(REMOTE_SCRIPT, /umask 077; f=\$\(mktemp\) \|\| exit 1; trap 'rm -f "\$f"' EXIT INT TERM HUP;/);
+	assert.deepEqual(call.args.slice(6), ["sh", "instance", "list"]);
+	assert.match(call.options.input, new RegExp(TOKEN));
+	assert.equal(call.options.stdio[0], "pipe", "the transport's ignored stdin must not swallow the config");
+	assert.ok(!call.args.join(" ").includes(TOKEN), "the token never appears in a command line");
+	const devCalls = [];
+	await withCluster("dev", transport => transport.ctl("instance", "list"), { exec: (p, a) => { devCalls.push(a); return ""; } });
+	assert.ok(devCalls[0].includes("/clusterio/tokens/config-control.json"), "the development cluster keeps its own config");
+});
+
+test("a malformed local config is reported without echoing its content", () => {
+	const files = { "clusters.json": `{ "vm": { "url": "https://vm.example/", "token": ${TOKEN} } }` };
+	assert.throws(() => readRemoteCluster("vm", { file: "clusters.json", read: name => files[name], exists: () => true }),
+		error => /is not valid JSON$/.test(error.message) && !error.message.includes(TOKEN.slice(0, 6)));
+});
+
+test("ctl refuses global options anywhere and local-config commands on remote clusters, even with --write", async () => {
+	const ran = [];
+	const run = async (cluster, fn) => fn({ ctl: (...args) => { ran.push([cluster, ...args]); return "ok"; } });
+	for (const argv of [
+		["--cluster", "vm", "instance", "list", "--config", "/clusterio/tokens/config-control.json"],
+		["--cluster", "vm", "instance", "list", "--plugin-list=/tmp/evil.json"],
+		["instance", "list", "--log-level", "silly"],
+		["--cluster", "vm", "--write", "control-config", "list"],
+		["--cluster", "vm", "--write", "plugin", "list"],
+	]) {
+		const err = sink();
+		assert.equal(await ctlMain(argv, { run, out: sink(), err }), 2, argv.join(" "));
+		assert.match(err.text(), /^Refusing/);
+	}
+	assert.deepEqual(ran, [], "nothing reached clusterioctl");
+	assert.equal(await ctlMain(["--write", "control-config", "list"], { run, out: sink(), err: sink() }), 0, "the local dev cluster may inspect its own config");
 });
 
 test("ctl allows only read-only commands without --write", async () => {
@@ -130,4 +157,15 @@ test("a snapshot records stopped and failing instances as unavailable with a rea
 	assert.match(state.instances.broken.reason, /query failed: rcon timeout/);
 	assert.deepEqual(state.instances.gone, { observation: "absent" });
 	assert.ok(!diffSnapshots(state, state).complete, "an unavailable instance leaves the verdict unknown");
+});
+
+test("gear waiting in arrival records and manifests counts, and different players or clusters are not compared", () => {
+	const armorAboard = observed(armor());
+	const arrived = { ...observed([]), pending: armor().map(p => ({ ...p, location: "pending:arrival:transfer-1" })) };
+	const handedOver = diffSnapshots({ cluster: "vm", player: "p", instances: { a: armorAboard } }, { cluster: "vm", player: "p", instances: { a: arrived } });
+	assert.ok(handedOver.conserved, "armor waiting for delivery is still the player's");
+	const mixed = diffSnapshots({ cluster: "vm", player: "p", instances: { a: armorAboard } }, { cluster: "vm", player: "q", instances: { a: armorAboard } });
+	assert.ok(!mixed.complete && mixed.lines.at(-1).includes("different players"));
+	const clusters = diffSnapshots({ cluster: "dev", player: "p", instances: { a: armorAboard } }, { cluster: "vm", player: "p", instances: { a: armorAboard } });
+	assert.ok(!clusters.complete && clusters.lines.at(-1).includes("different clusters"));
 });

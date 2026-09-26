@@ -51,8 +51,7 @@ const messages = require(path.join(distNode, "messages.js"));
 const read = registered.find(c => String(c.definition[0]) === "gateways");
 const write = registered.find(c => String(c.definition[0]).startsWith("set-gateway-links"));
 
-async function invoke(command, args, reply) {
-	const sent = [];
+async function invoke(command, args, reply, sent = []) {
 	const printed = [];
 	const originalLog = console.log;
 	console.log = (line) => printed.push(line);
@@ -102,14 +101,17 @@ test("no targets clears the gateway, and a refusal fails loudly", async () => {
 
 test("malformed ids are refused before anything is sent", async () => {
 	for (const bad of ["abc", "", "0", "-3", "1.5", " 7"]) {
-		const { sent } = await invoke(write, { sourceInstanceId: 1, gatewayName: "g", targets: [] }, { success: true });
-		assert.equal(sent.length, 1);
-		await assert.rejects(() => invoke(write, { sourceInstanceId: bad, gatewayName: "g", targets: ["2"] }, { success: true }),
+		const sent = [];
+		await assert.rejects(() => invoke(write, { sourceInstanceId: bad, gatewayName: "g", targets: ["2"] }, { success: true }, sent),
 			/sourceInstanceId must be a positive instance id/, `source ${JSON.stringify(bad)}`);
+		assert.equal(sent.length, 0, `source ${JSON.stringify(bad)} must not reach the controller`);
 	}
 	for (const bad of ["two", "1.5", "", "0", "-2", "3:", "3:gw:extra", "3 ", ":gw", "3:g w"]) {
-		assert.throws(() => control.parseGatewayTargets([bad], "g"), /target must be <instanceId> or <instanceId>:<gatewayName>/,
+		const sent = [];
+		await assert.rejects(() => invoke(write, { sourceInstanceId: 1, gatewayName: "g", targets: ["2", bad] }, { success: true }, sent),
+			/target must be <instanceId> or <instanceId>:<gatewayName>/,
 			`target ${JSON.stringify(bad)} must not become an instance or lose part of its input`);
+		assert.equal(sent.length, 0, `target ${JSON.stringify(bad)} must not reach the controller`);
 	}
 	assert.deepEqual(control.parseGatewayTargets(["12", "34:surfexp_gateway_2"], "surfexp_gateway_hub"), [
 		{ targetInstanceId: 12, targetGateway: "surfexp_gateway_hub" },
@@ -121,7 +123,9 @@ test("a self-target is refused instead of silently clearing the gateway", async 
 	const { sent } = await invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets: ["7"] }, { success: true });
 	assert.equal(sent.length, 1);
 	for (const targets of [["5"], ["7", "5:other"]]) {
-		const attempt = invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets }, { success: true });
-		await assert.rejects(() => attempt, /cannot link to its own instance 5/);
+		const sent = [];
+		await assert.rejects(() => invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets }, { success: true }, sent),
+			/cannot link to its own instance 5/);
+		assert.equal(sent.length, 0, `${JSON.stringify(targets)} must not send a replacement that clears the existing links`);
 	}
 });
