@@ -228,7 +228,7 @@ function report(stream, error, code) {
 const USAGE = `usage: node tools/clusterio/reconcile.mjs plan --cluster <dev|name> --desired <file>
        node tools/clusterio/reconcile.mjs apply --cluster <dev|name> --desired <file> --yes [--restart]`;
 
-export async function main(argv, { out = process.stdout, err = process.stderr, run = withCluster, read = file => JSON.parse(readFileSync(file, "utf8")) } = {}) {
+export async function main(argv, { out = process.stdout, err = process.stderr, run = withCluster, read = file => JSON.parse(readFileSync(file, "utf8")), modFile = localModFile } = {}) {
 	const value = flag => { const index = argv.indexOf(flag); return index >= 0 ? argv[index + 1] : undefined; };
 	const command = argv[0];
 	const cluster = value("--cluster");
@@ -238,7 +238,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, r
 	try {
 		const desired = read(desiredFile);
 		return await run(cluster, transport => {
-			const result = planChanges(desired, readLive(transport, desired));
+			const result = planChanges(desired, readLive(transport, desired), { modFile });
 			printPlan(result, out);
 			if (command === "plan") return result.errors.length ? 1 : 0;
 			if (result.errors.length) { err.write("Refusing to apply a blocked plan.\n"); return 1; }
@@ -255,7 +255,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, r
 			if (argv.includes("--restart")) {
 				for (const instance of result.restart) { out.write(`restarting ${instance}\n`); transport.ctl("instance", "restart", instance); }
 			}
-			const after = planChanges(desired, readLive(transport, desired));
+			const after = planChanges(desired, readLive(transport, desired), { modFile });
 			out.write(after.actions.length ? `Still different after apply:\n` : "Applied; the cluster now matches the desired state.\n");
 			if (after.actions.length) printPlan(after, out);
 			return after.actions.length || after.errors.length ? 1 : 0;

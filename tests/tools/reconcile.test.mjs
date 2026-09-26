@@ -116,7 +116,7 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 		if (args[0] === "instance" && args[2] === "set") { state.fact1Pack = Number(args[5]); return ""; }
 		return "";
 	} };
-	const code = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes"], { out, err, read: () => desired, run: async (_, fn) => fn(transport) });
+	const code = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes"], { out, err, read: () => desired, run: async (_, fn) => fn(transport), modFile });
 	assert.equal(code, 0, out.text + err.text);
 	assert.deepEqual(state.calls.find(call => call[2] === "set"), ["instance", "config", "set", "fact1", "factorio.mod_pack_id", "9"]);
 	assert.match(out.text, /the cluster now matches the desired state/);
