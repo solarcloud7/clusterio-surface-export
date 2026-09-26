@@ -5,12 +5,14 @@ local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local platform_identity = require("modules/surface_export/utils/platform-identity")
 local PassengerWindow = require("modules/surface_export/interfaces/gui/passenger-window")
+local PassengerArrival = require("modules/surface_export/core/passenger-arrival")
 
 local Transit = {}
 
 Transit.HOLD_SURFACE = Gateway.PASSENGER_HOLD
 Transit.OFFER_TICKS = 10 * 60 * 60
 Transit.JOB_WAIT_TICKS = 5 * 60
+Transit.PLATFORM_GONE_TICKS = 10 * 60
 
 local CARRIED = {
 	{key = "main", inventory = "character_main"},
@@ -124,7 +126,7 @@ local function remote_view(player, platform)
 end
 
 local function park_connected(player, record, platform, hold)
-	if not player.clear_cursor() then return false end
+	if not player.clear_cursor() then return false, "cursor" end
 	player.leave_space_platform()
 	local body = player.character
 	if not (body and body.valid) then return false end
@@ -221,12 +223,15 @@ function Transit.park(platform, target, gateway_name, players)
 				started_tick = game.tick,
 			}
 			records()[player.index] = record
-			local ok, err = pcall(connected and park_connected or park_offline, player, record, platform, hold)
+			local ok, err, reason = pcall(connected and park_connected or park_offline, player, record, platform, hold)
 			if ok and err then
 				parked[#parked + 1] = player.index
 				show_window(player, record)
 			elseif ok then
 				records()[player.index] = nil
+				if reason == "cursor" then
+					player.print("The item in your hand could not be put away, so you were not held for the transfer. You will be moved to the planet when the platform leaves.")
+				end
 			else
 				log(string.format("[Passenger] parking '%s' from '%s' failed: %s",
 					tostring(player.name), tostring(platform.name), tostring(err)))
@@ -255,14 +260,36 @@ function Transit.return_parked(parked)
 	end
 end
 
-function Transit.transfer_released(job_id)
-	if type(job_id) ~= "string" or job_id == "" then return end
-	for index, record in pairs(records()) do
-		if record.job_id == job_id and record.state == "in_transit" then
-			record.state = "returned"
-			Transit.restore(game.get_player(index), record, "aboard")
+local function give_back(record, job_id)
+	local manifest = manifests()[job_id]
+	if not manifest then return end
+	for position, entry in ipairs(manifest) do
+		if entry.name == record.player_name then
+			if #(entry.items or {}) > 0 then
+				PassengerArrival.give_back(record.player_name, "returned:" .. job_id, record, entry.items)
+			end
+			table.remove(manifest, position)
+			break
 		end
 	end
+	if #manifest == 0 then manifests()[job_id] = nil end
+end
+
+function Transit.transfer_released(job_id)
+	if type(job_id) ~= "string" or job_id == "" then return end
+	local confirmed = Receipts.get("source_deleted", job_id) ~= nil
+	for index, record in pairs(records()) do
+		local unconfirmed = record.state == "departed" and not record.notified and not confirmed
+		if record.job_id == job_id and (record.state == "in_transit" or unconfirmed) then
+			if unconfirmed then give_back(record, job_id) end
+			record.state = "returned"
+			local player = game.get_player(index)
+			if Transit.restore(player, record, "aboard") then
+				GameUtils.pcall_warn("[Passenger] give back gear to " .. tostring(player.name), function() PassengerArrival.process(player) end)
+			end
+		end
+	end
+	if confirmed then Transit.notify_departed(job_id) end
 end
 
 function Transit.abort(player)
@@ -334,12 +361,23 @@ function Transit.depart(job_id)
 			if not read then
 				log(string.format("[Passenger] reading the carried gear of '%s' failed; it stays on the body: %s",
 					tostring(entry.name), tostring(read_err)))
+				if player and player.connected then player.print("Your gear could not be read, so it stays here and you travel without it.") end
 				stacks, kept_armor, entry.items = {}, false, {}
+			end
+			local extracted = entry.items
+			entry.items = {}
+			for position, carried in ipairs(stacks) do
+				local cleared, clear_err = pcall(carried.stack.clear)
+				if cleared and not carried.stack.valid_for_read then
+					entry.items[#entry.items + 1] = extracted[position]
+				else
+					log(string.format("[Passenger] a carried stack of '%s' could not be removed and stays on the body: %s",
+						tostring(entry.name), tostring(clear_err)))
+				end
 			end
 			record.state = "departed"
 			record.departed_tick = game.tick
 			manifest[#manifest + 1] = entry
-			for _, carried in ipairs(stacks) do carried.stack.clear() end
 			if kept_armor then
 				log(string.format("[Passenger] '%s' keeps their armor: its inventory slots are full", tostring(entry.name)))
 				if player and player.connected then player.print("Your armor stayed behind: removing it would spill your inventory.") end
@@ -369,7 +407,7 @@ function Transit.notify_departed(job_id)
 					local surface, position = Transit.landing(player.force)
 					if surface then player.set_controller{type = defines.controllers.remote, surface = surface, position = position} end
 				end)
-				show_window(player, record)
+				GameUtils.pcall_warn("[Passenger] arrival window for " .. tostring(player.name), function() show_window(player, record) end)
 				connect(player, record)
 			end
 		end
@@ -409,8 +447,19 @@ end
 function Transit.on_tick()
 	local list = storage.surface_export_passengers
 	if not list or next(list) == nil then return end
+	local settled = {}
 	for index, record in pairs(list) do
 		local player = game.get_player(index)
+		if record.state == "departed" and not record.notified and record.job_id then
+			if Receipts.get("source_deleted", record.job_id) then
+				settled[record.job_id] = true
+			elseif resolve_platform(record) then
+				record.platform_missing_tick = nil
+			else
+				record.platform_missing_tick = record.platform_missing_tick or game.tick
+				if game.tick - record.platform_missing_tick >= Transit.PLATFORM_GONE_TICKS then settled[record.job_id] = true end
+			end
+		end
 		if record.state == "in_transit" and not record.job_id
 			and game.tick >= (record.started_tick or 0) + Transit.JOB_WAIT_TICKS then
 			log(string.format("[Passenger] '%s' was parked without a transfer job; returning aboard", tostring(record.player_name)))
@@ -428,6 +477,10 @@ function Transit.on_tick()
 				Transit.restore(player, record, "aboard")
 			end
 		end
+	end
+	for job_id in pairs(settled) do
+		log(string.format("[Passenger] source deletion of %s is settled; notifying its departed passengers", job_id))
+		Transit.notify_departed(job_id)
 	end
 end
 

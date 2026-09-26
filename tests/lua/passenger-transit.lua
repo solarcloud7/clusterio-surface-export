@@ -52,7 +52,21 @@ local ship_surface = surface("platform-7", 70)
 local function stack(name, count, extra)
 	local s = {valid_for_read = true, name = name, count = count, quality = {name = "normal"},
 		prototype = {type = extra and extra.type or "item", get_inventory_size_bonus = function() return extra and extra.bonus or 0 end}}
+	s.can_set_stack = function() return not s.valid_for_read end
+	s.set_stack = function(params)
+		s.valid_for_read, s.name, s.count, s.quality = true, params.name, params.count, {name = params.quality or "normal"}
+		s.grid = nil
+		if params.name:find("armor", 1, true) then
+			local g = {valid = true, equipment = {}}
+			g.clear = function() g.equipment = {} end
+			g.put = function(spec) g.equipment[#g.equipment + 1] = {name = spec.name, position = spec.position}; return g.equipment[#g.equipment] end
+			s.grid = g
+		end
+		return true
+	end
 	s.clear = function()
+		if s.clear_error then error(s.clear_error) end
+		s.grid = nil
 		s.valid_for_read, s.name, s.count = false, nil, nil
 	end
 	return s
@@ -184,10 +198,11 @@ local function new_player(index, name, connected, body)
 	return p
 end
 
+local ship_hub = inventory(2)
 local force = {name = "player", valid = true, platforms = {}, hidden = {}}
 force.set_surface_hidden = function(s, hidden) force.hidden[s.name] = hidden end
 local platform = {valid = true, index = 7, name = "Ship", uid = "uid:7", surface = ship_surface, force = force,
-	hub = {valid = true, position = {x = 0.5, y = 0.5}}}
+	hub = {valid = true, position = {x = 0.5, y = 0.5}, get_inventory = function() return ship_hub end}}
 ship_surface.platform = platform
 force.platforms[7] = platform
 
@@ -208,8 +223,9 @@ env.game.create_surface = function(name, settings)
 end
 
 local window = assert(loadfile(root .. "interfaces/gui/passenger-window.lua", "t", env))()
+local deserializer, arrival
 local receipts = assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))()
-local util_stub = {QUALITY_NORMAL = "normal"}
+local util_stub = {QUALITY_NORMAL = "normal", pcall_warn = function(_, fn) fn() end}
 env.require = function(name)
 	if name:find("utils/util", 1, true) then return util_stub end
 	if name:find("fluid-registry", 1, true) then return {} end
@@ -231,8 +247,18 @@ env.require = function(name)
 	end
 	if name:find("platform-identity", 1, true) then return function(p) return p.valid and p.uid or nil end end
 	if name:find("passenger-window", 1, true) then return window end
+	if name:find("core/deserializer", 1, true) then return deserializer end
+	if name:find("passenger-arrival", 1, true) then return arrival end
 	error(name)
 end
+local base_require = env.require
+env.require = function(name)
+	if name:find("utils/util", 1, true) then return util_stub end
+	if name:find("connection_restoration", 1, true) then return {} end
+	return base_require(name)
+end
+deserializer = assert(loadfile(root .. "core/deserializer.lua", "t", env))()
+arrival = assert(loadfile(root .. "core/passenger-arrival.lua", "t", env))()
 local transit = assert(loadfile(root .. "core/passenger-transit.lua", "t", env))()
 local target = {instanceId = 2, instanceName = "Two", address = "10.0.0.2:34197"}
 
@@ -500,6 +526,7 @@ local mae = new_player(13, "mae", true, mae_body)
 mae.cursor_stuck = true
 assert(#transit.park(platform, target, "surfexp_gateway_hub", {mae}) == 0 and not transit.owns(mae)
 	and mae.character == mae_body and mae.in_hub, "a passenger whose cursor cannot be emptied stays aboard")
+assert(#mae.printed == 1 and mae.printed[1]:find("could not be put away", 1, true), "the passenger is told why they were not held")
 print("PASS a passenger whose cursor cannot be emptied is not parked")
 
 local ned_body = character(nil, gear())
@@ -559,6 +586,7 @@ for _, entry in ipairs(departed) do by[entry.name] = entry end
 assert(#by.quin.items == 0 and quin_body.inventories[inventory_ids.character_armor][1].valid_for_read,
 	"a passenger whose gear cannot be read keeps it on their body")
 assert(#by.rex.items == 1 and env.storage.surface_export_passengers[17].state == "departed", "the other passenger still carries their gear")
+assert(quin.printed[#quin.printed]:find("could not be read", 1, true), "the passenger is told they travel without their gear")
 print("PASS a gear extraction failure for one passenger leaves their gear on the body and departs everyone")
 
 local sal = new_player(19, "sal", true, character(nil, gear()))
@@ -571,6 +599,106 @@ assert(transit.owns(sal) and env.storage.surface_export_passengers[19].state == 
 assert(sal.printed[#sal.printed]:find("reconciled", 1, true), "the passenger is told the transfer is being reconciled")
 env.storage.locked_platforms = nil
 print("PASS Abort is refused while a committed source lock is reconciled")
+
+local function passenger(index, name, connected)
+	local body = character(nil, gear())
+	return new_player(index, name, connected, body), body
+end
+local function armor_of(body) return body.inventories[inventory_ids.character_armor][1] end
+
+local tia, tia_body = passenger(30, "tia", true)
+local uma, uma_body = passenger(31, "uma", true)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {tia, uma})
+transit.assign_job(parked, "job-30")
+transit.depart("job-30")
+local show_arrived = window.show_arrived
+window.show_arrived = function() error("injected window failure") end
+transit.notify_departed("job-30")
+window.show_arrived = show_arrived
+assert(#tia.connects == 1 and #uma.connects == 1, "a window failure for one passenger must not stop the others' connect prompts")
+print("PASS the departure notice reaches every passenger when a window fails")
+
+local vic = passenger(32, "vic", true)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {vic})
+transit.assign_job(parked, "job-31")
+transit.depart("job-31")
+receipts.put("source_deleted", "job-31", {passengers = {}})
+transit.on_tick()
+assert(env.storage.surface_export_passengers[32].notified and #vic.connects == 1,
+	"a confirmed deletion whose notice never ran is noticed later")
+transit.on_gui_click{player_index = 32, element = {valid = true, name = window.JOIN}}
+assert(#vic.connects == 2, "Join works once the deletion is confirmed")
+print("PASS a confirmed deletion that missed its notice is settled on the next tick")
+
+local wes, wes_body = passenger(33, "wes", true)
+local xan, xan_body = passenger(34, "xan", false)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {wes, xan})
+transit.assign_job(parked, "job-32")
+transit.depart("job-32")
+transit.on_gui_click{player_index = 33, element = {valid = true, name = window.JOIN}}
+assert(#wes.connects == 0, "Join does nothing before the deletion is confirmed")
+xan.join()
+transit.on_join(xan)
+assert(transit.owns(xan) and xan.character == nil and xan_body.surface == hold,
+	"a departed passenger who joins before the deletion is confirmed stays held")
+assert(not armor_of(wes_body).valid_for_read and env.storage.surface_export_passenger_manifests["job-32"],
+	"the armor is in the unconfirmed manifest")
+transit.transfer_released("job-32")
+assert(not transit.owns(wes) and wes.character == wes_body and wes.in_hub and armor_of(wes_body).valid_for_read
+	and armor_of(wes_body).name == "power-armor", "a released unconfirmed departure returns the passenger aboard with their armor")
+assert(not transit.owns(xan) and xan.character == xan_body and xan.in_hub, "the other passenger returns aboard too")
+assert(env.storage.surface_export_passenger_manifests["job-32"] == nil and not (env.storage.surface_export_arrivals or {}).wes,
+	"the manifest is dropped once the gear is back")
+print("PASS releasing an unconfirmed departure returns passengers aboard with their carried gear")
+
+local yul, yul_body = passenger(35, "yul", true)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {yul})
+transit.assign_job(parked, "job-33")
+transit.depart("job-33")
+armor_of(yul_body).set_stack({name = "light-armor", count = 1})
+local yul_main = yul_body.inventories[inventory_ids.character_main]
+for slot = 1, #yul_main do if not yul_main[slot].valid_for_read then yul_main[slot].set_stack({name = "stone", count = 50}) end end
+platform.uid = "gone"
+transit.transfer_released("job-33")
+platform.uid = "uid:7"
+assert(not transit.owns(yul) and yul.character == yul_body and yul.physical_surface_index == nauvis.index,
+	"with the platform gone the passenger lands on the planet")
+local kept_for_yul = env.storage.surface_export_arrivals.yul["returned:job-33"]
+assert(kept_for_yul and #kept_for_yul.items == 1 and kept_for_yul.items[1].name == "power-armor"
+	and yul.printed[#yul.printed]:find("kept for you", 1, true), "gear that does not fit is kept and the player is told")
+yul_main[1].clear()
+arrival.process(yul)
+assert(not env.storage.surface_export_arrivals.yul and yul_main[1].name == "power-armor", "the kept gear is given back once there is room")
+print("PASS gear from a released departure is given back on the planet, keeping what does not fit")
+
+local zoe = passenger(36, "zoe", true)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {zoe})
+transit.assign_job(parked, "job-34")
+transit.depart("job-34")
+platform.uid = "gone"
+transit.on_tick()
+assert(not env.storage.surface_export_passengers[36].notified, "a missing platform is not settled at once")
+env.game.tick = env.game.tick + transit.PLATFORM_GONE_TICKS
+transit.on_tick()
+platform.uid = "uid:7"
+assert(env.storage.surface_export_passengers[36].notified and #zoe.connects == 1,
+	"a departed passenger whose platform has been gone for ten seconds is notified")
+print("PASS a deleted source whose lock could not be cleared still settles its passengers")
+
+local amy, amy_body = passenger(37, "amy", true)
+env.storage.surface_export_config.passenger_carry_inventory = true
+parked = transit.park(platform, target, "surfexp_gateway_hub", {amy})
+transit.assign_job(parked, "job-35")
+local pistol = amy_body.inventories[inventory_ids.character_guns][1]
+pistol.clear_error = "injected clear failure"
+manifest = transit.depart("job-35")
+env.storage.surface_export_config.passenger_carry_inventory = false
+pistol.clear_error = nil
+local carried_names = {}
+for _, item in ipairs(manifest[1].items) do carried_names[item.name] = true end
+assert(not carried_names.pistol and pistol.valid_for_read and carried_names["power-armor"],
+	"a stack that cannot be removed stays on the body and out of the manifest")
+print("PASS a carried stack that cannot be removed is left out of the manifest")
 
 local lock_env = setmetatable({storage = {source_recovery_ready = true, locked_platforms = {}}, log = noop,
 	game = {forces = {player = force}}}, {__index = _G})

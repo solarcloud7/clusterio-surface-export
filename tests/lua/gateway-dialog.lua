@@ -44,6 +44,7 @@ local force = {name = "player", platforms = {[7] = platform}}
 platform.surface = {platform = platform}
 local started = {}
 local passenger_calls, start_error = {}, nil
+local lock_state, released_locks = nil, 0
 local player = {index = 1, valid = true, connected = true, physical_surface_index = 70, gui = {screen = gui()}, printed = {}}
 player.print = function(message) player.printed[#player.printed + 1] = message end
 
@@ -68,7 +69,10 @@ env.require = function(name)
 	if name:find("transfer-trigger", 1, true) then
 		return {start = function(_, index, instance, gateway)
 			started[#started + 1] = {index, instance, gateway, parked_before = #passenger_calls}
-			if start_error == "throw" then error("injected start exception") end
+			if start_error == "throw" then
+				lock_state = {kind = "transfer"}
+				error("injected start exception")
+			end
 			if start_error then return nil, start_error end
 			return "job-" .. #started
 		end}
@@ -83,7 +87,14 @@ env.require = function(name)
 			return_parked = function(parked_list) passenger_calls[#passenger_calls + 1] = {"return", parked_list[1]} end,
 		}
 	end
-	if name:find("surface-lock", 1, true) then return {is_locked = function() return locked end} end
+	if name:find("surface-lock", 1, true) then
+		return {is_locked = function() return locked end, get_lock_data = function() return lock_state end,
+			unlock_current_lock = function(_, observed)
+				assert(observed == lock_state, "the observed lock should be released")
+				lock_state, released_locks = nil, released_locks + 1
+				return true
+			end}
+	end
 	return {
 		get_gateway_config = function() return {targets = gateway_targets} end,
 		parked_at_gateway = function() return parked end,
@@ -201,5 +212,6 @@ if not player.gui.screen[FRAME] then assert(dialog.open(player, platform, "surfe
 local threw = not pcall(dialog.on_gui_click, {player_index = 1, element = named(player.gui.screen[FRAME], "surfexp_gw_transfer")})
 assert(not threw and passenger_calls[1][1] == "park" and passenger_calls[2] and passenger_calls[2][1] == "return",
 	"a transfer start that raises should still return the parked passengers")
+assert(released_locks == 1 and lock_state == nil, "the lock taken by a start that raised should be released")
 start_error = nil
-print("PASS a transfer start that raises returns the parked passengers")
+print("PASS a transfer start that raises returns the parked passengers and releases its lock")

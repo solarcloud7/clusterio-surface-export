@@ -326,6 +326,15 @@ function GatewayTransferGui.confirm_transfer(player, state)
 		local ok, id, err = pcall(TransferTrigger.start, force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
 		if not ok then
 			log("[Gateway] transfer start raised: " .. tostring(id))
+			local lock = SurfaceLock.get_lock_data(platform.index)
+			local exporting = false
+			for _, job in pairs(storage.async_jobs or {}) do
+				if job.platform_index == state.platform_index and job.force_name == state.force_name then exporting = true end
+			end
+			if lock and lock.kind == "transfer" and not exporting then
+				local released, release_err = SurfaceLock.unlock_current_lock(platform.index, lock)
+				if not released then log("[Gateway] releasing the lock after a failed start failed: " .. tostring(release_err)) end
+			end
 			return nil, tostring(id)
 		end
 		job_id = id
