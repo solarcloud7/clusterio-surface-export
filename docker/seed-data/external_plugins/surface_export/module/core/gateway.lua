@@ -67,7 +67,10 @@ function Gateway.parked_at_gateway(platform)
 	if not (platform and platform.valid) then
 		return nil
 	end
-	if platform.state ~= defines.space_platform_state.waiting_at_station then
+	local states = defines.space_platform_state
+	local state = platform.state
+	if state ~= states.waiting_at_station and state ~= states.paused
+		and state ~= states.no_schedule and state ~= states.no_path then
 		return nil
 	end
 	local loc = platform.space_location

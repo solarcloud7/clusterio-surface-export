@@ -82,3 +82,20 @@ for _, options in ipairs({{}, {player = true}, {empty = true, no_destination = t
     for _, body in ipairs(bodies) do assert(body.surface ~= source, "reported success with a body aboard") end
 end
 print("PASS evacuation requires verified empty source, including false/throwing teleports and failed reads")
+
+local states = {waiting_at_station = 7, paused = 8, no_schedule = 5, no_path = 6, waiting_for_departure = 4, on_the_path = 3}
+local parked_env = setmetatable({defines = {space_platform_state = states},
+    prototypes = {space_location = {surfexp_gateway_hub = {}}}}, {__index = _G})
+parked_env.require = function() return {} end
+local parked_gateway = assert(loadfile(root .. "core/gateway.lua", "t", parked_env))()
+local function at(state, location)
+    return parked_gateway.parked_at_gateway({valid = true, state = state, space_location = location and {name = location}})
+end
+for _, state in ipairs({"waiting_at_station", "paused", "no_schedule", "no_path"}) do
+    assert(at(states[state], "surfexp_gateway_hub") == "surfexp_gateway_hub", state .. " at the gateway should count as parked")
+end
+for _, state in ipairs({"waiting_for_departure", "on_the_path"}) do
+    assert(at(states[state], "surfexp_gateway_hub") == nil, state .. " should not count as parked")
+end
+assert(at(states.paused, nil) == nil and at(states.paused, "nauvis") == nil, "a paused platform away from a gateway is not parked there")
+print("PASS a platform stopped at a gateway counts as parked in automatic or manual mode")
