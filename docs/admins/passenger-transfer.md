@@ -7,6 +7,16 @@ Their characters are held on the source instance while the transfer runs. On suc
 their carried gear goes to the destination instance with the platform. On any other
 outcome they are put back aboard or on the default planet.
 
+## Requirements
+
+- Every instance and the controller must run the same plugin version. A mixed cluster
+  fails closed: for example, a source without the passenger manifest remote fails the
+  deletion response, and the transfer can stay in `cleanup_failed` until the versions
+  match.
+- Each host needs a `publicAddress` that players can reach. The connect prompt and the
+  **Join** button use that address and the instance's game port. Without it the prompt
+  points at `localhost`; with no game port the **Join** button is disabled.
+
 ## Flow
 
 1. **Transfer pressed.** The gateway dialog checks that the platform is parked and not
@@ -14,8 +24,9 @@ outcome they are put back aboard or on the default planet.
    before the transfer starts.
    - A connected passenger leaves the hub. Their character moves to the hidden surface
      `surfexp_passenger_hold`, and the player keeps a bodiless map view of the platform.
-     The **Gateway transfer** window shows "Transferring to → *instance*" with an
-     **Abort** button that uses the default planet's icon.
+     The hold has solid ground around 0,0. The **Gateway transfer** window shows
+     "Transferring to → *instance*" with an **Abort** button that uses the default
+     planet's icon.
    - An offline passenger is moved to the hold surface together with their stored
      character.
    - A connected player aboard without a character (editor, god or spectator
@@ -46,7 +57,7 @@ outcome they are put back aboard or on the default planet.
 | Success, prompt accepted | The player joins the destination. Their gear is inserted, and they board the platform if the offer has not expired. |
 | Success, prompt declined or **Stay** | The player's own character is restored at the source's default-planet landing pad, without the carried gear. The gear waits on the destination. |
 | Success, still on the source 10 minutes after the deletion is confirmed | Same as **Stay**. |
-| **Abort** | Allowed while the passenger is in transit. The character is restored at the default planet's landing pad, and the player is left out of the manifest. |
+| **Abort** | Allowed while the passenger is in transit. The character is restored at the default planet's landing pad, and the player is left out of the manifest. Refused while the source is held under a committed lock for that transfer, for example a source restored from a save and quarantined; the passenger stays held until an administrator resolves it. Accepting the restored source releases the lock and puts its passengers back aboard. |
 | Transfer fails to start | Every parked passenger is put back aboard at once. A passenger still parked without a transfer job after 5 seconds is also put back aboard. |
 | Transfer fails after starting | When the source's transfer lock is released (validation or import failure, census abort, refused start, startup recovery or queue failure), that transfer's passengers are put back aboard. |
 | Passenger offline | Their outcome is stored and applied at their next join. See [Offline passengers](#offline-passengers). |
@@ -99,9 +110,12 @@ instances with the gateway configuration and apply to the next transfer.
 
 Only those stacks are removed from the parked character; everything else stays on
 it. Each stack is recorded with its quality, grid, spoilage and other item
-properties. Armor is removed last. With inventory carry off, armor whose extra
-inventory slots are in use stays on the character, because removing it would spill
-those items. The player is told their armor stayed behind.
+properties. Armor is removed last. With inventory carry off, armor stays on the
+character when any main-inventory slot beyond the size without the armor is in use,
+counting the armor's own bonus and the inventory bonus of its equipment, because
+removing it would spill those items. The inventory is not reordered. The player is
+told their armor stayed behind. If a passenger's gear cannot be read, it stays on
+their character, they still depart without it, and the failure is logged.
 
 On the destination, gear is inserted without clearing anything the player already
 has:
@@ -120,8 +134,9 @@ starts at the default planet's landing position. A player in the map editor whos
 stashed controller could hold a character is served after leaving the editor.
 
 Delivery progress is saved per stack. A stack whose equipment grid or other properties
-cannot be fully restored on this instance is still counted as delivered, and the
-problem is logged, so it is never inserted twice.
+cannot be fully restored on this instance is removed again and kept in the arrival
+record rather than delivered incomplete. The player is told once, and the failure is
+logged. Malformed items in a received manifest are logged and dropped.
 
 ### inventory_sync
 
