@@ -299,6 +299,7 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 	local holds = ensure_storage()
 	local hold, force, platform, err = resolve_hold(transfer_id, job_id)
 	if err then return false, err end
+	local arrivals = record_arrivals(transfer_id, hold, passengers)
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
 	force.set_surface_hidden(surface, hold.original_hidden == true)
@@ -311,7 +312,6 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,
 		platform_uid = hold.platform_uid, job_id = hold.job_id,
 	})
-	local arrivals = record_arrivals(transfer_id, hold, passengers)
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d, passengers=%d)",
 		transfer_id, platform.name, restored, kept_inactive, arrivals))
