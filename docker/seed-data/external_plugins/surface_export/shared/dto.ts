@@ -62,11 +62,22 @@ export interface ResolvedGatewayTarget {
 	instanceName: string;
 	targetGateway: string;
 	online: boolean;
+	address?: string;
 }
 
 export interface ResolvedGateway {
 	gatewayName: string;
 	targets: ResolvedGatewayTarget[];
+}
+
+export interface PassengerCarry {
+	armor: boolean;
+	inventory: boolean;
+}
+
+export interface PassengerManifestEntry {
+	name: string;
+	items?: Record<string, unknown>[];
 }
 
 export interface TransferSummaryModel {

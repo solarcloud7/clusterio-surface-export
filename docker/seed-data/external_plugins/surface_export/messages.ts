@@ -9,6 +9,8 @@ import type {
 	ValidationResult,
 	GatewayLink,
 	ResolvedGateway,
+	PassengerCarry,
+	PassengerManifestEntry,
 	AuditRow,
 } from "./shared/dto";
 export type {
@@ -26,6 +28,8 @@ export type {
 	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
+	PassengerCarry,
+	PassengerManifestEntry,
 	AuditRow,
 } from "./shared/dto";
 export {
@@ -866,6 +870,7 @@ const RESOLVED_TARGET_SCHEMA: JsonSchema = {
 		instanceName: { type: "string" },
 		targetGateway: { type: "string" },
 		online: { type: "boolean" },
+		address: { type: "string" },
 	},
 	required: ["instanceId", "instanceName", "targetGateway", "online"],
 	additionalProperties: false,
@@ -880,6 +885,23 @@ const RESOLVED_GATEWAYS_SCHEMA: JsonSchema = {
 		},
 		required: ["gatewayName", "targets"],
 		additionalProperties: false,
+	},
+};
+const PASSENGER_CARRY_SCHEMA: JsonSchema = {
+	type: "object",
+	properties: { armor: { type: "boolean" }, inventory: { type: "boolean" } },
+	required: ["armor", "inventory"],
+	additionalProperties: false,
+};
+const PASSENGER_MANIFEST_SCHEMA: JsonSchema = {
+	type: "array",
+	items: {
+		type: "object",
+		properties: {
+			name: { type: "string" },
+			items: { type: "array", items: { type: "object" } },
+		},
+		required: ["name"],
 	},
 };
 
@@ -994,9 +1016,9 @@ export class GetGatewayConfigRequest {
 	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } }, required: ["gateways"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[] };
+			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry };
 		},
 	};
 }
@@ -1089,23 +1111,25 @@ export class PushGatewayConfigRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } },
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA },
 		required: ["gateways"],
 		additionalProperties: false,
 	};
 
 	gateways: ResolvedGateway[];
 	activeGatewayNames?: string[];
+	passengerCarry?: PassengerCarry;
 
-	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
+	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry }) {
 		this.gateways = json.gateways;
 		this.activeGatewayNames = json.activeGatewayNames;
+		this.passengerCarry = json.passengerCarry;
 	}
 
-	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
+	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry }) {
 		return new PushGatewayConfigRequest(json);
 	}
-	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames }; }
+	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames, passengerCarry: this.passengerCarry }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1265,17 +1289,19 @@ export class DestinationTransferGateRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live"] } },
+		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live"] }, passengers: PASSENGER_MANIFEST_SCHEMA },
 		required: ["transferId", "action"], additionalProperties: false,
 	};
 	transferId: string;
 	action: "verify" | "go_live";
-	constructor(json: { transferId: string; action: "verify" | "go_live" }) {
+	passengers?: PassengerManifestEntry[];
+	constructor(json: { transferId: string; action: "verify" | "go_live"; passengers?: PassengerManifestEntry[] }) {
 		this.transferId = json.transferId;
 		this.action = json.action;
+		this.passengers = json.passengers;
 	}
-	static fromJSON(json: { transferId: string; action: "verify" | "go_live" }) { return new DestinationTransferGateRequest(json); }
-	toJSON() { return { transferId: this.transferId, action: this.action }; }
+	static fromJSON(json: { transferId: string; action: "verify" | "go_live"; passengers?: PassengerManifestEntry[] }) { return new DestinationTransferGateRequest(json); }
+	toJSON() { return { transferId: this.transferId, action: this.action, passengers: this.passengers }; }
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) { return json as SimpleResponse; },
@@ -1316,8 +1342,8 @@ export class DeleteSourcePlatformRequest {
 	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName, exportId: this.exportId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse; },
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, passengers: PASSENGER_MANIFEST_SCHEMA }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { passengers?: PassengerManifestEntry[] }; },
 	};
 }
 
@@ -1598,6 +1624,7 @@ export interface ActiveTransfer {
 	armedValidationTimeoutMs?: number | null;
 	phases?: Record<string, PhaseRecord>;
 	metricsRecorded?: boolean;
+	passengers?: PassengerManifestEntry[];
 }
 
 

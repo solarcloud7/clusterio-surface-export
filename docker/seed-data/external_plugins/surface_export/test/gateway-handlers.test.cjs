@@ -53,8 +53,10 @@ test("registered gateway handlers persist, reload and resolve recovery-aware ava
 	plugin.recoveryReservations.set(2, {});
 	const view = await call(messages.GetGatewayConfigRequest, {instanceId: 1});
 	assert.deepEqual(view.gateways[0].targets, [{instanceId: 2, instanceName: "Destination",
-		targetGateway: messages.ONE_GATE_NAME, online: false}]);
+		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]);
 	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME]);
+	assert.deepEqual(view.passengerCarry, {armor: true, inventory: false});
+	assert.deepEqual(sends[0].message.passengerCarry, {armor: true, inventory: false});
 	plugin.recoveryReservations.set(1, {});
 	assert.equal((await call(messages.SetGatewayLinkRequest, update())).success, true);
 	assert.equal(sends.length, 1);
@@ -91,4 +93,19 @@ test("gateway mode is read dynamically and a rejected handler does not poison la
 	plugin.controller.config.get = get;
 	config.set("surface_export.gateway_mode", "one_gate");
 	assert.equal((await call(messages.SetGatewayLinkRequest, update())).success, true);
+});
+
+test("passenger carry setting changes re-push gateway config; other fields do not", async t => {
+	const {plugin, warnings} = await fixture(t);
+	let pushes = 0;
+	plugin.gatewayConfig.pushGatewayConfigToAllSources = async () => {
+		pushes++;
+		return new Map([[1, null], [2, "instance 2 unreachable"]]);
+	};
+	await plugin.onControllerConfigFieldChanged("surface_export.passenger_carry_armor", false, true);
+	await plugin.onControllerConfigFieldChanged("surface_export.passenger_carry_inventory", true, false);
+	await plugin.onControllerConfigFieldChanged("surface_export.gateway_mode", "multi", "one_gate");
+	assert.equal(pushes, 2);
+	assert.equal(warnings.filter(warning => /instance 2 unreachable/.test(warning)).length, 2);
+	assert.equal(warnings.some(warning => /instance 1 /.test(warning)), false);
 });

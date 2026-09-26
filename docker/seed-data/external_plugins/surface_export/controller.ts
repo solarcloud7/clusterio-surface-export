@@ -282,6 +282,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
+	override async onControllerConfigFieldChanged(field: string) {
+		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory") return;
+		const gateways = this.gatewayConfig;
+		if (!gateways) return;
+		const results = await gateways.pushGatewayConfigToAllSources();
+		for (const [sourceInstanceId, error] of results) {
+			if (error) this.logger.warn(`Passenger carry refresh for instance ${sourceInstanceId} failed: ${error}`);
+		}
+	}
+
 	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		const id = makeCanonicalTransferId(event.instanceId, event.exportId);
 		return timingContext.run(this.txLogger.clock(id), () => timed("Artifact receipt and storage", "inclusive", () => this.handlePlatformExportMeasured(event)));

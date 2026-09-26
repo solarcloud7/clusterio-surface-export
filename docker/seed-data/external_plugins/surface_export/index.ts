@@ -125,6 +125,20 @@ export const plugin = {
 			type: "string",
 			initialValue: messages.DEFAULT_GATEWAY_MODE,
 		},
+		[`${PLUGIN_NAME}.passenger_carry_armor`]: {
+			title: "Armor carry over?",
+			description: "Players aboard a platform that transfers through a gateway take their equipped armor with them. "
+				+ "Applies to the next transfer.",
+			type: "boolean",
+			initialValue: true,
+		},
+		[`${PLUGIN_NAME}.passenger_carry_inventory`]: {
+			title: "Inventory carry over?",
+			description: "Players aboard a platform that transfers through a gateway take their main inventory, weapons, ammunition "
+				+ "and logistic trash with them. Applies to the next transfer.",
+			type: "boolean",
+			initialValue: false,
+		},
 		[`${PLUGIN_NAME}.max_storage_size`]: {
 			title: "Stored Payload Downloads",
 			description: "Number of platform payload files retained for download. The oldest file is removed when the limit is reached. "

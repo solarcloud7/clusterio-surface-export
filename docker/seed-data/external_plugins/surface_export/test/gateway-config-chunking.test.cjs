@@ -352,3 +352,131 @@ test("platform status retains applied debug mode until successful reconfiguratio
 	await plugin.sendConfigurationToLua();
 	assert.equal((await plugin.handleInstanceListPlatformsRequest({})).debugMode, false);
 });
+
+function unwrapBracket(text) {
+	const match = /^\[(=*)\[([\s\S]*)\]\1\]$/.exec(text);
+	assert.ok(match, `not a long-bracket string: ${text.slice(0, 40)}`);
+	return match[2];
+}
+
+test("go_live stages a large passenger manifest in complete 1-based chunks before activation", async () => {
+	const passengers = Array.from({ length: 30 }, (_, i) => ({
+		name: `player-${i}-é`,
+		items: Array.from({ length: 20 }, (_, j) => ({ name: `item-${j}-${"x".repeat(60)}`, count: j + 1 })),
+	}));
+	const expected = helpers.toAsciiJson(JSON.stringify(passengers));
+	assert.ok(expected.length > helpers.GATEWAY_CONFIG_CHUNK_SIZE, "fixture must need several chunks");
+	const { commands, host } = makeHost(script => script.includes("passenger_manifest_stage")
+		? '{"ok":true,"received":1}' : '{"success":true}');
+	const lua = new LuaInterface(host, noopLogger);
+	const reply = await lua.destinationTransferGate("1:job", "go_live", passengers);
+	assert.equal(reply, '{"success":true}');
+	const stages = commands.slice(0, -1);
+	const total = Math.ceil(expected.length / helpers.GATEWAY_CONFIG_CHUNK_SIZE);
+	assert.equal(stages.length, total);
+	let joined = "";
+	stages.forEach((command, i) => {
+		const match = /^\/sc rcon\.print\(remote\.call\("surface_export", "passenger_manifest_stage", "1:job", (\d+), (\d+), ([\s\S]*)\)\)$/.exec(command);
+		assert.ok(match, command.slice(0, 120));
+		assert.equal(Number(match[1]), i + 1);
+		assert.equal(Number(match[2]), total);
+		joined += unwrapBracket(match[3]);
+	});
+	assert.equal(joined, expected);
+	assert.equal(commands.at(-1), '/sc rcon.print(remote.call("surface_export", "destination_hold_json", "go_live", "1:job"))');
+});
+
+test("go_live without passengers and verify with passengers send no staging", async () => {
+	for (const [action, passengers] of [["go_live", undefined], ["go_live", []], ["verify", [{ name: "alice", items: [] }]]]) {
+		const { commands, host } = makeHost(() => '{"success":true}');
+		const lua = new LuaInterface(host, noopLogger);
+		await lua.destinationTransferGate("1:job", action, passengers);
+		assert.equal(commands.length, 1);
+		assert.match(commands[0], new RegExp(`destination_hold_json", "${action}", "1:job"`));
+	}
+});
+
+test("a refused passenger stage prevents activation", async () => {
+	const { commands, host } = makeHost(() => '{"ok":false,"error":"stale transfer"}');
+	const lua = new LuaInterface(host, noopLogger);
+	await assert.rejects(() => lua.destinationTransferGate("1:job", "go_live", [{ name: "alice", items: [] }]),
+		/stage 1\/1 failed: stale transfer/);
+	assert.equal(commands.some(command => command.includes("destination_hold_json")), false);
+});
+
+test("passengerManifest normalizes empty Lua tables and rejects refusals", async () => {
+	const replies = [
+		'{"success":true,"passengers":{}}',
+		'{"success":true,"passengers":[{"name":"alice","items":{}},{"name":"bob"},{"name":"carol","items":[{"name":"power-armor","count":1}]}]}',
+		'{"success":false,"error":"no receipt"}',
+		'{"success":true,"passengers":[{"items":[]}]}',
+	];
+	const { commands, host } = makeHost((_script, n) => replies[n - 1]);
+	const lua = new LuaInterface(host, noopLogger);
+	assert.deepEqual(await lua.passengerManifest("job_1"), []);
+	assert.equal(commands[0], '/sc rcon.print(remote.call("surface_export", "passenger_manifest", "job_1"))');
+	assert.deepEqual(await lua.passengerManifest("job_1"), [
+		{ name: "alice", items: [] }, { name: "bob", items: [] }, { name: "carol", items: [{ name: "power-armor", count: 1 }] },
+	]);
+	await assert.rejects(() => lua.passengerManifest("job_1"), /refused: no receipt/);
+	await assert.rejects(() => lua.passengerManifest("job_1"), /no player name/);
+});
+
+test("configurePassengerCarry sends both settings and verifies the echo", async () => {
+	const { commands, host } = makeHost(() => '{"armor":false,"inventory":true}');
+	const lua = new LuaInterface(host, noopLogger);
+	await lua.configurePassengerCarry({ armor: false, inventory: true });
+	assert.match(commands[0], /passenger_carry_armor=false, passenger_carry_inventory=true/);
+	await assert.rejects(() => lua.configurePassengerCarry({ armor: true, inventory: true }), /acknowledgement does not match/);
+	const empty = makeHost(() => "");
+	await assert.rejects(() => new LuaInterface(empty.host, noopLogger).configurePassengerCarry({ armor: true, inventory: false }), /non-JSON reply/);
+});
+
+test("gateway pushes apply passenger carry after the gateways only when present", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	const calls = [];
+	plugin.logger = noopLogger;
+	plugin.lua = {
+		configureGateways: async () => { calls.push("gateways"); return { gateways: 0 }; },
+		configurePassengerCarry: async carry => { calls.push(carry); },
+	};
+	assert.deepEqual(await plugin.handlePushGatewayConfig({ gateways: [], passengerCarry: { armor: true, inventory: false } }), { success: true });
+	assert.deepEqual(await plugin.handlePushGatewayConfig({ gateways: [] }), { success: true });
+	assert.deepEqual(calls, ["gateways", { armor: true, inventory: false }, "gateways"]);
+	plugin.lua.configurePassengerCarry = async () => { throw new Error("carry echo mismatch"); };
+	assert.deepEqual(await plugin.handlePushGatewayConfig({ gateways: [], passengerCarry: { armor: true, inventory: false } }),
+		{ success: false, error: "carry echo mismatch" });
+});
+
+test("source deletion returns the passenger manifest and fails closed without it", async () => {
+	const passengers = [{ name: "alice", items: [{ name: "power-armor", count: 1 }] }];
+	const makePlugin = manifest => {
+		const plugin = Object.create(InstancePlugin.prototype);
+		plugin.logger = noopLogger;
+		plugin.retirementJournal = { retire: async () => {}, snapshot: () => ({ retirements: [] }) };
+		plugin.lua = {
+			sourceRecovery: async () => '{"success":true,"platformUid":"u","surfaceIndex":5}',
+			deleteSourcePlatform: async () => "SUCCESS",
+			passengerManifest: manifest,
+		};
+		return plugin;
+	};
+	const request = { platformIndex: 3, platformName: "p", exportId: "job" };
+	let requestedJob;
+	const ok = makePlugin(async jobId => { requestedJob = jobId; return passengers; });
+	assert.deepEqual(await ok.handleDeleteSourcePlatformMeasured(request), { success: true, passengers });
+	assert.equal(requestedJob, "job");
+	const lost = makePlugin(async () => { throw new Error("rcon timeout"); });
+	assert.deepEqual(await lost.handleDeleteSourcePlatformMeasured(request),
+		{ success: false, error: "Source deleted; passenger manifest unavailable: rcon timeout" });
+});
+
+test("the destination gate handler forwards passengers to Lua", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	const seen = [];
+	plugin.withTiming = (_id, _job, _label, fn) => fn();
+	plugin.lua = { destinationTransferGate: async (...args) => { seen.push(args); return '{"success":true}'; } };
+	const passengers = [{ name: "alice", items: [] }];
+	assert.deepEqual(await plugin.handleDestinationTransferGate({ transferId: "1:job", action: "go_live", passengers }), { success: true });
+	assert.deepEqual(seen, [["1:job", "go_live", passengers]]);
+});
