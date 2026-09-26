@@ -101,8 +101,27 @@ test("no targets clears the gateway, and a refusal fails loudly", async () => {
 });
 
 test("malformed ids are refused before anything is sent", async () => {
-	await assert.rejects(() => invoke(write, { sourceInstanceId: "abc", gatewayName: "g", targets: ["2"] }, { success: true }),
-		/sourceInstanceId must be an integer/);
-	assert.throws(() => control.parseGatewayTargets(["two"], "g"), /target must be <instanceId> or <instanceId>:<gatewayName>/);
-	assert.throws(() => control.parseGatewayTargets(["1.5"], "g"), /target must be/);
+	for (const bad of ["abc", "", "0", "-3", "1.5", " 7"]) {
+		const { sent } = await invoke(write, { sourceInstanceId: 1, gatewayName: "g", targets: [] }, { success: true });
+		assert.equal(sent.length, 1);
+		await assert.rejects(() => invoke(write, { sourceInstanceId: bad, gatewayName: "g", targets: ["2"] }, { success: true }),
+			/sourceInstanceId must be a positive instance id/, `source ${JSON.stringify(bad)}`);
+	}
+	for (const bad of ["two", "1.5", "", "0", "-2", "3:", "3:gw:extra", "3 ", ":gw", "3:g w"]) {
+		assert.throws(() => control.parseGatewayTargets([bad], "g"), /target must be <instanceId> or <instanceId>:<gatewayName>/,
+			`target ${JSON.stringify(bad)} must not become an instance or lose part of its input`);
+	}
+	assert.deepEqual(control.parseGatewayTargets(["12", "34:surfexp_gateway_2"], "surfexp_gateway_hub"), [
+		{ targetInstanceId: 12, targetGateway: "surfexp_gateway_hub" },
+		{ targetInstanceId: 34, targetGateway: "surfexp_gateway_2" },
+	]);
+});
+
+test("a self-target is refused instead of silently clearing the gateway", async () => {
+	const { sent } = await invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets: ["7"] }, { success: true });
+	assert.equal(sent.length, 1);
+	for (const targets of [["5"], ["7", "5:other"]]) {
+		const attempt = invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets }, { success: true });
+		await assert.rejects(() => attempt, /cannot link to its own instance 5/);
+	}
 });
