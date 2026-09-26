@@ -17,6 +17,9 @@ const WIDTH = 2048;
 const HEIGHT = 1024;
 const DISC = 0.86;
 const BACKGROUND = [26, 22, 30];
+const MIRROR = true;
+const ROTATION_DEGREES = 126;
+const GLOW = 0.55;
 
 function clamp(value) {
 	return Math.max(0, Math.min(1, value));
@@ -34,6 +37,8 @@ function sampler(art) {
 function render(art) {
 	const sample = sampler(art);
 	const half = art.width / 2;
+	const angle = (ROTATION_DEGREES * Math.PI) / 180;
+	const cos = Math.cos(angle), sin = Math.sin(angle);
 	const surface = Buffer.alloc(WIDTH * HEIGHT * 4);
 	const emission = Buffer.alloc(WIDTH * HEIGHT * 4);
 	const reflectivity = Buffer.alloc(WIDTH * HEIGHT * 4);
@@ -50,12 +55,14 @@ function render(art) {
 			let glow = [0, 0, 0];
 			let shine = 40;
 			if (radius < DISC) {
-				const [r, g, b, a] = sample(half + (px / DISC) * half, half + (py / DISC) * half);
+				const ux = (MIRROR ? -px : px) / DISC, uy = -py / DISC;
+				const ax = ux * cos - uy * sin, ay = ux * sin + uy * cos;
+				const [r, g, b, a] = sample(half + ax * half, half - ay * half);
 				colour = [r * a + BACKGROUND[0] * (1 - a), g * a + BACKGROUND[1] * (1 - a), b * a + BACKGROUND[2] * (1 - a)];
 				const violet = clamp((b - Math.max(r, g) * 1.1) / 80) * a;
 				const lamp = clamp((r - 180) / 60) * clamp((g - 80) / 60) * clamp((110 - b) / 60) * a;
 				const weight = Math.max(violet, lamp);
-				glow = [r * weight, g * weight, b * weight];
+				glow = [r * weight * GLOW, g * weight * GLOW, b * weight * GLOW];
 				shine = 40 + 100 * a * (1 - violet);
 			}
 			for (let c = 0; c < 3; c++) {
