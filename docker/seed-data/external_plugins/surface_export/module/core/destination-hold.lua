@@ -310,17 +310,7 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		platform.hidden = hold.original_platform_hidden
 	end
 	platform.paused = hold.original_paused == true
-	local boarding = 0
-	for _, entry in ipairs(type(passengers) == "table" and passengers or {}) do
-		if type(entry) == "table" and type(entry.name) == "string" and entry.name ~= "" then boarding = boarding + 1 end
-	end
-	if hold.resume_route and boarding > 0 then
-		local told, tell_error = pcall(function()
-			log(string.format("[Gateway] Route paused for '%s': %d passenger(s) still to board", platform.name, boarding))
-			force.print({"", platform.name, " is holding at the Transfer Gateway until its passengers board; unpause it to continue the route."})
-		end)
-		if not told then log("[Gateway] Route hold notice failed: " .. tostring(tell_error)) end
-	elseif hold.resume_route then
+	if hold.resume_route then
 		local resumed, resume_error = pcall(function()
 			platform.paused = false
 			log(string.format("[Gateway] Route continues for '%s' toward record %s", platform.name, tostring(platform.get_schedule().current)))

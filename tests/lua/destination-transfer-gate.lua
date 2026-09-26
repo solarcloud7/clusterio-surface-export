@@ -93,11 +93,12 @@ force.print = noop
 platform.paused = true
 local _, passenger_hold = holds.stage("route-passengers", platform, force, true)
 passenger_hold.resume_route = true
-env.storage.surface_export_arrivals = {Solar = {["route-passengers"] = {transfer_id = "route-passengers"}}}
-assert(holds.go_live("route-passengers", nil, {{name = "Solar", items = {}}}))
-assert(platform.paused == true, "a continuing route waits for its passengers, even when a retried release finds their arrivals already recorded")
+assert(holds.go_live("route-passengers", nil, {{name = "Solar", items = {{name = "iron-plate", count = 5}}}}))
+assert(platform.paused == false, "a continuing route leaves without waiting for passengers to reconnect")
+local arrival = env.storage.surface_export_arrivals.Solar["route-passengers"]
+assert(arrival and arrival.items[1].count == 5, "the passenger still boards and receives their gear afterwards")
 env.storage.surface_export_arrivals = nil
-print("PASS a continuing route resumes only at release and never without its passengers; other gateway arrivals stay parked")
+print("PASS a continuing route resumes only at release, without waiting for passengers, whose arrival is still recorded; other gateway arrivals stay parked")
 
 assert(holds.stage("print-failure", platform, force, true))
 local print_notice = env.game.print
