@@ -1,8 +1,7 @@
 // requires: Docker with the development controller container; tools/clusterio/remote-clusters.local.json naming each remote cluster's controller URL and a control token, token file or copied control config
 // produces: a cluster transport whose clusterioctl calls reach the named controller
-// does not: print or log the token, keep it anywhere but the ignored local file and a mode-600 temporary file removed after each use, or authorize state changes
+// does not: print or log the token, echo configuration content in errors, keep it anywhere but the ignored local file and a mode-600 temporary file that one container shell creates and removes (also on interrupt), or authorize state changes
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import url from "node:url";
@@ -19,7 +18,7 @@ export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = re
 	}
 	let clusters;
 	try { clusters = JSON.parse(read(file, "utf8")); }
-	catch (error) { throw new Error(`${shown} is not valid JSON: ${error.message}`); }
+	catch (error) { throw new Error(`${shown} is not valid JSON`, { cause: error }); }
 	const entry = clusters?.[name];
 	if (!entry || typeof entry !== "object") {
 		throw new Error(`No cluster "${name}" in ${shown}. Known: ${Object.keys(clusters || {}).join(", ") || "none"}`);
@@ -36,7 +35,7 @@ export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = re
 		if (!exists(entry.controlConfig)) throw new Error(`Cluster "${name}" controlConfig does not exist: ${entry.controlConfig}`);
 		let control;
 		try { control = JSON.parse(read(entry.controlConfig, "utf8").replace(/^﻿/, "")); }
-		catch (error) { throw new Error(`Cluster "${name}" controlConfig is not valid JSON: ${error.message}`); }
+		catch (error) { throw new Error(`Cluster "${name}" controlConfig is not valid JSON`, { cause: error }); }
 		token = control?.["control.controller_token"];
 	}
 	if (typeof token !== "string" || token.length === 0) {
@@ -45,22 +44,29 @@ export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = re
 	return { url: entry.url, token };
 }
 
+export const REMOTE_CONFIG_PLACEHOLDER = "<remote-control-config>";
+export const REMOTE_SCRIPT = "umask 077; f=$(mktemp) || exit 1; trap 'rm -f \"$f\"' EXIT INT TERM HUP; "
+	+ "cat > \"$f\" && npx clusterioctl --log-level error --config \"$f\" \"$@\"";
+
+export function remoteExec(exec, controller, config) {
+	return (program, args, options = {}) => {
+		const configIndex = args.indexOf(REMOTE_CONFIG_PLACEHOLDER);
+		if (program !== "docker" || args[0] !== "exec" || configIndex < 0) return exec(program, args, options);
+		const rest = args.slice(configIndex + 1);
+		return exec("docker", ["exec", "-i", controller, "sh", "-c", REMOTE_SCRIPT, "sh", ...rest],
+			{ ...options, input: config, stdio: ["pipe", "pipe", "pipe"] });
+	};
+}
+
 export async function withCluster(name, fn, { exec = execFileSync, controller = CONTROLLER, read } = {}) {
 	if (name === DEVELOPMENT) return await fn(createClusterTransport({ controller, exec }));
 	const { url: controllerUrl, token } = readRemoteCluster(name, read ? { read, exists: () => true } : undefined);
-	const file = `/tmp/remote-${name.replace(/[^A-Za-z0-9_-]/g, "_")}-${randomUUID()}.json`;
 	const config = JSON.stringify({
 		"control.controller_url": controllerUrl,
 		"control.controller_token": token,
 		"control.max_reconnect_delay": 60,
 	});
-	exec("docker", ["exec", "-i", controller, "sh", "-c", `umask 077 && cat > ${file}`],
-		{ input: config, stdio: ["pipe", "ignore", "pipe"], timeout: 60_000 });
-	try {
-		return await fn(createClusterTransport({ controller, config: file, hosts: {}, exec }));
-	} finally {
-		exec("docker", ["exec", controller, "rm", "-f", file], { stdio: "ignore", timeout: 60_000 });
-	}
+	return await fn(createClusterTransport({ controller, config: REMOTE_CONFIG_PLACEHOLDER, hosts: {}, exec: remoteExec(exec, controller, config) }));
 }
 
 export function parseInstanceList(output) {
