@@ -8,7 +8,6 @@ import { DEVELOPMENT, withCluster } from "../shared/remote-cluster.mjs";
 const READ_ONLY = [
 	["instance", "list"],
 	["instance", "config", "list"],
-	["instance", "config", "get"],
 	["instance", "save", "list"],
 	["host", "list"],
 	["host", "config", "list"],
