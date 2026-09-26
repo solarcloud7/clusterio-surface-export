@@ -102,7 +102,8 @@ and appears in the manifest with no items.
 
 ## Gear
 
-Two controller settings choose what a passenger carries. The settings are sent to
+Two controller settings choose what a passenger carries. Change them in the
+plugin's Settings tab under **Gateway passengers**. The settings are sent to
 instances with the gateway configuration and apply to the next transfer.
 
 | Setting | Title | Default | Carries |

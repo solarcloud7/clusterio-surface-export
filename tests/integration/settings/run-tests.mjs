@@ -41,7 +41,7 @@ try {
 					frame.type = "responseError";
 					frame.data = { message: operation.write ? "Injected settings save failure" : "Injected settings read failure", code: "RequestError" };
 				} else if (operation.write) {
-					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("gateway_mode") || key.endsWith("platform_source_of_truth") ? value : Number(value);
+					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("gateway_mode") || key.endsWith("platform_source_of_truth") ? value : key.includes("passenger_carry") ? value === "true" : Number(value);
 					delete frame.data;
 				} else Object.assign(frame.data, shadow);
 			}
@@ -59,9 +59,14 @@ try {
 	const policy=page.getByRole("combobox",{name:"Platform source of truth",exact:true});
 	assert.equal(await policy.count(),1,"Recovery policy must be selectable");
 	assert.equal(await page.locator(".se-settings aside ul").count(), 0, "Instance names are not listed");
-	assert.equal(await page.locator(".se-settings .ant-form-item").count(), 4, "Three numeric settings and the recovery policy are shown");
+	assert.equal(await page.locator(".se-settings .ant-form-item").count(), 6, "Three numeric settings, the recovery policy and two passenger switches are shown");
+	const armorCarry = page.getByRole("switch", { name: "Armor carry over?", exact: true });
+	const inventoryCarry = page.getByRole("switch", { name: "Inventory carry over?", exact: true });
+	assert.equal(await armorCarry.count(), 1, "Armor carry over is a switch");
+	assert.equal(await inventoryCarry.count(), 1, "Inventory carry over is a switch");
 	assert.equal(await page.getByRole("region", { name: "Transfer records", exact: true }).count(), 1);
 	assert.equal(await page.getByRole("region", { name: "Transfer recovery", exact: true }).count(), 1);
+	assert.equal(await page.getByRole("region", { name: "Gateway passengers", exact: true }).count(), 1);
 	assert.ok(await page.getByRole("button", { name: "Save changes" }).isDisabled());
 	const batchHelp = page.locator(".se-settings-reference details").filter({ hasText: "Batch sizes" });
 	for (const title of ["Belt trace", "Batch profiling"]) {
@@ -120,6 +125,7 @@ try {
 	await page.getByText("Read only. Saving requires permission to update controller configuration.").waitFor();
 	assert.ok(await input.isDisabled());
 	assert.ok(await policy.isDisabled());
+	assert.ok(await armorCarry.isDisabled() && await inventoryCarry.isDisabled(), "Passenger switches are read only without update permission");
 	mode = "denied";
 	await page.reload();
 	await page.getByText("Controller settings require permission to view controller configuration.").waitFor();

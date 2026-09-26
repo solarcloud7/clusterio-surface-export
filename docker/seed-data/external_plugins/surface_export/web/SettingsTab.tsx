@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from "react";
-import { Alert, Button, Form, InputNumber, Select, Spin, Typography } from "antd";
-import { CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined, RightOutlined, SettingOutlined } from "@ant-design/icons";
+import { Alert, Button, Form, InputNumber, Select, Spin, Switch, Typography } from "antd";
+import { CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined, RightOutlined, SettingOutlined, TeamOutlined } from "@ant-design/icons";
 import { ControlContext, useAccount } from "@clusterio/web_ui";
 import { Config, ConfigAccess, ControllerConfig, ControllerConfigGetRequest, ControllerConfigSetRequest } from "@clusterio/lib";
 import { getErrorMessage } from "./utils";
@@ -14,11 +14,14 @@ const fields = [
 	{ name: "surface_export.transaction_log_detail_entries", group: "records", unit: "transfers", help: "Keep step timings and audit evidence for this many transfers. Failed transfers take priority; older transfers keep their summary and outcome.", applies: "Takes effect at the next log trim.", min: 10, max: 5000 },
 	{ name: "surface_export.max_storage_size", group: "records", unit: "files", help: "Keep this many platform files available to download. The oldest file is removed when the limit is reached. Transfer logs are separate.", applies: "Takes effect on the next stored export.", min: 1 },
 	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Check delayed job status after", group: "recovery", unit: "seconds", help: "Check Lua job progress after this wait. Queued or delayed work remains pending; this does not cancel the transfer.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
+	{ name: "surface_export.passenger_carry_armor", group: "passengers", kind: "boolean", unit: "", help: "Players aboard a platform that transfers through a gateway take the armor they wear. Off: the armor stays on their body on the old server.", applies: "Takes effect on the next transfer.", min: 0 },
+	{ name: "surface_export.passenger_carry_inventory", group: "passengers", kind: "boolean", unit: "", help: "Players aboard also take their main inventory, weapons, ammunition and logistic trash. Off: these stay on their body on the old server.", applies: "Takes effect on the next transfer.", min: 0 },
 ];
 
 const groups = [
 	{ id: "records", title: "Transfer records", description: "Choose what stays available after a transfer.", icon: <DatabaseOutlined /> },
 	{ id: "recovery", title: "Transfer recovery", description: "Choose how saves and unfinished transfers are handled.", icon: <ClockCircleOutlined /> },
+	{ id: "passengers", title: "Gateway passengers", description: "Choose what players take with them when their platform transfers.", icon: <TeamOutlined /> },
 ];
 
 const instanceSettings = [
@@ -92,7 +95,7 @@ export default function SettingsTab({ active, state }: { active: boolean; state?
 
 	return <section className="se-settings" aria-label="Surface Export settings">
 		<header className="se-settings-header"><Typography.Title level={3}>Settings</Typography.Title>
-			<Typography.Paragraph>Manage saved transfer records and recovery limits across this cluster.</Typography.Paragraph>
+			<Typography.Paragraph>Manage transfer records, recovery limits and gateway passengers across this cluster.</Typography.Paragraph>
 		</header>
 		<div className="se-settings-layout">
 			<section className="se-settings-controller" aria-label="Controller settings">
@@ -127,7 +130,10 @@ export default function SettingsTab({ active, state }: { active: boolean; state?
 														? "applied mode unverified" : `${instance.recovery.mode === "save_game" ? "Save game" : "Plugin history"} applied${instance.recovery.mode !== saved[field.name] ? " · restart required" : ""}${instance.recovery.state !== "ready" ? " · recovery not ready" : ""}`}</p>)}
 												</>}
 											</div>
-											{field.name === "surface_export.platform_source_of_truth" ? <Form.Item name={field.name} rules={[{ required: true }]}>
+											{field.kind === "boolean" ? <Form.Item name={field.name} valuePropName="checked">
+												<Switch id={id} aria-describedby={`${id}-help ${id}-applies`}
+													disabled={busy || !canWrite || !config.canAccess(field.name, ConfigAccess.write)} />
+											</Form.Item> : field.name === "surface_export.platform_source_of_truth" ? <Form.Item name={field.name} rules={[{ required: true }]}>
 												<Select id={id} aria-describedby={`${id}-help ${id}-applies`} size="large" options={[
 													{ value: "save_game", label: "Save game" }, { value: "plugin_history", label: "Plugin history" },
 												]} disabled={busy || !canWrite || !config.canAccess(field.name, ConfigAccess.write)} />
