@@ -1,4 +1,4 @@
-// requires: Docker with the development controller container; tools/clusterio/remote-clusters.local.json naming each remote cluster's controller URL and control token (or token file)
+// requires: Docker with the development controller container; tools/clusterio/remote-clusters.local.json naming each remote cluster's controller URL and a control token, token file or copied control config
 // produces: a cluster transport whose clusterioctl calls reach the named controller
 // does not: print or log the token, keep it anywhere but the ignored local file and a mode-600 temporary file removed after each use, or authorize state changes
 import { execFileSync } from "node:child_process";
@@ -15,7 +15,7 @@ export const DEVELOPMENT = "dev";
 export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = readFileSync, exists = existsSync } = {}) {
 	const shown = path.relative(process.cwd(), file) || file;
 	if (!exists(file)) {
-		throw new Error(`${shown} is missing. Create it with {"${name}": {"url": "https://controller.example/", "tokenFile": "C:/path/to/token.txt"}}; it is ignored by git.`);
+		throw new Error(`${shown} is missing. Create it with {"${name}": {"url": "https://controller.example/", "controlConfig": "C:/path/to/config-control.json"}}; it is ignored by git.`);
 	}
 	let clusters;
 	try { clusters = JSON.parse(read(file, "utf8")); }
@@ -30,10 +30,17 @@ export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = re
 	let token = entry.token;
 	if (token === undefined && typeof entry.tokenFile === "string") {
 		if (!exists(entry.tokenFile)) throw new Error(`Cluster "${name}" tokenFile does not exist: ${entry.tokenFile}`);
-		token = read(entry.tokenFile, "utf8").trim();
+		token = read(entry.tokenFile, "utf8").replace(/^﻿/, "").trim();
+	}
+	if (token === undefined && typeof entry.controlConfig === "string") {
+		if (!exists(entry.controlConfig)) throw new Error(`Cluster "${name}" controlConfig does not exist: ${entry.controlConfig}`);
+		let control;
+		try { control = JSON.parse(read(entry.controlConfig, "utf8").replace(/^﻿/, "")); }
+		catch (error) { throw new Error(`Cluster "${name}" controlConfig is not valid JSON: ${error.message}`); }
+		token = control?.["control.controller_token"];
 	}
 	if (typeof token !== "string" || token.length === 0) {
-		throw new Error(`Cluster "${name}" needs a "token" or "tokenFile" in ${shown}`);
+		throw new Error(`Cluster "${name}" needs a "token", "tokenFile" or "controlConfig" in ${shown}`);
 	}
 	return { url: entry.url, token };
 }

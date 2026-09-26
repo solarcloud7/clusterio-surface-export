@@ -14,7 +14,11 @@ test("remote cluster config reads a token file and names the missing file withou
 	assert.throws(() => readRemoteCluster("vm", { ...options, exists: () => false }), /is missing/);
 	assert.throws(() => readRemoteCluster("other", options), /No cluster "other".*Known: vm/);
 	const noToken = { ...options, read: () => JSON.stringify({ vm: { url: "https://vm.example/" } }) };
-	assert.throws(() => readRemoteCluster("vm", noToken), /needs a "token" or "tokenFile"/);
+	assert.throws(() => readRemoteCluster("vm", noToken), /needs a "token", "tokenFile" or "controlConfig"/);
+	const control = { "c.json": JSON.stringify({ vm: { url: "https://vm.example/", controlConfig: "control.json" } }),
+		"control.json": "﻿" + JSON.stringify({ "control.controller_url": "http://internal:8080/", "control.controller_token": TOKEN }) };
+	assert.deepEqual(readRemoteCluster("vm", { file: "c.json", read: name => control[name], exists: name => name in control }),
+		{ url: "https://vm.example/", token: TOKEN }, "a copied control config supplies the token, even with a byte-order mark");
 });
 
 test("a remote cluster call writes a private temporary config, never passes the token as an argument, and removes it", async () => {
