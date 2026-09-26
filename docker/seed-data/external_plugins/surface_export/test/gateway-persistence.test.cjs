@@ -248,3 +248,19 @@ test("a repaired gateway file can be reloaded after an I/O error", async t => {
 	assert.deepEqual(plugin.gatewayLinks.get(`1:${ONE_GATE_NAME}`), [target(2)]);
 	assert.equal((await plugin.handleSetGatewayLinkRequest(request(1, [target(3)]))).success, true);
 });
+
+test("an instance status change re-pushes gateway config to every linked source", async t => {
+	const { plugin, pushes } = await fixture(t);
+	await plugin.handleSetGatewayLinkRequest(request(1, [target(3)]));
+	await plugin.handleSetGatewayLinkRequest(request(2, [target(3)]));
+	pushes.length = 0;
+	plugin.pushGatewayConfigToInstance = async id => {
+		pushes.push({ id });
+		return id === 2 ? "instance 2 unreachable" : null;
+	};
+	const results = await plugin.pushGatewayConfigToAllSources();
+	assert.deepEqual(pushes.map(push => push.id).sort(), [1, 2]);
+	assert.equal(results.get(1), null);
+	assert.equal(results.get(2), "instance 2 unreachable");
+	assert.equal(results.has(3), false);
+});

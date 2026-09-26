@@ -55,6 +55,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	lastTreeForceName!: string;
 	storagePath!: string;
 	storageLoadError!: string | null;
+	gatewayConfig?: GatewayConfig;
 	consecutiveStorageWriteFailures!: number;
 	transactionLogPath!: string;
 	auditLedgerPath!: string;
@@ -176,6 +177,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			resolveInstanceName: id => this.platformTree.resolveInstanceName(id),
 		});
 		await gateways.loadGatewayConfig();
+		this.gatewayConfig = gateways;
 		await this.loadPendingTransfers();
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
 			[...this.platformStorage.keys(), ...this.auditIndex.keys(), ...this.pendingTransfers.keys(),
@@ -272,6 +274,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	override async onInstanceStatusChanged() {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+		const gateways = this.gatewayConfig;
+		if (!gateways) return;
+		const results = await gateways.pushGatewayConfigToAllSources();
+		for (const [sourceInstanceId, error] of results) {
+			if (error) this.logger.warn(`Gateway status refresh for instance ${sourceInstanceId} failed: ${error}`);
+		}
 	}
 
 	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {

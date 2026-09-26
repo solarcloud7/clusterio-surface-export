@@ -8,15 +8,18 @@ local GatewayTransferGui = {}
 
 local FRAME = "surfexp_gateway_frame"
 local PREFIX = "surfexp_gw_"
+local CLOSE_DELAY_TICKS = 120
+local WIDTH = 380
 
-local open_guis = {}
-
-local COLOR_ONLINE = {r = 0.4, g = 1.0, b = 0.4}
-local COLOR_OFFLINE = {r = 0.9, g = 0.6, b = 0.3}
 local COLOR_WARN = {r = 1.0, g = 0.5, b = 0.4}
+local COLOR_MUTED = {r = 0.7, g = 0.7, b = 0.7}
+local COLOR_ONLINE = {r = 0.4, g = 1.0, b = 0.4}
+local COLOR_OFFLINE = {r = 1.0, g = 0.45, b = 0.4}
 
-
-
+local function dialogs()
+	storage.surface_export_gateway_dialogs = storage.surface_export_gateway_dialogs or {}
+	return storage.surface_export_gateway_dialogs
+end
 
 local function resolve_platform(state)
 	local force = state and game.forces[state.force_name]
@@ -27,94 +30,150 @@ local function resolve_platform(state)
 	return platform
 end
 
-local function build_frame(player, state)
-	if player.gui.screen[FRAME] then
-		player.gui.screen[FRAME].destroy()
-	end
-
-	local frame = player.gui.screen.add{
-		type = "frame",
-		direction = "vertical",
-		name = FRAME,
-		caption = {"", "Gateway transfer"},
-	}
-	frame.auto_center = true
-	frame.style.minimal_width = 360
-	player.opened = frame
-
-	local platform = resolve_platform(state)
-	if not platform then
-		frame.add{type = "label", caption = "This platform is no longer available."}
-		local close_only = frame.add{type = "flow", direction = "horizontal"}
-		close_only.add{type = "empty-widget"}.style.horizontally_stretchable = true
-		close_only.add{type = "button", name = PREFIX .. "cancel", caption = "Close"}
-		return
-	end
-
-	frame.add{type = "label", caption = {"", "[font=default-bold]", platform.name, "[/font] parked at [font=default-bold]", state.gateway_name, "[/font]"}}
-	frame.add{type = "label", caption = "Choose a destination instance:", style = "bold_label"}
-
-	local aboard_players, char_count = Gateway.collect_passengers(platform)
-	local in_flight = SurfaceLock.is_locked(platform.index)
-	local decision = GatewayGuard.evaluate{
-		docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
-		in_flight = in_flight,
-		aboard_players = aboard_players,
-		aboard_characters = char_count,
-	}
-	local passenger_count = decision.passenger_count
-
-	if passenger_count > 0 then
-		local warn = frame.add{type = "label", caption = {"",
-			"⚠ ", tostring(passenger_count), " aboard — they will be returned to a planet when the platform transfers."}}
-		warn.style.single_line = false
-		warn.style.maximal_width = 340
-		warn.style.font_color = COLOR_WARN
-	end
-	if in_flight then
-		local busy = frame.add{type = "label", caption = "This platform is already transferring."}
-		busy.style.font_color = COLOR_WARN
-	end
-
-	local list = frame.add{type = "flow", direction = "vertical", name = PREFIX .. "list"}
-	list.style.vertical_spacing = 4
-	for idx, target in ipairs(state.targets or {}) do
-		local online = target.online and true or false
-		local name = target.instanceName or ("instance " .. tostring(target.instanceId))
-		local selected = (state.selected == idx)
-		local row = list.add{type = "flow", direction = "horizontal"}
-		row.style.vertical_align = "center"
-		local pick = row.add{
-			type = "button",
-			name = PREFIX .. "target_" .. idx,
-			caption = {"", (selected and "● " or "○ "), name, "  →  ", target.targetGateway or state.gateway_name},
-			style = selected and "confirm_button" or "button",
-		}
-		pick.tags = {gw_target_idx = idx}
-		pick.style.horizontally_stretchable = true
-		pick.style.minimal_width = 300
-		local tag = row.add{type = "label", caption = online and "online" or "offline"}
-		tag.style.font_color = online and COLOR_ONLINE or COLOR_OFFLINE
-		tag.style.left_margin = 8
-	end
-
-	frame.add{type = "line"}
-	local footer = frame.add{type = "flow", direction = "horizontal"}
-	footer.style.top_margin = 6
-	footer.style.vertical_align = "center"
-	footer.add{type = "button", name = PREFIX .. "cancel", caption = "Cancel"}
-	footer.add{type = "empty-widget"}.style.horizontally_stretchable = true
-
-	local can_transfer = (state.selected ~= nil) and decision.allowed
-	local transfer_btn = footer.add{
-		type = "button",
-		name = PREFIX .. "transfer",
-		caption = "Transfer",
-		style = "confirm_button",
-	}
-	transfer_btn.enabled = can_transfer
+local function location_name(name)
+	local proto = prototypes.space_location[name]
+	return proto and proto.localised_name or name
 end
 
+local function default_selection(targets)
+	local online
+	for idx, target in ipairs(targets) do
+		if target.online then
+			if online then return nil end
+			online = idx
+		end
+	end
+	return online
+end
+
+local function sync_targets(state)
+	local cfg = Gateway.get_gateway_config(state.gateway_name)
+	local targets = (cfg and cfg.targets) or state.targets or {}
+	local previous = state.selected and state.targets and state.targets[state.selected]
+	state.targets = targets
+	state.selected = nil
+	if previous then
+		for idx, target in ipairs(targets) do
+			if target.instanceId == previous.instanceId and target.online then state.selected = idx end
+		end
+	end
+	if not state.selected and not state.chosen then state.selected = default_selection(targets) end
+end
+
+local function titlebar(frame)
+	local bar = frame.add{type = "flow", direction = "horizontal"}
+	bar.drag_target = frame
+	bar.style.horizontal_spacing = 8
+	bar.add{type = "label", caption = "Gateway transfer", style = "frame_title", ignored_by_interaction = true}
+	local drag = bar.add{type = "empty-widget", style = "draggable_space_header", ignored_by_interaction = true}
+	drag.style.horizontally_stretchable = true
+	drag.style.height = 24
+	drag.style.right_margin = 4
+	bar.add{type = "sprite-button", name = PREFIX .. "close", style = "frame_action_button", sprite = "utility/close", tooltip = "Stay at the gateway"}
+end
+
+local function note(parent, caption, color)
+	local label = parent.add{type = "label", caption = caption}
+	label.style.single_line = false
+	label.style.maximal_width = WIDTH - 24
+	label.style.font_color = color
+	return label
+end
+
+local function build_frame(player, state)
+	local existing = player.gui.screen[FRAME]
+	if existing then existing.destroy() end
+	sync_targets(state)
+
+	local frame = player.gui.screen.add{type = "frame", direction = "vertical", name = FRAME}
+	frame.auto_center = true
+	titlebar(frame)
+	local body = frame.add{type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical"}
+	body.style.minimal_width = WIDTH
+	local content = body.add{type = "flow", direction = "vertical"}
+	content.style.vertical_spacing = 8
+
+	local platform = resolve_platform(state)
+	local decision = {allowed = false, passenger_count = 0}
+	local in_flight = false
+	if not platform then
+		note(content, "This platform is no longer available.", COLOR_WARN)
+	else
+		local header = content.add{type = "flow", direction = "horizontal"}
+		header.style.vertical_align = "center"
+		header.style.horizontal_spacing = 8
+		local icon_path = "space-location/" .. state.gateway_name
+		local icon = header.add{type = "sprite", sprite = helpers.is_valid_sprite_path(icon_path) and icon_path or "entity/space-platform-hub"}
+		icon.style.size = 32
+		icon.style.stretch_image_to_widget_size = true
+		local names = header.add{type = "flow", direction = "vertical"}
+		names.style.vertical_spacing = 0
+		names.add{type = "label", caption = platform.name, style = "bold_label"}
+		local where = names.add{type = "label", caption = {"", state.departed and "Left " or "Parked at ", location_name(state.gateway_name)}}
+		where.style.font_color = COLOR_MUTED
+
+		local aboard_players, char_count = Gateway.collect_passengers(platform)
+		in_flight = SurfaceLock.is_locked(platform.index)
+		decision = GatewayGuard.evaluate{
+			docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
+			in_flight = in_flight,
+			aboard_players = aboard_players,
+			aboard_characters = char_count,
+		}
+		if state.departed then
+			note(content, "The platform left the gateway. This window will close.", COLOR_MUTED)
+		elseif in_flight then
+			note(content, "This platform is already transferring.", COLOR_WARN)
+		end
+		if decision.passenger_count > 0 and not state.departed then
+			note(content, {"", "[img=utility/warning_icon] ", decision.passenger_count == 1 and "1 player is" or (decision.passenger_count .. " players are"),
+				" aboard. They will be returned to a planet when the platform transfers."}, COLOR_WARN)
+		end
+
+		content.add{type = "label", caption = "Destination", style = "bold_label"}
+		local list = content.add{type = "frame", style = "deep_frame_in_shallow_frame", direction = "vertical"}
+		list.style.horizontally_stretchable = true
+		for idx, target in ipairs(state.targets) do
+			local online = target.online == true
+			local row = list.add{type = "flow", direction = "horizontal"}
+			row.style.vertical_align = "center"
+			row.style.horizontal_spacing = 8
+			row.style.left_margin = 8
+			row.style.right_margin = 8
+			row.style.top_margin = 4
+			row.style.bottom_margin = 4
+			local radio = row.add{type = "radiobutton", name = PREFIX .. "target_" .. idx, state = state.selected == idx,
+				caption = target.instanceName or ("instance " .. tostring(target.instanceId)), tags = {gw_target_idx = idx}}
+			radio.enabled = online and not state.departed
+			if target.targetGateway and target.targetGateway ~= state.gateway_name then
+				local arrival = row.add{type = "label", caption = {"", "→ ", location_name(target.targetGateway)}}
+				arrival.style.font_color = COLOR_MUTED
+			end
+			row.add{type = "empty-widget"}.style.horizontally_stretchable = true
+			local status = row.add{type = "sprite", sprite = online and "utility/status_working" or "utility/status_not_working"}
+			status.style.size = 16
+			status.style.stretch_image_to_widget_size = true
+			local status_label = row.add{type = "label", caption = online and "Online" or "Offline"}
+			status_label.style.font_color = online and COLOR_ONLINE or COLOR_OFFLINE
+		end
+	end
+
+	local footer = frame.add{type = "flow", direction = "horizontal", style = "dialog_buttons_horizontal_flow"}
+	footer.add{type = "button", name = PREFIX .. "cancel", caption = "Stay", style = "back_button"}
+	local pusher = footer.add{type = "empty-widget", style = "draggable_space", ignored_by_interaction = true}
+	pusher.style.horizontally_stretchable = true
+	pusher.style.height = 32
+	local transfer = footer.add{type = "button", name = PREFIX .. "transfer", caption = "Transfer", style = "confirm_button"}
+	transfer.enabled = platform ~= nil and state.selected ~= nil and decision.allowed == true
+	if not transfer.enabled then
+		transfer.tooltip = state.departed and "The platform left the gateway."
+			or in_flight and "This platform is already transferring."
+			or state.selected == nil and "Choose an online destination."
+			or "The platform must be parked at the gateway."
+	end
+	player.opened = frame
+	dialogs()[player.index] = state
+end
 
 function GatewayTransferGui.open(player, platform, gateway_name)
 	if not (player and player.valid and platform and platform.valid) then
@@ -126,18 +185,29 @@ function GatewayTransferGui.open(player, platform, gateway_name)
 		player.print({"", "Gateway '", gateway_name, "' has no configured destinations. Set links in the web UI → Gateways tab."})
 		return false
 	end
-
 	local state = {
 		platform_index = platform.index,
 		platform_uid = platform_identity(platform),
 		force_name = platform.force.name,
 		gateway_name = gateway_name,
 		targets = targets,
-		selected = (#targets == 1) and 1 or nil,
 	}
-	open_guis[player.index] = state
+	dialogs()[player.index] = state
 	build_frame(player, state)
 	return true
+end
+
+function GatewayTransferGui.offer(player)
+	if not (player and player.valid and player.connected) then return false end
+	local surface = game.get_surface(player.physical_surface_index)
+	local platform = surface and surface.platform
+	local gateway_name = platform and Gateway.parked_at_gateway(platform)
+	if not gateway_name or SurfaceLock.is_locked(platform.index) then return false end
+	local cfg = Gateway.get_gateway_config(gateway_name)
+	if not (cfg and cfg.targets and #cfg.targets > 0) then return false end
+	local state = dialogs()[player.index]
+	if state and state.platform_index == platform.index and player.gui.screen[FRAME] then return true end
+	return GatewayTransferGui.open(player, platform, gateway_name)
 end
 
 function GatewayTransferGui.close(player)
@@ -145,25 +215,55 @@ function GatewayTransferGui.close(player)
 		player.gui.screen[FRAME].destroy()
 	end
 	if player then
-		open_guis[player.index] = nil
+		dialogs()[player.index] = nil
 	end
 end
 
+function GatewayTransferGui.refresh_open()
+	for player_index, state in pairs(dialogs()) do
+		local player = game.get_player(player_index)
+		if player and player.valid and player.connected and player.gui.screen[FRAME] then
+			build_frame(player, state)
+		end
+	end
+end
+
+function GatewayTransferGui.platform_state_changed(platform)
+	if not (platform and platform.valid) then return end
+	local parked = Gateway.parked_at_gateway(platform)
+	for player_index, state in pairs(dialogs()) do
+		if state.platform_index == platform.index and state.force_name == platform.force.name then
+			if parked == state.gateway_name then
+				state.departed, state.close_tick = nil, nil
+			elseif not state.close_tick then
+				state.departed, state.close_tick = true, game.tick + CLOSE_DELAY_TICKS
+			end
+			local player = game.get_player(player_index)
+			if player and player.valid and player.gui.screen[FRAME] then build_frame(player, state) end
+		end
+	end
+end
+
+function GatewayTransferGui.on_tick()
+	local open = storage.surface_export_gateway_dialogs
+	if not open or next(open) == nil then return end
+	for player_index, state in pairs(open) do
+		if state.close_tick and game.tick >= state.close_tick then
+			local player = game.get_player(player_index)
+			if player then GatewayTransferGui.close(player) else open[player_index] = nil end
+		end
+	end
+end
 
 function GatewayTransferGui.on_gui_click(event)
 	local element = event.element
 	if not (element and element.valid and type(element.name) == "string") then return end
 	if element.name:sub(1, #PREFIX) ~= PREFIX then return end
 
-	local player = game.players[event.player_index]
-	local state = open_guis[event.player_index]
+	local player = game.get_player(event.player_index)
+	local state = dialogs()[event.player_index]
 
-	if element.name == PREFIX .. "cancel" then
-		GatewayTransferGui.close(player)
-		return
-	end
-
-	if not state then
+	if element.name == PREFIX .. "cancel" or element.name == PREFIX .. "close" or not state then
 		GatewayTransferGui.close(player)
 		return
 	end
@@ -171,13 +271,13 @@ function GatewayTransferGui.on_gui_click(event)
 	local pick_idx = element.tags and element.tags.gw_target_idx
 	if pick_idx then
 		state.selected = pick_idx
+		state.chosen = true
 		build_frame(player, state)
 		return
 	end
 
 	if element.name == PREFIX .. "transfer" then
 		GatewayTransferGui.confirm_transfer(player, state)
-		return
 	end
 end
 
@@ -222,7 +322,7 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	else
 		player.print("✗ Transfer could not start.")
 	end
-	if open_guis[player.index] then
+	if dialogs()[player.index] then
 		build_frame(player, state)
 	end
 end
@@ -230,7 +330,7 @@ end
 function GatewayTransferGui.on_gui_closed(event)
 	local element = event.element
 	if element and element.valid and element.name == FRAME then
-		GatewayTransferGui.close(game.players[event.player_index])
+		GatewayTransferGui.close(game.get_player(event.player_index))
 	end
 end
 

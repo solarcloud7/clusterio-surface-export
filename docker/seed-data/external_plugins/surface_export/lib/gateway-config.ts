@@ -185,6 +185,19 @@ export class GatewayConfig {
 		}
 	}
 
+	async pushGatewayConfigToAllSources(): Promise<Map<number, string | null>> {
+		const sources = new Set<number>();
+		for (const key of this.gatewayLinks.keys()) {
+			const parsed = this.parseGatewayKey(key);
+			if (parsed) sources.add(parsed.sourceInstanceId);
+		}
+		const results = new Map<number, string | null>();
+		for (const sourceInstanceId of sources) {
+			results.set(sourceInstanceId, await this.pushGatewayConfigToInstance(sourceInstanceId));
+		}
+		return results;
+	}
+
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
 		const activeNames = messages.gatewayNamesFor(this.gatewayMode());
 		const links = Array.from(this.gatewayLinks.entries()).flatMap(([key, targets]) => {

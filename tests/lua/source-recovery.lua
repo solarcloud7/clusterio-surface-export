@@ -335,7 +335,7 @@ local gui_uid, started = "copy-a", 0
 local gui_platform={valid=true,index=3,name="renamed",force={name="player"}}
 local gui_force={platforms={[3]=gui_platform}}
 local gui_player={index=1,print=function() end,gui={screen={}}}
-local gui_env=setmetatable({game={forces={player=gui_force}}},{__index=_G})
+local gui_env=setmetatable({game={forces={player=gui_force}},storage={}},{__index=_G})
 gui_env.require=function(name)
     if name:find("platform-identity",1,true) then return function() return gui_uid end end
     if name:find("gateway-guard",1,true) then return {guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end

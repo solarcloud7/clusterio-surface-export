@@ -67,6 +67,7 @@ local e = defines.events
 
 SurfaceExportModule.events = {
 	[e.on_tick] = function()
+		GatewayTransferGui.on_tick()
 		for _, player in pairs(game.connected_players) do InstancePanel.refresh_position(player) end
 		if game.tick % 10 == 0 then
 			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
@@ -107,7 +108,11 @@ SurfaceExportModule.events = {
 	[e.on_force_created] = function(event) PlanetPolicy.enforce(event.force) end,
 	[e.on_forces_merged] = function(event) PlanetPolicy.enforce(event.destination) end,
 	[e.on_player_created] = function(event) refresh_player(event, true) end,
-	[e.on_player_joined_game] = refresh_player,
+	[e.on_player_joined_game] = function(event)
+		refresh_player(event)
+		local player = game.get_player(event.player_index)
+		if player then GatewayTransferGui.offer(player) end
+	end,
 	[e.on_player_respawned] = refresh_player,
 	[e.on_player_changed_surface] = refresh_player,
 	[e.on_player_controller_changed] = function(event)
@@ -124,6 +129,7 @@ SurfaceExportModule.events = {
 	[e.on_space_platform_changed_state] = function(event)
 		local platform = event.platform
 		if not (platform and platform.valid) then return end
+		GatewayTransferGui.platform_state_changed(platform)
 
 		local sps = defines.space_platform_state
 
@@ -170,7 +176,7 @@ SurfaceExportModule.events = {
 					for _, player in pairs(game.connected_players) do
 						-- intentional probe; a surface_index read failure just means this player doesn't get
 						local ok, si = pcall(function() return player.surface_index end)
-						if ok and si == surf_idx then
+						if (ok and si == surf_idx) or player.physical_surface_index == surf_idx then
 							GameUtils.pcall_warn("[Gateway] open arrival chooser", function()
 								GatewayTransferGui.open(player, platform, gw_name)
 							end)
@@ -205,6 +211,8 @@ SurfaceExportModule.events = {
 		InstancePanel.on_gui_click(event)
 		DebugControls.on_gui_click(event)
 	end,
+
+	[e.on_gui_checked_state_changed] = GatewayTransferGui.on_gui_click,
 
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
