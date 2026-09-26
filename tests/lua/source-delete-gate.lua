@@ -17,6 +17,7 @@ for _, committed in ipairs({false, true}) do
         local lock = {committed = committed}
         local platform = {valid = true, surface = {valid = true, index = 9}}
         local cleared, deleted, deleteCalls, notices = false, false, 0, {}
+        local manifest, departCalls, departedNotices = {{name = "passenger", items = {}}}, 0, 0
         local env = setmetatable({storage = {locked_platforms = {[3] = lock}}, log = noop,
             game = {forces = {player = {platforms = {[3] = platform}}}, print = function(message)
                 assert(deleted and cleared, "departure announced before deletion was confirmed")
@@ -26,6 +27,18 @@ for _, committed in ipairs({false, true}) do
         local modules = {
             ["core/source-recovery"] = {matches = function(_, uid) return uid == "uid" end},
             ["utils/operation-timing"] = {begin = noop, finish = noop, scope = function(_, _, fn, ...) return fn(...) end},
+            ["core/passenger-transit"] = {
+                depart = function(job)
+                    assert(committed and job == "job", "passengers departed before the source commit")
+                    departCalls = departCalls + 1
+                    return manifest
+                end,
+                settle = noop,
+                notify_departed = function()
+                    assert(deleted, "passengers notified before deletion")
+                    departedNotices = departedNotices + 1
+                end,
+            },
             ["core/gateway"] = {evacuate_passengers = function()
                 if evacuation == "throw" then error("injected evacuation failure") end
                 if evacuation == "missing" then return nil end
@@ -83,6 +96,9 @@ for _, committed in ipairs({false, true}) do
             assert(remove(3, "renamed fixture", "player", "job", "uid") == "SUCCESS", "lost deletion reply cannot be retried")
             assert(remove(3, "fixture", "player", "job", "other-uid"):sub(1, 6) == "ERROR:", "receipt accepted a different UID")
             assert(deleteCalls == 1, "duplicate source deletion executed twice")
+            local receipt = modules["utils/transfer-receipts"].get("source_deleted", "job")
+            assert(receipt.passengers == manifest, "source deletion receipt lost the passenger manifest")
+            assert(departedNotices == 1, "passenger departure notice was duplicated or missing")
             assert(#notices == 1 and notices[1] == "Platform 'fixture' departed.", "departure was duplicated or missing")
             platform.valid = true
             assert(remove(3, "fixture", "player", "job", "uid"):sub(1, 6) == "ERROR:", "receipt accepted a present platform")
@@ -91,6 +107,7 @@ for _, committed in ipairs({false, true}) do
         else
             assert(result:sub(1, 6) == "ERROR:" and env.storage.locked_platforms[3] == lock and not cleared)
             assert(#notices == 0, "failed deletion announced departure")
+            assert(departedNotices == 0, "failed deletion notified passengers")
         end
       end
     end

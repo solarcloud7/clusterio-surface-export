@@ -1,4 +1,5 @@
 local DestinationHold = require("modules/surface_export/core/destination-hold")
+local PassengerArrival = require("modules/surface_export/core/passenger-arrival")
 
 local function find_platform(platform_index, force_name)
 	local selected_force_name = force_name or "player"
@@ -35,8 +36,12 @@ local function destination_hold(action, transfer_id, platform_index, force_name)
 		local ok, result = DestinationHold.verify(transfer_id)
 		return {success = ok, error = not ok and result or nil}
 	elseif action == "go_live" then
-		local ok, result = DestinationHold.go_live(transfer_id)
+		local passengers, staged_err = PassengerArrival.take_staged(transfer_id)
+		if staged_err then return { success = false, error = staged_err } end
+		local ok, result = DestinationHold.go_live(transfer_id, nil, passengers)
 		if not ok then return { success = false, error = result } end
+		local processed, process_err = pcall(PassengerArrival.process_connected)
+		if not processed then log("[Passenger] arrival after go-live failed: " .. tostring(process_err)) end
 		return { success = true, result = result }
 	elseif action == "discard" then
 		local ok, result = DestinationHold.discard(transfer_id)

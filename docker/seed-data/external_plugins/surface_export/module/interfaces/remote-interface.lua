@@ -53,6 +53,7 @@ local gateway_config_staging_selftest = Base.debug_wrap("gateway_config_staging_
 local delete_platform_for_transfer = require("modules/surface_export/interfaces/remote/delete-platform-for-transfer")
 local get_source_transfer_lock_state = require("modules/surface_export/interfaces/remote/get-source-transfer-lock-state")
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
+local passenger_manifest_remote = require("modules/surface_export/interfaces/remote/passenger-manifest")
 local test_roster = require("modules/surface_export/interfaces/remote/test-roster")
 local lifecycle = require("modules/surface_export/interfaces/remote/lifecycle")
 local teleport_roster_update = require("modules/surface_export/interfaces/remote/teleport-roster")
@@ -109,6 +110,8 @@ RemoteInterface.gateway_config_staging_selftest = gateway_config_staging_selftes
 RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
 RemoteInterface.get_source_transfer_lock_state = get_source_transfer_lock_state
 RemoteInterface.destination_hold = destination_hold
+RemoteInterface.passenger_manifest = passenger_manifest_remote.passenger_manifest
+RemoteInterface.passenger_manifest_stage = passenger_manifest_remote.passenger_manifest_stage
 RemoteInterface.set_test_roster = test_roster.set_test_roster
 RemoteInterface.set_test_roster_begin = test_roster.set_test_roster_begin
 RemoteInterface.set_test_roster_chunk = test_roster.set_test_roster_chunk
@@ -216,6 +219,8 @@ function RemoteInterface.register()
     get_source_transfer_lock_state_json = Base.json_wrap(get_source_transfer_lock_state),
     destination_hold = destination_hold,
     destination_hold_json = Base.json_wrap(destination_hold),
+    passenger_manifest = passenger_manifest_remote.passenger_manifest,
+    passenger_manifest_stage = passenger_manifest_remote.passenger_manifest_stage,
 
     set_test_roster = test_roster.set_test_roster,
     set_test_roster_json = Base.json_wrap(test_roster.set_test_roster),

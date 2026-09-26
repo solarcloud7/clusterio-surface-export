@@ -1,6 +1,7 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
+local PassengerTransit = require("modules/surface_export/core/passenger-transit")
 
 local platform_identity = require("modules/surface_export/utils/platform-identity")
 
@@ -476,6 +477,14 @@ function SurfaceLock.accept_restored_source(platform_index, old_job_id)
     return SurfaceLock.unlock_platform(platform_index, nil, true, old_job_id)
 end
 
+local function release_passengers(job_id)
+    if not job_id then return end
+    local ok, err = pcall(PassengerTransit.transfer_released, job_id)
+    if not ok then
+        log(string.format("[SurfaceLock] passenger return for transfer %s failed: %s", tostring(job_id), tostring(err)))
+    end
+end
+
 local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
@@ -489,6 +498,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name
+    local released_job_id = lock_data.kind == "transfer" and lock_data.transfer_job_id or nil
     if observed_lock and observed_lock ~= lock_data then
         return false, "Unlock refused: local lock identity changed"
     end
@@ -515,6 +525,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local platform = force.platforms[lock_data.platform_index]
     if not platform or not platform.valid then
         storage.locked_platforms[platform_index] = nil
+        release_passengers(released_job_id)
         return false, "Platform no longer exists"
     end
 
@@ -544,6 +555,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         log(string.format("[SurfaceLock] unlock: destination hold %s owns platform '%s' (index %s, surface %s); not restoring hold-owned not-live state",
             tostring(destination_hold_transfer_id), tostring(platform_name), tostring(platform_index), tostring(surface.index)))
         log(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)))
+        release_passengers(released_job_id)
         return true, nil
     end
 
@@ -564,6 +576,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     log(string.format("[SurfaceLock] Unlocked platform '%s' (index %s), restored %d entities",
         tostring(platform_name), tostring(platform_index), restored))
     log(string.format("[Lock] Platform '%s' unlocked and restored", tostring(platform_name)))
+    release_passengers(released_job_id)
 
     return true, nil
 end

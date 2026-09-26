@@ -84,6 +84,7 @@ for _, pending in ipairs({false, true}) do
             if name:find("platform-schedule", 1, true) then return {capture = function() return {} end} end
             if name:find("latch_rearm", 1, true) then return {pending_on_surface = function() return pending end} end
             if name:find("platform-identity", 1, true) then return function() return nil end end
+            if name:find("passenger-transit", 1, true) then return {transfer_released = function() end} end
             error(name)
         end}, {__index = _G})
     local lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
@@ -338,7 +339,9 @@ local gui_player={index=1,print=function() end,gui={screen={}}}
 local gui_env=setmetatable({game={forces={player=gui_force}},storage={}},{__index=_G})
 gui_env.require=function(name)
     if name:find("platform-identity",1,true) then return function() return gui_uid end end
-    if name:find("gateway-guard",1,true) then return {guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end
+    if name:find("gateway-guard",1,true) then return {evaluate=function() return {allowed=true} end,
+        guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end
+    if name:find("passenger-transit",1,true) then return {park=function() return {} end,assign_job=function() end,return_parked=function() end} end
     if name:find("transfer-trigger",1,true) then return {start=function() started=started+1;return true end} end
     if name:find("surface-lock",1,true) then return {is_locked=function() return false end} end
     return {parked_at_gateway=function() return "gateway" end,collect_passengers=function() return {},0 end}

@@ -2,6 +2,7 @@ local Gateway = {}
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 
 Gateway.PREFIX = "surfexp_gateway_"
+Gateway.PASSENGER_HOLD = "surfexp_passenger_hold"
 
 function Gateway.is_gateway(name)
 	if type(name) ~= "string" then
@@ -128,7 +129,7 @@ function Gateway.evacuate_passengers(platform)
 			return result
 		end
 		for _, s in pairs(game.surfaces) do
-			if s.valid and not s.platform then dest = s; break end
+			if s.valid and not s.platform and s.name ~= Gateway.PASSENGER_HOLD then dest = s; break end
 		end
 	end
 	if not (dest and dest.valid) then

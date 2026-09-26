@@ -74,6 +74,8 @@ jobs:
           lua5.2 tests/lua/gateway-dialog.lua
           lua5.2 tests/lua/gateway-portal.lua
           lua5.2 tests/lua/teleport-window.lua
+          lua5.2 tests/lua/passenger-transit.lua
+          lua5.2 tests/lua/passenger-arrival.lua
           lua5.2 tests/lua/remote-debug-gates.lua
           lua5.2 tests/lua/player-travel.lua
           lua5.2 tests/lua/export-cache-protection.lua

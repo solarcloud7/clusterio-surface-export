@@ -19,6 +19,7 @@ local surface = {platform = platform}
 local player = {index = 1, valid = true, physical_surface_index = 70, gui = {top = top()}}
 local calls = {}
 local dialog_open, teleport_open = false, false
+local passenger
 
 local env = setmetatable({
 	game = {get_player = function() return player end, get_surface = function(index) return index == 70 and surface or nil end},
@@ -31,6 +32,10 @@ env.require = function(name)
 			close = function() teleport_open = false; calls[#calls + 1] = "teleport-close" end,
 			request_roster = function() calls[#calls + 1] = "roster" end,
 			open = function() teleport_open = true; calls[#calls + 1] = "teleport" end}
+	end
+	if name:find("passenger-transit", 1, true) then
+		return {owns = function() return passenger ~= nil end,
+			toggle_window = function() calls[#calls + 1] = "passenger" end}
 	end
 	if name:find("gateway-transfer", 1, true) then
 		return {is_open = function() return dialog_open end,
@@ -88,3 +93,15 @@ allowed = false
 portal.on_gui_click{player_index = 1, element = player.gui.top[TELEPORT]}
 assert(#calls == before and not player.gui.top[TELEPORT], "a player who lost permission should not get the window and loses the button")
 print("PASS each button opens and closes its own window")
+
+parked = nil
+passenger = {state = "in_transit"}
+player.physical_surface_index = 99
+portal.refresh(player)
+assert(player.gui.top[GATEWAY], "a passenger in transit should see the gateway button away from any gateway")
+portal.on_gui_click{player_index = 1, element = player.gui.top[GATEWAY]}
+assert(calls[#calls] == "passenger" and not dialog_open, "the gateway button should open the passenger window for a passenger")
+passenger = nil
+portal.refresh(player)
+assert(not player.gui.top[GATEWAY], "the gateway button should go away once the passenger record is resolved")
+print("PASS the gateway button opens the passenger window while a passenger record exists")

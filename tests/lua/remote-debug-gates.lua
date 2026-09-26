@@ -80,7 +80,8 @@ end
 local table_modules = { ["core/source-recovery"] = true, ["interfaces/remote/test-runner"] = true,
 	["interfaces/gui/teleport-gui"] = true,
     ["interfaces/remote/configure-gateways"] = true, ["interfaces/remote/test-roster"] = true,
-    ["interfaces/remote/lifecycle"] = true, ["interfaces/remote/upload-session"] = true }
+    ["interfaces/remote/lifecycle"] = true, ["interfaces/remote/upload-session"] = true,
+    ["interfaces/remote/passenger-manifest"] = true }
 env.require = function(name)
     local key = name:gsub("^modules/surface_export/", "")
     if key == "core/json" then return {encode = function(value) return "json:" .. tostring(value) end} end

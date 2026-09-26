@@ -3,6 +3,7 @@ local Gateway = require("modules/surface_export/core/gateway")
 local GatewayGuard = require("modules/surface_export/core/gateway-guard")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local PassengerTransit = require("modules/surface_export/core/passenger-transit")
 
 local GatewayTransferGui = {}
 
@@ -306,21 +307,34 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	local gw_now = Gateway.parked_at_gateway(platform)
 	local aboard_players, char_count = Gateway.collect_passengers(platform)
 	local force = game.forces[state.force_name]
-
-	local result = GatewayGuard.guard_and_transfer{
+	local guard = {
 		docked = (gw_now == state.gateway_name),
 		in_flight = SurfaceLock.is_locked(platform.index),
 		aboard_players = aboard_players,
 		aboard_characters = char_count,
-		start_fn = function()
-			return TransferTrigger.start(force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
-		end,
 	}
 
+	local parked = {}
+	if GatewayGuard.evaluate(guard).allowed then
+		for _, passenger in ipairs(aboard_players) do
+			if passenger.index ~= player.index then GatewayTransferGui.close(passenger) end
+		end
+		parked = PassengerTransit.park(platform, target, state.gateway_name, aboard_players)
+	end
+	local job_id
+	guard.start_fn = function()
+		local id, err = TransferTrigger.start(force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
+		job_id = id
+		return id, err
+	end
+	local result = GatewayGuard.guard_and_transfer(guard)
+
 	if result.started then
+		PassengerTransit.assign_job(parked, job_id)
 		GatewayTransferGui.close(player)
 		return
 	end
+	PassengerTransit.return_parked(parked)
 
 	if result.reason == GatewayGuard.REASON.IN_FLIGHT then
 		player.print("✗ Cannot transfer: this platform is already transferring.")
