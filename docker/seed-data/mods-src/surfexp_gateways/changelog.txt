@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.12
+  Changes:
+    - Show the gateway portal beneath platforms parked there, facing the camera like a planet backdrop.
+    - Make gateway routes one unit longer than the planet routes so platforms no longer take the gateway as a shortcut.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.8
   Changes:
     - Remove the always-visible Selection Lab shortcut. The companion plugin provides its debug-only button.
