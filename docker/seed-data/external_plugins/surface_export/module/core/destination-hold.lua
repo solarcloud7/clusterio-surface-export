@@ -310,6 +310,11 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		platform.hidden = hold.original_platform_hidden
 	end
 	platform.paused = hold.original_paused == true
+	if hold.resume_route then
+		local resumed, resume_error = pcall(function() platform.paused = false end)
+		log(string.format("[Gateway] Route continues for '%s' toward record %s: %s", platform.name,
+			tostring(resumed and platform.get_schedule().current), resumed and "unpaused" or tostring(resume_error)))
+	end
 	Receipts.put("destination_live", transfer_id, {
 		transfer_id = transfer_id, platform_index = hold.platform_index,
 		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,

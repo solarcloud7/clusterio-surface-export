@@ -9,6 +9,7 @@ local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui"
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
+local GatewayRoute = require("modules/surface_export/core/gateway-route")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
@@ -181,7 +182,12 @@ SurfaceExportModule.events = {
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 
-			local gw_name = Gateway.parked_at_gateway(platform)
+			local route_ok, routed = pcall(GatewayRoute.on_arrival, platform, GatewayTransferGui.start_transfer)
+			if not route_ok then
+				log("[Gateway] route arrival failed; offering the manual chooser: " .. tostring(routed))
+				routed = false
+			end
+			local gw_name = not routed and Gateway.parked_at_gateway(platform)
 			if gw_name then
 				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
 					tostring(platform.name),

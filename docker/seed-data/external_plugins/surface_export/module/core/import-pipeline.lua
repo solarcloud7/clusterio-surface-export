@@ -435,7 +435,17 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 		Timing.stop(job_id, "platform_parking")
 		Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
+		local resume_route = false
+		local advanced, resume = nil, false
 		if park_target and Gateway.is_gateway(park_target) and imported_schedule then
+			advanced, resume = Gateway.advance_past_arrival(imported_schedule, force)
+		end
+		if advanced then
+			log(string.format("[Gateway] Route arrival at '%s' — continuing the schedule at record %d of %d (%s)",
+				park_target, advanced.current, #advanced.records, resume and "resumes at go-live" or "next stop is this server; holding"))
+			imported_schedule = advanced
+			resume_route = resume
+		elseif park_target and Gateway.is_gateway(park_target) and imported_schedule then
 			local stripped = Gateway.strip_gateway_records(imported_schedule)
 			if stripped then
 				log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
@@ -532,6 +542,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			preparation_visibility = setup_job.preparation_visibility,
 			imported_schedule = imported_schedule,
 			park_target = park_target,
+			resume_route = resume_route,
 
 			metrics = {
 				delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,

@@ -200,6 +200,48 @@ function Gateway.evacuate_passengers(platform)
 	return result
 end
 
+Gateway.INSTANCE_PREFIX = "surfexp_gateway_i_"
+
+function Gateway.is_instance_gateway(name)
+	return Gateway.is_gateway(name) and name:sub(1, #Gateway.INSTANCE_PREFIX) == Gateway.INSTANCE_PREFIX
+end
+
+function Gateway.reached_instance_gateway(platform)
+	if not (platform and platform.valid) or platform.state ~= defines.space_platform_state.waiting_at_station then
+		return nil
+	end
+	local location = platform.space_location
+	if not (location and Gateway.is_instance_gateway(location.name)) then
+		return nil
+	end
+	local schedule = platform.get_schedule()
+	local records = schedule and schedule.get_records() or {}
+	local record = schedule and records[schedule.current]
+	if not (record and record.station == location.name) then
+		return nil
+	end
+	return location.name
+end
+
+function Gateway.advance_past_arrival(schedule_payload, force)
+	local records = schedule_payload.records or {}
+	local current = schedule_payload.current
+	local reached = type(current) == "number" and records[current]
+	if not (type(reached) == "table" and Gateway.is_instance_gateway(reached.station)) or #records < 2 then
+		return nil
+	end
+	local next_index = current % #records + 1
+	local next_station = records[next_index].station
+	local resume = not (Gateway.is_instance_gateway(next_station) and force
+		and not force.is_space_location_unlocked(next_station))
+	return {
+		current = next_index,
+		records = records,
+		interrupts = schedule_payload.interrupts or {},
+		group = schedule_payload.group,
+	}, resume
+end
+
 function Gateway.strip_gateway_records(schedule_payload)
 	local records = schedule_payload.records or {}
 	local orig_current = schedule_payload.current

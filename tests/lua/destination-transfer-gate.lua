@@ -77,6 +77,20 @@ assert(holds.go_live("preparing"))
 assert(platform.hidden == false, "completed import retained temporary preparation visibility")
 print("PASS early preparation visibility is restored only through a validated hold")
 
+platform.paused = true
+platform.get_schedule = function() return {current = 2} end
+local staged, route_hold = holds.stage("route", platform, force, true)
+assert(staged and route_hold.original_paused == true)
+route_hold.resume_route = true
+assert(platform.paused == true, "the hold keeps a continuing route parked until release")
+assert(holds.go_live("route"))
+assert(platform.paused == false, "a continuing route must leave the destination moving at release")
+platform.paused = true
+assert(holds.stage("parked", platform, force, true))
+assert(holds.go_live("parked"))
+assert(platform.paused == true, "a hub arrival without a continuing route stays parked")
+print("PASS a continuing route resumes only at release; other gateway arrivals stay parked")
+
 assert(holds.stage("print-failure", platform, force, true))
 local print_notice = env.game.print
 env.game.print = function() error("injected chat failure") end

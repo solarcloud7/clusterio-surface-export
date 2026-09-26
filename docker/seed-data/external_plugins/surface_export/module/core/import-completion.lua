@@ -593,8 +593,9 @@ function ImportCompletion.run_phase2(job, batch_size)
 							job.platform_name, tostring(captured_paused), tostring(err_captured)))
 					end
 				end
-				local held, hold_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id)
-				assert(held, hold_error)
+				local held, hold_or_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id)
+				assert(held, hold_or_error)
+				if job.resume_route and job.park_target then hold_or_error.resume_route = true end
 				result.destinationHeld = true
 				LatchRearm.schedule(job)
 				if job.platform_data._standaloneImport == true then
