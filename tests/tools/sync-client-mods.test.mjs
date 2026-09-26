@@ -15,7 +15,7 @@ function fixture(t, seeds, client = {}) {
 		"docker/seed-data/mods-src/surfexp_gateways", "appdata/Factorio/mods"]) {
 		mkdirSync(join(root, dir), { recursive: true });
 	}
-	for (const script of ["tools/clusterio/sync-client-mods.ps1", "tools/surface-export/build-gateway-mod.ps1"]) {
+	for (const script of ["tools/clusterio/sync-client-mods.ps1", "tools/surface-export/build-gateway-mod.ps1", "tools/surface-export/pack-gateway-mod.mjs"]) {
 		copyFileSync(join(repo, script), join(root, script));
 	}
 	for (const [name, bytes] of Object.entries(seeds)) writeFileSync(join(root, "docker/seed-data/mods", name), bytes);

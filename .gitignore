@@ -86,3 +86,6 @@ controller-logs.txt
 
 # CI failure-repro captures and instrument run reports — run products, never committed
 /ci-artifacts/
+
+# Remote cluster controller URLs and control tokens for tools/clusterio/ctl.mjs (never commit).
+tools/clusterio/remote-clusters.local.json
