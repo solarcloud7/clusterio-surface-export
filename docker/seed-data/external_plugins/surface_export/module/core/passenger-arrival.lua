@@ -211,7 +211,12 @@ function Arrival.give_back(player_name, key, source, items)
 	local list = arrivals()
 	local by_player = list[player_name] or {}
 	list[player_name] = by_player
-	if by_player[key] then return false end
+	local existing = by_player[key]
+	if existing then
+		for _, item in ipairs(items) do existing.items[#existing.items + 1] = item end
+		existing.notice_given = nil
+		return true
+	end
 	by_player[key] = {
 		transfer_id = key, force_name = source.force_name, platform_index = source.platform_index,
 		platform_uid = source.platform_uid, items = items, created_tick = game.tick, boarding_done = "returned",

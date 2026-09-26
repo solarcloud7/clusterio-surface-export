@@ -671,19 +671,39 @@ arrival.process(yul)
 assert(not env.storage.surface_export_arrivals.yul and yul_main[1].name == "power-armor", "the kept gear is given back once there is room")
 print("PASS gear from a released departure is given back on the planet, keeping what does not fit")
 
-local zoe = passenger(36, "zoe", true)
+local zoe, zoe_body = passenger(36, "zoe", true)
 parked = transit.park(platform, target, "surfexp_gateway_hub", {zoe})
 transit.assign_job(parked, "job-34")
 transit.depart("job-34")
 platform.uid = "gone"
 transit.on_tick()
-assert(not env.storage.surface_export_passengers[36].notified, "a missing platform is not settled at once")
+assert(transit.owns(zoe) and not env.storage.surface_export_passengers[36].notified, "a missing platform is not settled at once")
 env.game.tick = env.game.tick + transit.PLATFORM_GONE_TICKS
 transit.on_tick()
 platform.uid = "uid:7"
-assert(env.storage.surface_export_passengers[36].notified and #zoe.connects == 1,
-	"a departed passenger whose platform has been gone for ten seconds is notified")
-print("PASS a deleted source whose lock could not be cleared still settles its passengers")
+assert(not transit.owns(zoe) and #zoe.connects == 0, "a source gone without a deletion receipt never sends the connect prompt")
+assert(zoe.character == zoe_body and zoe.physical_surface_index == nauvis.index and armor_of(zoe_body).name == "power-armor",
+	"the passenger lands on the planet with their carried gear given back")
+assert(env.storage.surface_export_passenger_manifests["job-34"] == nil, "the unconfirmed manifest is dropped once the gear is back")
+print("PASS a source gone without a deletion receipt returns its departed passengers with their gear")
+
+local ada, ada_body = passenger(38, "ada", true)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {ada})
+transit.assign_job(parked, "job-36")
+transit.depart("job-36")
+env.storage.surface_export_arrivals = env.storage.surface_export_arrivals or {}
+env.storage.surface_export_arrivals.ada = {["returned:job-36"] = {transfer_id = "returned:job-36", force_name = "player",
+	platform_index = 7, platform_uid = "uid:7", created_tick = 1, boarding_done = "returned",
+	items = {{name = "stone", count = 5, quality = "normal", inventory = "main"}}}}
+ada.teleport_refused = true
+transit.transfer_released("job-36")
+ada.teleport_refused = false
+local merged = env.storage.surface_export_arrivals.ada["returned:job-36"]
+local merged_names = {}
+for _, item in ipairs(merged.items) do merged_names[item.name] = true end
+assert(merged_names.stone and merged_names["power-armor"] and env.storage.surface_export_passenger_manifests["job-36"] == nil,
+	"gear given back under an existing key is merged, never dropped")
+print("PASS gear given back under an existing record is merged into it")
 
 local amy, amy_body = passenger(37, "amy", true)
 env.storage.surface_export_config.passenger_carry_inventory = true

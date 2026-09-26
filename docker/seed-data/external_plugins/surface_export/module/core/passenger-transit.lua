@@ -265,14 +265,23 @@ local function give_back(record, job_id)
 	if not manifest then return end
 	for position, entry in ipairs(manifest) do
 		if entry.name == record.player_name then
-			if #(entry.items or {}) > 0 then
-				PassengerArrival.give_back(record.player_name, "returned:" .. job_id, record, entry.items)
+			if #(entry.items or {}) == 0
+				or PassengerArrival.give_back(record.player_name, "returned:" .. job_id, record, entry.items) then
+				table.remove(manifest, position)
 			end
-			table.remove(manifest, position)
 			break
 		end
 	end
 	if #manifest == 0 then manifests()[job_id] = nil end
+end
+
+local function return_passenger(index, record, job_id, departed, where)
+	if departed then give_back(record, job_id) end
+	record.state = "returned"
+	local player = game.get_player(index)
+	if Transit.restore(player, record, where) then
+		GameUtils.pcall_warn("[Passenger] give back gear to " .. tostring(player.name), function() PassengerArrival.process(player) end)
+	end
 end
 
 function Transit.transfer_released(job_id)
@@ -281,12 +290,7 @@ function Transit.transfer_released(job_id)
 	for index, record in pairs(records()) do
 		local unconfirmed = record.state == "departed" and not record.notified and not confirmed
 		if record.job_id == job_id and (record.state == "in_transit" or unconfirmed) then
-			if unconfirmed then give_back(record, job_id) end
-			record.state = "returned"
-			local player = game.get_player(index)
-			if Transit.restore(player, record, "aboard") then
-				GameUtils.pcall_warn("[Passenger] give back gear to " .. tostring(player.name), function() PassengerArrival.process(player) end)
-			end
+			return_passenger(index, record, job_id, unconfirmed, "aboard")
 		end
 	end
 	if confirmed then Transit.notify_departed(job_id) end
@@ -457,7 +461,11 @@ function Transit.on_tick()
 				record.platform_missing_tick = nil
 			else
 				record.platform_missing_tick = record.platform_missing_tick or game.tick
-				if game.tick - record.platform_missing_tick >= Transit.PLATFORM_GONE_TICKS then settled[record.job_id] = true end
+				if game.tick - record.platform_missing_tick >= Transit.PLATFORM_GONE_TICKS then
+					log(string.format("[Passenger] the source of %s is gone without a deletion receipt; returning '%s' with their gear",
+						record.job_id, tostring(record.player_name)))
+					return_passenger(index, record, record.job_id, true, "landing")
+				end
 			end
 		end
 		if record.state == "in_transit" and not record.job_id

@@ -386,7 +386,8 @@ local rae = new_player(14, "rae", rae_body)
 hub_inventory = inventory(0)
 assert(arrival.give_back("rae", "returned:job-x", {force_name = "player", platform_index = 3, platform_uid = "uid:3"},
 	{{name = "power-armor", count = 1, quality = "normal", inventory = "armor"}, {name = "stone", count = 5, quality = "normal", inventory = "main"}}))
-assert(not arrival.give_back("rae", "returned:job-x", {}, {}), "gear is given back once per job")
+assert(arrival.give_back("rae", "returned:job-x", {}, {}) and #env.storage.surface_export_arrivals.rae["returned:job-x"].items == 2,
+	"a second give-back for the same job merges into the record")
 arrival.process(rae)
 local pending = env.storage.surface_export_arrivals.rae["returned:job-x"]
 assert(rae_body.inventories[inventory_ids.character_armor][1].name == "power-armor" and #pending.items == 1
