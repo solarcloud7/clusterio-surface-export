@@ -57,9 +57,10 @@ outcome they are put back aboard or on the default planet.
 | Success, prompt accepted | The player joins the destination. Their gear is inserted, and they board the platform if the offer has not expired. |
 | Success, prompt declined or **Stay** | The player's own character is restored at the source's default-planet landing pad, without the carried gear. The gear waits on the destination. |
 | Success, still on the source 10 minutes after the deletion is confirmed | Same as **Stay**. |
-| **Abort** | Allowed while the passenger is in transit. The character is restored at the default planet's landing pad, and the player is left out of the manifest. Refused while the source is held under a committed lock for that transfer, for example a source restored from a save and quarantined; the passenger stays held until an administrator resolves it. Accepting the restored source releases the lock and puts its passengers back aboard. |
+| **Abort** | Allowed while the passenger is in transit. The character is restored at the default planet's landing pad, and the player is left out of the manifest. Refused while the source is held under a committed lock for that transfer, for example a source restored from a save and quarantined; the passenger stays held until an administrator resolves it. Accepting the restored source releases the lock. See the next row. |
 | Transfer fails to start | Every parked passenger is put back aboard at once. A passenger still parked without a transfer job after 5 seconds is also put back aboard. |
-| Transfer fails after starting | When the source's transfer lock is released (validation or import failure, census abort, refused start, startup recovery or queue failure), that transfer's passengers are put back aboard. |
+| Transfer fails after starting | When the source's transfer lock is released (validation or import failure, census abort, refused start, startup recovery, queue failure, or accepting a restored source), that transfer's passengers are put back aboard. Passengers still in transit keep their gear on their character. Passengers already departed, whose source deletion was never confirmed, get their carried gear back from the manifest: armor first, inserted without clearing anything, overflow to the platform hub, and anything that still does not fit kept for them and retried until there is room. |
+| Source deleted but the notice missed | If the deletion receipt exists but the departure notice never ran, or the platform has been gone for 10 seconds while its lock could not be cleared, the departed passengers are notified on the next check. Their gear stays with the ship. |
 | Passenger offline | Their outcome is stored and applied at their next join. See [Offline passengers](#offline-passengers). |
 
 "Landing pad" means the first cargo landing pad of the player's force on the
@@ -78,7 +79,7 @@ The source instance keeps one record per player in
 | `in_transit` | Parked; the transfer is running. | The player is parked again and sees the transit window. |
 | `departed` | The carried gear was taken into the manifest. The arrival window, **Stay** and the 10-minute timer start only once the source deletion is confirmed; until then the passenger stays parked, and Abort is refused. | Restored at the landing pad once the deletion is confirmed; parked again before that. |
 | `aborted` | Abort was pressed, and restoration is pending. | Restored at the landing pad. |
-| `returned` | The transfer failed, and restoration is pending. | Put back aboard, or at the landing pad. |
+| `returned` | The transfer failed, and restoration is pending. Gear given back that does not fit waits in an arrival record until it does. | Put back aboard, or at the landing pad, then given their gear back. |
 
 A record is removed once the player controls their own character again. Connected
 players with a pending `aborted` or `returned` record are retried once a second.
@@ -133,10 +134,17 @@ character, and creates one only when the player has none at all. A created chara
 starts at the default planet's landing position. A player in the map editor whose
 stashed controller could hold a character is served after leaving the editor.
 
-Delivery progress is saved per stack. A stack whose equipment grid or other properties
-cannot be fully restored on this instance is removed again and kept in the arrival
-record rather than delivered incomplete. The player is told once, and the failure is
-logged. Malformed items in a received manifest are logged and dropped.
+Delivery progress is saved per stack. A stack whose property restoration raises an
+error, for example an equipment grid holding equipment this instance does not have,
+is removed again and kept in the arrival record rather than delivered incomplete. The
+player is told once, and the item is tried again only at their next join. Malformed
+items in a received manifest are logged and dropped.
+
+Some partial restorations do not raise an error, and the stack is then delivered
+incomplete, as it would be in a platform transfer: a grid that refuses a piece of
+equipment, a nested inventory that takes only part of its contents, and an item with
+tags or a blueprint whose export string is declined. The nested inventory and export
+string cases are logged; a refused grid slot is not.
 
 ### inventory_sync
 
