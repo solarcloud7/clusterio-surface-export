@@ -12,6 +12,7 @@ import type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
+	InstanceDestination,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -31,6 +32,7 @@ export type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
+	InstanceDestination,
 } from "./shared/dto";
 export {
 	ALL_GATEWAY_NAMES,
@@ -39,8 +41,11 @@ export {
 	MULTI_GATEWAY_NAMES,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
+	INSTANCE_GATEWAY_PREFIX,
 	checkMultiModeLink,
 	gatewayNamesFor,
+	instanceGatewayName,
+	isInstanceGatewayName,
 	parseGatewayMode,
 } from "./shared/dto";
 export type { GatewayMode } from "./shared/dto";
@@ -937,11 +942,30 @@ export class GetGatewaysRequest {
 						additionalProperties: false,
 					},
 				},
+				destinations: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							gatewayName: { type: "string" },
+							instanceId: { type: "integer" },
+							instanceName: { type: "string" },
+						},
+						required: ["gatewayName", "instanceId", "instanceName"],
+						additionalProperties: false,
+					},
+				},
+				unroutableInstances: { type: "array", items: { type: "string" } },
 			},
 			required: ["gatewayNames", "links"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gatewayNames: string[]; links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }> };
+			return json as {
+				gatewayNames: string[];
+				links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }>;
+				destinations?: InstanceDestination[];
+				unroutableInstances?: string[];
+			};
 		},
 	};
 }

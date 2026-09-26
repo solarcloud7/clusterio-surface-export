@@ -91,6 +91,23 @@ function emptyValueError(where, field, value) {
 		: null;
 }
 
+export const DESTINATIONS_SETTING = "surfexp-gateway-instances";
+
+export function destinationsSettingErrors(value, instanceNames) {
+	if (value === undefined) return [];
+	if (typeof value !== "string") return [`${DESTINATIONS_SETTING} must be a string`];
+	const errors = [];
+	const seen = new Set();
+	for (const entry of value.split(",").map(part => part.trim()).filter(Boolean)) {
+		const name = entry.split("=")[0].trim();
+		if (!/^[A-Za-z0-9_-]+$/.test(name)) errors.push(`${DESTINATIONS_SETTING}: "${name}" must use only letters, digits, "_" and "-"; the mod refuses to load otherwise`);
+		else if (seen.has(name)) errors.push(`${DESTINATIONS_SETTING}: "${name}" is listed twice; the mod refuses to load otherwise`);
+		else if (!instanceNames.includes(name)) errors.push(`${DESTINATIONS_SETTING}: "${name}" is not an instance on the cluster, so its destination would lead nowhere`);
+		seen.add(name);
+	}
+	return errors;
+}
+
 function configValue(value) {
 	return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -102,6 +119,7 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	const want = desired.modPack;
 	const existing = live.packs.find(pack => pack.name === want?.name);
 	const packDetail = existing ? live.packDetails[existing.id] : null;
+	errors.push(...destinationsSettingErrors(want?.settings?.startup?.[DESTINATIONS_SETTING], Object.keys(live.instanceIds || {})));
 
 	const modSpecs = [];
 	for (const [name, version] of Object.entries(want?.mods || {})) {

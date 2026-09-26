@@ -159,6 +159,47 @@ export class GatewayConfig {
 		}
 	}
 
+	private liveInstances() {
+		return [...this.controller.instances.values()].filter(inst => !inst.isDeleted);
+	}
+
+	destinations(): { destinations: messages.InstanceDestination[]; unroutableInstances: string[] } {
+		const destinations: messages.InstanceDestination[] = [];
+		const unroutableInstances: string[] = [];
+		if (this.gatewayMode() !== "one_gate") {
+			return { destinations, unroutableInstances };
+		}
+		for (const inst of this.liveInstances()) {
+			const configured = inst.config?.get("instance.name");
+			const instanceName = typeof configured === "string" ? configured : "";
+			const gatewayName = messages.instanceGatewayName(instanceName);
+			if (gatewayName) {
+				destinations.push({ gatewayName, instanceId: inst.id, instanceName });
+			} else {
+				unroutableInstances.push(instanceName);
+			}
+		}
+		return { destinations, unroutableInstances };
+	}
+
+	activeGatewayNamesFor(sourceInstanceId: number): string[] {
+		const names = messages.gatewayNamesFor(this.gatewayMode());
+		for (const destination of this.destinations().destinations) {
+			if (destination.instanceId !== sourceInstanceId) names.push(destination.gatewayName);
+		}
+		return names;
+	}
+
+	private resolveTarget(instanceId: number, targetGateway: string): messages.ResolvedGatewayTarget {
+		return {
+			instanceId,
+			instanceName: this.context.resolveInstanceName(instanceId) ?? "(unknown)",
+			targetGateway,
+			online: this.context.isInstanceOnline(instanceId),
+			address: this.targetAddress(instanceId),
+		};
+	}
+
 	private resolveGateways(sourceInstanceId: number): messages.ResolvedGateway[] {
 		const out: messages.ResolvedGateway[] = [];
 		for (const [key, links] of this.gatewayLinks.entries()) {
@@ -166,14 +207,15 @@ export class GatewayConfig {
 			if (!parsed || parsed.sourceInstanceId !== sourceInstanceId) {
 				continue;
 			}
-			const targets = (links || []).map(link => ({
-				instanceId: link.targetInstanceId,
-				instanceName: this.context.resolveInstanceName(link.targetInstanceId) ?? "(unknown)",
-				targetGateway: link.targetGateway,
-				online: this.context.isInstanceOnline(link.targetInstanceId),
-				address: this.targetAddress(link.targetInstanceId),
-			}));
+			const targets = (links || []).map(link => this.resolveTarget(link.targetInstanceId, link.targetGateway));
 			out.push({ gatewayName: parsed.gatewayName, targets });
+		}
+		for (const destination of this.destinations().destinations) {
+			if (destination.instanceId === sourceInstanceId) continue;
+			out.push({
+				gatewayName: destination.gatewayName,
+				targets: [this.resolveTarget(destination.instanceId, messages.ONE_GATE_NAME)],
+			});
 		}
 		return out;
 	}
@@ -188,7 +230,7 @@ export class GatewayConfig {
 				{ instanceId: sourceInstanceId },
 				new messages.PushGatewayConfigRequest({
 					gateways,
-					activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+					activeGatewayNames: this.activeGatewayNamesFor(sourceInstanceId),
 					passengerCarry: this.passengerCarry(),
 				}),
 			)) as { success?: boolean; error?: string } | undefined;
@@ -206,7 +248,7 @@ export class GatewayConfig {
 	}
 
 	async pushGatewayConfigToAllSources(): Promise<Map<number, string | null>> {
-		const sources = new Set<number>();
+		const sources = new Set<number>(this.liveInstances().map(inst => inst.id));
 		for (const key of this.gatewayLinks.keys()) {
 			const parsed = this.parseGatewayKey(key);
 			if (parsed) sources.add(parsed.sourceInstanceId);
@@ -231,6 +273,7 @@ export class GatewayConfig {
 			gatewayMode: this.gatewayMode(),
 			gatewayNames: activeNames,
 			links,
+			...this.destinations(),
 		};
 	}
 
@@ -257,6 +300,9 @@ export class GatewayConfig {
 		const normalized = new Map<string, messages.GatewayLink[]>();
 		for (const entry of submitted) {
 			const gatewayName = entry?.gatewayName;
+			if (gatewayName && messages.isInstanceGatewayName(gatewayName)) {
+				return { success: false, error: `${gatewayName} always leads to its own server and cannot be linked` };
+			}
 			if (!gatewayName || !activeNames.includes(gatewayName)) {
 				return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
 			}
@@ -319,7 +365,7 @@ export class GatewayConfig {
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
 		return {
 			gateways: this.resolveGateways(Number(request.instanceId)),
-			activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+			activeGatewayNames: this.activeGatewayNamesFor(Number(request.instanceId)),
 			passengerCarry: this.passengerCarry(),
 		};
 	}

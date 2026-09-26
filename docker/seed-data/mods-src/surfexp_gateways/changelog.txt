@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.0
+  Features:
+    - Add the "Server destinations" startup setting: each listed Clusterio instance gets its own destination beside
+      the Transfer Gateway, labelled with a friendly name, that platform schedules can stop at.
+---------------------------------------------------------------------------------------------------
 Version: 0.6.12
   Changes:
     - Show the gateway portal beneath platforms parked there, facing the camera like a planet backdrop.

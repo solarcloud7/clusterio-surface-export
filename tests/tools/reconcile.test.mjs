@@ -199,3 +199,19 @@ test("restart-only controller fields restart instances, empty values block, and 
 	const changed = planChanges({ ...desired, modPack: { ...desired.modPack, settings: { startup: { ...desired.modPack.settings.startup, tint: colour } } } }, live, { modFile });
 	assert.ok(changed.actions[0].argv.join(" ").includes(`--color-setting startup tint ${JSON.stringify(colour)}`));
 });
+
+test("server destinations must name real instances in the grammar the mod accepts", () => {
+	const plan = value => {
+		const want = structuredClone(desired);
+		want.modPack.settings.startup["surfexp-gateway-instances"] = value;
+		const live = liveWith({ instanceIds: { fact1: 11, fact2: 22 } });
+		live.packDetails[7].mods.FluidMustFlow.enabled = true;
+		return planChanges(want, live, { modFile });
+	};
+	const good = plan(" fact1=Forge , fact2,");
+	assert.deepEqual(good.errors, []);
+	assert.ok(good.actions.some(action => action.argv.includes("surfexp-gateway-instances")), "a valid value is applied through the pack edit");
+	for (const [value, reason] of [["fact 1", /only letters/], ["=Forge", /only letters/], ["fact1,fact1=Again", /listed twice/], ["fact9=Ghost", /not an instance/]]) {
+		assert.match(plan(value).errors.join("\n"), reason, value);
+	}
+});
