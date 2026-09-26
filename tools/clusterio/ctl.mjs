@@ -16,8 +16,6 @@ const READ_ONLY = [
 	["mod", "list"],
 	["mod", "show"],
 	["controller", "config", "list"],
-	["controller", "config", "get"],
-	["plugin", "list"],
 	["user", "list"],
 	["user", "show"],
 	["role", "list"],
