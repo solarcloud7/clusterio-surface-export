@@ -18,13 +18,25 @@ function TeleportGui.ensure_permission_group()
 	end
 end
 
-local open_guis = {}
-
 local FRAME_NAME = "surface_export_teleport"
-local DROPDOWN_NAME = "surface_export_teleport_dropdown"
-local CONNECT_NAME = "surface_export_teleport_connect"
-local CLOSE_NAME = "surface_export_teleport_close"
-local REFRESH_NAME = "surface_export_teleport_refresh"
+local PREFIX = "surface_export_teleport_"
+local CONNECT_NAME = PREFIX .. "connect"
+local CLOSE_NAME = PREFIX .. "close"
+local CANCEL_NAME = PREFIX .. "cancel"
+local REFRESH_NAME = PREFIX .. "refresh"
+local ICON = "space-location/surfexp_gateway_3"
+local WIDTH = 380
+
+local COLOR_MUTED = {r = 0.7, g = 0.7, b = 0.7}
+local COLOR_ONLINE = {r = 0.4, g = 1.0, b = 0.4}
+local COLOR_OFFLINE = {r = 1.0, g = 0.45, b = 0.4}
+
+TeleportGui.ICON = ICON
+
+local function open_guis()
+	storage.surface_export_teleport_guis = storage.surface_export_teleport_guis or {}
+	return storage.surface_export_teleport_guis
+end
 
 local function roster_entries()
 	local roster = storage.teleport_roster
@@ -41,120 +53,155 @@ local function roster_entries()
 	return entries
 end
 
-local function dropdown_items(entries)
-	local items = {}
-	for _, inst in ipairs(entries) do
-		items[#items + 1] = string.format("%s  (%s)%s", inst.name, inst.address,
-			inst.online and "" or "  [OFFLINE]")
+local function selected_entry(state)
+	for _, entry in ipairs(state.entries or {}) do
+		if entry.instanceId == state.selected_id and entry.online then return entry end
 	end
-	return items
+end
+
+local function titlebar(frame)
+	local bar = frame.add{type = "flow", direction = "horizontal"}
+	bar.drag_target = frame
+	bar.style.horizontal_spacing = 8
+	bar.add{type = "label", caption = "Teleport", style = "frame_title", ignored_by_interaction = true}
+	local drag = bar.add{type = "empty-widget", style = "draggable_space_header", ignored_by_interaction = true}
+	drag.style.horizontally_stretchable = true
+	drag.style.height = 24
+	drag.style.right_margin = 4
+	bar.add{type = "sprite-button", name = REFRESH_NAME, style = "frame_action_button", sprite = "utility/refresh", tooltip = "Refresh the instance list"}
+	bar.add{type = "sprite-button", name = CLOSE_NAME, style = "frame_action_button", sprite = "utility/close", tooltip = "Close"}
 end
 
 local function build(player)
-	local prior = open_guis[player.index]
-	local prior_id = nil
-	if prior and prior.dropdown and prior.dropdown.valid and prior.entries then
-		local prior_entry = prior.entries[prior.dropdown.selected_index]
-		prior_id = prior_entry and prior_entry.instanceId
-	end
-
+	local state = open_guis()[player.index] or {}
 	local existing = player.gui.screen[FRAME_NAME]
 	if existing then existing.destroy() end
 
-	local frame = player.gui.screen.add{
-		type = "frame",
-		name = FRAME_NAME,
-		caption = "Teleport — connect to another instance",
-		direction = "vertical"
-	}
-	frame.auto_center = true
-
-	local entries = roster_entries()
-	local content = frame.add{type = "flow", direction = "vertical"}
-
-	local dropdown = nil
-	if #entries == 0 then
-		local roster = storage.teleport_roster
-		content.add{
-			type = "label",
-			caption = roster and "No other instances in the roster." or
-				"Fetching the instance roster from the controller…"
-		}
-	else
-		local selected = 1
-		if prior_id then
-			for i, inst in ipairs(entries) do
-				if inst.instanceId == prior_id then selected = i end
-			end
+	state.entries = roster_entries()
+	if not selected_entry(state) then
+		state.selected_id = nil
+		for _, entry in ipairs(state.entries) do
+			if entry.online then state.selected_id = entry.instanceId break end
 		end
-		content.add{type = "label", caption = "Destination instance:"}
-		dropdown = content.add{
-			type = "drop-down",
-			name = DROPDOWN_NAME,
-			items = dropdown_items(entries),
-			selected_index = selected
-		}
-		dropdown.style.minimal_width = 320
 	end
 
-	local buttons = frame.add{type = "flow", direction = "horizontal"}
-	buttons.add{type = "button", name = CONNECT_NAME, caption = "Connect", style = "confirm_button",
-		enabled = #entries > 0}
-	buttons.add{type = "button", name = REFRESH_NAME, caption = "Refresh"}
-	buttons.add{type = "button", name = CLOSE_NAME, caption = "Close"}
+	local frame = player.gui.screen.add{type = "frame", name = FRAME_NAME, direction = "vertical"}
+	frame.auto_center = true
+	titlebar(frame)
+	local body = frame.add{type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical"}
+	body.style.minimal_width = WIDTH
+	local content = body.add{type = "flow", direction = "vertical"}
+	content.style.vertical_spacing = 8
+
+	local header = content.add{type = "flow", direction = "horizontal"}
+	header.style.vertical_align = "center"
+	header.style.horizontal_spacing = 8
+	local icon = header.add{type = "sprite", sprite = helpers.is_valid_sprite_path(ICON) and ICON or "utility/character_running_speed_modifier_icon"}
+	icon.style.size = 32
+	icon.style.stretch_image_to_widget_size = true
+	local names = header.add{type = "flow", direction = "vertical"}
+	names.style.vertical_spacing = 0
+	names.add{type = "label", caption = "Connect to another instance", style = "bold_label"}
+	local hint = names.add{type = "label", caption = "You travel alone. Your platform stays here."}
+	hint.style.font_color = COLOR_MUTED
+
+	content.add{type = "label", caption = "Destination", style = "bold_label"}
+	local list = content.add{type = "frame", style = "deep_frame_in_shallow_frame", direction = "vertical"}
+	list.style.horizontally_stretchable = true
+	if #state.entries == 0 then
+		local empty = list.add{type = "label", caption = storage.teleport_roster and "No other instances in the cluster."
+			or "Fetching the instance list from the controller…"}
+		empty.style.font_color = COLOR_MUTED
+		empty.style.margin = 8
+	end
+	for idx, entry in ipairs(state.entries) do
+		local online = entry.online == true
+		local row = list.add{type = "flow", direction = "horizontal"}
+		row.style.vertical_align = "center"
+		row.style.horizontal_spacing = 8
+		row.style.left_margin = 8
+		row.style.right_margin = 8
+		row.style.top_margin = 4
+		row.style.bottom_margin = 4
+		local radio = row.add{type = "radiobutton", name = PREFIX .. "target_" .. idx, state = state.selected_id == entry.instanceId,
+			caption = entry.name, tags = {teleport_instance = entry.instanceId}}
+		radio.enabled = online
+		if entry.address and entry.address ~= "" then
+			local address = row.add{type = "label", caption = entry.address}
+			address.style.font_color = COLOR_MUTED
+		end
+		row.add{type = "empty-widget"}.style.horizontally_stretchable = true
+		local status = row.add{type = "sprite", sprite = online and "utility/status_working" or "utility/status_not_working"}
+		status.style.size = 16
+		status.style.stretch_image_to_widget_size = true
+		local status_label = row.add{type = "label", caption = online and "Online" or "Offline"}
+		status_label.style.font_color = online and COLOR_ONLINE or COLOR_OFFLINE
+	end
+
+	local footer = frame.add{type = "flow", direction = "horizontal", style = "dialog_buttons_horizontal_flow"}
+	footer.add{type = "button", name = CANCEL_NAME, caption = "Close", style = "back_button"}
+	local pusher = footer.add{type = "empty-widget", style = "draggable_space", ignored_by_interaction = true}
+	pusher.style.horizontally_stretchable = true
+	pusher.style.height = 32
+	local connect = footer.add{type = "button", name = CONNECT_NAME, caption = "Connect", style = "confirm_button"}
+	connect.enabled = selected_entry(state) ~= nil
+	if not connect.enabled then connect.tooltip = "Choose an online instance." end
 
 	player.opened = frame
-	open_guis[player.index] = { frame = frame, dropdown = dropdown, entries = entries }
+	open_guis()[player.index] = state
 end
 
 function TeleportGui.open(player)
 	build(player)
 end
 
+function TeleportGui.is_open(player)
+	return player.gui.screen[FRAME_NAME] ~= nil
+end
+
 function TeleportGui.refresh_all()
-	for player_index in pairs(open_guis) do
+	for player_index in pairs(open_guis()) do
 		local player = game.get_player(player_index)
-		if player and player.valid then
+		if player and player.valid and player.gui.screen[FRAME_NAME] then
 			build(player)
 		else
-			open_guis[player_index] = nil
+			open_guis()[player_index] = nil
 		end
 	end
 end
 
 local function close(player_index)
-	local state = open_guis[player_index]
-	if state and state.frame and state.frame.valid then
-		state.frame.destroy()
-	end
-	open_guis[player_index] = nil
+	local player = game.get_player(player_index)
+	local frame = player and player.gui.screen[FRAME_NAME]
+	if frame then frame.destroy() end
+	open_guis()[player_index] = nil
+end
+
+function TeleportGui.close(player)
+	close(player.index)
 end
 
 function TeleportGui.on_gui_click(event)
 	local element = event.element
-	if not (element and element.valid) then return end
+	if not (element and element.valid and type(element.name) == "string") then return end
 	local name = element.name
-	if name ~= CLOSE_NAME and name ~= REFRESH_NAME and name ~= CONNECT_NAME then return end
+	if name:sub(1, #PREFIX) ~= PREFIX then return end
+	local player = game.get_player(event.player_index)
+	if not player then return end
 
-	local state = open_guis[event.player_index]
-	if not state then
-		local player = game.get_player(event.player_index)
-		local orphan = player and player.gui.screen[FRAME_NAME]
-		if orphan then orphan.destroy() end
+	local state = open_guis()[event.player_index]
+	if not state or name == CLOSE_NAME or name == CANCEL_NAME then
+		close(event.player_index)
 		return
 	end
 
-	if element.name == CLOSE_NAME then
-		close(event.player_index)
-	elseif element.name == REFRESH_NAME then
-		local player = game.get_player(event.player_index)
-		if player then
-			TeleportGui.request_roster()
-			player.print("Refreshing the instance roster…")
-		end
-	elseif element.name == CONNECT_NAME then
-		local player = game.get_player(event.player_index)
-		if not player then return end
+	local instance_id = element.tags and element.tags.teleport_instance
+	if instance_id then
+		state.selected_id = instance_id
+		build(player)
+	elseif name == REFRESH_NAME then
+		TeleportGui.request_roster()
+	elseif name == CONNECT_NAME then
 		if not TeleportGui.is_allowed(player) then
 			player.print(string.format(
 				"You are no longer allowed to teleport (admins or the '%s' permission group).",
@@ -162,14 +209,9 @@ function TeleportGui.on_gui_click(event)
 			close(event.player_index)
 			return
 		end
-		local dropdown = state.dropdown
-		local entry = dropdown and dropdown.valid and state.entries[dropdown.selected_index]
+		local entry = selected_entry(state)
 		if not entry then
-			player.print("Select a destination instance first.")
-			return
-		end
-		if not entry.online then
-			player.print(string.format("%s is OFFLINE — not sending a connect prompt.", entry.name))
+			player.print("Choose an online instance first.")
 			return
 		end
 		if not entry.address or entry.address == "" then
@@ -186,13 +228,8 @@ end
 
 function TeleportGui.on_gui_closed(event)
 	local element = event.element
-	if not (element and element.valid and element.name == FRAME_NAME) then return end
-	local state = open_guis[event.player_index]
-	if state and state.frame and state.frame.valid and element.index == state.frame.index then
+	if element and element.valid and element.name == FRAME_NAME then
 		close(event.player_index)
-	else
-		element.destroy()
-		open_guis[event.player_index] = nil
 	end
 end
 

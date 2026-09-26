@@ -72,6 +72,8 @@ jobs:
           lua5.2 tests/lua/planet-policy.lua
           lua5.2 tests/lua/platform-boarding.lua
           lua5.2 tests/lua/gateway-dialog.lua
+          lua5.2 tests/lua/gateway-portal.lua
+          lua5.2 tests/lua/teleport-window.lua
           lua5.2 tests/lua/remote-debug-gates.lua
           lua5.2 tests/lua/player-travel.lua
           lua5.2 tests/lua/export-cache-protection.lua

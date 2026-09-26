@@ -14,6 +14,7 @@ local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
 local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
+local GatewayPortal = require("modules/surface_export/interfaces/gui/gateway-portal")
 
 local function refresh_player(event, use_default)
 	local player = game.get_player(event.player_index)
@@ -21,6 +22,7 @@ local function refresh_player(event, use_default)
 	PlanetPolicy.ensure_player(player, use_default)
 	InstancePanel.refresh_button(player)
 	DebugControls.refresh(player)
+	GatewayPortal.refresh(player)
 end
 
 local SurfaceExportModule = {}
@@ -78,6 +80,7 @@ SurfaceExportModule.events = {
 				else storage.surface_export_pending_arrivals[player_index] = nil end
 			end
 			TeleportGui.flush_announcements()
+			for _, player in pairs(game.connected_players) do GatewayPortal.refresh(player) end
 		end
 		if storage.source_recovery_ready == false then
 			AsyncProcessor.process_tick(true)
@@ -130,6 +133,10 @@ SurfaceExportModule.events = {
 		local platform = event.platform
 		if not (platform and platform.valid) then return end
 		GatewayTransferGui.platform_state_changed(platform)
+		local platform_surface = platform.surface
+		for _, player in pairs(platform_surface and game.connected_players or {}) do
+			if player.physical_surface_index == platform_surface.index then GatewayPortal.refresh(player) end
+		end
 
 		local sps = defines.space_platform_state
 
@@ -210,6 +217,7 @@ SurfaceExportModule.events = {
 		TeleportGui.on_gui_click(event)
 		InstancePanel.on_gui_click(event)
 		DebugControls.on_gui_click(event)
+		GatewayPortal.on_gui_click(event)
 	end,
 
 	[e.on_gui_checked_state_changed] = GatewayTransferGui.on_gui_click,
