@@ -413,13 +413,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 				tostring(gateway_target)))
 			gateway_target = nil
 		end
-		if gateway_target and Gateway.is_instance_gateway(gateway_target) then
-			local hub = Gateway.PREFIX .. "hub"
-			log(string.format("[Gateway] gateway_target '%s' is a server destination; arriving at '%s' instead",
-				gateway_target, hub))
-			gateway_target = Gateway.is_gateway(hub) and hub or nil
-		end
 		local park_target = requested_park or gateway_target
+		if park_target and Gateway.is_instance_gateway(park_target) then
+			local hub = Gateway.PREFIX .. "hub"
+			log(string.format("[Gateway] park target '%s' is a server destination; arriving at '%s' instead",
+				park_target, hub))
+			park_target = Gateway.is_gateway(hub) and hub or nil
+		end
 
 		if park_target then
 			if not is_transfer then
