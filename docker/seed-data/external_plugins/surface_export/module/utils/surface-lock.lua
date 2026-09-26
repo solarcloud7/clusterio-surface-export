@@ -519,6 +519,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local force = game.forces[lock_data.force_name]
     if not force then
         storage.locked_platforms[platform_index] = nil
+        release_passengers(released_job_id)
         return false, "Force not found: " .. tostring(lock_data.force_name)
     end
 

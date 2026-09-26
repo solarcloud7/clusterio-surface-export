@@ -144,6 +144,7 @@ local function new_player(index, name, connected, body)
 		end
 	end
 	p.teleport = function(position, target)
+		if p.teleport_refused then return false end
 		target = target or surfaces[p.physical_surface_index]
 		if p.controller_type == controllers.remote then
 			p.surface_index = target.index
@@ -171,7 +172,9 @@ local function new_player(index, name, connected, body)
 		p.controller_type = controllers.character
 		return true
 	end
-	p.get_associated_characters = function() return {} end
+	p.associated = {}
+	p.get_associated_characters = function() return p.associated end
+	p.clear_cursor = function() return not p.cursor_stuck end
 	p.join = function()
 		p.connected = true
 		if p.stored then p.character, p.stored = p.stored, nil end
@@ -449,6 +452,74 @@ assert(created == 1 and jay.character and jay.character ~= jay_body and not tran
 	"a body is created only when the parked body no longer exists")
 print("PASS a body is created only when the passenger has none")
 
+local kay_body = character(nil, gear())
+local kay = new_player(11, "kay", true, kay_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {kay})
+transit.assign_job(parked, "job-12")
+transit.depart("job-12")
+window.close(kay)
+transit.toggle_window(kay)
+frame = kay.gui.screen[window.FRAME]
+assert(frame and not find(frame, window.JOIN), "no arrival offer before the source deletion is confirmed")
+transit.on_gui_click{player_index = 11, element = {valid = true, name = window.STAY}}
+env.game.tick = env.game.tick + transit.OFFER_TICKS + 1
+transit.on_tick()
+assert(transit.owns(kay) and kay.character == nil, "Stay and the ten-minute timer wait for the confirmed deletion")
+transit.on_gui_click{player_index = 11, element = {valid = true, name = window.ABORT}}
+assert(transit.owns(kay) and env.storage.surface_export_passengers[11].state == "departed", "Abort is refused after departure")
+transit.notify_departed("job-12")
+assert(find(kay.gui.screen[window.FRAME], window.JOIN), "the arrival offer appears once the deletion is confirmed")
+env.game.tick = env.game.tick + transit.OFFER_TICKS - 1
+transit.on_tick()
+assert(transit.owns(kay), "the ten-minute offer counts from the confirmed deletion")
+env.game.tick = env.game.tick + 1
+transit.on_tick()
+assert(not transit.owns(kay) and kay.character == kay_body, "the offer ends ten minutes after the confirmed deletion")
+print("PASS the arrival offer, Stay and the timer start only after the source deletion is confirmed")
+
+local lee_body = character(nil, gear())
+local lee = new_player(12, "lee", true, lee_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {lee})
+env.game.tick = env.game.tick + 60
+transit.on_tick()
+assert(transit.owns(lee), "a just-parked passenger waits for the job id")
+env.game.tick = env.game.tick + 600
+transit.on_tick()
+assert(not transit.owns(lee) and lee.character == lee_body and lee.in_hub, "a parked passenger whose transfer never got a job returns aboard")
+print("PASS a parked passenger without a job returns aboard")
+
+local mae_body = character(nil, gear())
+local mae = new_player(13, "mae", true, mae_body)
+mae.cursor_stuck = true
+assert(#transit.park(platform, target, "surfexp_gateway_hub", {mae}) == 0 and not transit.owns(mae)
+	and mae.character == mae_body and mae.in_hub, "a passenger whose cursor cannot be emptied stays aboard")
+print("PASS a passenger whose cursor cannot be emptied is not parked")
+
+local ned_body = character(nil, gear())
+local ned = new_player(14, "ned", true, ned_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {ned})
+transit.assign_job(parked, "job-13")
+ned_body.valid = false
+local spare = character(nauvis)
+ned.associated = {spare}
+ned.teleport_refused = true
+local logs_before = #logged
+transit.transfer_released("job-13")
+local refused = false
+for i = logs_before + 1, #logged do refused = refused or logged[i]:find("existing character was refused", 1, true) ~= nil end
+assert(transit.owns(ned) and ned.character == nil and refused, "a refused teleport to an existing character stops the reattach")
+ned.teleport_refused = false
+print("PASS a refused teleport to an existing character stops the reattach")
+
+local ona = new_player(15, "ona", true, character(nil, gear()))
+parked = transit.park(platform, {instanceId = 3, instanceName = "Three", address = ""}, "surfexp_gateway_hub", {ona})
+transit.assign_job(parked, "job-14")
+transit.depart("job-14")
+transit.notify_departed("job-14")
+local join = find(ona.gui.screen[window.FRAME], window.JOIN)
+assert(join and not join.enabled and join.tooltip and #ona.connects == 0, "Join is disabled with a reason when the destination has no address")
+print("PASS Join is disabled when the destination has no address")
+
 local lock_env = setmetatable({storage = {source_recovery_ready = true, locked_platforms = {}}, log = noop,
 	game = {forces = {player = force}}}, {__index = _G})
 local released = {}
@@ -476,7 +547,10 @@ lock("transfer", "job-9")
 assert(surface_lock.unlock_platform(7, nil, nil, nil, "job-9") and released[1] == "job-9", "a transfer unlock should return that job's passengers")
 lock("export", "job-10")
 assert(surface_lock.unlock_platform(7) and #released == 1, "an export unlock has no passengers")
+lock("transfer", "job-15")
+lock_env.storage.locked_platforms[7].force_name = "ghost"
+assert(not surface_lock.unlock_platform(7) and released[#released] == "job-15", "a lock cleared for a missing force returns its passengers")
 lock("transfer", "job-11")
 lock_env.storage.locked_platforms[7].phase = "committed"
-assert(not surface_lock.unlock_platform(7) and #released == 1, "a committed source keeps its passengers in transit")
+assert(not surface_lock.unlock_platform(7) and #released == 2, "a committed source keeps its passengers in transit")
 print("PASS the transfer unlock returns its job's passengers after the lock is released")

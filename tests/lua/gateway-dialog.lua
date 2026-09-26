@@ -53,6 +53,7 @@ local env = setmetatable({
 		get_surface = function(index) return index == 70 and platform.surface or nil end},
 	prototypes = {space_location = {surfexp_gateway_hub = {localised_name = "Gateway Hub"}}},
 	helpers = {is_valid_sprite_path = function() return true end},
+	log = function() end,
 }, {__index = _G})
 env.require = function(name)
 	if name:find("platform-identity", 1, true) then return function(p) return "uid:" .. p.index end end
@@ -67,6 +68,7 @@ env.require = function(name)
 	if name:find("transfer-trigger", 1, true) then
 		return {start = function(_, index, instance, gateway)
 			started[#started + 1] = {index, instance, gateway, parked_before = #passenger_calls}
+			if start_error == "throw" then error("injected start exception") end
 			if start_error then return nil, start_error end
 			return "job-" .. #started
 		end}
@@ -193,3 +195,11 @@ dialog.on_gui_click{player_index = 1, element = named(player.gui.screen[FRAME], 
 for _, call in ipairs(passenger_calls) do assert(call[1] ~= "park" and call[2] == nil, "a refused transfer should not park anyone") end
 locked = false
 print("PASS passengers are parked only for an allowed transfer and returned when it fails to start")
+
+passenger_calls, start_error = {}, "throw"
+if not player.gui.screen[FRAME] then assert(dialog.open(player, platform, "surfexp_gateway_hub")) end
+local threw = not pcall(dialog.on_gui_click, {player_index = 1, element = named(player.gui.screen[FRAME], "surfexp_gw_transfer")})
+assert(not threw and passenger_calls[1][1] == "park" and passenger_calls[2] and passenger_calls[2][1] == "return",
+	"a transfer start that raises should still return the parked passengers")
+start_error = nil
+print("PASS a transfer start that raises returns the parked passengers")

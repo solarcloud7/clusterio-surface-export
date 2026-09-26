@@ -10,6 +10,7 @@ local Transit = {}
 
 Transit.HOLD_SURFACE = Gateway.PASSENGER_HOLD
 Transit.OFFER_TICKS = 10 * 60 * 60
+Transit.JOB_WAIT_TICKS = 5 * 60
 
 local CARRIED = {
 	{key = "main", inventory = "character_main"},
@@ -89,7 +90,7 @@ end
 local function show_window(player, record)
 	if not player.connected then return end
 	local planet = PlanetPolicy.default_planet()
-	if record.state == "in_transit" then
+	if record.state == "in_transit" or (record.state == "departed" and not record.notified) then
 		PassengerWindow.show_transit(player, record, planet)
 	elseif record.state == "departed" then
 		PassengerWindow.show_arrived(player, record, planet)
@@ -118,6 +119,7 @@ local function remote_view(player, platform)
 end
 
 local function park_connected(player, record, platform, hold)
+	if not player.clear_cursor() then return false end
 	player.leave_space_platform()
 	local body = player.character
 	if not (body and body.valid) then return false end
@@ -153,7 +155,9 @@ local function reattach(player, record)
 	for _, associated in pairs(player.get_associated_characters()) do
 		if associated.valid then
 			if player.controller_type ~= defines.controllers.god then player.set_controller{type = defines.controllers.god} end
-			player.teleport(associated.position, associated.surface)
+			if not player.teleport(associated.position, associated.surface) then
+				error("player teleport to the existing character was refused")
+			end
 			player.set_controller{type = defines.controllers.character, character = associated}
 			return player.character == associated
 		end
@@ -334,7 +338,7 @@ end
 function Transit.notify_departed(job_id)
 	for index, record in pairs(records()) do
 		if record.job_id == job_id and record.state == "departed" and not record.notified then
-			record.notified = true
+			record.notified, record.notified_tick = true, game.tick
 			local player = game.get_player(index)
 			if player and player.connected then
 				GameUtils.pcall_warn("[Passenger] move the departed view of " .. tostring(player.name), function()
@@ -367,7 +371,7 @@ end
 function Transit.on_join(player)
 	local record = Transit.record(player)
 	if not record then return false end
-	if record.state == "in_transit" then
+	if record.state == "in_transit" or (record.state == "departed" and not record.notified) then
 		GameUtils.pcall_warn("[Passenger] resume transit for " .. tostring(player.name), function() resume(player, record) end)
 		show_window(player, record)
 	elseif record.state == "departed" or record.state == "aborted" then
@@ -383,10 +387,16 @@ function Transit.on_tick()
 	if not list or next(list) == nil then return end
 	for index, record in pairs(list) do
 		local player = game.get_player(index)
+		if record.state == "in_transit" and not record.job_id
+			and game.tick >= (record.started_tick or 0) + Transit.JOB_WAIT_TICKS then
+			log(string.format("[Passenger] '%s' was parked without a transfer job; returning aboard", tostring(record.player_name)))
+			record.state = "returned"
+		end
 		if not player then
 			list[index] = nil
 		elseif player.connected then
-			if record.state == "departed" and game.tick >= (record.departed_tick or 0) + Transit.OFFER_TICKS then
+			if record.state == "departed" and record.notified
+				and game.tick >= (record.notified_tick or 0) + Transit.OFFER_TICKS then
 				Transit.restore(player, record, "landing")
 			elseif record.state == "aborted" then
 				Transit.restore(player, record, "landing")
@@ -411,11 +421,12 @@ function Transit.on_gui_click(event)
 		if Transit.abort(player) then
 			player.print("Transfer aborted. You stayed behind.")
 		elseif Transit.record(player) then
+			if Transit.record(player).state == "departed" then player.print("The platform has already left; the transfer can no longer be aborted.") end
 			show_window(player, Transit.record(player))
 		end
-	elseif name == PassengerWindow.STAY and record.state == "departed" then
+	elseif name == PassengerWindow.STAY and record.state == "departed" and record.notified then
 		Transit.restore(player, record, "landing")
-	elseif name == PassengerWindow.JOIN and record.state == "departed" then
+	elseif name == PassengerWindow.JOIN and record.state == "departed" and record.notified then
 		connect(player, record)
 	end
 end

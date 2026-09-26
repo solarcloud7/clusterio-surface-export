@@ -323,7 +323,11 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	end
 	local job_id
 	guard.start_fn = function()
-		local id, err = TransferTrigger.start(force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
+		local ok, id, err = pcall(TransferTrigger.start, force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
+		if not ok then
+			log("[Gateway] transfer start raised: " .. tostring(id))
+			return nil, tostring(id)
+		end
 		job_id = id
 		return id, err
 	end
