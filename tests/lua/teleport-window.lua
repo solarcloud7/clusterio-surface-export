@@ -33,8 +33,8 @@ local function captioned(element, text)
 	return find(element, function(child) return type(child.caption) == "string" and child.caption:find(text, 1, true) ~= nil end)
 end
 
-local connects, printed, requests = {}, {}, 0
-local player = {index = 1, valid = true, admin = true, gui = {screen = gui()}}
+local connects, printed, logged, requests = {}, {}, {}, 0
+local player = {index = 1, name = "tester", valid = true, admin = true, gui = {screen = gui()}}
 player.print = function(message) printed[#printed + 1] = message end
 player.connect_to_server = function(options) connects[#connects + 1] = options end
 
@@ -42,6 +42,7 @@ local env = setmetatable({
 	storage = {},
 	game = {get_player = function() return player end, permissions = {}},
 	helpers = {is_valid_sprite_path = function() return true end},
+	log = function(message) logged[#logged + 1] = message end,
 }, {__index = _G})
 env.require = function(name)
 	if name:find("clusterio/api", 1, true) then
@@ -90,7 +91,10 @@ print("PASS choosing and refreshing keeps a valid selection")
 teleport.on_gui_click{player_index = 1, element = named(player.gui.screen[FRAME], "surface_export_teleport_connect")}
 assert(#connects == 1 and connects[1].address == "host:2" and connects[1].name == "Two", "Connect should prompt for the chosen instance")
 assert(not player.gui.screen[FRAME] and not env.storage.surface_export_teleport_guis[1], "Connect should close the window")
-print("PASS Connect sends the connect prompt for the chosen instance and closes")
+assert(#printed == 0, "the connect prompt is the player's feedback; nothing should be printed to chat")
+assert(#logged == 1 and logged[1]:find("tester", 1, true) and logged[1]:find("Two (host:2)", 1, true),
+	"the connect prompt should be logged with the player and destination")
+print("PASS Connect sends the connect prompt for the chosen instance, logs it and closes")
 
 teleport.open(player)
 player.admin = false
