@@ -21,6 +21,8 @@ There is no separate plugin settings store.
 | `platform_source_of_truth` | `plugin_history` | `plugin_history` protects previously transferred source copies restored from saves. `save_game` accepts a restored copy with a fresh identity when no unresolved handoff owns it. Applied at instance restart. |
 | `max_inflight_transfers_per_instance` | 1 | Experimental admission limit, 1–4; not exposed in the Settings tab. Unresolved recovery blocks admission. |
 | `gateway_mode` | `one_gate` | Gateway layout, with `multi` retained as an alternative. Not exposed in the Settings tab. Must match the gateway mod's startup setting. |
+| `passenger_carry_armor` | `true` | Armor carry over?: passengers take their worn armor through a gateway. Sent with the gateway configuration and applied to the next transfer. Not exposed in the Settings tab. See [passenger transfer](passenger-transfer.md). |
+| `passenger_carry_inventory` | `false` | Inventory carry over?: passengers take their main inventory, weapons, ammunition and logistic trash. Sent with the gateway configuration and applied to the next transfer. Not exposed in the Settings tab. |
 
 The Settings tab shows configured and applied recovery modes and restart
 requirements. Both modes retain active-transfer protections and existing outcomes.

@@ -84,6 +84,7 @@ for _, pending in ipairs({false, true}) do
             if name:find("platform-schedule", 1, true) then return {capture = function() return {} end} end
             if name:find("latch_rearm", 1, true) then return {pending_on_surface = function() return pending end} end
             if name:find("platform-identity", 1, true) then return function() return nil end end
+            if name:find("passenger-transit", 1, true) then return {transfer_released = function() end} end
             error(name)
         end}, {__index = _G})
     local lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
@@ -101,7 +102,15 @@ lock_api.accept_restored_source = function(index, old_id)
 end
 recovery.startup()
 assert(recovery.begin("boot-save", "journal-a", true, "save_game", true).success)
+env.storage.surface_export_passengers = {[5] = {state = "returned", job_id = "job-old", platform_index = 3, platform_uid = "boot-b:16"},
+    [6] = {state = "returned", job_id = "job-other", platform_index = 3, platform_uid = "boot-b:16"}}
+env.storage.surface_export_arrivals = {pat = {["returned:job-old"] = {platform_index = 3, platform_uid = "boot-b:16", items = {}}}}
 local accepted = recovery.reconcile(3, "boot-b:16", "job-old")
+assert(env.storage.surface_export_passengers[5].platform_uid == accepted.platformUid
+    and env.storage.surface_export_arrivals.pat["returned:job-old"].platform_uid == accepted.platformUid,
+    "passenger records of the adopted transfer follow the new identity")
+assert(env.storage.surface_export_passengers[6].platform_uid == "boot-b:16", "other transfers keep their identity")
+env.storage.surface_export_passengers, env.storage.surface_export_arrivals = nil, nil
 assert(accepted.accepted and not platform.hidden, "save-game policy did not accept the restored source")
 assert(recovery.finish().success)
 assert(not recovery.matches(platform, "boot-b:16"), "old identity can address an accepted restoration")
@@ -338,7 +347,9 @@ local gui_player={index=1,print=function() end,gui={screen={}}}
 local gui_env=setmetatable({game={forces={player=gui_force}},storage={}},{__index=_G})
 gui_env.require=function(name)
     if name:find("platform-identity",1,true) then return function() return gui_uid end end
-    if name:find("gateway-guard",1,true) then return {guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end
+    if name:find("gateway-guard",1,true) then return {evaluate=function() return {allowed=true} end,
+        guard_and_transfer=function(opts) return {started=opts.start_fn()} end} end
+    if name:find("passenger-transit",1,true) then return {park=function() return {} end,assign_job=function() end,return_parked=function() end} end
     if name:find("transfer-trigger",1,true) then return {start=function() started=started+1;return true end} end
     if name:find("surface-lock",1,true) then return {is_locked=function() return false end} end
     return {parked_at_gateway=function() return "gateway" end,collect_passengers=function() return {},0 end}
@@ -353,3 +364,24 @@ assert(started==1,"old in-game dialog started a replacement platform")
 selection.platform_uid=nil;gui.confirm_transfer(gui_player,selection)
 assert(started==1,"unidentified in-game dialog started a transfer")
 print("PASS in-game gateway confirmation binds the displayed copy instead of a reusable index")
+
+do
+    local retention
+    local plat = {valid = true, index = 4, name = "ship", surface = {valid = true, index = 12}}
+    local ctx = setmetatable({storage = {locked_platforms = {[4] = {kind = "transfer", phase = "pre_commit", transfer_job_id = "job-r",
+        platform_index = 4, platform_name = "ship", force_name = "player", surface_index = 12, platform_uid = "uid:4"}}},
+        game = {tick = 100, forces = {player = {platforms = {[4] = plat}}}}, log = function() end,
+        require = function(name)
+            if name:find("passenger-transit", 1, true) then return {transfer_released = function() end} end
+            if name:find("platform-identity", 1, true) then return function() return "uid:4" end end
+            return {ACTIVATABLE_ENTITY_TYPES = {}}
+        end}, {__index = _G})
+    local lock_module = assert(loadfile(root .. "utils/surface-lock.lua", "t", ctx))()
+    retention = lock_module.COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS
+    assert(lock_module.commit_source_transfer_lock(4, "job-r"))
+    ctx.game.tick = 100 + retention + 1
+    assert(lock_module.commit_source_transfer_lock(4, "job-r"), "a retried commit is accepted")
+    assert(ctx.storage.committed_source_transfer_tombstones["job-r"], "a retried commit must not prune its own tombstone")
+    assert(lock_module.clear_committed_source_lock_after_delete(4, "job-r"), "the source lock clears after a late retried deletion")
+    print("PASS a commit retried after the tombstone retention keeps its tombstone")
+end

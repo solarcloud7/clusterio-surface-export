@@ -1,6 +1,7 @@
 local Gateway = require("modules/surface_export/core/gateway")
 local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui")
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
+local PassengerTransit = require("modules/surface_export/core/passenger-transit")
 
 local Portal = {}
 
@@ -30,7 +31,7 @@ end
 
 function Portal.refresh(player)
 	if not (player and player.valid) then return end
-	show(player, GATEWAY_BUTTON, parked(player) ~= nil, GATEWAY_SPRITE, "entity/space-platform-hub",
+	show(player, GATEWAY_BUTTON, PassengerTransit.owns(player) or parked(player) ~= nil, GATEWAY_SPRITE, "entity/space-platform-hub",
 		"Gateway: choose where this platform goes.")
 	show(player, TELEPORT_BUTTON, TeleportGui.is_allowed(player), TeleportGui.ICON, "utility/character_running_speed_modifier_icon",
 		"Teleport: connect to another instance.")
@@ -44,7 +45,9 @@ function Portal.on_gui_click(event)
 	local player = game.get_player(event.player_index)
 	if not player then return end
 	if name == GATEWAY_BUTTON then
-		if GatewayTransferGui.is_open(player) then
+		if PassengerTransit.owns(player) then
+			PassengerTransit.toggle_window(player)
+		elseif GatewayTransferGui.is_open(player) then
 			GatewayTransferGui.close(player)
 		else
 			local platform, gateway_name = parked(player)

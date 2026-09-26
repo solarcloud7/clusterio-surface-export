@@ -264,3 +264,56 @@ test("an instance status change re-pushes gateway config to every linked source"
 	assert.equal(results.get(2), "instance 2 unreachable");
 	assert.equal(results.has(3), false);
 });
+
+async function addressFixture(t, settings = {}) {
+	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-address-"));
+	t.after(() => fs.rm(directory, { recursive: true, force: true }));
+	const config = new Map([["controller.database_directory", directory], ["surface_export.gateway_mode", "one_gate"],
+		...Object.entries(settings)]);
+	const instance = (id, hostId, gamePort) => ({ id, gamePort, config: { get: key => key === "instance.assigned_host" ? hostId : undefined } });
+	const sends = [];
+	const controller = {
+		config: { get: key => config.get(key) },
+		instances: new Map([[1, instance(1, 10, 34197)], [2, instance(2, 10, 34198)], [3, instance(3, 11, 34199)]]),
+		hosts: new Map([[10, { publicAddress: "game.example.net" }], [11, {}]]),
+		async sendTo(target, message) {
+			sends.push({ target, message });
+			return { success: true };
+		},
+	};
+	const logger = Object.fromEntries(["info", "warn", "error", "verbose"].map(level => [level, () => {}]));
+	const plugin = new GatewayConfig(controller, logger, { isInstanceOnline: () => true, resolveInstanceName: id => `instance-${id}` });
+	return { plugin, controller, config, sends };
+}
+
+test("resolved gateway targets carry the destination join address", async t => {
+	const { plugin, sends } = await addressFixture(t);
+	plugin.gatewayLinks.set(`1:${ONE_GATE_NAME}`, [target(2), target(3), target(9)]);
+	const view = await plugin.handleGetGatewayConfigRequest({ instanceId: 1 });
+	assert.deepEqual(view.gateways[0].targets.map(entry => entry.address), ["game.example.net:34198", "localhost:34199", ""]);
+	assert.equal(await plugin.pushGatewayConfigToInstance(1), null);
+	assert.deepEqual(sends[0].message.gateways, view.gateways);
+});
+
+test("a deleted destination resolves to an empty address", async t => {
+	const { plugin, controller } = await addressFixture(t);
+	controller.instances.get(2).isDeleted = true;
+	plugin.gatewayLinks.set(`1:${ONE_GATE_NAME}`, [target(2)]);
+	const view = await plugin.handleGetGatewayConfigRequest({ instanceId: 1 });
+	assert.equal(view.gateways[0].targets[0].address, "");
+});
+
+test("gateway pushes and pulls carry passenger carry settings with defaults", async t => {
+	const { plugin, config, sends } = await addressFixture(t);
+	plugin.gatewayLinks.set(`1:${ONE_GATE_NAME}`, [target(2)]);
+	assert.deepEqual((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).passengerCarry, { armor: true, inventory: false });
+	await plugin.pushGatewayConfigToInstance(1);
+	assert.deepEqual(sends.at(-1).message.passengerCarry, { armor: true, inventory: false });
+	assert.deepEqual(sends.at(-1).message.toJSON().passengerCarry, { armor: true, inventory: false });
+	config.set("surface_export.passenger_carry_armor", false);
+	config.set("surface_export.passenger_carry_inventory", true);
+	assert.deepEqual((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).passengerCarry, { armor: false, inventory: true });
+	await plugin.pushGatewayConfigToAllSources();
+	assert.deepEqual(sends.at(-1).message.passengerCarry, { armor: false, inventory: true });
+	assert.deepEqual(sends.map(send => send.target), [{ instanceId: 1 }, { instanceId: 1 }]);
+});

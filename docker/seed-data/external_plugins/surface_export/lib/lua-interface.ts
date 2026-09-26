@@ -1,7 +1,7 @@
 import { timed, timedSync } from "./timing";
 import { normalizeSectionExport, prepareSectionImport } from "./section-codec";
 import { escapeString } from "@clusterio/lib";
-import type { ExportData } from "../messages";
+import type { ExportData, PassengerCarry, PassengerManifestEntry } from "../messages";
 import { UploadSessions, type UploadReceipt } from "./upload-session";
 import {
 	chunkify,
@@ -98,6 +98,27 @@ export class LuaInterface {
 		this.logger.info(`Gateway config pushed in ${chunks.length} chunk(s): `
 			+ `${expectedGateways} gateway(s), ${expectedBytes} bytes`);
 		return { gateways: expectedGateways };
+	}
+
+	async configurePassengerCarry(carry: PassengerCarry): Promise<void> {
+		const armor = carry.armor === true;
+		const inventory = carry.inventory === true;
+		const script = `/sc ` +
+			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
+			`remote.call("surface_export", "configure", {passenger_carry_armor=${armor}, passenger_carry_inventory=${inventory}}); ` +
+			`rcon.print(helpers.table_to_json({armor=storage.surface_export_config.passenger_carry_armor == true, inventory=storage.surface_export_config.passenger_carry_inventory == true})) ` +
+			`end`;
+		const raw = String(await this.host.sendRcon(script) || "").trim();
+		let response: { armor?: unknown; inventory?: unknown };
+		try {
+			response = JSON.parse(raw) as { armor?: unknown; inventory?: unknown };
+		} catch (err: unknown) {
+			throw new Error(`Passenger carry configuration returned a non-JSON reply "${raw.slice(0, 200)}" (${getErrorMessage(err)})`);
+		}
+		if (response?.armor !== armor || response.inventory !== inventory) {
+			throw new Error(`Passenger carry acknowledgement does not match: applied armor=${String(response?.armor)} inventory=${String(response?.inventory)}, `
+				+ `expected armor=${armor} inventory=${inventory}`);
+		}
 	}
 
 	private gatewayRemoteScript(remoteCallExpr: string): string {
@@ -229,7 +250,50 @@ export class LuaInterface {
 		return result;
 	}
 
-	async destinationTransferGate(transferId: string, action: "verify" | "go_live"): Promise<string> {
+	async passengerManifest(jobId: string): Promise<PassengerManifestEntry[]> {
+		const raw = String(await this.host.sendRcon(
+			`/sc rcon.print(remote.call("surface_export", "passenger_manifest", "${escapeString(jobId)}"))`,
+		) || "").trim();
+		let response: { success?: unknown; error?: unknown; passengers?: unknown };
+		try {
+			response = JSON.parse(raw) as { success?: unknown; error?: unknown; passengers?: unknown };
+		} catch (err: unknown) {
+			throw new Error(`Passenger manifest returned a non-JSON reply "${raw.slice(0, 200)}" (${getErrorMessage(err)})`);
+		}
+		if (response?.success !== true) {
+			throw new Error(`Passenger manifest refused: ${String(response?.error ?? "unknown")}`);
+		}
+		const passengers = Array.isArray(response.passengers) ? response.passengers as unknown[] : [];
+		return passengers.map(entry => {
+			const passenger = entry as { name?: unknown; items?: unknown } | null;
+			if (!passenger || typeof passenger !== "object" || typeof passenger.name !== "string") {
+				throw new Error(`Passenger manifest entry has no player name: ${JSON.stringify(entry)?.slice(0, 200)}`);
+			}
+			return { ...passenger, name: passenger.name, items: Array.isArray(passenger.items) ? passenger.items as Record<string, unknown>[] : [] };
+		});
+	}
+
+	private async stagePassengerManifest(transferId: string, passengers: PassengerManifestEntry[]): Promise<void> {
+		const chunks = chunkify(GATEWAY_CONFIG_CHUNK_SIZE, toAsciiJson(JSON.stringify(passengers)));
+		for (let i = 0; i < chunks.length; i++) {
+			const raw = String(await this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "passenger_manifest_stage", `
+				+ `"${escapeString(transferId)}", ${i + 1}, ${chunks.length}, ${bracketWrap(chunks[i])}))`) || "").trim();
+			let reply: { ok?: unknown; error?: unknown };
+			try {
+				reply = JSON.parse(raw) as { ok?: unknown; error?: unknown };
+			} catch (err: unknown) {
+				throw new Error(`Passenger manifest stage ${i + 1}/${chunks.length}: non-JSON reply "${raw.slice(0, 200)}" (${getErrorMessage(err)})`);
+			}
+			if (reply?.ok !== true) {
+				throw new Error(`Passenger manifest stage ${i + 1}/${chunks.length} failed: ${String(reply?.error ?? "unknown")}`);
+			}
+		}
+	}
+
+	async destinationTransferGate(transferId: string, action: "verify" | "go_live", passengers?: PassengerManifestEntry[]): Promise<string> {
+		if (action === "go_live" && passengers && passengers.length > 0) {
+			await this.stagePassengerManifest(transferId, passengers);
+		}
 		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "destination_hold_json", `
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
 	}

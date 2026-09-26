@@ -4,6 +4,7 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local PassengerTransit = require("modules/surface_export/core/passenger-transit")
 
 local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   if type(expected_job_id) ~= "string" or expected_job_id == "" then
@@ -35,6 +36,10 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
   if not committed then return "ERROR:" .. tostring(commit_error) end
 
+  local departed_ok, manifest = pcall(PassengerTransit.depart, expected_job_id)
+  if not departed_ok then
+    return "ERROR:passenger departure failed: " .. tostring(manifest)
+  end
   -- Retain identity and the frozen source until deletion actually succeeds.
   -- A failed request must not unlock it or publish a source-deleted tombstone.
   local evacuation_ok, evacuation = pcall(Gateway.evacuate_passengers, platform)
@@ -64,8 +69,12 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
         platform_index = platform_index, force_name = force_name,
         platform_uid = expected_uid,
         surface_index = lock.surface_index, tick = game.tick,
+        passengers = manifest,
       })
+      PassengerTransit.settle(expected_job_id)
     end
+    local notified, notify_error = pcall(PassengerTransit.notify_departed, expected_job_id)
+    if not notified then log("[Transfer] Passenger departure notice failed: " .. tostring(notify_error)) end
     local announced, announce_error = pcall(function()
       game.print(string.format("Platform '%s' departed.", platform_name), {0, 1, 0})
     end)

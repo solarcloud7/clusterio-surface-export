@@ -239,15 +239,20 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private async applyGatewaysToLua(
 		gateways: messages.ResolvedGateway[],
 		activeGatewayNames?: string[],
+		passengerCarry?: messages.PassengerCarry,
 	): Promise<{ gateways: number }> {
 		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
 		for (const g of gateways || []) {
 			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
-		return await this.lua.configureGateways(
+		const applied = await this.lua.configureGateways(
 			JSON.stringify(keyed),
 			activeGatewayNames ? JSON.stringify(activeGatewayNames) : undefined,
 		);
+		if (passengerCarry) {
+			await this.lua.configurePassengerCarry(passengerCarry);
+		}
+		return applied;
 	}
 
 	async handleTeleportRosterRequest(): Promise<void> {
@@ -269,8 +274,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const resp = (await this.link.sendTo(
 				"controller",
 				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
-			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[] };
-			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
+			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry };
+			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames, resp?.passengerCarry);
 			this.logger.info(`Gateway config pulled from controller: ${applied.gateways} gateway(s) applied`);
 		};
 		try {
@@ -291,9 +296,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		})();
 	}
 
-	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[] }) {
+	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry }) {
 		try {
-			const applied = await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames);
+			const applied = await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames, request.passengerCarry);
 			this.logger.info(`Gateway config applied: ${applied.gateways} gateway(s)`);
 			return { success: true };
 		} catch (err: unknown) {
@@ -861,10 +866,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live" }) {
+	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live"; passengers?: messages.PassengerManifestEntry[] }) {
 		return this.withTiming(request.transferId, undefined, "Destination transfer gate", async () => {
 			try {
-				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action));
+				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action, request.passengers));
 				return response.success === true ? { success: true }
 					: { success: false, error: String(response.error || "Destination gate refused") };
 			} catch (error) {
@@ -877,7 +882,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return this.withTiming(request.exportId ? makeCanonicalTransferId(this.i.id, request.exportId) : "source-delete", request.exportId ?? undefined, "handleDeleteSourcePlatform", () => this.handleDeleteSourcePlatformMeasured(request));
 	}
 
-	async handleDeleteSourcePlatformMeasured(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
+	async handleDeleteSourcePlatformMeasured(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }): Promise<messages.SimpleResponse & { passengers?: messages.PassengerManifestEntry[] }> {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}', export ${request.exportId ?? "—"})`);
 
@@ -913,7 +918,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const trimmedResult = result.trim();
 			if (trimmedResult === "SUCCESS") {
 				this.logger.info(`Platform ${request.platformName} deleted successfully`);
-				return { success: true };
+				let passengers: messages.PassengerManifestEntry[];
+				try {
+					passengers = await this.lua.passengerManifest(request.exportId);
+				} catch (err: unknown) {
+					const error = `Source deleted; passenger manifest unavailable: ${getErrorMessage(err)}`;
+					this.logger.error(error);
+					return { success: false, error };
+				}
+				return { success: true, passengers };
 			}
 			const error = trimmedResult.replace("ERROR:", "");
 			this.logger.error(`Failed to delete platform: ${error}`);

@@ -15,11 +15,13 @@ local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
 local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
 local GatewayPortal = require("modules/surface_export/interfaces/gui/gateway-portal")
+local PassengerTransit = require("modules/surface_export/core/passenger-transit")
+local PassengerArrival = require("modules/surface_export/core/passenger-arrival")
 
 local function refresh_player(event, use_default)
 	local player = game.get_player(event.player_index)
 	if not player then return end
-	PlanetPolicy.ensure_player(player, use_default)
+	if not PassengerTransit.owns(player) then PlanetPolicy.ensure_player(player, use_default) end
 	InstancePanel.refresh_button(player)
 	DebugControls.refresh(player)
 	GatewayPortal.refresh(player)
@@ -80,6 +82,8 @@ SurfaceExportModule.events = {
 				else storage.surface_export_pending_arrivals[player_index] = nil end
 			end
 			TeleportGui.flush_announcements()
+			GameUtils.pcall_warn("[Passenger] transit tick", PassengerTransit.on_tick)
+			GameUtils.pcall_warn("[Passenger] arrival tick", PassengerArrival.process_connected)
 			for _, player in pairs(game.connected_players) do GatewayPortal.refresh(player) end
 		end
 		if storage.source_recovery_ready == false then
@@ -108,12 +112,19 @@ SurfaceExportModule.events = {
 	end,
 	[e.on_research_finished] = function(event) PlanetPolicy.enforce(event.research.force) end,
 	[e.on_technology_effects_reset] = function(event) PlanetPolicy.enforce(event.force) end,
-	[e.on_force_created] = function(event) PlanetPolicy.enforce(event.force) end,
+	[e.on_force_created] = function(event)
+		PlanetPolicy.enforce(event.force)
+		PassengerTransit.hide_hold(event.force)
+	end,
 	[e.on_forces_merged] = function(event) PlanetPolicy.enforce(event.destination) end,
 	[e.on_player_created] = function(event) refresh_player(event, true) end,
 	[e.on_player_joined_game] = function(event)
-		refresh_player(event)
 		local player = game.get_player(event.player_index)
+		if player then
+			GameUtils.pcall_warn("[Passenger] join outcome", function() PassengerTransit.on_join(player) end)
+			GameUtils.pcall_warn("[Passenger] arrival on join", function() PassengerArrival.process(player, true) end)
+		end
+		refresh_player(event)
 		if player then GatewayTransferGui.offer(player) end
 	end,
 	[e.on_player_respawned] = refresh_player,
@@ -218,6 +229,7 @@ SurfaceExportModule.events = {
 		InstancePanel.on_gui_click(event)
 		DebugControls.on_gui_click(event)
 		GatewayPortal.on_gui_click(event)
+		PassengerTransit.on_gui_click(event)
 	end,
 
 	[e.on_gui_checked_state_changed] = GatewayTransferGui.on_gui_click,
@@ -227,6 +239,7 @@ SurfaceExportModule.events = {
 		GatewayTransferGui.on_gui_closed(event)
 		TeleportGui.on_gui_closed(event)
 		InstancePanel.on_gui_closed(event)
+		PassengerTransit.on_gui_closed(event)
 	end,
 
 	[e.on_player_selected_area] = function(event)

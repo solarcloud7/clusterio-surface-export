@@ -1319,3 +1319,70 @@ test("compressed source identity and force survive canonical promotion", async t
         assert.equal(row.transferId,"1:force-export");
     }
 });
+
+test("the source passenger manifest is stored on the transfer and forwarded with go_live", async t => {
+	const passengers = [{name: "alice", items: [{name: "power-armor", count: 1}]}, {name: "bob", items: []}];
+	const gates = [];
+	const h = makeHarness(() => ({success: true}), msg => {
+		if (msg.constructor.name === "DeleteSourcePlatformRequest") return {success: true, passengers};
+		if (msg.constructor.name === "DestinationTransferGateRequest") gates.push(msg.toJSON());
+		return {success: true};
+	});
+	t.after(() => h.orch.stop());
+	const result = await h.orch.transferPlatform("1:export_1", 2);
+	await h.orch.handleTransferValidation({transferId: result.transferId, success: true});
+	const transfer = onlyTransfer(h.activeTransfers);
+	assert.equal(transfer.status, "completed");
+	assert.deepEqual(transfer.passengers, passengers);
+	assert.deepEqual(gates.map(gate => gate.action), ["verify", "go_live"]);
+	assert.equal(gates[0].passengers, undefined);
+	assert.deepEqual(gates[1].passengers, passengers);
+});
+
+for (const replayCarriesManifest of [true, false]) {
+	test(`a retried go_live forwards the same passengers (replay carries manifest=${replayCarriesManifest})`, async t => {
+		const passengers = [{name: "alice", items: [{name: "modular-armor", count: 1}]}];
+		const goLive = [];
+		let deletes = 0;
+		const h = makeHarness(() => ({success: true}), msg => {
+			if (msg.constructor.name === "DeleteSourcePlatformRequest") {
+				deletes++;
+				return deletes === 1 || replayCarriesManifest ? {success: true, passengers} : {success: true};
+			}
+			if (msg.constructor.name === "DestinationTransferGateRequest" && msg.action === "go_live") {
+				goLive.push(msg.toJSON().passengers);
+				if (goLive.length === 1) return {success: false, error: "activation refused"};
+			}
+			return {success: true};
+		});
+		t.after(() => h.orch.stop());
+		const start = await h.orch.transferPlatform("1:export_1", 2);
+		await h.orch.handleTransferValidation({transferId: start.transferId, success: true});
+		const transfer = onlyTransfer(h.activeTransfers);
+		assert.equal(transfer.status, "cleanup_failed");
+		h.plugin.pendingTransfers = new Map([[start.transferId, h.calls.pendingPersisted]]);
+		await h.orch.recoverPendingTransfers();
+		assert.equal(transfer.status, "completed");
+		assert.equal(deletes, 2);
+		assert.deepEqual(goLive, [passengers, passengers]);
+		assert.equal(h.calls.importSends, 1);
+	});
+}
+
+test("passenger manifests stay out of transfer summaries and transfer info", () => {
+	const plugin = {
+		transactionLogs: new Map(), activeTransfers: new Map(), persistedTransactionLogs: [], platformStorage: new Map(),
+		auditIndex: new Map(), auditRevisions: new Map(),
+		platformTree: {resolveInstanceName: id => `instance-${id}`},
+		controller: {config: {get: () => undefined}},
+		logger: {info() {}, warn() {}, error() {}, verbose() {}},
+	};
+	const logger = new TransactionLogger(plugin);
+	const transfer = {transferId: "1:export_1", operationType: "transfer", status: "completed", platformName: "p", platformIndex: 3,
+		forceName: "player", sourceInstanceId: 1, targetInstanceId: 2, startedAt: 1, exportId: "1:export_1", artifactSizeBytes: null,
+		passengers: [{name: "alice", items: [{name: "power-armor", count: 1}]}]};
+	for (const view of [logger.buildTransferInfo(transfer), logger.buildTransferSummary(transfer.transferId, transfer),
+		logger.buildDetailedTransferSummary(transfer.transferId, transfer)]) {
+		assert.equal(JSON.stringify(view).includes("alice"), false);
+	}
+});

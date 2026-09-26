@@ -1379,5 +1379,30 @@ end
 
 Deserializer.prune_pole_copper = ConnectionRestoration.prune_pole_copper
 
+function Deserializer.place_stack(stack, item, item_state)
+  if not stack or stack.valid_for_read then return false, "the slot is occupied" end
+  local placed_ok, placed_err = place_plain_stack(stack, item)
+  if not placed_ok then return false, placed_err end
+  if not (stack.valid_for_read and stack.name == item.name and stack.count == item.count) then
+    if stack.valid_for_read then stack.clear() end
+    return false, "the slot did not take the whole stack"
+  end
+  local restored, restore_err = pcall(function()
+    if item.export_string then
+      restore_export_string_stack(stack, item, item_state)
+    else
+      restore_item_properties(stack, item, item_state)
+    end
+  end)
+  if restored then return true end
+  stack.clear()
+  if stack.valid_for_read then
+    log(string.format("[Deserializer] '%s' could not be fully restored and its stack could not be removed; keeping it: %s",
+      tostring(item.name), tostring(restore_err)))
+    return true
+  end
+  return false, "properties could not be restored: " .. tostring(restore_err), true
+end
+
 return Deserializer
 

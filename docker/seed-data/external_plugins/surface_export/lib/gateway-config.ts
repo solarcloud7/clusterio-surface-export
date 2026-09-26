@@ -6,6 +6,7 @@ import * as messages from "../messages";
 import { getErrorMessage } from "../helpers";
 import { enqueueWrite } from "./persist-queue";
 import { timed } from "./timing";
+import { instanceAddress } from "./platform-tree";
 
 type GatewayLinkUpdate = {
 	sourceInstanceId: number;
@@ -19,7 +20,7 @@ export class GatewayConfig {
 	private gatewayConfigUpdate?: Promise<void>;
 
 	constructor(
-		private readonly controller: Pick<Controller, "config" | "instances" | "sendTo">,
+		private readonly controller: Pick<Controller, "config" | "instances" | "hosts" | "sendTo">,
 		private readonly logger: messages.IControllerPlugin["logger"],
 		private readonly context: {
 			isInstanceOnline(instanceId: number): boolean;
@@ -41,6 +42,23 @@ export class GatewayConfig {
 		}
 		return mode;
 	}
+
+	passengerCarry(): messages.PassengerCarry {
+		const config = this.controller.config as { get(key: string): unknown };
+		return {
+			armor: config.get("surface_export.passenger_carry_armor") !== false,
+			inventory: config.get("surface_export.passenger_carry_inventory") === true,
+		};
+	}
+
+	private targetAddress(instanceId: number): string {
+		const inst = this.controller.instances.get(instanceId);
+		if (!inst || inst.isDeleted) return "";
+		const hostId = Number(inst.config.get("instance.assigned_host"));
+		const host = Number.isInteger(hostId) ? this.controller.hosts.get(hostId) : null;
+		return instanceAddress(host?.publicAddress, inst.gamePort ?? null);
+	}
+
 	private gatewayKey(sourceInstanceId: number, gatewayName: string): string {
 		return `${sourceInstanceId}:${gatewayName}`;
 	}
@@ -153,6 +171,7 @@ export class GatewayConfig {
 				instanceName: this.context.resolveInstanceName(link.targetInstanceId) ?? "(unknown)",
 				targetGateway: link.targetGateway,
 				online: this.context.isInstanceOnline(link.targetInstanceId),
+				address: this.targetAddress(link.targetInstanceId),
 			}));
 			out.push({ gatewayName: parsed.gatewayName, targets });
 		}
@@ -170,6 +189,7 @@ export class GatewayConfig {
 				new messages.PushGatewayConfigRequest({
 					gateways,
 					activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+					passengerCarry: this.passengerCarry(),
 				}),
 			)) as { success?: boolean; error?: string } | undefined;
 			if (!response?.success) {
@@ -300,6 +320,7 @@ export class GatewayConfig {
 		return {
 			gateways: this.resolveGateways(Number(request.instanceId)),
 			activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+			passengerCarry: this.passengerCarry(),
 		};
 	}
 }

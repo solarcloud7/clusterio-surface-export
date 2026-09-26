@@ -121,6 +121,13 @@ function Recovery.reconcile(platform_index, uid, retired_export_id, unresolved_s
 			storage.source_recovery_identities = storage.source_recovery_identities or {}
 			storage.source_recovery_identities[platform_index] = {uid = new_uid, surface_index = platform.surface.index,
 				hub_unit_number = platform.hub.unit_number}
+			for _, passenger in pairs(storage.surface_export_passengers or {}) do
+				if passenger.job_id == retired_export_id and passenger.platform_index == platform_index then passenger.platform_uid = new_uid end
+			end
+			for _, by_player in pairs(storage.surface_export_arrivals or {}) do
+				local returned = by_player["returned:" .. retired_export_id]
+				if returned and returned.platform_index == platform_index then returned.platform_uid = new_uid end
+			end
 			local notice = {platformIndex = platform_index, platformName = platform.name, platformUid = new_uid,
 				exportId = retired_export_id, status = "accepted"}
 			storage.source_recovery_notices[platform_index] = notice

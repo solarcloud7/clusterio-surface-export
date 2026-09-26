@@ -10,7 +10,7 @@ import { JobObserver } from "./job-observer";
 import { isInstanceRouteRejection } from "./request-errors";
 import type { JobStatusBatch } from "../shared/job-status";
 import type { TimingRecord } from "../shared/timing";
-import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport, PassengerManifestEntry } from "../messages";
 
 type TransferStartResult = {
 	success: boolean; error?: string; transferId?: string; message?: string;
@@ -866,9 +866,9 @@ export class TransferOrchestrator {
 
 	async handleValidationSuccess(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.startPhase(transferId, "cleanup");
-		const gate = (action: "verify" | "go_live") => timed("Destination transfer gate round trip", "round-trip", () =>
+		const gate = (action: "verify" | "go_live", passengers?: PassengerManifestEntry[]) => timed("Destination transfer gate round trip", "round-trip", () =>
 			this.plugin.controller.sendTo({ instanceId: transfer.targetInstanceId },
-				new this.messages.DestinationTransferGateRequest({ transferId, action })));
+				new this.messages.DestinationTransferGateRequest({ transferId, action, passengers })));
 		const failed = async (error: string) => {
 			this.txLogger.endPhase(transferId, "cleanup");
 			if (transfer.status === "cleanup_failed" && transfer.error === error) return { sourceResolved: false };
@@ -901,7 +901,9 @@ export class TransferOrchestrator {
 			));
 
 			if (deleteResponse.success) {
-				const activated = await gate("go_live");
+				const replayed = (deleteResponse as { passengers?: unknown }).passengers;
+				if (Array.isArray(replayed)) transfer.passengers = replayed as PassengerManifestEntry[];
+				const activated = await gate("go_live", transfer.passengers);
 				if (!activated.success) return failed(`Source deleted; destination activation not confirmed: ${activated.error}`);
 				const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
 				transfer.status = "completed";

@@ -262,13 +262,47 @@ function DestinationHold.verify(transfer_id, job_id)
 	return true, hold
 end
 
-function DestinationHold.go_live(transfer_id, job_id)
+DestinationHold.BOARDING_OFFER_TICKS = 10 * 60 * 60
+
+local function record_arrivals(transfer_id, hold, passengers)
+	if type(passengers) ~= "table" then return 0 end
+	storage.surface_export_arrivals = storage.surface_export_arrivals or {}
+	local recorded = 0
+	for _, entry in ipairs(passengers) do
+		if type(entry) == "table" and type(entry.name) == "string" and entry.name ~= "" then
+			local by_player = storage.surface_export_arrivals[entry.name] or {}
+			storage.surface_export_arrivals[entry.name] = by_player
+			if not by_player[transfer_id] then
+				local items = {}
+				for _, item in ipairs(type(entry.items) == "table" and entry.items or {}) do
+					if type(item) == "table" and type(item.name) == "string" and type(item.count) == "number" then
+						items[#items + 1] = item
+					else
+						log(string.format("[DestinationHold] dropped a malformed passenger item for '%s' in transfer %s: name=%s count=%s",
+							entry.name, transfer_id, tostring(type(item) == "table" and item.name), tostring(type(item) == "table" and item.count)))
+					end
+				end
+				by_player[transfer_id] = {
+					transfer_id = transfer_id, force_name = hold.force_name,
+					platform_index = hold.platform_index, surface_index = hold.surface_index,
+					platform_uid = hold.platform_uid, items = items, created_tick = game.tick,
+					boarding_expires_tick = game.tick + DestinationHold.BOARDING_OFFER_TICKS,
+				}
+				recorded = recorded + 1
+			end
+		end
+	end
+	return recorded
+end
+
+function DestinationHold.go_live(transfer_id, job_id, passengers)
 	local verified, result = DestinationHold.verify(transfer_id, job_id)
 	if not verified then return false, result end
 	if Receipts.get("destination_live", transfer_id) then return true, result end
 	local holds = ensure_storage()
 	local hold, force, platform, err = resolve_hold(transfer_id, job_id)
 	if err then return false, err end
+	local arrivals = record_arrivals(transfer_id, hold, passengers)
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
 	force.set_surface_hidden(surface, hold.original_hidden == true)
@@ -282,8 +316,8 @@ function DestinationHold.go_live(transfer_id, job_id)
 		platform_uid = hold.platform_uid, job_id = hold.job_id,
 	})
 	holds[transfer_id] = nil
-	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d)",
-		transfer_id, platform.name, restored, kept_inactive))
+	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d, passengers=%d)",
+		transfer_id, platform.name, restored, kept_inactive, arrivals))
 	local announced, announce_error = pcall(function()
 		game.print(string.format("Platform '%s' arrived.", platform.name), {0, 1, 0})
 	end)
