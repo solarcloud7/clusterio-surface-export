@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: a reachable cluster (dev, or a remote named in tools/clusterio/remote-clusters.local.json)
 // produces: a JSON snapshot of one player on every instance, each observed, absent or unavailable with a reason, with possessions as {item, quality, count, location} across inventories, cursor and equipment grids; a diff of two snapshots that gives a conservation verdict only from complete evidence
-// does not: change game state, read an offline player's body (the engine hides it), or prove where unobserved items went
+// does not: change game state, read an offline player's body (the engine hides it), take instances at the same instant (each is read in turn, so a player moving between instances mid-snapshot can be seen twice or not at all), or prove where unobserved items went; gear waiting in arrival records and passenger manifests counts as the player's
 import { readFileSync, writeFileSync } from "node:fs";
 import url from "node:url";
 import { DEVELOPMENT, parseInstanceList, withCluster } from "../shared/remote-cluster.mjs";
@@ -44,15 +44,29 @@ end
 local physical = game.get_surface(p.physical_surface_index)
 local record = storage.surface_export_passengers and storage.surface_export_passengers[p.index]
 local arrivals = {}
+local pending = {}
+local function add_serialized(items, location)
+	for _, entry in ipairs(items or {}) do
+		if type(entry) == "table" and type(entry.name) == "string" then
+			pending[#pending + 1] = {item = entry.name, quality = type(entry.quality) == "string" and entry.quality or "normal", count = entry.count or 1, location = location}
+		end
+	end
+end
 for key, arrival in pairs((storage.surface_export_arrivals or {})[p.name] or {}) do
 	arrivals[#arrivals + 1] = {key = key, items = #(arrival.items or {}), boarding = arrival.boarding_done and tostring(arrival.boarding_done) or nil}
+	add_serialized(arrival.items, "pending:arrival:" .. key)
+end
+for job, manifest in pairs(storage.surface_export_passenger_manifests or {}) do
+	for _, entry in ipairs(manifest) do
+		if entry.name == p.name then add_serialized(entry.items, "pending:manifest:" .. job) end
+	end
 end
 return {observation = "observed", connected = p.connected, controller = controller,
 	physical_surface = physical and physical.name or nil,
 	aboard = physical and physical.platform and physical.platform.name or nil,
 	body = body,
 	passenger = record and {state = record.state, job = record.job_id, notified = record.notified == true, destination = record.destination_name} or nil,
-	arrivals = arrivals}`.replace(/\n\s*/g, " ");
+	arrivals = arrivals, pending = pending}`.replace(/\n\s*/g, " ");
 }
 
 export function normalizeObservation(raw) {
@@ -75,6 +89,10 @@ export function countPossessions(possessions = [], byLocation = false) {
 	return counts;
 }
 
+function possessionsOf(state) {
+	return [...(state.body?.possessions || []), ...(state.pending || [])];
+}
+
 export function summarize(snapshot) {
 	const totals = {};
 	const unavailable = [];
@@ -86,7 +104,7 @@ export function summarize(snapshot) {
 		observed += 1;
 		if (state.observation === "absent") continue;
 		if (!state.body) { unreadable.push(instance); continue; }
-		for (const [item, count] of Object.entries(countPossessions(state.body.possessions))) totals[item] = (totals[item] || 0) + count;
+		for (const [item, count] of Object.entries(countPossessions(possessionsOf(state)))) totals[item] = (totals[item] || 0) + count;
 	}
 	return { totals, unavailable, unreadable, observed };
 }
@@ -120,8 +138,8 @@ export function diffSnapshots(before, after) {
 		const was = where(a);
 		const now = where(b);
 		lines.push(`${instance}: ${was === now ? now : `${was} -> ${now}`}`);
-		if (a.body && b.body) {
-			const changes = delta(countPossessions(a.body.possessions, true), countPossessions(b.body.possessions, true));
+		if (a.observation === "observed" && b.observation === "observed") {
+			const changes = delta(countPossessions(possessionsOf(a), true), countPossessions(possessionsOf(b), true));
 			if (changes.length) lines.push(`  ${changes.join(", ")}`);
 		}
 		if (JSON.stringify(a.passenger ?? null) !== JSON.stringify(b.passenger ?? null)) {
@@ -140,6 +158,8 @@ export function diffSnapshots(before, after) {
 		for (const instance of summary.unreadable) gaps.push(`${label}: no readable body on ${instance} (offline bodies are hidden by the engine)`);
 	}
 	if (beforeNames.sort().join(",") !== afterNames.sort().join(",")) gaps.push("the snapshots cover different instances");
+	if (before.player !== after.player) gaps.push(`the snapshots are of different players (${before.player} and ${after.player})`);
+	if (before.cluster !== after.cluster) gaps.push(`the snapshots are from different clusters (${before.cluster} and ${after.cluster})`);
 	const totalChanges = delta(first.totals, second.totals);
 	const complete = gaps.length === 0;
 	if (!complete) {
