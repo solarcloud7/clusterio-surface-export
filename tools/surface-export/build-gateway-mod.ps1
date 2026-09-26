@@ -25,16 +25,8 @@ $zipPath = Join-Path $ModsDir "${folder}.zip"
 
 Write-Host "Building $folder from $SrcDir" -ForegroundColor Cyan
 
-$stage = Join-Path ([System.IO.Path]::GetTempPath()) ("surfexp_gw_build_" + [System.Guid]::NewGuid().ToString("N"))
-$stageMod = Join-Path $stage $folder
-New-Item -ItemType Directory -Path $stageMod -Force | Out-Null
-Copy-Item -Path (Join-Path $SrcDir "*") -Destination $stageMod -Recurse -Force
-$stagedReadme = Join-Path $stageMod "README.md"
-if (Test-Path $stagedReadme) { Remove-Item $stagedReadme -Force }
-
-if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-Compress-Archive -Path $stageMod -DestinationPath $zipPath -Force
-Remove-Item -Path $stage -Recurse -Force
+node (Join-Path $RepoRoot "tools/surface-export/pack-gateway-mod.mjs") --src $SrcDir --out-dir $ModsDir
+if ($LASTEXITCODE -ne 0) { throw "Packing $folder failed; a changed mod needs a new info.json version." }
 Write-Host "  -> $zipPath" -ForegroundColor Green
 
 if (-not $SkipClientSync) {
