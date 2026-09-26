@@ -122,7 +122,7 @@ SurfaceExportModule.events = {
 		local player = game.get_player(event.player_index)
 		if player then
 			GameUtils.pcall_warn("[Passenger] join outcome", function() PassengerTransit.on_join(player) end)
-			GameUtils.pcall_warn("[Passenger] arrival on join", function() PassengerArrival.process(player) end)
+			GameUtils.pcall_warn("[Passenger] arrival on join", function() PassengerArrival.process(player, true) end)
 		end
 		refresh_player(event)
 		if player then GatewayTransferGui.offer(player) end

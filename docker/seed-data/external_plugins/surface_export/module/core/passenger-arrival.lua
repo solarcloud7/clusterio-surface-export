@@ -146,7 +146,7 @@ local function deliver(player, record)
 	for _, item in ipairs(ordered) do
 		local target = TARGETS[item.inventory]
 		local placed, unrestorable = false, nil
-		for _, inventory in ipairs({
+		for _, inventory in ipairs(item.unrestorable and {} or {
 			target and character.get_inventory(defines.inventory[target]) or false,
 			character.get_inventory(defines.inventory.character_main) or false,
 			hub or false,
@@ -154,6 +154,7 @@ local function deliver(player, record)
 			if inventory then placed, unrestorable = place_into(inventory, item) end
 			if placed or unrestorable then break end
 		end
+		if unrestorable then item.unrestorable = true end
 		if unrestorable and not item.unrestorable_notified then
 			item.unrestorable_notified = true
 			log(string.format("[Passenger] '%s' for '%s' is kept in the arrival record: %s",
@@ -168,6 +169,10 @@ local function deliver(player, record)
 				end
 			end
 		end
+	end
+	if record.notice and #record.items > 0 and not record.notice_given then
+		record.notice_given = true
+		player.print(record.notice)
 	end
 end
 
@@ -202,12 +207,30 @@ local function ordered_records(by_player)
 	return list
 end
 
-function Arrival.process(player)
+function Arrival.give_back(player_name, key, source, items)
+	local list = arrivals()
+	local by_player = list[player_name] or {}
+	list[player_name] = by_player
+	if by_player[key] then return false end
+	by_player[key] = {
+		transfer_id = key, force_name = source.force_name, platform_index = source.platform_index,
+		platform_uid = source.platform_uid, items = items, created_tick = game.tick, boarding_done = "returned",
+		notice = "Some of your gear did not fit and is kept for you until there is room.",
+	}
+	return true
+end
+
+function Arrival.process(player, joined)
 	if not (player and player.valid and player.connected) then return false end
 	local list = arrivals()
 	local by_player = list[player.name]
 	if not by_player or next(by_player) == nil then return false end
 	if (storage.surface_export_passengers or {})[player.index] then return false end
+	if joined then
+		for _, record in pairs(by_player) do
+			for _, item in ipairs(record.items) do item.unrestorable = nil end
+		end
+	end
 	local ok, ready = pcall(ensure_body, player)
 	if not ok then
 		log(string.format("[Passenger] arrival body for '%s' failed: %s", tostring(player.name), tostring(ready)))

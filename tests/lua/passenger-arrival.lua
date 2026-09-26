@@ -5,11 +5,15 @@ local controllers = {character = 1, god = 2, editor = 3, cutscene = 4, spectator
 local inventory_ids = {character_main = 1, character_guns = 3, character_ammo = 4, character_armor = 5, character_trash = 8, hub_main = 20}
 local ARMOR = {["power-armor"] = true}
 
+local missing_puts = 0
 local function grid()
 	local g = {valid = true, equipment = {}}
 	g.clear = function() g.equipment = {} end
 	g.put = function(spec)
-		if spec.name == "missing-equipment" then error("Unknown equipment name: missing-equipment") end
+		if spec.name == "missing-equipment" then
+			missing_puts = missing_puts + 1
+			error("Unknown equipment name: missing-equipment")
+		end
 		local equipment = {name = spec.name, position = spec.position, quality = spec.quality}
 		g.equipment[#g.equipment + 1] = equipment
 		return equipment
@@ -364,3 +368,32 @@ local dropped = 0
 for i = logs_before + 1, #logged do if logged[i]:find("malformed", 1, true) then dropped = dropped + 1 end end
 assert(dropped == 2, "each dropped malformed item is logged")
 print("PASS malformed arrival items are logged when dropped")
+
+local quinn = new_player(13, "quinn", character_entity())
+env.storage.surface_export_arrivals.quinn = late_record("tx-31", {{name = "power-armor", count = 1, quality = "normal",
+	inventory = "armor", grid = {equipment = {{name = "missing-equipment", position = {x = 0, y = 0}, quality = "normal"}}}}})
+local puts_before = missing_puts
+for _ = 1, 3 do arrival.process(quinn) end
+assert(missing_puts == puts_before + 1, "an unrestorable item is tried once, not every retry")
+arrival.process(quinn, true)
+assert(missing_puts == puts_before + 2, "a new join tries the unrestorable item again")
+assert(#quinn.printed == 1, "the player is told once")
+print("PASS an unrestorable item waits for the next join instead of being retried every second")
+
+env.storage.surface_export_passengers = {}
+local rae_body = character_entity({{name = "a", count = 1}, {name = "b", count = 1}, {name = "c", count = 1}})
+local rae = new_player(14, "rae", rae_body)
+hub_inventory = inventory(0)
+assert(arrival.give_back("rae", "returned:job-x", {force_name = "player", platform_index = 3, platform_uid = "uid:3"},
+	{{name = "power-armor", count = 1, quality = "normal", inventory = "armor"}, {name = "stone", count = 5, quality = "normal", inventory = "main"}}))
+assert(not arrival.give_back("rae", "returned:job-x", {}, {}), "gear is given back once per job")
+arrival.process(rae)
+local pending = env.storage.surface_export_arrivals.rae["returned:job-x"]
+assert(rae_body.inventories[inventory_ids.character_armor][1].name == "power-armor" and #pending.items == 1
+	and pending.items[1].name == "stone" and rae.boarded == 0, "given-back gear is inserted and the rest waits without boarding")
+assert(#rae.printed == 1, "the player is told that some gear is kept")
+rae_body.inventories[inventory_ids.character_main][1].clear()
+arrival.process(rae)
+assert(not env.storage.surface_export_arrivals.rae and count_named(rae_body, "stone") == 5 and #rae.printed == 1,
+	"the kept gear is delivered once there is room")
+print("PASS gear given back is inserted, and what does not fit waits for room")
