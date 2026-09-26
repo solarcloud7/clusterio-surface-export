@@ -293,8 +293,8 @@ function SurfaceLock.commit_source_transfer_lock(platform_index, transfer_id)
     lock.phase = SOURCE_TRANSFER_PHASE_COMMITTED
     lock.committed_transfer_id = transfer_id or lock.committed_transfer_id or lock.transfer_job_id
     lock.committed_tick = lock.committed_tick or game.tick
-    record_committed_source_tombstone(lock, lock.committed_transfer_id)
     SurfaceLock.prune_committed_source_tombstones(game.tick)
+    record_committed_source_tombstone(lock, lock.committed_transfer_id)
     return true, nil
 end
 
