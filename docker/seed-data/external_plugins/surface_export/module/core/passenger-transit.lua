@@ -465,6 +465,7 @@ function Transit.on_tick()
 					log(string.format("[Passenger] the source of %s is gone without a deletion receipt; returning '%s' with their gear",
 						record.job_id, tostring(record.player_name)))
 					return_passenger(index, record, record.job_id, true, "landing")
+					goto continue
 				end
 			end
 		end
@@ -485,6 +486,7 @@ function Transit.on_tick()
 				Transit.restore(player, record, "aboard")
 			end
 		end
+		::continue::
 	end
 	for job_id in pairs(settled) do
 		log(string.format("[Passenger] source deletion of %s is settled; notifying its departed passengers", job_id))

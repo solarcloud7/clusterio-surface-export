@@ -679,8 +679,12 @@ platform.uid = "gone"
 transit.on_tick()
 assert(transit.owns(zoe) and not env.storage.surface_export_passengers[36].notified, "a missing platform is not settled at once")
 env.game.tick = env.game.tick + transit.PLATFORM_GONE_TICKS
+local restore, restores = transit.restore, 0
+transit.restore = function(player, ...) if player == zoe then restores = restores + 1 end return restore(player, ...) end
 transit.on_tick()
+transit.restore = restore
 platform.uid = "uid:7"
+assert(restores == 1, "the returned passenger is restored once, not again by the same tick")
 assert(not transit.owns(zoe) and #zoe.connects == 0, "a source gone without a deletion receipt never sends the connect prompt")
 assert(zoe.character == zoe_body and zoe.physical_surface_index == nauvis.index and armor_of(zoe_body).name == "power-armor",
 	"the passenger lands on the planet with their carried gear given back")
