@@ -192,14 +192,27 @@ surfaceExportCommands.add(new Command({
 	},
 }));
 
-export function parseGatewayTargets(targets: Array<string | number>, defaultGateway: string): messages.GatewayLink[] {
+const TARGET_PATTERN = /^([1-9]\d*)(?::([A-Za-z0-9_-]+))?$/;
+
+export function parseInstanceId(value: unknown, label: string): number {
+	const text = String(value ?? "");
+	if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(Number(text))) {
+		throw new Error(`${label} must be a positive instance id, not ${JSON.stringify(value)}`);
+	}
+	return Number(text);
+}
+
+export function parseGatewayTargets(targets: Array<string | number>, defaultGateway: string, sourceInstanceId?: number): messages.GatewayLink[] {
 	return targets.map(target => {
-		const [id, gateway] = String(target).split(":");
-		const targetInstanceId = Number(id);
-		if (!Number.isInteger(targetInstanceId)) {
+		const match = String(target).match(TARGET_PATTERN);
+		if (!match || !Number.isSafeInteger(Number(match[1]))) {
 			throw new Error(`target must be <instanceId> or <instanceId>:<gatewayName>, not ${JSON.stringify(target)}`);
 		}
-		return { targetInstanceId, targetGateway: gateway || defaultGateway };
+		const targetInstanceId = Number(match[1]);
+		if (targetInstanceId === sourceInstanceId) {
+			throw new Error(`a gateway cannot link to its own instance ${sourceInstanceId}; the controller would drop the link and clear the gateway`);
+		}
+		return { targetInstanceId, targetGateway: match[2] || defaultGateway };
 	});
 }
 
@@ -223,9 +236,8 @@ surfaceExportCommands.add(new Command({
 	],
 	handler: async function(args: { sourceInstanceId: number | string; gatewayName: string; targets?: Array<string | number> },
 		control: ControlLike) {
-		const sourceInstanceId = Number(args.sourceInstanceId);
-		if (!Number.isInteger(sourceInstanceId)) throw new Error("sourceInstanceId must be an integer");
-		const targets = parseGatewayTargets(args.targets || [], args.gatewayName);
+		const sourceInstanceId = parseInstanceId(args.sourceInstanceId, "sourceInstanceId");
+		const targets = parseGatewayTargets(args.targets || [], args.gatewayName, sourceInstanceId);
 		const response = await control.sendTo("controller", new messages.SetGatewayLinkRequest({
 			sourceInstanceId, gateways: [{ gatewayName: args.gatewayName, targets }],
 		})) as messages.SimpleResponse;
