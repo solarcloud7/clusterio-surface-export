@@ -19,7 +19,8 @@ outcome they are put back aboard or on the default planet.
    - An offline passenger is moved to the hold surface together with their stored
      character.
    - A connected player aboard without a character (editor, god or spectator
-     controller) is not parked. Evacuation at source deletion handles them as it does
+     controller), or whose cursor item cannot be returned to their inventory, is not
+     parked. Evacuation at source deletion handles them as it does
      for any other occupant.
 2. **Transfer running.** The platform is locked and exported as usual. Parked
    characters are not on the platform, so they are not part of the exported cargo.
@@ -44,9 +45,9 @@ outcome they are put back aboard or on the default planet.
 |---|---|
 | Success, prompt accepted | The player joins the destination. Their gear is inserted, and they board the platform if the offer has not expired. |
 | Success, prompt declined or **Stay** | The player's own character is restored at the source's default-planet landing pad, without the carried gear. The gear waits on the destination. |
-| Success, still on the source after 10 minutes | Same as **Stay**. |
+| Success, still on the source 10 minutes after the deletion is confirmed | Same as **Stay**. |
 | **Abort** | Allowed while the passenger is in transit. The character is restored at the default planet's landing pad, and the player is left out of the manifest. |
-| Transfer fails to start | Every parked passenger is put back aboard at once. |
+| Transfer fails to start | Every parked passenger is put back aboard at once. A passenger still parked without a transfer job after 5 seconds is also put back aboard. |
 | Transfer fails after starting | When the source's transfer lock is released (validation or import failure, census abort, refused start, startup recovery or queue failure), that transfer's passengers are put back aboard. |
 | Passenger offline | Their outcome is stored and applied at their next join. See [Offline passengers](#offline-passengers). |
 
@@ -64,7 +65,7 @@ The source instance keeps one record per player in
 | State | Meaning | Applied at next join |
 |---|---|---|
 | `in_transit` | Parked; the transfer is running. | The player is parked again and sees the transit window. |
-| `departed` | The source was deleted, and the carried gear left with the manifest. | Restored at the landing pad. |
+| `departed` | The carried gear was taken into the manifest. The arrival window, **Stay** and the 10-minute timer start only once the source deletion is confirmed; until then the passenger stays parked, and Abort is refused. | Restored at the landing pad once the deletion is confirmed; parked again before that. |
 | `aborted` | Abort was pressed, and restoration is pending. | Restored at the landing pad. |
 | `returned` | The transfer failed, and restoration is pending. | Put back aboard, or at the landing pad. |
 
@@ -114,8 +115,13 @@ has:
 Gear never expires. Only the boarding offer expires after 10 minutes.
 
 The destination never creates a second character. It reattaches an existing
-character, and creates one only when the player has none at all. A player in the map
-editor with a stashed character is served after leaving the editor.
+character, and creates one only when the player has none at all. A created character
+starts at the default planet's landing position. A player in the map editor whose
+stashed controller could hold a character is served after leaving the editor.
+
+Delivery progress is saved per stack. A stack whose equipment grid or other properties
+cannot be fully restored on this instance is still counted as delivered, and the
+problem is logged, so it is never inserted twice.
 
 ### inventory_sync
 
