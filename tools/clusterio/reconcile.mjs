@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
-// produces: `plan`: the exact clusterioctl commands that bring mods, the mod pack, controller, host and instance config, and gateway links to the desired state; `apply --yes`: runs them in order, stops on the first failure and re-plans
-// does not: delete stored mods, mod packs or instances, touch mod packs other than the desired one (whose unlisted mods it removes), remove settings, restart instances unless --restart is given, restart hosts, or authorize a change on a shared cluster
+// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, controller, host and instance config, and gateway links to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
+// does not: replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -50,8 +50,11 @@ export function parseModPackShow(text) {
 			continue;
 		}
 		if (section === "mods") {
-			const mod = line.match(/^ {2}(?:[?!] )?(\(disabled\) )?(\S+) (\d+\.\d+\.\d+)(?: \(([0-9a-f]{40})\))?\s*$/);
-			if (mod) pack.mods[mod[2]] = { version: mod[3], enabled: !mod[1], sha1: mod[4] };
+			const mod = line.match(/^ {2}(?:([?!]) )?(\(disabled\) )?(\S+) (\d+\.\d+\.\d+)(?: \(([0-9a-f]{40})\))?\s*$/);
+			if (mod) {
+				const stored = mod[1] === "?" ? "missing" : mod[1] === "!" ? "checksum-mismatch" : "ok";
+				pack.mods[mod[3]] = { version: mod[4], enabled: !mod[2], sha1: mod[5], stored };
+			}
 		} else if (section === "settings") {
 			const scopeLine = line.match(/^ {2}([\w-]+):\s*$/);
 			if (scopeLine) { scope = scopeLine[1]; pack.settings[scope] = {}; continue; }
@@ -73,10 +76,19 @@ export function localModFile(name, version, { dir = LOCAL_MODS, exists = existsS
 	return { container: `${CONTAINER_MODS}/${file}`, sha1: hash(local) };
 }
 
+const RESTART_CONTROLLER_FIELDS = new Set(["surface_export.gateway_mode", "surface_export.platform_source_of_truth"]);
+
 function settingArgs(scope, name, value) {
+	if (value !== null && typeof value === "object") return ["--color-setting", scope, name, JSON.stringify(value)];
 	const flag = typeof value === "boolean" ? "--bool-setting" : Number.isInteger(value) ? "--int-setting"
 		: typeof value === "number" ? "--double-setting" : "--string-setting";
 	return [flag, scope, name, String(value)];
+}
+
+function emptyValueError(where, field, value) {
+	return value === null || value === ""
+		? `${where} ${field}: an empty value cannot be set through clusterioctl (Clusterio turns "" into null); set it deliberately`
+		: null;
 }
 
 function configValue(value) {
@@ -98,10 +110,19 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		if (file.error) { errors.push(file.error); continue; }
 		const expected = want.sha1?.[name];
 		if (expected && expected !== file.sha1) { errors.push(`${name}_${version}.zip sha1 ${file.sha1} does not match the pinned ${expected}`); continue; }
-		modSpecs.push(`${name}:${version}:${file.sha1}`);
-		if (!live.mods.has(`${name}_${version}`)) {
+		const storedKey = `${name}_${version}`;
+		if (live.mods.has(storedKey)) {
+			const stored = live.modSha1?.[storedKey];
+			if (!stored) { errors.push(`could not read the stored sha1 of ${name} ${version}; refusing to treat it as matching`); continue; }
+			if (stored !== file.sha1) {
+				errors.push(`the controller stores ${name} ${version} with sha1 ${stored}, but the local ZIP is ${file.sha1}; `
+					+ "a stored version is never replaced: bump the version or delete the stored mod deliberately");
+				continue;
+			}
+		} else {
 			actions.push({ describe: `upload ${name} ${version}`, argv: ["mod", "upload", file.container] });
 		}
+		modSpecs.push(`${name}:${version}:${file.sha1}`);
 	}
 
 	if (want && !existing) {
@@ -115,23 +136,33 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		const add = modSpecs.filter(spec => {
 			const [name, version, hash] = spec.split(":");
 			const have = packDetail.mods[name];
-			return !have || have.version !== version || !have.enabled || (hash && have.sha1 && have.sha1 !== hash);
+			return !have || have.version !== version || !have.enabled || (hash && have.sha1 !== hash);
 		});
 		if (add.length) edit.push("--add-mods", ...add);
 		const extra = Object.keys(packDetail.mods).filter(name => !(name in (want.mods || {})));
 		if (extra.length) edit.push("--remove-mods", ...extra);
 		for (const [scope, values] of Object.entries(want.settings || {})) {
 			for (const [name, value] of Object.entries(values)) {
-				if (packDetail.settings[scope]?.[name] !== value) edit.push(...settingArgs(scope, name, value));
+				if (JSON.stringify(packDetail.settings[scope]?.[name]) !== JSON.stringify(value)) edit.push(...settingArgs(scope, name, value));
 			}
 		}
-		if (edit.length) actions.push({ describe: `edit mod pack "${want.name}"`, argv: ["mod-pack", "edit", String(existing.id), ...edit], packChanged: true });
+		if (edit.length) {
+			actions.push({ describe: `edit mod pack "${want.name}"`, argv: ["mod-pack", "edit", String(existing.id), ...edit], packChanged: true });
+			for (const [instance, config] of Object.entries(live.instances)) {
+				if (instance in (desired.instances || {}) && config["factorio.mod_pack_id"] === existing.id) restart.add(instance);
+			}
+		}
 	}
 
 	for (const [field, value] of Object.entries(desired.controller || {})) {
 		if (JSON.stringify(live.controller[field]) !== JSON.stringify(value)) {
+			const empty = emptyValueError("controller", field, value);
+			if (empty) { errors.push(empty); continue; }
 			actions.push({ describe: `controller ${field}: ${JSON.stringify(live.controller[field])} -> ${JSON.stringify(value)}`,
 				argv: ["controller", "config", "set", field, configValue(value)] });
+			if (RESTART_CONTROLLER_FIELDS.has(field)) {
+				for (const instance of Object.keys(desired.instances || {})) if (live.instances[instance]) restart.add(instance);
+			}
 		}
 	}
 
@@ -140,6 +171,8 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		if (!config) { errors.push(`instance ${instance} does not exist on the cluster`); continue; }
 		for (const [field, value] of Object.entries(fields)) {
 			if (JSON.stringify(config[field]) !== JSON.stringify(value)) {
+				const empty = emptyValueError(instance, field, value);
+				if (empty) { errors.push(empty); continue; }
 				actions.push({ describe: `${instance} ${field}: ${JSON.stringify(config[field])} -> ${JSON.stringify(value)}`,
 					argv: ["instance", "config", "set", instance, field, configValue(value)] });
 				restart.add(instance);
@@ -163,6 +196,8 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		if (!config) { errors.push(`host ${host} is not connected, so its config cannot be read`); continue; }
 		for (const [field, value] of Object.entries(fields)) {
 			if (JSON.stringify(config[field]) !== JSON.stringify(value)) {
+				const empty = emptyValueError(host, field, value);
+				if (empty) { errors.push(empty); continue; }
 				actions.push({ describe: `${host} ${field}: ${JSON.stringify(config[field])} -> ${JSON.stringify(value)}`,
 					argv: ["host", "config", "set", host, field, configValue(value)] });
 			}
@@ -195,6 +230,13 @@ export function readLive(transport, desired) {
 	const target = packs.find(pack => pack.name === desired.modPack?.name);
 	if (target) packDetails[target.id] = parseModPackShow(transport.ctl("mod-pack", "show", String(target.id)));
 	const mods = new Set(parseTable(transport.ctl("mod", "list")).map(row => `${row.name}_${row.version}`));
+	const modSha1 = {};
+	for (const [name, version] of Object.entries(desired.modPack?.mods || {})) {
+		const storedKey = `${name}_${version}`;
+		if (BUILTIN_MODS.has(name) || !mods.has(storedKey)) continue;
+		const sha1Line = transport.ctl("mod", "show", name, version).split(/\r?\n/).find(line => line.startsWith("sha1: "));
+		if (sha1Line) modSha1[storedKey] = sha1Line.slice("sha1: ".length).trim();
+	}
 	const controller = parseConfigList(transport.ctl("controller", "config", "list"));
 	const instances = {};
 	const instanceRows = parseTable(transport.ctl("instance", "list"));
@@ -209,7 +251,7 @@ export function readLive(transport, desired) {
 		if (connected.has(host)) hosts[host] = parseConfigList(transport.ctl("host", "config", "list", host));
 	}
 	const gateways = desired.gatewayLinks ? JSON.parse(transport.ctl("surface-export", "gateways").trim().split(/\r?\n/).at(-1)) : undefined;
-	return { packs, packDetails, mods, controller, instances, instanceIds, hosts, gateways };
+	return { packs, packDetails, mods, modSha1, controller, instances, instanceIds, hosts, gateways };
 }
 
 function printPlan(result, out) {
@@ -226,9 +268,11 @@ function report(stream, error, code) {
 }
 
 const USAGE = `usage: node tools/clusterio/reconcile.mjs plan --cluster <dev|name> --desired <file>
-       node tools/clusterio/reconcile.mjs apply --cluster <dev|name> --desired <file> --yes [--restart]`;
+       node tools/clusterio/reconcile.mjs apply --cluster <dev|name> --desired <file> --yes [--restart]
+exit codes: 0 configuration converged and no restart pending, 1 blocked or still different, 2 usage, 4 configuration converged but a restart is pending or an instance is not running`;
 
-export async function main(argv, { out = process.stdout, err = process.stderr, run = withCluster, read = file => JSON.parse(readFileSync(file, "utf8")), modFile = localModFile } = {}) {
+export async function main(argv, { out = process.stdout, err = process.stderr, run = withCluster, read = file => JSON.parse(readFileSync(file, "utf8")), modFile = localModFile,
+	sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), pollAttempts = 36, pollIntervalMs = 5000 } = {}) {
 	const value = flag => { const index = argv.indexOf(flag); return index >= 0 ? argv[index + 1] : undefined; };
 	const command = argv[0];
 	const cluster = value("--cluster");
@@ -237,7 +281,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, r
 	if (command === "apply" && !argv.includes("--yes")) { err.write("apply changes the cluster; review `plan` first and pass --yes\n"); return 2; }
 	try {
 		const desired = read(desiredFile);
-		return await run(cluster, transport => {
+		return await run(cluster, async transport => {
 			const result = planChanges(desired, readLive(transport, desired), { modFile });
 			printPlan(result, out);
 			if (command === "plan") return result.errors.length ? 1 : 0;
@@ -245,20 +289,48 @@ export async function main(argv, { out = process.stdout, err = process.stderr, r
 			for (const action of result.actions) {
 				let argvToRun = action.argv;
 				if (action.packId) {
-					const created = parseTable(transport.ctl("mod-pack", "list")).find(row => row.name === action.packId);
-					if (!created) throw new Error(`mod pack "${action.packId}" was not found after creating it`);
-					argvToRun = [...action.argv.slice(0, -1), String(created.id)];
+					const matches = parseTable(transport.ctl("mod-pack", "list")).filter(row => row.name === action.packId);
+					if (matches.length !== 1) throw new Error(`expected exactly one mod pack named "${action.packId}" after creating it, found ${matches.length}`);
+					argvToRun = [...action.argv.slice(0, -1), String(matches[0].id)];
 				}
 				out.write(`applying: ${action.describe}\n`);
 				transport.ctl(...argvToRun);
 			}
-			if (argv.includes("--restart")) {
-				for (const instance of result.restart) { out.write(`restarting ${instance}\n`); transport.ctl("instance", "restart", instance); }
-			}
 			const after = planChanges(desired, readLive(transport, desired), { modFile });
-			out.write(after.actions.length ? `Still different after apply:\n` : "Applied; the cluster now matches the desired state.\n");
-			if (after.actions.length) printPlan(after, out);
-			return after.actions.length || after.errors.length ? 1 : 0;
+			if (after.actions.length || after.errors.length) {
+				out.write("Configuration: still different after apply.\n");
+				printPlan(after, out);
+				return 1;
+			}
+			out.write("Configuration: converged; the controller matches the desired state.\n");
+			if (!result.restart.length) { out.write("Runtime: no restart required.\n"); return 0; }
+			if (!argv.includes("--restart")) {
+				out.write(`Runtime: RESTART REQUIRED for ${result.restart.join(", ")}; the running games still use their previous configuration. Pass --restart or restart them.\n`);
+				return 4;
+			}
+			const notRunning = [];
+			for (const instance of result.restart) {
+				const before = parseTable(transport.ctl("instance", "list")).find(row => row.name === instance)?.status || "missing";
+				if (before !== "running") {
+					notRunning.push(`${instance} (${before}; not restarted, it loads the new configuration when started)`);
+					continue;
+				}
+				out.write(`restarting ${instance}\n`);
+				transport.ctl("instance", "restart", instance);
+				let status = "";
+				for (let attempt = 0; attempt < pollAttempts; attempt++) {
+					status = parseTable(transport.ctl("instance", "list")).find(row => row.name === instance)?.status || "missing";
+					if (status === "running") break;
+					await sleep(pollIntervalMs);
+				}
+				if (status !== "running") notRunning.push(`${instance} (${status})`);
+			}
+			if (notRunning.length) {
+				out.write(`Runtime: restarted, but not running: ${notRunning.join(", ")}.\n`);
+				return 4;
+			}
+			out.write(`Runtime: restarted and running: ${result.restart.join(", ")}. The loaded mods and settings were not read back from the games.\n`);
+			return 0;
 		});
 	} catch (error) {
 		return report(err, error, 1);

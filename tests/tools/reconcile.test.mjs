@@ -41,6 +41,7 @@ function liveWith(overrides = {}) {
 		packs: [{ id: 7, name: "Space Age 2.1.20 - Test" }],
 		packDetails: { 7: parseModPackShow(SHOW) },
 		mods: new Set(["surfexp_gateways_0.6.12", "FluidMustFlow_1.5.0"]),
+		modSha1: { "surfexp_gateways_0.6.12": hashes.surfexp_gateways, "FluidMustFlow_1.5.0": hashes.FluidMustFlow },
 		controller: { "surface_export.gateway_mode": "one_gate" },
 		instances: { fact1: { "surface_export.debug_mode": false, "factorio.mod_pack_id": 7 } },
 		...overrides,
@@ -51,8 +52,8 @@ test("mod pack show and config list output parse into structured state", () => {
 	const pack = parseModPackShow(SHOW);
 	assert.equal(pack.id, 7);
 	assert.equal(pack.factorioVersion, "2.1.20");
-	assert.deepEqual(pack.mods.base, { version: "2.1.20", enabled: true, sha1: undefined });
-	assert.deepEqual(pack.mods.FluidMustFlow, { version: "1.5.0", enabled: false, sha1: "6c576d8d354cf930a64d79819af8f9b002583792" });
+	assert.deepEqual(pack.mods.base, { version: "2.1.20", enabled: true, sha1: undefined, stored: "missing" });
+	assert.deepEqual(pack.mods.FluidMustFlow, { version: "1.5.0", enabled: false, sha1: "6c576d8d354cf930a64d79819af8f9b002583792", stored: "ok" });
 	assert.deepEqual(pack.settings, { startup: { "surfexp-gateway-layout": "one_gate" }, "runtime-global": { "surfexp-platform-boarding": true }, "runtime-per-user": {} });
 	assert.deepEqual(parseConfigList('instance.name "fact1"\ninstance.id 42\nsurface_export.debug_mode false\n'),
 		{ "instance.name": "fact1", "instance.id": 42, "surface_export.debug_mode": false });
@@ -85,7 +86,7 @@ test("a cluster that matches plans nothing; drift plans only the differences", (
 		["mod-pack", "edit", "7", "--add-mods", "FluidMustFlow:1.5.0:6c576d8d354cf930a64d79819af8f9b002583792"],
 		["controller", "config", "set", "surface_export.gateway_mode", "one_gate"],
 	]);
-	assert.deepEqual(drift.restart, [], "controller and pack edits alone do not restart instances");
+	assert.deepEqual(drift.restart, ["fact1"], "a content change to the pack fact1 runs needs a restart even though its pack id is unchanged");
 });
 
 test("a missing or mismatched local mod blocks the plan instead of uploading the wrong bytes", () => {
@@ -110,6 +111,7 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 			return SHOW.replace("id: 7", "id: 9").replace("(disabled) FluidMustFlow", "FluidMustFlow");
 		}
 		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
+		if (args[0] === "mod" && args[1] === "show") return `name: ${args[2]}\nversion: ${args[3]}\nsha1: ${hashes[args[2]]}\n`;
 		if (args[0] === "controller") return 'surface_export.gateway_mode "one_gate"\n';
 		if (args[0] === "instance" && args[1] === "list") return "name | status\n---\nfact1 | running\n";
 		if (args[0] === "instance" && args[2] === "list") return `surface_export.debug_mode false\nfactorio.mod_pack_id ${state.fact1Pack ?? 1}\n`;
@@ -117,9 +119,43 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 		return "";
 	} };
 	const code = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes"], { out, err, read: () => desired, run: async (_, fn) => fn(transport), modFile });
-	assert.equal(code, 0, out.text + err.text);
+	assert.equal(code, 4, "configuration converged but the restart is still pending");
 	assert.deepEqual(state.calls.find(call => call[2] === "set"), ["instance", "config", "set", "fact1", "factorio.mod_pack_id", "9"]);
-	assert.match(out.text, /the cluster now matches the desired state/);
+	assert.match(out.text, /Configuration: converged/);
+	assert.match(out.text, /Runtime: RESTART REQUIRED for fact1; the running games still use their previous configuration/);
+	assert.ok(!state.calls.some(call => call[1] === "restart"), "nothing is restarted without --restart");
+
+	state.created = false; state.fact1Pack = undefined; state.calls.length = 0; out.text = "";
+	const restarted = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes", "--restart"],
+		{ out, err, read: () => desired, run: async (_, fn) => fn(transport), modFile, sleep: async () => {}, pollAttempts: 2 });
+	assert.equal(restarted, 0, out.text);
+	assert.deepEqual(state.calls.filter(call => call[1] === "restart"), [["instance", "restart", "fact1"]]);
+	assert.match(out.text, /Runtime: restarted and running: fact1\. The loaded mods and settings were not read back/);
+});
+
+test("stored bytes that differ from the pin block the plan; a stale or missing pack pin is repaired", () => {
+	const wrongStored = planChanges(desired, liveWith({ modSha1: { "surfexp_gateways_0.6.12": "b".repeat(40), "FluidMustFlow_1.5.0": hashes.FluidMustFlow } }), { modFile });
+	assert.match(wrongStored.errors.join("\n"), /stores surfexp_gateways 0\.6\.12 with sha1 b{40}, but the local ZIP is a96c8f/);
+	assert.ok(!wrongStored.actions.some(action => action.argv[1] === "upload"), "a stored version is never overwritten");
+	const unreadable = planChanges(desired, liveWith({ modSha1: {} }), { modFile });
+	assert.match(unreadable.errors.join("\n"), /could not read the stored sha1/);
+	const unpinned = liveWith();
+	unpinned.packDetails[7].mods.FluidMustFlow.enabled = true;
+	delete unpinned.packDetails[7].mods.surfexp_gateways.sha1;
+	const repin = planChanges(desired, unpinned, { modFile });
+	assert.deepEqual(repin.actions.map(action => action.argv), [["mod-pack", "edit", "7", "--add-mods", "surfexp_gateways:0.6.12:a96c8f968f260f7c6aff1880e7394bdb1853f75d"]]);
+	assert.deepEqual(repin.restart, ["fact1"]);
+	const flagged = parseModPackShow(SHOW.replace("  surfexp_gateways 0.6.12", "  ! surfexp_gateways 0.6.12"));
+	assert.equal(flagged.mods.surfexp_gateways.stored, "checksum-mismatch");
+});
+
+test("a startup-setting change on an assigned pack restarts only the instances on that pack", () => {
+	const live = liveWith({ instances: { fact1: { "surface_export.debug_mode": false, "factorio.mod_pack_id": 7 }, fact2: { "factorio.mod_pack_id": 3 } } });
+	live.packDetails[7].mods.FluidMustFlow.enabled = true;
+	live.packDetails[7].settings.startup["surfexp-gateway-layout"] = "multi";
+	const result = planChanges({ ...desired, instances: { fact1: {}, fact2: {} }, instanceModPack: false }, live, { modFile });
+	assert.deepEqual(result.actions.map(action => action.argv.slice(0, 3)), [["mod-pack", "edit", "7"]]);
+	assert.deepEqual(result.restart, ["fact1"]);
 });
 
 test("host config and gateway links are planned by name and only where they differ", () => {
@@ -146,4 +182,20 @@ test("host config and gateway links are planned by name and only where they diff
 		liveWith({ instanceIds: { fact1: 11 }, hosts: {} }), { modFile });
 	assert.match(missing.errors.join("\n"), /host clusterio-host-1 is not connected/);
 	assert.match(missing.errors.join("\n"), /gateway targets not on the cluster: fact9/);
+});
+
+test("restart-only controller fields restart instances, empty values block, and colour settings stay structured", () => {
+	const enabled = () => { const live = liveWith(); live.packDetails[7].mods.FluidMustFlow.enabled = true; return live; };
+	const mode = planChanges({ ...desired, controller: { "surface_export.gateway_mode": "multi" } }, enabled(), { modFile });
+	assert.deepEqual(mode.restart, ["fact1"], "gateway mode applies only after a restart");
+	const empty = planChanges({ ...desired, instances: { fact1: { "surface_export.disabled_planets": "" } } }, enabled(), { modFile });
+	assert.match(empty.errors.join("\n"), /fact1 surface_export\.disabled_planets: an empty value cannot be set through clusterioctl/);
+	const colour = { r: 1, g: 0.5, b: 0, a: 1 };
+	const live = enabled();
+	live.packDetails[7].settings.startup.tint = { ...colour };
+	const same = planChanges({ ...desired, modPack: { ...desired.modPack, settings: { ...desired.modPack.settings, startup: { ...desired.modPack.settings.startup, tint: colour } } } }, live, { modFile });
+	assert.deepEqual(same.actions, [], "an equal colour object is not re-applied forever");
+	live.packDetails[7].settings.startup.tint = { r: 0, g: 0, b: 0, a: 1 };
+	const changed = planChanges({ ...desired, modPack: { ...desired.modPack, settings: { startup: { ...desired.modPack.settings.startup, tint: colour } } } }, live, { modFile });
+	assert.ok(changed.actions[0].argv.join(" ").includes(`--color-setting startup tint ${JSON.stringify(colour)}`));
 });
