@@ -192,6 +192,48 @@ surfaceExportCommands.add(new Command({
 	},
 }));
 
+export function parseGatewayTargets(targets: Array<string | number>, defaultGateway: string): messages.GatewayLink[] {
+	return targets.map(target => {
+		const [id, gateway] = String(target).split(":");
+		const targetInstanceId = Number(id);
+		if (!Number.isInteger(targetInstanceId)) {
+			throw new Error(`target must be <instanceId> or <instanceId>:<gatewayName>, not ${JSON.stringify(target)}`);
+		}
+		return { targetInstanceId, targetGateway: gateway || defaultGateway };
+	});
+}
+
+surfaceExportCommands.add(new Command({
+	definition: ["gateways", "Print every gateway link as JSON (mode, gateway names and links per source instance)"],
+	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
+		const response = await control.sendTo("controller", new messages.GetGatewaysRequest());
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
+	definition: [
+		"set-gateway-links <sourceInstanceId> <gatewayName> [targets..]",
+		"Replace one gateway's links; each target is <instanceId> or <instanceId>:<targetGateway>, and no targets clears the links",
+		(yargs: YargsLike) => {
+			yargs.positional("sourceInstanceId", { describe: "Instance that owns the gateway", type: "number" });
+			yargs.positional("gatewayName", { describe: "Gateway space location, e.g. surfexp_gateway_hub", type: "string" });
+			yargs.positional("targets", { describe: "Destination instances", type: "string", array: true });
+		},
+	],
+	handler: async function(args: { sourceInstanceId: number | string; gatewayName: string; targets?: Array<string | number> },
+		control: ControlLike) {
+		const sourceInstanceId = Number(args.sourceInstanceId);
+		if (!Number.isInteger(sourceInstanceId)) throw new Error("sourceInstanceId must be an integer");
+		const targets = parseGatewayTargets(args.targets || [], args.gatewayName);
+		const response = await control.sendTo("controller", new messages.SetGatewayLinkRequest({
+			sourceInstanceId, gateways: [{ gatewayName: args.gatewayName, targets }],
+		})) as messages.SimpleResponse;
+		if (!response.success) throw new Error(response.error || "Gateway links were refused");
+		console.log(JSON.stringify({ sourceInstanceId, gatewayName: args.gatewayName, targets, warning: response.error }));
+	},
+}));
+
 export class CtlPlugin extends BaseCtlPlugin {
 	override async addCommands(rootCommand: CommandTree) {
 		rootCommand.add(surfaceExportCommands);
