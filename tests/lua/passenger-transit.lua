@@ -275,6 +275,10 @@ local b = env.storage.surface_export_passengers[2]
 assert(b.state == "in_transit" and b.body == nil and bob.physical_surface_index == hold.index and bob_body.surface == hold,
 	"an offline passenger should be moved with their stored body")
 assert(transit.owns(alice) and transit.owns(bob))
+local zed = new_player(20, "zed", true, nil)
+zed.in_hub, zed.controller_type = false, controllers.editor
+assert(#transit.park(platform, target, "surfexp_gateway_hub", {zed}) == 0 and not transit.owns(zed),
+	"a connected player aboard without a character is not parked")
 print("PASS pressing Transfer parks connected and offline passengers on the hidden hold")
 
 transit.return_parked(parked)

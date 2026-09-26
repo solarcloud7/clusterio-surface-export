@@ -120,13 +120,14 @@ end
 local function park_connected(player, record, platform, hold)
 	player.leave_space_platform()
 	local body = player.character
-	if not (body and body.valid) then error("passenger has no character after leaving the hub") end
+	if not (body and body.valid) then return false end
 	record.body, record.body_unit_number = body, body.unit_number
 	player.set_controller{type = defines.controllers.god}
 	local position = hold_position(hold)
 	if not body.teleport(position, hold) then error("character teleport to the passenger hold was refused") end
 	if not player.teleport(position, hold) then error("player teleport to the passenger hold was refused") end
 	remote_view(player, platform)
+	return true
 end
 
 local function park_offline(player, _, _, hold)
@@ -134,6 +135,7 @@ local function park_offline(player, _, _, hold)
 	if player.controller_type == defines.controllers.remote then player.exit_remote_view() end
 	if not player.teleport(hold_position(hold), hold) then error("offline passenger teleport to the passenger hold was refused") end
 	if player.physical_surface_index ~= hold.index then error("offline passenger did not reach the passenger hold") end
+	return true
 end
 
 local function reattach(player, record)
@@ -200,9 +202,8 @@ function Transit.park(platform, target, gateway_name, players)
 	local hold = Transit.hold_surface()
 	local uid = platform_identity(platform)
 	for _, player in ipairs(players or {}) do
-		local connected = player.valid and player.connected
-		local has_body = connected and player.character ~= nil and player.character.valid
-		if player.valid and not records()[player.index] and (has_body or not connected) then
+		if player.valid and not records()[player.index] then
+			local connected = player.connected
 			local record = {
 				state = "in_transit", player_name = player.name,
 				platform_index = platform.index, platform_uid = uid, force_name = platform.force.name,
@@ -212,9 +213,11 @@ function Transit.park(platform, target, gateway_name, players)
 			}
 			records()[player.index] = record
 			local ok, err = pcall(connected and park_connected or park_offline, player, record, platform, hold)
-			if ok then
+			if ok and err then
 				parked[#parked + 1] = player.index
 				show_window(player, record)
+			elseif ok then
+				records()[player.index] = nil
 			else
 				log(string.format("[Passenger] parking '%s' from '%s' failed: %s",
 					tostring(player.name), tostring(platform.name), tostring(err)))
