@@ -1,37 +1,30 @@
 #!/usr/bin/env node
-// requires: a reachable cluster (dev, or a remote named in tools/clusterio/remote-clusters.local.json) with running instances
-// produces: a JSON snapshot of one player on every running instance (body, gear, grids, platform, passenger and arrival records) and a diff of two snapshots with item totals
-// does not: change game state, read an offline player's body (the engine hides it), or prove where unreadable items went
+// requires: a reachable cluster (dev, or a remote named in tools/clusterio/remote-clusters.local.json)
+// produces: a JSON snapshot of one player on every instance, each observed, absent or unavailable with a reason, with possessions as {item, quality, count, location} across inventories, cursor and equipment grids; a diff of two snapshots that gives a conservation verdict only from complete evidence
+// does not: change game state, read an offline player's body (the engine hides it), or prove where unobserved items went
 import { readFileSync, writeFileSync } from "node:fs";
 import url from "node:url";
 import { DEVELOPMENT, parseInstanceList, withCluster } from "../shared/remote-cluster.mjs";
 
-const INVENTORIES = ["armor", "main", "guns", "ammo", "trash"];
-
 export function snapshotLua(player) {
 	if (!/^[A-Za-z0-9_.-]+$/.test(player)) throw new Error(`Unsupported player name: ${player}`);
 	return `local p = game.get_player("${player}")
-if not p then return {present = false} end
-local function contents(inv)
-	local out = {}
-	if not (inv and inv.valid) then return out end
-	for _, item in pairs(inv.get_contents()) do
-		local key = item.name
-		if item.quality and item.quality ~= "normal" then key = key .. "@" .. item.quality end
-		out[key] = (out[key] or 0) + item.count
+if not p then return {observation = "absent"} end
+local possessions = {}
+local function quality_of(thing) return thing.quality and thing.quality.name or "normal" end
+local function add_stack(stack, location)
+	possessions[#possessions + 1] = {item = stack.name, quality = quality_of(stack), count = stack.count, location = location}
+	if stack.grid then
+		for _, e in pairs(stack.grid.equipment) do
+			possessions[#possessions + 1] = {item = e.name, quality = quality_of(e), count = 1, location = "grid:" .. location}
+		end
 	end
-	return out
 end
-local function grids(inv, where, out)
+local function scan(inv, location)
 	if not (inv and inv.valid) then return end
 	for slot = 1, #inv do
 		local stack = inv[slot]
-		if stack.valid_for_read and stack.grid then
-			local equipment = {}
-			for _, e in pairs(stack.grid.equipment) do equipment[#equipment + 1] = e.name end
-			table.sort(equipment)
-			out[#out + 1] = {where = where, slot = slot, item = stack.name, equipment = table.concat(equipment, ",")}
-		end
+		if stack.valid_for_read then add_stack(stack, location) end
 	end
 end
 local controller = tostring(p.controller_type)
@@ -39,18 +32,14 @@ for name, value in pairs(defines.controllers) do if value == p.controller_type t
 local body
 local c = p.character
 if c and c.valid then
-	local armor = c.get_inventory(defines.inventory.character_armor)
-	local main = c.get_main_inventory()
-	local grid_list = {}
-	grids(armor, "armor", grid_list)
-	grids(main, "main", grid_list)
-	body = {unit = c.unit_number, surface = c.surface.name, x = math.floor(c.position.x), y = math.floor(c.position.y),
-		armor = contents(armor), main = contents(main),
-		guns = contents(c.get_inventory(defines.inventory.character_guns)),
-		ammo = contents(c.get_inventory(defines.inventory.character_ammo)),
-		trash = contents(c.get_inventory(defines.inventory.character_trash)),
-		cursor = p.cursor_stack and p.cursor_stack.valid_for_read and (p.cursor_stack.name .. " x" .. p.cursor_stack.count) or nil,
-		grids = grid_list}
+	scan(c.get_inventory(defines.inventory.character_armor), "armor")
+	scan(c.get_main_inventory(), "main")
+	scan(c.get_inventory(defines.inventory.character_guns), "guns")
+	scan(c.get_inventory(defines.inventory.character_ammo), "ammo")
+	scan(c.get_inventory(defines.inventory.character_trash), "trash")
+	local cursor = p.cursor_stack
+	if cursor and cursor.valid_for_read then add_stack(cursor, "cursor") end
+	body = {unit = c.unit_number, surface = c.surface.name, x = math.floor(c.position.x), y = math.floor(c.position.y), possessions = possessions}
 end
 local physical = game.get_surface(p.physical_surface_index)
 local record = storage.surface_export_passengers and storage.surface_export_passengers[p.index]
@@ -58,7 +47,7 @@ local arrivals = {}
 for key, arrival in pairs((storage.surface_export_arrivals or {})[p.name] or {}) do
 	arrivals[#arrivals + 1] = {key = key, items = #(arrival.items or {}), boarding = arrival.boarding_done and tostring(arrival.boarding_done) or nil}
 end
-return {present = true, connected = p.connected, controller = controller,
+return {observation = "observed", connected = p.connected, controller = controller,
 	physical_surface = physical and physical.name or nil,
 	aboard = physical and physical.platform and physical.platform.name or nil,
 	body = body,
@@ -66,27 +55,46 @@ return {present = true, connected = p.connected, controller = controller,
 	arrivals = arrivals}`.replace(/\n\s*/g, " ");
 }
 
-export function bodyTotals(body) {
-	const totals = {};
-	for (const inventory of INVENTORIES) {
-		for (const [item, count] of Object.entries(body?.[inventory] || {})) totals[item] = (totals[item] || 0) + count;
+export function normalizeObservation(raw) {
+	if (raw && (raw.observation === "observed" || raw.observation === "absent")) return raw;
+	if (raw && raw.observation === "unavailable") return raw;
+	const reason = raw?.error ? `snapshot failed: ${raw.error}` : "no usable observation";
+	return { observation: "unavailable", reason };
+}
+
+function key(possession) {
+	return possession.quality && possession.quality !== "normal" ? `${possession.item}@${possession.quality}` : possession.item;
+}
+
+export function countPossessions(possessions = [], byLocation = false) {
+	const counts = {};
+	for (const possession of possessions) {
+		const name = byLocation ? `${possession.location} ${key(possession)}` : key(possession);
+		counts[name] = (counts[name] || 0) + Number(possession.count || 0);
 	}
-	return totals;
+	return counts;
 }
 
 export function summarize(snapshot) {
 	const totals = {};
+	const unavailable = [];
 	const unreadable = [];
-	for (const [instance, state] of Object.entries(snapshot.instances)) {
-		if (!state.present) continue;
+	let observed = 0;
+	for (const [instance, raw] of Object.entries(snapshot.instances || {})) {
+		const state = normalizeObservation(raw);
+		if (state.observation === "unavailable") { unavailable.push(`${instance} (${state.reason})`); continue; }
+		observed += 1;
+		if (state.observation === "absent") continue;
 		if (!state.body) { unreadable.push(instance); continue; }
-		for (const [item, count] of Object.entries(bodyTotals(state.body))) totals[item] = (totals[item] || 0) + count;
+		for (const [item, count] of Object.entries(countPossessions(state.body.possessions))) totals[item] = (totals[item] || 0) + count;
 	}
-	return { totals, unreadable };
+	return { totals, unavailable, unreadable, observed };
 }
 
-function where(state) {
-	if (!state?.present) return "not on this instance";
+function where(raw) {
+	const state = normalizeObservation(raw);
+	if (state.observation === "unavailable") return `unavailable: ${state.reason}`;
+	if (state.observation === "absent") return "player absent";
 	const place = state.aboard ? `aboard ${state.aboard}` : state.physical_surface || "?";
 	const body = state.body ? `body ${state.body.unit} on ${state.body.surface}` : "no readable body";
 	return `${state.connected ? "online" : "offline"}, ${state.controller}, ${place}, ${body}`;
@@ -103,49 +111,57 @@ function delta(before = {}, after = {}) {
 
 export function diffSnapshots(before, after) {
 	const lines = [];
-	const instances = [...new Set([...Object.keys(before.instances), ...Object.keys(after.instances)])].sort();
+	const beforeNames = Object.keys(before.instances || {});
+	const afterNames = Object.keys(after.instances || {});
+	const instances = [...new Set([...beforeNames, ...afterNames])].sort();
 	for (const instance of instances) {
-		const a = before.instances[instance];
-		const b = after.instances[instance];
+		const a = normalizeObservation(before.instances?.[instance] ?? { observation: "unavailable", reason: "not in the before snapshot" });
+		const b = normalizeObservation(after.instances?.[instance] ?? { observation: "unavailable", reason: "not in the after snapshot" });
 		const was = where(a);
 		const now = where(b);
 		lines.push(`${instance}: ${was === now ? now : `${was} -> ${now}`}`);
-		if (a?.body && b?.body) {
-			for (const inventory of INVENTORIES) {
-				const changes = delta(a.body[inventory], b.body[inventory]);
-				if (changes.length) lines.push(`  ${inventory}: ${changes.join(", ")}`);
-			}
-			const gridsBefore = JSON.stringify(a.body.grids || []);
-			const gridsAfter = JSON.stringify(b.body.grids || []);
-			if (gridsBefore !== gridsAfter) lines.push(`  grids: ${gridsBefore} -> ${gridsAfter}`);
+		if (a.body && b.body) {
+			const changes = delta(countPossessions(a.body.possessions, true), countPossessions(b.body.possessions, true));
+			if (changes.length) lines.push(`  ${changes.join(", ")}`);
 		}
-		if (JSON.stringify(a?.passenger ?? null) !== JSON.stringify(b?.passenger ?? null)) {
-			lines.push(`  passenger record: ${JSON.stringify(a?.passenger ?? null)} -> ${JSON.stringify(b?.passenger ?? null)}`);
+		if (JSON.stringify(a.passenger ?? null) !== JSON.stringify(b.passenger ?? null)) {
+			lines.push(`  passenger record: ${JSON.stringify(a.passenger ?? null)} -> ${JSON.stringify(b.passenger ?? null)}`);
 		}
-		if (JSON.stringify(a?.arrivals ?? []) !== JSON.stringify(b?.arrivals ?? [])) {
-			lines.push(`  arrivals: ${JSON.stringify(a?.arrivals ?? [])} -> ${JSON.stringify(b?.arrivals ?? [])}`);
+		if (JSON.stringify(a.arrivals ?? []) !== JSON.stringify(b.arrivals ?? [])) {
+			lines.push(`  arrivals: ${JSON.stringify(a.arrivals ?? [])} -> ${JSON.stringify(b.arrivals ?? [])}`);
 		}
 	}
 	const first = summarize(before);
 	const second = summarize(after);
+	const gaps = [];
+	for (const [label, summary] of [["before", first], ["after", second]]) {
+		if (summary.observed === 0) gaps.push(`no instance was observed in the ${label} snapshot`);
+		for (const entry of summary.unavailable) gaps.push(`${label}: ${entry}`);
+		for (const instance of summary.unreadable) gaps.push(`${label}: no readable body on ${instance} (offline bodies are hidden by the engine)`);
+	}
+	if (beforeNames.sort().join(",") !== afterNames.sort().join(",")) gaps.push("the snapshots cover different instances");
 	const totalChanges = delta(first.totals, second.totals);
-	const unreadable = [...new Set([...first.unreadable, ...second.unreadable])];
-	if (unreadable.length) {
-		lines.push(`totals: incomplete, no readable body on ${unreadable.join(", ")} (offline bodies are hidden by the engine)`);
-		if (totalChanges.length) lines.push(`  readable change: ${totalChanges.join(", ")}`);
+	const complete = gaps.length === 0;
+	if (!complete) {
+		lines.push(`totals: UNKNOWN, evidence incomplete: ${gaps.join("; ")}`);
+		if (totalChanges.length) lines.push(`  observed change: ${totalChanges.join(", ")}`);
 	} else if (totalChanges.length) {
 		lines.push(`totals: CHANGED ${totalChanges.join(", ")}`);
 	} else {
 		lines.push("totals: unchanged across all instances (nothing created or lost)");
 	}
-	return { lines, conserved: unreadable.length === 0 && totalChanges.length === 0, complete: unreadable.length === 0 };
+	return { lines, conserved: complete && totalChanges.length === 0, complete };
 }
 
 export async function takeSnapshot(cluster, player, { run = withCluster } = {}) {
 	return run(cluster, transport => {
-		const running = parseInstanceList(transport.ctl("instance", "list")).filter(row => row.status === "running");
+		const rows = parseInstanceList(transport.ctl("instance", "list"));
 		const instances = {};
-		for (const row of running) instances[row.name] = transport.lua(row.name, snapshotLua(player));
+		for (const row of rows) {
+			if (row.status !== "running") { instances[row.name] = { observation: "unavailable", reason: `instance ${row.status || "status unknown"}` }; continue; }
+			try { instances[row.name] = normalizeObservation(transport.lua(row.name, snapshotLua(player))); }
+			catch (error) { instances[row.name] = { observation: "unavailable", reason: `query failed: ${String(error?.message || error).split("\n")[0]}` }; }
+		}
 		return { cluster, player, takenAt: new Date().toISOString(), instances };
 	});
 }
@@ -156,7 +172,8 @@ function report(stream, error, code) {
 }
 
 const USAGE = `usage: node tools/surface-export/player-state.mjs --player <name> [--cluster dev|<name>] [--out snapshot.json]
-       node tools/surface-export/player-state.mjs --diff <before.json> <after.json>`;
+       node tools/surface-export/player-state.mjs --diff <before.json> <after.json>
+exit codes for --diff: 0 conserved, 1 changed, 3 evidence incomplete (no verdict)`;
 
 export async function main(argv, { out = process.stdout, err = process.stderr, snapshot = takeSnapshot } = {}) {
 	const value = flag => { const index = argv.indexOf(flag); return index >= 0 ? argv[index + 1] : undefined; };
@@ -165,7 +182,8 @@ export async function main(argv, { out = process.stdout, err = process.stderr, s
 		if (!beforeFile || !afterFile) { err.write(`${USAGE}\n`); return 2; }
 		const result = diffSnapshots(JSON.parse(readFileSync(beforeFile, "utf8")), JSON.parse(readFileSync(afterFile, "utf8")));
 		out.write(`${result.lines.join("\n")}\n`);
-		return result.complete && !result.conserved ? 1 : 0;
+		if (!result.complete) return 3;
+		return result.conserved ? 0 : 1;
 	}
 	const player = value("--player");
 	if (!player) { err.write(`${USAGE}\n`); return 2; }
@@ -174,8 +192,9 @@ export async function main(argv, { out = process.stdout, err = process.stderr, s
 		const json = JSON.stringify(state, null, 2);
 		if (value("--out")) writeFileSync(value("--out"), `${json}\n`);
 		for (const [instance, instanceState] of Object.entries(state.instances)) out.write(`${instance}: ${where(instanceState)}\n`);
-		const { totals, unreadable } = summarize(state);
-		out.write(`readable items: ${Object.entries(totals).map(([item, count]) => `${item} ${count}`).join(", ") || "none"}${unreadable.length ? ` (no readable body on ${unreadable.join(", ")})` : ""}\n`);
+		const { totals, unavailable, unreadable } = summarize(state);
+		const gaps = [...unavailable, ...unreadable.map(instance => `no readable body on ${instance}`)];
+		out.write(`observed possessions: ${Object.entries(totals).map(([item, count]) => `${item} ${count}`).join(", ") || "none"}${gaps.length ? ` (incomplete: ${gaps.join("; ")})` : ""}\n`);
 		if (value("--out")) out.write(`saved ${value("--out")}\n`);
 		return 0;
 	} catch (error) {

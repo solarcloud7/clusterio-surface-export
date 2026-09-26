@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseInstanceList, readRemoteCluster, withCluster } from "../../tools/shared/remote-cluster.mjs";
 import { isReadOnly, main as ctlMain } from "../../tools/clusterio/ctl.mjs";
-import { diffSnapshots, snapshotLua } from "../../tools/surface-export/player-state.mjs";
+import { diffSnapshots, snapshotLua, takeSnapshot } from "../../tools/surface-export/player-state.mjs";
 
 const TOKEN = "secret-token-value";
 function sink() { const parts = []; return { write: text => parts.push(text), text: () => parts.join("") }; }
@@ -66,27 +66,68 @@ test("the snapshot Lua is one line and refuses unsafe player names", () => {
 	assert.throws(() => snapshotLua('x") game.print("y'), /Unsupported player name/);
 });
 
-test("the diff proves conservation only when every body was readable", () => {
-	const armor = { "modular-armor": 1 };
+const armor = (quality = "normal", equipment = [{ item: "solar-panel-equipment", quality: "normal" }]) => [
+	{ item: "modular-armor", quality, count: 1, location: "armor" },
+	...equipment.map(e => ({ item: e.item, quality: e.quality, count: 1, location: "grid:armor" })),
+];
+const observed = (possessions, extra = {}) => ({ observation: "observed", connected: true, controller: "character",
+	body: { unit: 1, surface: "nauvis", possessions }, ...extra });
+
+test("the diff proves conservation only from complete observations", () => {
 	const before = { instances: {
-		a: { present: true, connected: true, controller: "character", aboard: "ship", body: { unit: 1, surface: "platform-1", armor, main: { "iron-plate": 5 } } },
-		b: { present: true, connected: false, controller: "character", body: { unit: 2, surface: "nauvis", main: {} } },
+		a: observed([...armor(), { item: "iron-plate", quality: "normal", count: 5, location: "main" }]),
+		b: observed([], { connected: false }),
 	} };
 	const moved = { instances: {
-		a: { present: true, connected: false, controller: "character", body: { unit: 1, surface: "nauvis", main: { "iron-plate": 5 } } },
-		b: { present: true, connected: true, controller: "remote", aboard: "ship", body: { unit: 2, surface: "platform-2", armor, main: {} } },
+		a: observed([{ item: "iron-plate", quality: "normal", count: 5, location: "main" }]),
+		b: observed(armor(), { aboard: "ship" }),
 	} };
-	const conserved = diffSnapshots(before, moved);
-	assert.ok(conserved.conserved && conserved.complete);
-	assert.ok(conserved.lines.some(line => line.includes("armor: modular-armor -1")));
-	assert.ok(conserved.lines.some(line => line.includes("armor: modular-armor +1")));
-	assert.equal(conserved.lines.at(-1), "totals: unchanged across all instances (nothing created or lost)");
+	const result = diffSnapshots(before, moved);
+	assert.ok(result.conserved && result.complete, result.lines.join("\n"));
+	assert.ok(result.lines.some(line => line.includes("armor modular-armor -1")));
+	assert.equal(result.lines.at(-1), "totals: unchanged across all instances (nothing created or lost)");
 	const duplicated = structuredClone(moved);
-	duplicated.instances.a.body.armor = armor;
+	duplicated.instances.a.body.possessions.push(...armor());
 	const dup = diffSnapshots(before, duplicated);
-	assert.ok(!dup.conserved && dup.lines.at(-1).includes("CHANGED modular-armor +1"));
-	const hidden = structuredClone(moved);
-	delete hidden.instances.a.body;
-	const partial = diffSnapshots(before, hidden);
-	assert.ok(!partial.complete && partial.lines.some(line => line.startsWith("totals: incomplete, no readable body on a")));
+	assert.ok(dup.complete && !dup.conserved && dup.lines.at(-1).includes("CHANGED modular-armor +1, solar-panel-equipment +1"));
+});
+
+test("moving an item between locations is conserved, but losing a cursor stack or equipment is not", () => {
+	const base = observed([...armor(), { item: "copper-plate", quality: "normal", count: 100, location: "cursor" }]);
+	const intoMain = observed([...armor(), { item: "copper-plate", quality: "normal", count: 100, location: "main" }]);
+	assert.ok(diffSnapshots({ instances: { a: base } }, { instances: { a: intoMain } }).conserved, "cursor to main is a move, not a loss");
+	const cursorLost = diffSnapshots({ instances: { a: base } }, { instances: { a: observed(armor()) } });
+	assert.ok(cursorLost.complete && !cursorLost.conserved && cursorLost.lines.at(-1).includes("copper-plate -100"));
+	const equipmentLost = diffSnapshots({ instances: { a: base } }, { instances: { a: observed([...armor("normal", []), base.body.possessions[2]]) } });
+	assert.ok(!equipmentLost.conserved && equipmentLost.lines.at(-1).includes("solar-panel-equipment -1"));
+	const qualityChanged = diffSnapshots({ instances: { a: base } },
+		{ instances: { a: observed([...armor("normal", [{ item: "solar-panel-equipment", quality: "rare" }]), base.body.possessions[2]]) } });
+	assert.ok(!qualityChanged.conserved && qualityChanged.lines.at(-1).includes("solar-panel-equipment -1, solar-panel-equipment@rare +1"));
+});
+
+test("failed, missing and unavailable observations never produce a verdict", () => {
+	const failed = { instances: { a: { success: false, error: "Lua snapshot failed" } } };
+	const bothFailed = diffSnapshots(failed, failed);
+	assert.ok(!bothFailed.complete && !bothFailed.conserved);
+	assert.match(bothFailed.lines.at(-1), /UNKNOWN, evidence incomplete: no instance was observed in the before snapshot/);
+	assert.match(bothFailed.lines.at(-1), /snapshot failed: Lua snapshot failed/);
+	const empty = diffSnapshots({ instances: {} }, { instances: {} });
+	assert.ok(!empty.complete && !empty.conserved, "no observed instances is not evidence of conservation");
+	const absent = { instances: { a: { observation: "absent" } } };
+	const allAbsent = diffSnapshots(absent, absent);
+	assert.ok(allAbsent.complete && allAbsent.conserved, "an explicitly observed absence is complete evidence");
+	const other = diffSnapshots({ instances: { a: observed([]) } }, { instances: { a: observed([]), b: observed([]) } });
+	assert.ok(!other.complete && other.lines.at(-1).includes("different instances"));
+});
+
+test("a snapshot records stopped and failing instances as unavailable with a reason", async () => {
+	const lua = name => { if (name === "broken") throw new Error("rcon timeout"); return name === "gone" ? { observation: "absent" } : observed([]); };
+	const run = async (_cluster, fn) => fn({ ctl: () => "name | status\n---\nup | running\ndown | stopped\nbroken | running\ngone | running\n", lua });
+	const state = await takeSnapshot("test", "player", { run });
+	assert.equal(state.instances.up.observation, "observed");
+	assert.deepEqual(state.instances.down, { observation: "unavailable", reason: "instance stopped" });
+	assert.equal(state.instances.broken.observation, "unavailable");
+	assert.match(state.instances.broken.reason, /query failed: rcon timeout/);
+	assert.deepEqual(state.instances.gone, { observation: "absent" });
+	assert.ok(!diffSnapshots(state, state).complete, "an unavailable instance leaves the verdict unknown");
 });
