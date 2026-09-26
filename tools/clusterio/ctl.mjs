@@ -45,10 +45,15 @@ Runs clusterioctl against the development cluster (default) or a remote cluster 
 tools/clusterio/remote-clusters.local.json. Without --write only these are allowed:
 ${READ_ONLY.map(words => `  ${words.join(" ")}`).join("\n")}`;
 
+function report(stream, context, error, code) {
+	stream.write(`${context}${String(error?.stderr || error?.message || error).trim()}\n`);
+	return code;
+}
+
 export async function main(argv, { run = withCluster, out = process.stdout, err = process.stderr } = {}) {
 	let options;
 	try { options = parseArgs(argv); }
-	catch (error) { err.write(`${error.message}\n${USAGE}\n`); return 2; }
+	catch (error) { return report(err, `${USAGE}\n\n`, error, 2); }
 	if (options.help || options.args.length === 0) { out.write(`${USAGE}\n`); return options.help ? 0 : 2; }
 	if (!options.write && !isReadOnly(options.args)) {
 		err.write(`Refusing "${options.args.slice(0, 3).join(" ")}" without --write: it is not on the read-only list.\n`);
@@ -59,8 +64,7 @@ export async function main(argv, { run = withCluster, out = process.stdout, err 
 		out.write(output.endsWith("\n") ? output : `${output}\n`);
 		return 0;
 	} catch (error) {
-		err.write(`${options.cluster}: ${String(error.stderr || error.message).trim()}\n`);
-		return 1;
+		return report(err, `${options.cluster}: `, error, 1);
 	}
 }
 

@@ -150,6 +150,11 @@ export async function takeSnapshot(cluster, player, { run = withCluster } = {}) 
 	});
 }
 
+function report(stream, error, code) {
+	stream.write(`${String(error?.stderr || error?.message || error).trim()}\n`);
+	return code;
+}
+
 const USAGE = `usage: node tools/surface-export/player-state.mjs --player <name> [--cluster dev|<name>] [--out snapshot.json]
        node tools/surface-export/player-state.mjs --diff <before.json> <after.json>`;
 
@@ -174,8 +179,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, s
 		if (value("--out")) out.write(`saved ${value("--out")}\n`);
 		return 0;
 	} catch (error) {
-		err.write(`${String(error.stderr || error.message).trim()}\n`);
-		return 1;
+		return report(err, error, 1);
 	}
 }
 
