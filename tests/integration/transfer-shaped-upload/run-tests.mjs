@@ -311,7 +311,7 @@ try {
 			docker(["exec", CONTROLLER, "sh", "-c", `rm -f ${path}`]);
 		}
 		docker(["exec", HOSTS[SOURCE_HOST].container, "sh", "-c",
-			`rm -f ${instancePath(SOURCE_HOST, `script-output/${DUMP_FILE}`)}`]);
+			`rm -f '${instancePath(SOURCE_HOST, `script-output/${DUMP_FILE}`)}'`]);
 
 		if (exportJobId) {
 			lua(SOURCE_HOST, "if storage.platform_exports then\n"

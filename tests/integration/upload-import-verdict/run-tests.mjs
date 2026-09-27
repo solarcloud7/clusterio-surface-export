@@ -463,9 +463,9 @@ try {
 			docker(["exec", CONTROLLER, "sh", "-c", `rm -f ${path}`]);
 		}
 		docker(["exec", HOSTS[SOURCE_HOST].container, "sh", "-c",
-			`rm -f ${instancePath(SOURCE_HOST, `script-output/${DUMP_FILE}`)}`]);
+			`rm -f '${instancePath(SOURCE_HOST, `script-output/${DUMP_FILE}`)}'`]);
 		docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
-			`rm -f ${instancePath(DEST_HOST, `script-output/failure_black_box_${PREFIX}*`)}`]);
+			`rm -f '${instancePath(DEST_HOST, "script-output")}'/failure_black_box_${PREFIX}*`]);
 
 		if (exportJobId) {
 			lua(SOURCE_HOST, "if storage.platform_exports then\n"

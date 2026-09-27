@@ -136,7 +136,7 @@ export function createCase(context) {
 		const path = instancePath(host, "factorio-current.log");
 		for (let attempt = 1; attempt <= STATE_LOG_ATTEMPTS; attempt++) {
 			const out = docker(["exec", HOSTS[host].container, "sh", "-c",
-				`grep -aF '${STATE_LOG_MARKER}' ${path} | tail -1 || true`]);
+				`grep -aF '${STATE_LOG_MARKER}' '${path}' | tail -1 || true`]);
 			const hit = out.split(/\r?\n/).map(l => l.trim()).filter(Boolean).pop();
 			if (hit) {
 				const nums = hit.match(/applied (\d+) \| declined (\d+) \| failed (\d+)/);

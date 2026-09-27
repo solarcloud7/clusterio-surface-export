@@ -299,7 +299,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	function filesNewerThanMarker(host, marker, glob) {
 		try {
 			return docker(["exec", HOSTS[host].container, "sh", "-c",
-				`find ${instancePath(host, "script-output")} -maxdepth 1 -name '${glob}' -newer ${marker} 2>/dev/null || true`])
+				`find '${instancePath(host, "script-output")}' -maxdepth 1 -name '${glob}' -newer '${marker}' 2>/dev/null || true`])
 				.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 		} catch (error) {
 			console.error(`filesNewerThanMarker(host ${host}): ${error.message}`);
