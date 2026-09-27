@@ -161,8 +161,8 @@ jobs:
             grep -oE '"factorio\.version"[^"]*"[0-9]+\.[0-9]+\.[0-9]+"' "$1" \
               | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
           }
-          H1=docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json
-          H2=docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/instance.json
+          H1="$(printf '%s\n' docker/seed-data/hosts/clusterio-host-1/*/instance.json | head -1)"
+          H2="$(printf '%s\n' docker/seed-data/hosts/clusterio-host-2/*/instance.json | head -1)"
           v=$(read_ver "$H1")  || true
           v2=$(read_ver "$H2") || true
           test -n "$v"   || { echo "::error::could not resolve factorio.version from $H1"; exit 1; }
@@ -296,7 +296,7 @@ jobs:
           echo "Waiting for RCON and the surface_export module on both instances..."
           READY_COMMAND='/sc rcon.print(remote.interfaces["surface_export"] and "ci-plugin-ready" or "ci-plugin-missing")'
           READY_DEADLINE=$((SECONDS + 90))
-          READY_INSTANCES=(clusterio-host-1-instance-1 clusterio-host-2-instance-1)
+          READY_INSTANCES=("Dev One" "Dev Two")
           declare -A LAST_READY_OUTPUT
           while true; do
             ALL_READY=true
@@ -442,10 +442,10 @@ jobs:
           docker logs surface-export-host-2 --tail 500 2>&1 || true
           echo ""
           echo "=== Host 1 Factorio Log (empty => Factorio never launched; see host log above) ==="
-          docker exec surface-export-host-1 cat /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
+          docker exec surface-export-host-1 cat "/clusterio/data/instances/Dev One/factorio-current.log" 2>/dev/null | tail -200 || true
           echo ""
           echo "=== Host 2 Factorio Log ==="
-          docker exec surface-export-host-2 cat /clusterio/data/instances/clusterio-host-2-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
+          docker exec surface-export-host-2 cat "/clusterio/data/instances/Dev Two/factorio-current.log" 2>/dev/null | tail -200 || true
 
       - name: Capture failing repro (payload + save) for local debugging
         if: failure()
@@ -453,13 +453,13 @@ jobs:
           # Capture the re-importable payload and the host-2 save so a CI-only failure can be
           # reproduced locally instead of through repeated CI pushes.
           mkdir -p ci-artifacts/host1-script-output ci-artifacts/host2-script-output ci-artifacts/host2-saves
-          docker cp surface-export-host-1:/clusterio/data/instances/clusterio-host-1-instance-1/script-output/. ci-artifacts/host1-script-output/ 2>/dev/null || true
-          docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/script-output/. ci-artifacts/host2-script-output/ 2>/dev/null || true
+          docker cp "surface-export-host-1:/clusterio/data/instances/Dev One/script-output/." ci-artifacts/host1-script-output/ 2>/dev/null || true
+          docker cp "surface-export-host-2:/clusterio/data/instances/Dev Two/script-output/." ci-artifacts/host2-script-output/ 2>/dev/null || true
           # Stop host-2 to flush the failed destination. `instance stop` can return before the save's
           # .tmp.zip is atomically renamed, so track the exact active save rather than an autosave/newest zip.
           HOST2=surface-export-host-2
           ACTIVE_SAVE_PATH="$(docker exec "$HOST2" sh -c '
-            log=/clusterio/data/instances/clusterio-host-2-instance-1/factorio-current.log
+            log="/clusterio/data/instances/Dev Two/factorio-current.log"
             line=$(grep -m1 -- "--start-server" "$log" 2>/dev/null || true)
             printf "%s\n" "$line" | sed -n "s#.*\(/clusterio/data/instances/[^\"]*/saves/[^\"]*\.zip\)\".*#\1#p"
           ' 2>/dev/null || true)"
@@ -475,7 +475,7 @@ jobs:
             echo "::warning::Could not resolve host-2's active save from factorio-current.log; skipping flush poll and copying any saves that exist"
           fi
 
-          docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-2-instance-1' 2>&1 || true
+          docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop "Dev Two"' 2>&1 || true
 
           OBSERVED_INCOMPLETE_AFTER_STOP=false
           FINAL_STAT=absent
@@ -504,7 +504,7 @@ jobs:
             done
           fi
 
-          docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/saves/. ci-artifacts/host2-saves/ 2>/dev/null || true
+          docker cp "surface-export-host-2:/clusterio/data/instances/Dev Two/saves/." ci-artifacts/host2-saves/ 2>/dev/null || true
           FOUND_SAVE=false
           while IFS= read -r save; do
             FOUND_SAVE=true

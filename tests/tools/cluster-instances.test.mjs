@@ -118,5 +118,5 @@ try { ConvertFrom-InstanceList -Raw @('Error: not connected') | Out-Null; $empty
 	assert.match(parsed.empty, /no name\/id\/assignedHost\/status column; raw output: Error: not connected/);
 	assert.equal(parsed.tiebreak, "902099405");
 	assert.match(parsed.ambiguous, /Host 2 has 2 assigned instance\(s\), none uniquely named like its seed \(Dev Two\)/);
-	assert.equal(parsed.seed, "clusterio-host-2-instance-1");
+	assert.equal(parsed.seed, "Dev Two");
 });

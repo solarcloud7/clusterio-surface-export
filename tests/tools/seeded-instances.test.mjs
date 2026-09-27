@@ -19,11 +19,11 @@ function tree(spec) {
 }
 
 test("the live seed tree derives the two-host cluster every tool used to hard-code", () => {
-	assert.deepEqual(seededInstanceNames(), ["clusterio-host-1-instance-1", "clusterio-host-2-instance-1"]);
+	assert.deepEqual(seededInstanceNames(), ["Dev One", "Dev Two"]);
 	const hosts = seededHosts();
 	assert.equal(hosts[1].container, "surface-export-host-1");
 	assert.equal(hosts[2].container, "surface-export-host-2");
-	assert.equal(hosts[1].instance, "clusterio-host-1-instance-1");
+	assert.equal(hosts[1].instance, "Dev One");
 });
 
 test("a third seeded host enters the set with its own container name", () => {

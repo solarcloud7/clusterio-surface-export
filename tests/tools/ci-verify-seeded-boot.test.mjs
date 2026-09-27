@@ -9,8 +9,8 @@ import {
 } from "../../tools/clusterio/ci-verify-seeded-boot.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const HOST1 = "clusterio-host-1-instance-1";
-const HOST2 = "clusterio-host-2-instance-1";
+const HOST1 = "Dev One";
+const HOST2 = "Dev Two";
 
 const SOURCE_SAVE = "lab-gallery-source.zip";
 const DESTINATION_SAVE = "lab-gallery-destination.zip";
