@@ -47,3 +47,16 @@ test("the cluster-state broadcasts are not filtered down to one event kind", () 
 		"broadcast on every host connection event; the tree is rebuilt whole, so the kind does not matter",
 	);
 });
+
+test("planet policy, mod pack assignment and mod pack edits rebroadcast the tree", () => {
+	const fields = controllerSource.match(/TREE_INSTANCE_CONFIG_FIELDS = new Set\(\[([^\]]*)\]\)/);
+	assert.ok(fields, "the instance config fields the tree renders must be listed");
+	for (const field of ["default_planet", "disabled_planets", "factorio.mod_pack_id"]) {
+		assert.ok(fields[1].includes(field), `${field} is rendered by the tree`);
+	}
+	assert.match(methodBody(controllerSource, "onInstanceConfigFieldChanged"), /TREE_INSTANCE_CONFIG_FIELDS\.has\(field\)[^\n]*queueTreeBroadcast\(/);
+	assert.match(methodBody(controllerSource, "onModPacksUpdated"), /queueTreeBroadcast\(/,
+		"server destinations are a mod pack startup setting");
+	assert.match(methodBody(controllerSource, "onControllerConfigFieldChanged"),
+		/"controller\.default_mod_pack_id"\)[^\n]*queueTreeBroadcast\(/);
+});

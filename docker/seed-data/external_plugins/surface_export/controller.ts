@@ -39,6 +39,11 @@ import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
+const TREE_INSTANCE_CONFIG_FIELDS = new Set([
+	`${PLUGIN_NAME}.default_planet`,
+	`${PLUGIN_NAME}.disabled_planets`,
+	"factorio.mod_pack_id",
+]);
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -290,7 +295,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
+	override async onInstanceConfigFieldChanged(_instance: InstanceRecord, field: string) {
+		if (TREE_INSTANCE_CONFIG_FIELDS.has(field)) this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
+	override async onModPacksUpdated() {
+		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
 	override async onControllerConfigFieldChanged(field: string) {
+		if (field === "controller.default_mod_pack_id") this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory"
 			&& field !== "surface_export.discord_invite") return;
 		const gateways = this.gatewayConfig;

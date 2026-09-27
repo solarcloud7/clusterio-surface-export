@@ -1,6 +1,11 @@
 import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 import { recoveryMode } from "../shared/recovery";
+import { SERVER_DESTINATIONS_SETTING, serverDestinationFor } from "../shared/server-destinations";
+
+export function planetList(value: unknown): string[] {
+	return typeof value === "string" ? value.split(",").map(name => name.trim()).filter(Boolean) : [];
+}
 
 export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
@@ -60,6 +65,22 @@ export class PlatformTree {
 
 		logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${checked} instances)`);
 		return null;
+	}
+
+	resolveDestination(instanceId: number, modPackId: unknown): InstanceNodeModel["destination"] {
+		try {
+			const controller = this.plugin.controller;
+			const fallback = controller.config?.get("controller.default_mod_pack_id");
+			const packId = Number.isInteger(modPackId) ? modPackId as number : fallback;
+			if (!Number.isInteger(packId)) {
+				return null;
+			}
+			const setting = controller.modPacks?.get(packId as number)?.settings?.startup?.get(SERVER_DESTINATIONS_SETTING);
+			return serverDestinationFor(setting?.value, instanceId);
+		} catch (err: unknown) {
+			this.plugin.logger.warn(`Failed to resolve the server destination of instance ${instanceId}: ${getErrorMessage(err)}`);
+			return null;
+		}
 	}
 
 	async requestInstancePlatforms(instanceId: number, forceName = "player") {
@@ -167,6 +188,9 @@ export class PlatformTree {
 				platforms: [],
 				platformError: null,
 				configuredRecoveryMode: recoveryMode(this.plugin.controller.config?.get("surface_export.platform_source_of_truth")),
+				defaultPlanet: String(instance.config.get("surface_export.default_planet") || "nauvis").trim() || "nauvis",
+				disabledPlanets: planetList(instance.config.get("surface_export.disabled_planets")),
+				destination: this.resolveDestination(instanceId, instance.config.get("factorio.mod_pack_id")),
 			};
 
 			if (hostId !== null && hostNodes.has(hostId)) {

@@ -1762,6 +1762,7 @@ export interface IControllerPlugin {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
 		config?: { get(field: string): unknown };
+		modPacks?: { get(id: number): { settings?: { startup?: Map<string, { value?: unknown }> } } | undefined };
 		instances: {
 			get(id: number): InstanceRecordLike | undefined;
 			values(): IterableIterator<InstanceRecordLike>;

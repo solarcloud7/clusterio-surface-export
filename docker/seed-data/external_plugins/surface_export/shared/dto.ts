@@ -135,6 +135,9 @@ export interface InstanceNodeModel {
 	connected: boolean;
 	platforms: PlatformModel[];
 	platformError: string | null;
+	defaultPlanet: string;
+	disabledPlanets: string[];
+	destination: { label: string; colour: import("./server-destinations").PortalColour } | null;
 }
 export interface HostNodeModel {
 	hostId: number;
