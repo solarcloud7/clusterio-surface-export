@@ -39,12 +39,21 @@ end
 function CommunityLinks.refresh(player)
 	if not (player and player.valid) then return end
 	local button = player.gui.top[BUTTON]
-	if not invite() then
+	local link = invite()
+	if not link then
 		if button then button.destroy() end
 		CommunityLinks.close(player)
-	elseif not button then
+		return
+	end
+	if not button then
 		player.gui.top.add{type = "sprite-button", name = BUTTON, style = "mod_gui_button", sprite = SPRITE,
 			tooltip = "Discord: copy the invite link."}
+	end
+	local frame = player.gui.screen[FRAME]
+	local box = frame and frame[LINK]
+	if box and box.text ~= link then
+		box.text = link
+		box.select_all()
 	end
 end
 

@@ -31,10 +31,30 @@ function report(stream, message, error, secret, code) {
 	return code;
 }
 
+export function parseArgs(argv) {
+	const options = { cluster: DEVELOPMENT, help: false };
+	let clusterGiven = false;
+	for (let index = 0; index < argv.length; index++) {
+		const arg = argv[index];
+		let value;
+		if (arg === "--help" || arg === "-h") { options.help = true; continue; }
+		if (arg === "--cluster") value = argv[++index];
+		else if (arg.startsWith("--cluster=")) value = arg.slice("--cluster=".length);
+		else throw new Error(`unsupported argument: ${arg}`);
+		if (clusterGiven) throw new Error("--cluster was given more than once");
+		if (!value || value.startsWith("-")) throw new Error("--cluster needs a name");
+		clusterGiven = true;
+		options.cluster = value;
+	}
+	return options;
+}
+
 export async function main(argv, { out = process.stdout, err = process.stderr, envText, run = withCluster } = {}) {
-	const index = argv.indexOf("--cluster");
-	const cluster = index >= 0 ? argv[index + 1] : DEVELOPMENT;
-	if (!cluster) { err.write(`${USAGE}\n`); return 2; }
+	let options;
+	try { options = parseArgs(argv); }
+	catch (error) { return report(err, USAGE, error, null, 2); }
+	if (options.help) { out.write(`${USAGE}\n`); return 0; }
+	const { cluster } = options;
 	let text = envText;
 	if (text === undefined) {
 		try { text = readFileSync(ENV_FILE, "utf8"); }
