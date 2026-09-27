@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // requires: a running seeded instance, Docker, and controller access
-// produces: gateway/platform JSON; optional layout, version, and before/after identity checks
+// produces: gateway/platform JSON; optional map, version, and before/after identity checks
 // does not: restart games, change settings, create fixtures, or prove client rendering
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -10,24 +10,32 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { seededInstances } from "../shared/seeded-instances.mjs";
 
-const PLANETS = ["nauvis", "vulcanus", "gleba", "fulgora", "aquilo"];
 const HUB = "surfexp_gateway_hub";
-export function verifyGatewayMap(state, { version, baseline } = {}) {
-	assert.ok(["one_gate", "multi"].includes(state.layout), "unknown gateway layout");
+const NUMBERED = [1, 2, 3, 4].map(i => `surfexp_gateway_${i}`);
+const DESTINATION = "surfexp_gateway_i_";
+const DESTINATION_ROUTE = "surfexp_gateway_link_i_";
+const hubRoute = planet => `surfexp_gateway_link_hub${planet === "nauvis" ? "" : `_${planet}`}`;
+export function verifyGatewayMap(state, { version, baseline, hubPlanets = ["nauvis"] } = {}) {
 	if (version) assert.equal(state.mod, version, "loaded mod version");
-	const expected = state.layout === "one_gate"
-		? PLANETS.map(p => [`surfexp_gateway_link_hub${p === "nauvis" ? "" : `_${p}`}`, p, HUB])
-		: [1, 2, 3, 4].map(i => [`surfexp_gateway_link_${i}`, "nauvis", `surfexp_gateway_${i}`]);
-	assert.deepEqual(Object.keys(state.routes).sort(), expected.map(r => r[0]).sort(),
-		"inactive routes must be absent; hidden flags do not remove map lines");
-	assert.deepEqual(Object.keys(state.locations).sort(), [HUB, ...[1, 2, 3, 4].map(i => `surfexp_gateway_${i}`)].sort());
-	const active = new Set(expected.map(r => r[2]));
-	for (const [name, location] of Object.entries(state.locations)) {
-		assert.equal(location.hidden, !active.has(name), `${name} visibility`);
+	const fixedRoutes = Object.keys(state.routes).filter(name => !name.startsWith(DESTINATION_ROUTE));
+	assert.deepEqual(fixedRoutes.sort(), hubPlanets.map(hubRoute).sort(),
+		"only the expected planets link to the Gateway; hidden flags do not remove map lines");
+	for (const planet of hubPlanets) {
+		assert.equal(state.routes[hubRoute(planet)].from, planet, `${hubRoute(planet)} origin`);
+		assert.equal(state.routes[hubRoute(planet)].to, HUB, `${hubRoute(planet)} destination`);
 	}
-	for (const [name, from, to] of expected) {
-		assert.equal(state.routes[name].from, from, `${name} origin`);
-		assert.equal(state.routes[name].to, to, `${name} destination`);
+	const fixedLocations = Object.keys(state.locations).filter(name => !name.startsWith(DESTINATION));
+	assert.deepEqual(fixedLocations.sort(), [HUB, ...NUMBERED].sort());
+	assert.equal(state.locations[HUB].hidden, false, `${HUB} visibility`);
+	for (const name of NUMBERED) assert.equal(state.locations[name].hidden, true, `${name} visibility`);
+	const destinations = Object.keys(state.locations).filter(name => name.startsWith(DESTINATION)).sort();
+	assert.deepEqual(Object.keys(state.routes).filter(name => name.startsWith(DESTINATION_ROUTE)).sort(),
+		destinations.map(name => DESTINATION_ROUTE + name.slice(DESTINATION.length)).sort(), "each server destination has one route");
+	for (const name of destinations) {
+		assert.equal(state.locations[name].hidden, false, `${name} visibility`);
+		const route = state.routes[DESTINATION_ROUTE + name.slice(DESTINATION.length)];
+		assert.equal(route.from, HUB, `${name} route origin`);
+		assert.equal(route.to, name, `${name} route destination`);
 	}
 	if (baseline) {
 		assert.equal(state.instance, baseline.instance, "baseline belongs to another instance");
@@ -50,8 +58,7 @@ for _,force in pairs(game.forces) do for _,p in pairs(force.platforms) do
     location=p.space_location and p.space_location.name,connection=p.space_connection and p.space_connection.name}
 end end
 table.sort(platforms,function(a,b) return a.index<b.index end)
-return {mod=script.active_mods.surfexp_gateways,layout=settings.startup['surfexp-gateway-layout'].value,
-  locations=locations,routes=routes,platforms=platforms}
+return {mod=script.active_mods.surfexp_gateways,locations=locations,routes=routes,platforms=platforms}
 `;
 
 function main() {

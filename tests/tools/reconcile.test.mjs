@@ -13,7 +13,7 @@ mods:
   (disabled) FluidMustFlow 1.5.0 (6c576d8d354cf930a64d79819af8f9b002583792)
 settings:
   startup:
-    surfexp-gateway-layout: "one_gate"
+    example-startup-string: "first"
   runtime-global:
     surfexp-platform-boarding: true
   runtime-per-user:
@@ -28,9 +28,9 @@ const desired = {
 		name: "Space Age 2.1.20 - Test", factorioVersion: "2.1.20",
 		mods: { base: "2.1.20", "space-age": "2.1.20", surfexp_gateways: "0.6.12", FluidMustFlow: "1.5.0" },
 		sha1: { surfexp_gateways: "a96c8f968f260f7c6aff1880e7394bdb1853f75d", FluidMustFlow: "6c576d8d354cf930a64d79819af8f9b002583792" },
-		settings: { startup: { "surfexp-gateway-layout": "one_gate" }, "runtime-global": { "surfexp-platform-boarding": true } },
+		settings: { startup: { "example-startup-string": "first" }, "runtime-global": { "surfexp-platform-boarding": true } },
 	},
-	controller: { "surface_export.gateway_mode": "one_gate" },
+	controller: { "surface_export.platform_source_of_truth": "plugin_history" },
 	instances: { fact1: { "surface_export.debug_mode": false } },
 };
 const hashes = { surfexp_gateways: "a96c8f968f260f7c6aff1880e7394bdb1853f75d", FluidMustFlow: "6c576d8d354cf930a64d79819af8f9b002583792" };
@@ -42,7 +42,7 @@ function liveWith(overrides = {}) {
 		packDetails: { 7: parseModPackShow(SHOW) },
 		mods: new Set(["surfexp_gateways_0.6.12", "FluidMustFlow_1.5.0"]),
 		modSha1: { "surfexp_gateways_0.6.12": hashes.surfexp_gateways, "FluidMustFlow_1.5.0": hashes.FluidMustFlow },
-		controller: { "surface_export.gateway_mode": "one_gate" },
+		controller: { "surface_export.platform_source_of_truth": "plugin_history" },
 		instances: { fact1: { "surface_export.debug_mode": false, "factorio.mod_pack_id": 7 } },
 		...overrides,
 	};
@@ -54,7 +54,7 @@ test("mod pack show and config list output parse into structured state", () => {
 	assert.equal(pack.factorioVersion, "2.1.20");
 	assert.deepEqual(pack.mods.base, { version: "2.1.20", enabled: true, sha1: undefined, stored: "missing" });
 	assert.deepEqual(pack.mods.FluidMustFlow, { version: "1.5.0", enabled: false, sha1: "6c576d8d354cf930a64d79819af8f9b002583792", stored: "ok" });
-	assert.deepEqual(pack.settings, { startup: { "surfexp-gateway-layout": "one_gate" }, "runtime-global": { "surfexp-platform-boarding": true }, "runtime-per-user": {} });
+	assert.deepEqual(pack.settings, { startup: { "example-startup-string": "first" }, "runtime-global": { "surfexp-platform-boarding": true }, "runtime-per-user": {} });
 	assert.deepEqual(parseConfigList('instance.name "fact1"\ninstance.id 42\nsurface_export.debug_mode false\n'),
 		{ "instance.name": "fact1", "instance.id": 42, "surface_export.debug_mode": false });
 });
@@ -70,7 +70,7 @@ test("a missing pack plans uploads, a pinned create and deferred instance pointe
 	]);
 	const create = result.actions[2].argv;
 	assert.ok(create.includes("surfexp_gateways:0.6.12:a96c8f968f260f7c6aff1880e7394bdb1853f75d"));
-	assert.ok(create.join(" ").includes("--string-setting startup surfexp-gateway-layout one_gate"));
+	assert.ok(create.join(" ").includes("--string-setting startup example-startup-string first"));
 	assert.ok(create.join(" ").includes("--bool-setting runtime-global surfexp-platform-boarding true"));
 	assert.equal(result.actions[3].packId, "Space Age 2.1.20 - Test");
 	assert.deepEqual(result.restart, ["fact1"]);
@@ -81,10 +81,10 @@ test("a cluster that matches plans nothing; drift plans only the differences", (
 	const enabled = liveWith();
 	enabled.packDetails[7].mods.FluidMustFlow.enabled = true;
 	assert.deepEqual(planChanges(desired, enabled, { modFile }).actions, []);
-	const drift = planChanges(desired, liveWith({ controller: { "surface_export.gateway_mode": "multi" } }), { modFile });
+	const drift = planChanges(desired, liveWith({ controller: { "surface_export.platform_source_of_truth": "save_game" } }), { modFile });
 	assert.deepEqual(drift.actions.map(action => action.argv), [
 		["mod-pack", "edit", "7", "--add-mods", "FluidMustFlow:1.5.0:6c576d8d354cf930a64d79819af8f9b002583792"],
-		["controller", "config", "set", "surface_export.gateway_mode", "one_gate"],
+		["controller", "config", "set", "surface_export.platform_source_of_truth", "plugin_history"],
 	]);
 	assert.deepEqual(drift.restart, ["fact1"], "a content change to the pack fact1 runs needs a restart even though its pack id is unchanged");
 });
@@ -112,7 +112,7 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 		}
 		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
 		if (args[0] === "mod" && args[1] === "show") return `name: ${args[2]}\nversion: ${args[3]}\nsha1: ${hashes[args[2]]}\n`;
-		if (args[0] === "controller") return 'surface_export.gateway_mode "one_gate"\n';
+		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
 		if (args[0] === "instance" && args[1] === "list") return "name | status\n---\nfact1 | running\n";
 		if (args[0] === "instance" && args[2] === "list") return `surface_export.debug_mode false\nfactorio.mod_pack_id ${state.fact1Pack ?? 1}\n`;
 		if (args[0] === "instance" && args[2] === "set") { state.fact1Pack = Number(args[5]); return ""; }
@@ -152,7 +152,7 @@ test("stored bytes that differ from the pin block the plan; a stale or missing p
 test("a startup-setting change on an assigned pack restarts only the instances on that pack", () => {
 	const live = liveWith({ instances: { fact1: { "surface_export.debug_mode": false, "factorio.mod_pack_id": 7 }, fact2: { "factorio.mod_pack_id": 3 } } });
 	live.packDetails[7].mods.FluidMustFlow.enabled = true;
-	live.packDetails[7].settings.startup["surfexp-gateway-layout"] = "multi";
+	live.packDetails[7].settings.startup["example-startup-string"] = "second";
 	const result = planChanges({ ...desired, instances: { fact1: {}, fact2: {} }, instanceModPack: false }, live, { modFile });
 	assert.deepEqual(result.actions.map(action => action.argv.slice(0, 3)), [["mod-pack", "edit", "7"]]);
 	assert.deepEqual(result.restart, ["fact1"]);
@@ -186,8 +186,8 @@ test("host config and gateway links are planned by name and only where they diff
 
 test("restart-only controller fields restart instances, empty values block, and colour settings stay structured", () => {
 	const enabled = () => { const live = liveWith(); live.packDetails[7].mods.FluidMustFlow.enabled = true; return live; };
-	const mode = planChanges({ ...desired, controller: { "surface_export.gateway_mode": "multi" } }, enabled(), { modFile });
-	assert.deepEqual(mode.restart, ["fact1"], "gateway mode applies only after a restart");
+	const policy = planChanges({ ...desired, controller: { "surface_export.platform_source_of_truth": "save_game" } }, enabled(), { modFile });
+	assert.deepEqual(policy.restart, ["fact1"], "the platform source of truth applies only after a restart");
 	const empty = planChanges({ ...desired, instances: { fact1: { "surface_export.disabled_planets": "" } } }, enabled(), { modFile });
 	assert.match(empty.errors.join("\n"), /fact1 surface_export\.disabled_planets: an empty value cannot be set through clusterioctl/);
 	const colour = { r: 1, g: 0.5, b: 0, a: 1 };

@@ -33,16 +33,6 @@ export class GatewayConfig {
 		);
 	}
 
-	private lastGatewayModeWarning?: string;
-	gatewayMode(): messages.GatewayMode {
-		const { mode, warning } = messages.parseGatewayMode((this.controller.config as { get(key: string): unknown }).get("surface_export.gateway_mode"));
-		if (warning && warning !== this.lastGatewayModeWarning) {
-			this.lastGatewayModeWarning = warning;
-			this.logger.warn(warning);
-		}
-		return mode;
-	}
-
 	passengerCarry(): messages.PassengerCarry {
 		const config = this.controller.config as { get(key: string): unknown };
 		return {
@@ -169,9 +159,6 @@ export class GatewayConfig {
 	}
 
 	destinations(): { destinations: messages.InstanceDestination[] } {
-		if (this.gatewayMode() !== "one_gate") {
-			return { destinations: [] };
-		}
 		return {
 			destinations: this.liveInstances().map(inst => ({
 				gatewayName: messages.instanceGatewayName(inst.id),
@@ -182,7 +169,7 @@ export class GatewayConfig {
 	}
 
 	activeGatewayNamesFor(sourceInstanceId: number): string[] {
-		const names = messages.gatewayNamesFor(this.gatewayMode());
+		const names = [...messages.ONE_GATE_NAMES];
 		for (const destination of this.destinations().destinations) {
 			if (destination.instanceId !== sourceInstanceId) names.push(destination.gatewayName);
 		}
@@ -261,7 +248,7 @@ export class GatewayConfig {
 	}
 
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
-		const activeNames = messages.gatewayNamesFor(this.gatewayMode());
+		const activeNames = messages.ONE_GATE_NAMES;
 		const links = Array.from(this.gatewayLinks.entries()).flatMap(([key, targets]) => {
 			const parsed = this.parseGatewayKey(key);
 			if (!parsed || !activeNames.includes(parsed.gatewayName)) {
@@ -270,8 +257,6 @@ export class GatewayConfig {
 			return [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }];
 		});
 		return {
-			gatewayMode: this.gatewayMode(),
-			gatewayNames: activeNames,
 			links,
 			...this.destinations(),
 		};
@@ -286,8 +271,7 @@ export class GatewayConfig {
 
 	private async applyGatewayLinkRequest(request: GatewayLinkUpdate) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
-		const mode = this.gatewayMode();
-		const activeNames = messages.gatewayNamesFor(mode);
+		const activeNames = messages.ONE_GATE_NAMES;
 		const submitted = request.gateways || [];
 		if (!submitted.length) {
 			return { success: false, error: "No gateways in the request" };
@@ -304,7 +288,7 @@ export class GatewayConfig {
 				return { success: false, error: `${gatewayName} always leads to its own server and cannot be linked` };
 			}
 			if (!gatewayName || !activeNames.includes(gatewayName)) {
-				return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
+				return { success: false, error: `Unknown gateway: ${gatewayName}` };
 			}
 			const destinationTarget = (entry.targets || []).find(t => t.targetGateway && messages.isInstanceGatewayName(t.targetGateway));
 			if (destinationTarget) {
@@ -316,26 +300,6 @@ export class GatewayConfig {
 			normalized.set(gatewayName, (entry.targets || [])
 				.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
 				.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName })));
-		}
-
-		if (mode === "multi") {
-			const proposed = new Map<string, messages.GatewayLink[]>();
-			for (const name of messages.MULTI_GATEWAY_NAMES) {
-				const next = normalized.has(name)
-					? normalized.get(name)
-					: this.gatewayLinks.get(this.gatewayKey(sourceInstanceId, name));
-				if (next?.length) {
-					proposed.set(name, next);
-				}
-			}
-			for (const [gatewayName, targets] of normalized) {
-				const others = new Map(proposed);
-				others.delete(gatewayName);
-				const violation = messages.checkMultiModeLink(gatewayName, targets, others);
-				if (violation) {
-					return { success: false, error: violation };
-				}
-			}
 		}
 
 		const updated = new Map(this.gatewayLinks);

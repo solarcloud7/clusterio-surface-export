@@ -1,5 +1,3 @@
-if settings.startup["surfexp-gateway-layout"].value == "multi" then return end
-
 local sprites = data.raw["utility-sprites"] and data.raw["utility-sprites"].default
 if not sprites then return end
 

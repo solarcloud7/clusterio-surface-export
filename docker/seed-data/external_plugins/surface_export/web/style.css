@@ -196,26 +196,6 @@ body.surface-export-page .site-layout-content-container {
 	font-size: 10px;
 }
 
-.surface-export-gw-handle {
-	width: 32px;
-	height: 32px;
-	border-radius: 50%;
-	border: 1px solid #434343;
-	background: #141414;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.surface-export-gw-handle-target {
-	background: transparent;
-	border-color: transparent;
-}
-
-.surface-export-gw-handle-source > span {
-	pointer-events: none;
-}
-
 .surface-export-instance-node-shaped {
 	background: none;
 	border: none;
@@ -509,19 +489,6 @@ body.surface-export-page .site-layout-content-container {
 	font-size: 11px;
 	color: rgba(255, 255, 255, 0.55);
 	white-space: nowrap;
-}
-
-.surface-export-gw-idle {
-	opacity: 0.35;
-	filter: grayscale(1);
-}
-
-.surface-export-gw-arrival-only {
-	opacity: 0.7;
-}
-
-.surface-export-gw-active {
-	border-color: #1668dc;
 }
 
 .surface-export-log-body {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // requires: an idle local cluster; the production configure and reapply remotes
-// produces: physical lock checks for missing/empty/hub/multi active lists and repeat calls
+// produces: physical lock checks for missing/empty/hub/numbered active lists and repeat calls
 // does not: retain configuration or unlock changes; each force's exact original state is restored
 import assert from "node:assert/strict";
 import { lua, preflightState, assertLeaseClean } from "../../lab-gallery/batch-lifecycle.mjs";
@@ -9,12 +9,15 @@ const HOST = 1;
 assertLeaseClean(HOST, preflightState(HOST), "gateway-lock-state");
 const result = lua(HOST, `
 local original_config = storage.surface_export_config
-local gates, before = {}, {}
+local gates, before, hub_and_destinations = {}, {}, {'surfexp_gateway_hub'}
 for name in pairs(prototypes.space_location) do
   if string.sub(name, 1, 16) == 'surfexp_gateway_' then gates[#gates + 1] = name end
+  if string.sub(name, 1, 18) == 'surfexp_gateway_i_' then hub_and_destinations[#hub_and_destinations + 1] = name end
 end
 table.sort(gates)
-if #gates ~= 5 then return {success=false, error='expected five gateway prototypes'} end
+for _, name in ipairs({'surfexp_gateway_hub','surfexp_gateway_1','surfexp_gateway_2','surfexp_gateway_3','surfexp_gateway_4'}) do
+  if not prototypes.space_location[name] then return {success=false, error='missing gateway prototype ' .. name} end
+end
 for name, force in pairs(game.forces) do
   before[name] = {}
   for _, gate in ipairs(gates) do before[name][gate] = force.is_space_location_unlocked(gate) end
@@ -27,8 +30,8 @@ local ok, err = pcall(function()
   local cases = {
     {name='missing', all=true},
     {name='empty', names={}},
-    {name='hub', names={'surfexp_gateway_hub'}},
-    {name='multi', names={'surfexp_gateway_1','surfexp_gateway_2','surfexp_gateway_3','surfexp_gateway_4'}},
+    {name='hub', names=hub_and_destinations},
+    {name='numbered', names={'surfexp_gateway_1','surfexp_gateway_2','surfexp_gateway_3','surfexp_gateway_4'}},
   }
   for _, case in ipairs(cases) do
     if case.all then storage.surface_export_config.active_gateways = nil

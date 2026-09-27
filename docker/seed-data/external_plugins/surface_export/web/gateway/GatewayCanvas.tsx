@@ -68,8 +68,7 @@ import {
 } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
 import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
-import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
-import type { GatewayMode } from "../../shared/dto";
+import { ONE_GATE_NAME } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
 import ConnectionLine from "./ConnectionLine";
 import TransferModal from "../TransferModal";
@@ -95,38 +94,13 @@ function toConnectRequest(link: Connection | Edge): ConnectRequest | null {
 	return { sourceInstanceId, sourceGateway, targetInstanceId, targetGateway };
 }
 
-function multiModeViolation(edits: GatewayEdits, request: ConnectRequest): string | null {
-	for (const end of [
-		{ instanceId: request.sourceInstanceId, gateway: request.sourceGateway,
-			link: { targetInstanceId: request.targetInstanceId, targetGateway: request.targetGateway } },
-		{ instanceId: request.targetInstanceId, gateway: request.targetGateway,
-			link: { targetInstanceId: request.sourceInstanceId, targetGateway: request.sourceGateway } },
-	]) {
-		const others = new Map<string, Array<{ targetInstanceId: number; targetGateway: string }>>();
-		for (const [key, targets] of Object.entries(edits)) {
-			const parsed = parseEditKey(key);
-			if (parsed && parsed.sourceInstanceId === end.instanceId && parsed.gatewayName !== end.gateway && targets.length) {
-				others.set(parsed.gatewayName, targets);
-			}
-		}
-		const existing = edits[`${end.instanceId}:${end.gateway}`] || [];
-		const violation = checkMultiModeLink(end.gateway, [...existing, end.link], others);
-		if (violation) {
-			return violation;
-		}
-	}
-	return null;
-}
-
 export function planBulkLink(
 	edits: GatewayEdits,
 	instanceIds: readonly number[],
 	gateway: string,
-	mode: GatewayMode,
 	connect: boolean,
-): { next: GatewayEdits; refused: string[] } {
+): GatewayEdits {
 	let next = edits;
-	const refused: string[] = [];
 	for (let a = 0; a < instanceIds.length; a += 1) {
 		for (let b = a + 1; b < instanceIds.length; b += 1) {
 			const request = {
@@ -135,22 +109,13 @@ export function planBulkLink(
 				targetInstanceId: instanceIds[b],
 				targetGateway: gateway,
 			};
-			if (!connect) {
-				next = applyDisconnect(next, request);
-				continue;
-			}
-			const violation = mode === "multi" ? multiModeViolation(next, request) : null;
-			if (violation) {
-				refused.push(violation);
-				continue;
-			}
-			next = applyConnect(next, request);
+			next = connect ? applyConnect(next, request) : applyDisconnect(next, request);
 		}
 	}
-	return { next, refused };
+	return next;
 }
 
-function connectionRefusal(link: Connection | Edge, edits: GatewayEdits, mode: GatewayMode): string | null {
+function connectionRefusal(link: Connection | Edge): string | null {
 	const sourceInstanceId = instanceIdFromNodeId(link.source);
 	const targetInstanceId = instanceIdFromNodeId(link.target);
 	const fromPlatform = platformIndexFromHandleId(link.sourceHandle) != null;
@@ -174,10 +139,6 @@ function connectionRefusal(link: Connection | Edge, edits: GatewayEdits, mode: G
 	if (gatewayFromHandleId(link.sourceHandle) == null || gatewayFromHandleId(link.targetHandle) == null) {
 		return "Both ends of a gateway link must be gateway portals.";
 	}
-	if (mode === "multi") {
-		const request = toConnectRequest(link);
-		return request ? multiModeViolation(edits, request) : "Could not read that connection — nothing was staged.";
-	}
 	return null;
 }
 
@@ -195,7 +156,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const [saving, setSaving] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [edits, setEdits] = useState<GatewayEdits>({});
-	const [mode, setMode] = useState<GatewayMode>(DEFAULT_GATEWAY_MODE);
 	const [baseline, setBaseline] = useState<GatewayEdits>({});
 	const [hostFilter, setHostFilter] = useState<string>(ALL_HOSTS);
 	const [transfer, setTransfer] = useState<
@@ -244,7 +204,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			const loaded = editsFromLinks(getProp(response, "links", []) as never);
 			setEdits(loaded);
 			setBaseline(loaded);
-			setMode(getProp(response, "gatewayMode", DEFAULT_GATEWAY_MODE) as GatewayMode);
 			setLoadError(null);
 		} catch (err: unknown) {
 			const messageText = getErrorMessage(err, "Failed to load gateways");
@@ -263,12 +222,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	);
 
 	const scenarioEdits = useMemo(
-		() => (scenario ? scenarioToEdits(scenario, gatewayNamesFor(mode)[0]) : null),
-		[scenario, mode],
+		() => (scenario ? scenarioToEdits(scenario, ONE_GATE_NAME) : null),
+		[scenario],
 	);
 	const graph = useMemo(
-		() => buildGraph(effectiveTree, scenarioEdits ?? edits, mode, hostFilter),
-		[effectiveTree, edits, scenarioEdits, mode, hostFilter],
+		() => buildGraph(effectiveTree, scenarioEdits ?? edits, hostFilter),
+		[effectiveTree, edits, scenarioEdits, hostFilter],
 	);
 
 	const allDirty = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
@@ -419,7 +378,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				};
 			});
 
-			const anchorGateway = gatewayNamesFor(mode)[0];
+			const anchorGateway = ONE_GATE_NAME;
 			const byPair = new Map<string, typeof ships>();
 			for (const ship of unassigned.values()) {
 				const key = instancePairKey(ship.sourceInstanceId, ship.targetInstanceId);
@@ -458,7 +417,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			}
 			return edges;
 		});
-	}, [graph, ships, mode, interactive, edgeShape, setNodes, setEdges]);
+	}, [graph, ships, interactive, edgeShape, setNodes, setEdges]);
 
 	const nodeActions = useMemo(() => ({
 		exportingKey,
@@ -488,16 +447,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	);
 
 	const bulkLink = useCallback((connect: boolean) => {
-		const gateway = gatewayNamesFor(mode)[0];
-		const { next, refused } = planBulkLink(edits, selectedInstanceIds, gateway, mode, connect);
-		setEdits(next);
-		if (refused.length) {
-			antMessage.warning({
-				content: `${refused.length} pair(s) refused: ${[...new Set(refused)].join(" ")}`,
-				key: "canvas-bulk", duration: 8,
-			});
-		}
-	}, [edits, mode, selectedInstanceIds]);
+		setEdits(planBulkLink(edits, selectedInstanceIds, ONE_GATE_NAME, connect));
+	}, [edits, selectedInstanceIds]);
 
 	const platformFromHandle = useCallback((nodeId: string | null | undefined, handleId: string | null | undefined) => {
 		const platformIndex = platformIndexFromHandleId(handleId);
@@ -515,8 +466,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, [graph]);
 
 	const isValidConnection = useCallback(
-		(link: Connection | Edge) => connectionRefusal(link, edits, mode) === null,
-		[edits, mode],
+		(link: Connection | Edge) => connectionRefusal(link) === null,
+		[],
 	);
 
 	const onConnect = useCallback((connection: Connection) => {
@@ -562,11 +513,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			sourceHandle: fromHandle.id ?? null,
 			target: toNode.id,
 			targetHandle: toHandle.id ?? null,
-		}, edits, mode);
+		});
 		if (refusal) {
 			antMessage.warning({ content: refusal, key: "canvas-refusal", duration: 6 });
 		}
-	}, [edits, mode]);
+	}, []);
 
 	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
 		if (edge.data?.transient) {
@@ -671,8 +622,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const revert = useCallback(() => setEdits(baseline), [baseline]);
 
-	const liveRef = useRef({ debug, scenario, graph, mode, summaries: state?.transferSummaries });
-	liveRef.current = { debug, scenario, graph, mode, summaries: state?.transferSummaries };
+	const liveRef = useRef({ debug, scenario, graph, summaries: state?.transferSummaries });
+	liveRef.current = { debug, scenario, graph, summaries: state?.transferSummaries };
 	useEffect(() => debugAllowed ? installCanvasDebugApi({
 		getState: () => liveRef.current.debug,
 		setState: setDebug,

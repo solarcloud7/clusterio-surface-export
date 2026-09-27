@@ -1,6 +1,6 @@
 import { CAPTION_WIDTH } from "../../shared/edge-geometry";
-import type { GatewayLink, GatewayMode } from "../../shared/dto";
-import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
+import type { GatewayLink } from "../../shared/dto";
+import { ONE_GATE_NAMES } from "../../shared/dto";
 import type { PlatformStatusFields } from "../platform-actions";
 
 
@@ -165,7 +165,7 @@ function directedLinks(edits: GatewayEdits): Array<{ from: Endpoint; to: Endpoin
 	return out;
 }
 
-export function buildEdges(edits: GatewayEdits, _mode: GatewayMode = DEFAULT_GATEWAY_MODE): GatewayEdgeModel[] {
+export function buildEdges(edits: GatewayEdits): GatewayEdgeModel[] {
 	const byPair = new Map<string, GatewayEdgeModel>();
 	for (const link of directedLinks(edits)) {
 		const { low, high, flipped } = orient(link.from, link.to);
@@ -336,7 +336,6 @@ function isOnline(instance: InstanceLike): boolean {
 export function buildGraph(
 	tree: TreeLike | null | undefined,
 	edits: GatewayEdits,
-	mode: GatewayMode = DEFAULT_GATEWAY_MODE,
 	hostFilter: string = ALL_HOSTS,
 ): {
 	nodes: GraphNodeModel[];
@@ -377,7 +376,7 @@ export function buildGraph(
 	columns.forEach((column, columnIndex) => {
 		column.instances.forEach((instance, index) => {
 			const perGateway: Record<string, GatewayUsage> = {};
-			for (const gatewayName of gatewayNamesFor(mode)) {
+			for (const gatewayName of ONE_GATE_NAMES) {
 				perGateway[gatewayName] = usage.get(instance.instanceId)?.get(gatewayName) || { outgoing: 0, incoming: 0 };
 			}
 			const dimmed = filtering && column.key !== hostFilter;
@@ -398,7 +397,6 @@ export function buildGraph(
 				style: dimmed ? { opacity: DIMMED_OPACITY } : undefined,
 				data: {
 					dimmed,
-					mode,
 					instanceId: instance.instanceId,
 					instanceName: instance.instanceName,
 					address: instance.address || "",
@@ -413,7 +411,7 @@ export function buildGraph(
 		});
 	});
 
-	return { nodes, edges: buildEdges(edits, mode), hosts };
+	return { nodes, edges: buildEdges(edits), hosts };
 }
 
 export type PositionedNode = {

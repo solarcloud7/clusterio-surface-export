@@ -76,7 +76,7 @@ export function localModFile(name, version, { dir = LOCAL_MODS, exists = existsS
 	return { container: `${CONTAINER_MODS}/${file}`, sha1: hash(local) };
 }
 
-const RESTART_CONTROLLER_FIELDS = new Set(["surface_export.gateway_mode", "surface_export.platform_source_of_truth"]);
+const RESTART_CONTROLLER_FIELDS = new Set(["surface_export.platform_source_of_truth"]);
 
 function settingArgs(scope, name, value) {
 	if (value !== null && typeof value === "object") return ["--color-setting", scope, name, JSON.stringify(value)];

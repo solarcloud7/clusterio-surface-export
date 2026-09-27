@@ -7,4 +7,4 @@ separate save-patched Surface Export module. There is no `control.lua` here.
 Use [gateway mod development](../../../../docs/developers/gateway-mod.md) for
 building, client synchronization and map checks. The [user guide](../../../../docs/users/transfers.md)
 explains travel, while [configuration](../../../../docs/admins/configuration.md)
-covers the matching mod/controller layout settings.
+covers the server destinations setting.

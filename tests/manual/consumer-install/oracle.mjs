@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { analyze } from "../transfer-reliability/oracle.mjs";
 import { verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
 
+const HUB_PLANETS_BEFORE_0_7 = ["nauvis", "vulcanus", "gleba", "fulgora", "aquilo"];
+
 export function analyzeConsumer(report) {
   assert.equal(report.schemaVersion, 1);
   assert.ok(!report.error, "harness failure recorded");
@@ -24,7 +26,8 @@ export function analyzeConsumer(report) {
   assert.equal(new Set(report.gatewayMaps.map(s => s.instanceId)).size, 2);
   assert.deepEqual(report.gatewayMaps.map(s => s.instanceId).sort(), report.freshSaves.map(s => s.instanceId).sort());
   for (const state of report.gatewayMaps) {
-    assert.equal(state.layout, "one_gate"); verifyGatewayMap(state, { version: install.runtime?.gatewayVersion ?? "0.6.5" });
+    const version = install.runtime?.gatewayVersion ?? "0.6.5";
+    verifyGatewayMap(state, { version, hubPlanets: /^0\.[0-6]\./.test(version) ? HUB_PLANETS_BEFORE_0_7 : undefined });
   }
   const b = report.browser;
   assert.equal(b?.success, true, "browser acceptance incomplete");

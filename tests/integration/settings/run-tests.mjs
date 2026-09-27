@@ -41,7 +41,7 @@ try {
 					frame.type = "responseError";
 					frame.data = { message: operation.write ? "Injected settings save failure" : "Injected settings read failure", code: "RequestError" };
 				} else if (operation.write) {
-					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("gateway_mode") || key.endsWith("platform_source_of_truth") ? value : key.includes("passenger_carry") ? value === "true" : Number(value);
+					for (const [key, value] of Object.entries(operation.write)) shadow[key] = key.endsWith("platform_source_of_truth") ? value : key.includes("passenger_carry") ? value === "true" : Number(value);
 					delete frame.data;
 				} else Object.assign(frame.data, shadow);
 			}

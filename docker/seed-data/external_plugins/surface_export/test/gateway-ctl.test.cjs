@@ -65,7 +65,7 @@ async function invoke(command, args, reply, sent = []) {
 
 test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => {
 	assert.ok(read, "the gateways command must be registered");
-	const reply = { gatewayMode: "one_gate", gatewayNames: ["surfexp_gateway_hub"], links: [] };
+	const reply = { links: [] };
 	const { sent, printed } = await invoke(read, {}, reply);
 	assert.equal(sent.length, 1);
 	assert.equal(sent[0].target, "controller");

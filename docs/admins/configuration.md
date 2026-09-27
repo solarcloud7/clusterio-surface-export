@@ -20,7 +20,6 @@ There is no separate plugin settings store.
 | `transfer_validation_timeout_seconds` | 30 | Delay before verifying job status after payload acceptance. Clamped to 5–120 seconds; takes effect on the next transfer. Queued or progressing work stays nonterminal. Missing status retains ownership for recovery. |
 | `platform_source_of_truth` | `plugin_history` | `plugin_history` protects previously transferred source copies restored from saves. `save_game` accepts a restored copy with a fresh identity when no unresolved handoff owns it. Applied at instance restart. |
 | `max_inflight_transfers_per_instance` | 1 | Experimental admission limit, 1–4; not exposed in the Settings tab. Unresolved recovery blocks admission. |
-| `gateway_mode` | `one_gate` | Gateway layout, with `multi` retained as an alternative. Not exposed in the Settings tab. Must match the gateway mod's startup setting. |
 | `passenger_carry_armor` | `true` | Armor carry over?: passengers take their worn armor through a gateway. Set it in the plugin's Settings tab under **Gateway passengers**; it is sent with the gateway configuration and applies to the next transfer. See [passenger transfer](passenger-transfer.md). |
 | `passenger_carry_inventory` | `false` | Inventory carry over?: passengers take their main inventory, weapons, ammunition and logistic trash. Set it in the plugin's Settings tab under **Gateway passengers**; it is sent with the gateway configuration and applies to the next transfer. |
 
@@ -86,12 +85,25 @@ playable starting scenario; administrators still need to prepare the world.
 The in-game **Instance** panel shows the applied instance name and unavailable
 planets. A configuration edit does not change that panel until restart applies it.
 
-## Mod startup setting
+## Server destinations
 
-[surfexp-gateway-layout](../../docker/seed-data/mods-src/surfexp_gateways/settings.lua)
-belongs to the gateway mod and accepts `one_gate` or `multi`, defaulting to
-`one_gate`. Restart affected instances and clients to load changed prototypes.
-Changing layouts can remove routes, so return platforms to planets first.
+`surfexp-gateway-instances` is a startup string setting in the
+[gateway mod](../../docker/seed-data/mods-src/surfexp_gateways/settings.lua),
+empty by default. It lists Clusterio instance ids, each followed by `=` and a label,
+separated by commas, for example `836570928=Forge,902099405=Cinder`. Each entry
+adds a destination orbiting the Gateway. Players see the label on the star map
+and in platform schedules; an entry without a label is shown as `Server <id>`.
+A platform that stops at a destination is sent to that server and arrives at its
+Gateway. Ids must be digits and may appear once; otherwise the mod refuses to load.
+Labels cannot contain commas. Keep the value identical on every server, and restart
+the instances after changing it.
+
+With the [reconciler](../../tools/clusterio/reconcile.mjs), set `serverDestinations`
+in the desired-state file instead of writing the setting directly. It maps instance
+names to labels, for example `"serverDestinations": { "Nauvis": "[planet=nauvis] Nauvis" }`.
+The reconciler resolves each name to its instance id, writes the setting into the
+desired mod pack and refuses an unknown instance, an empty label or a label with a
+comma. Setting both `serverDestinations` and the startup setting is refused.
 
 ## Mod map setting
 
