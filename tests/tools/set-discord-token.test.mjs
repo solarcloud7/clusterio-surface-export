@@ -58,3 +58,35 @@ test("DISCORD_CHANNEL is accepted when DISCORD_CHANNEL_ID is absent, and the gui
 	assert.deepEqual(calls.map(args => args[3]), ["discord_bridge.bot_token", "discord_bridge.channel_id"]);
 	assert.equal(calls[1][4], "1521306605386338335");
 });
+
+test("--help prints usage without reading .env or sending anything", async () => {
+	let sent = 0;
+	for (const argv of [["--help"], ["-h"], ["--cluster", "vm", "--help"]]) {
+		const io = capture();
+		const code = await main(argv, { ...io, envText: `DISCORD_BOT_TOKEN=${SECRET}\n`, run: async () => { sent += 1; } });
+		assert.equal(code, 0);
+		assert.match(io.text.out, /^usage:/);
+	}
+	assert.equal(sent, 0);
+});
+
+test("--cluster=<name> selects that cluster", async () => {
+	const clusters = [];
+	const io = capture();
+	const code = await main(["--cluster=vm"], { ...io, envText: `DISCORD_BOT_TOKEN=${SECRET}\n`,
+		run: async (cluster, fn) => { clusters.push(cluster); fn({ ctl: () => {} }); } });
+	assert.equal(code, 0);
+	assert.deepEqual(clusters, ["vm"]);
+});
+
+test("unsupported, repeated or incomplete arguments are refused before any cluster is chosen", async () => {
+	let sent = 0;
+	const run = async () => { sent += 1; };
+	for (const argv of [["--clustr", "vm"], ["vm"], ["--cluster"], ["--cluster", "--help"], ["--cluster="],
+		["--cluster", "vm", "--cluster", "dev"], ["--cluster", "vm", "extra"]]) {
+		const io = capture();
+		assert.equal(await main(argv, { ...io, envText: `DISCORD_BOT_TOKEN=${SECRET}\n`, run }), 2, argv.join(" "));
+		assert.match(io.text.err, /usage:/);
+	}
+	assert.equal(sent, 0);
+});
