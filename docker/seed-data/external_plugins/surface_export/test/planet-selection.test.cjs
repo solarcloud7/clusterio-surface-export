@@ -2,7 +2,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 
-const { selectPlanetNames } = require("../dist/node/shared/planets.js");
+const { selectPlanetNames, selectStarMapPlanets } = require("../dist/node/shared/planets.js");
 
 const SPACE_LOCATION_BUCKET = [
 	{ name: "space-location-unknown", type: "space-location" },
@@ -60,4 +60,11 @@ test("a bucket literally named 'planet' also works, if Clusterio ever adds one",
 test("an empty or absent metadata set yields no options rather than throwing", () => {
 	assert.deepEqual(selectPlanetNames([]), []);
 	assert.deepEqual(selectPlanetNames([[]]), []);
+});
+
+test("the Gateways page lists only planets with a star-map route", () => {
+	const planets = ["aquilo", "maraxsis", "maraxsis-trench", "nauvis"];
+	assert.deepStrictEqual(selectStarMapPlanets(planets, ["maraxsis", "nauvis", "surfexp_gateway_hub"]), ["maraxsis", "nauvis"],
+		"a planet reached only from another surface, such as maraxsis-trench, is not on the star map");
+	assert.deepStrictEqual(selectStarMapPlanets(planets, null), planets, "without exported routes every planet is listed");
 });

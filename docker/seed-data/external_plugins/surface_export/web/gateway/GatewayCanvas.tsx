@@ -569,7 +569,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						</span>
 					</Panel>
 					<Panel position="top-right">
-						<Text type="secondary" style={{ fontSize: 12 }}>
+						<Text type="secondary" style={{ fontSize: 12, display: "block", maxWidth: 220, textAlign: "right" }}>
 							{canEdit
 								? "every server reaches every other · drag a platform onto a portal to transfer it"
 								: "every server reaches every other · read-only"}
