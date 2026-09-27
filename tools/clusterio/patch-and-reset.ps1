@@ -26,7 +26,8 @@ This script:
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
    (skipped by -LuaOnly, guarded by the staleness tripwire above)
 3. Stops Factorio instances (keeps controller running)
-4. Resets save files to seed saves (deliberate fixture reset)
+4. Uploads the seed saves and starts each instance on the uploaded copy (deliberate fixture
+   reset). Existing saves, autosaves and backups are kept; nothing is deleted.
 5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
    saves with the latest Lua; the controller re-reads dist/web/manifest.json
 6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
@@ -239,38 +240,13 @@ Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
-
-
-
-$inst1SavePath = "$($hostInstances[1].Dir)/saves"
-Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "find '$inst1SavePath' -maxdepth 1 -name '*.zip' ! -name 'predeploy-*.zip' -delete" } | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to clear instance 1 saves" -ForegroundColor Red
-}
-$inst1SeedSave = "/clusterio/seed-data/hosts/$($seedInstances[1].Host)/$($seedInstances[1].Instance)/lab-gallery-source.zip"
-Invoke-Step "upload host-1 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload $hostInstances[1].Id $inst1SeedSave } | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Re-uploaded seed save for instance 1 (lab-gallery-source.zip)" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to upload seed save for instance 1" -ForegroundColor Red
-}
-
-$inst2SavePath = "$($hostInstances[2].Dir)/saves"
-Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "find '$inst2SavePath' -maxdepth 1 -name '*.zip' ! -name 'predeploy-*.zip' -delete" } | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to clear instance 2 saves" -ForegroundColor Red
-}
-$inst2SeedSave = "/clusterio/seed-data/hosts/$($seedInstances[2].Host)/$($seedInstances[2].Instance)/lab-gallery-destination.zip"
-Invoke-Step "upload host-2 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload $hostInstances[2].Id $inst2SeedSave } | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Re-uploaded seed save for instance 2 (lab-gallery-destination.zip)" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to upload seed save for instance 2" -ForegroundColor Red
+Write-Host "Uploading seed saves (existing saves are kept)..." -ForegroundColor Yellow
+$seedSaveFiles = @{ 1 = 'lab-gallery-source.zip'; 2 = 'lab-gallery-destination.zip' }
+$uploadedSaves = @{}
+foreach ($h in 1, 2) {
+    $seedSave = "/clusterio/seed-data/hosts/$($seedInstances[$h].Host)/$($seedInstances[$h].Instance)/$($seedSaveFiles[$h])"
+    $uploadedSaves[$h] = Publish-SeedSave -InstanceId $hostInstances[$h].Id -SeedSavePath $seedSave
+    Write-Host "  ✓ Uploaded $($seedSaveFiles[$h]) to $($hostInstances[$h].Name) as $($uploadedSaves[$h])" -ForegroundColor Green
 }
 
 Write-Host "  → Instances will re-patch seed saves with updated Lua code on start" -ForegroundColor Cyan
@@ -320,8 +296,8 @@ Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[1].Id }
-Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[2].Id }
+Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[1].Id --save $uploadedSaves[1] }
+Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[2].Id --save $uploadedSaves[2] }
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 
@@ -343,7 +319,11 @@ foreach ($h in 1, 2) {
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {
-        Write-Host "  ✓ ${inst}: patched save loaded, module version $NewVersion, build $ModuleBuildId answering" -ForegroundColor Green
+        $loaded = @(Get-LoadedSave -InstanceId $hostInstances[$h].Id)
+        if ($loaded.Count -ne 1 -or $loaded[0] -ne $uploadedSaves[$h]) {
+            throw "$inst is running '$($loaded -join ', ')', not the uploaded seed save '$($uploadedSaves[$h])'. Nothing was deleted; load it with clusterioctl instance stop $($hostInstances[$h].Id), then instance start $($hostInstances[$h].Id) --save '$($uploadedSaves[$h])'."
+        }
+        Write-Host "  ✓ ${inst}: $($uploadedSaves[$h]) loaded, module version $NewVersion, build $ModuleBuildId answering" -ForegroundColor Green
     } else {
         Write-Host "  X ${inst} FAILED the boot check (no answer with module version $NewVersion within 90s)." -ForegroundColor Red
         $reported = Get-ModuleDeploymentResponse $lastPing

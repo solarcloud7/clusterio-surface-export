@@ -30,6 +30,36 @@ function Get-InstanceDataDir {
     return Select-InstanceDataDir -Raw @($raw | ForEach-Object { "$_" }) -InstanceId $InstanceId -Container $container
 }
 
+function Publish-SeedSave {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][string]$SeedSavePath
+    )
+    $out = docker exec surface-export-controller npx clusterioctl --config $script:ControlConfig --log-level info instance save upload $InstanceId $SeedSavePath 2>&1
+    $code = $LASTEXITCODE
+    $text = ((@($out) | ForEach-Object { "$_" }) -join "`n") -replace "\x1b\[[0-9;]*m", ''
+    if ($code -ne 0) { throw "Uploading $SeedSavePath to instance $InstanceId failed (exit $code): $($text.Trim())" }
+    $stored = @([regex]::Matches($text, '(?m)Successfully uploaded as (.+?\.zip)\s*$') | ForEach-Object { $_.Groups[1].Value })
+    if ($stored.Count -ne 1) {
+        throw "Uploading $SeedSavePath to instance $InstanceId reported $($stored.Count) stored save names; expected one. Output: $(if ($text.Trim()) { $text.Trim() } else { '(empty)' })"
+    }
+    return $stored[0]
+}
+
+function Get-LoadedSave {
+    param([Parameter(Mandatory)][string]$InstanceId)
+    $raw = docker exec surface-export-controller npx clusterioctl --config $script:ControlConfig --log-level error instance save list $InstanceId 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "clusterioctl instance save list $InstanceId failed (exit $LASTEXITCODE): $(($raw | Out-String).Trim())" }
+    $lines = @($raw | ForEach-Object { "$_" } | Where-Object { $_.Contains('|') })
+    $header = if ($lines.Count) { @($lines[0] -split '\|' | ForEach-Object { $_.Trim() }) } else { @() }
+    $nameAt = [Array]::IndexOf($header, 'name'); $loadedAt = [Array]::IndexOf($header, 'loaded')
+    if ($nameAt -lt 0 -or $loadedAt -lt 0) { throw "clusterioctl instance save list $InstanceId has no name/loaded column: $(($raw | Out-String).Trim())" }
+    return @($lines | Select-Object -Skip 1 | Where-Object { $_ -notmatch '^[-\s|]+$' } | ForEach-Object {
+        $cells = @($_ -split '\|' | ForEach-Object { $_.Trim() })
+        if ($cells.Count -gt $loadedAt -and $cells[$loadedAt] -eq 'true') { $cells[$nameAt] }
+    })
+}
+
 function Get-TransactionLogStore {
     param(
         [string]$Container,
