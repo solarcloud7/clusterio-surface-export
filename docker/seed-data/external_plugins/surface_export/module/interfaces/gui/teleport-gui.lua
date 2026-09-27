@@ -24,7 +24,7 @@ local CONNECT_NAME = PREFIX .. "connect"
 local CLOSE_NAME = PREFIX .. "close"
 local CANCEL_NAME = PREFIX .. "cancel"
 local REFRESH_NAME = PREFIX .. "refresh"
-local ICON = "space-location/surfexp_gateway_hub"
+local ICON = "space-location/surfexp_gateway_3"
 local WIDTH = 380
 
 local COLOR_MUTED = {r = 0.7, g = 0.7, b = 0.7}
