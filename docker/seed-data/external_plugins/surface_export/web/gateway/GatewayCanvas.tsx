@@ -35,8 +35,8 @@ import {
 	sourceHandleId,
 	targetHandleId,
 } from "./gateway-graph";
-import { portalColour } from "./gateway-colours";
-import type { PlatformLike, PortalDestination, TrafficRouteModel } from "./gateway-graph";
+import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
+import type { PlatformLike, PortalDestination, TrafficPair, TrafficRouteModel } from "./gateway-graph";
 import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
 import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
@@ -280,10 +280,41 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			);
 			const anchorGateway = ONE_GATE_NAME;
 
-			return groupTraffic<ShipTransfer>(graph.routes, ships, new Set(byInstance.keys())).map(pair => {
+			const traffic = new Map(groupTraffic<ShipTransfer>(graph.routes, ships, new Set(byInstance.keys()))
+				.map(pair => [pair.key, pair]));
+			const drawnIds = [...byInstance.keys()].sort((a, b) => a - b);
+			const pairs: Array<TrafficPair<ShipTransfer>> = [];
+			for (let a = 0; a < drawnIds.length; a += 1) {
+				for (let b = a + 1; b < drawnIds.length; b += 1) {
+					const key = `${drawnIds[a]}|${drawnIds[b]}`;
+					pairs.push(traffic.get(key) ?? {
+						key, sourceInstanceId: drawnIds[a], targetInstanceId: drawnIds[b],
+						forward: false, reverse: false, routes: [], ships: [],
+					});
+				}
+			}
+			const reachable = { type: MarkerType.ArrowClosed, color: PORTAL_LINK_COLOUR };
+
+			return pairs.map(pair => {
 				const colour = portalColour(destinationOf(pair.targetInstanceId)?.colour);
 				const reverseColour = portalColour(destinationOf(pair.sourceInstanceId)?.colour);
 				const heading = pair.routes.length > 0;
+				if (!heading && pair.ships.length === 0) {
+					return {
+						id: `link:${pair.key}`,
+						source: instanceNodeId(pair.sourceInstanceId),
+						sourceHandle: sourceHandleId(anchorGateway),
+						target: instanceNodeId(pair.targetInstanceId),
+						targetHandle: targetHandleId(anchorGateway),
+						type: GATEWAY_EDGE_TYPE,
+						deletable: false,
+						selectable: false,
+						style: dimStyle(pair.sourceInstanceId, pair.targetInstanceId) ?? { opacity: 0.45 },
+						markerEnd: reachable,
+						markerStart: reachable,
+						data: { colour: PORTAL_LINK_COLOUR, headings: [], shape: edgeShape, sourceInstanceId: pair.sourceInstanceId, transfers: [] },
+					};
+				}
 				return {
 					id: heading ? `route:${pair.key}` : transientEdgeId(pair.key),
 					source: instanceNodeId(pair.sourceInstanceId),
@@ -297,8 +328,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						...dimStyle(pair.sourceInstanceId, pair.targetInstanceId),
 						...(heading ? {} : { strokeDasharray: "6 4" }),
 					},
-					markerEnd: pair.forward ? { type: MarkerType.ArrowClosed, color: colour } : undefined,
-					markerStart: pair.reverse ? { type: MarkerType.ArrowClosed, color: reverseColour } : undefined,
+					markerEnd: pair.forward ? { type: MarkerType.ArrowClosed, color: colour } : reachable,
+					markerStart: pair.reverse ? { type: MarkerType.ArrowClosed, color: reverseColour } : reachable,
 					data: {
 						transient: !heading,
 						colour,

@@ -5,8 +5,8 @@ import { Typography } from "antd";
 
 import { ONE_GATE_NAME } from "../../shared/dto";
 import type { PortalColour } from "../../shared/server-destinations";
-import { activePlanets, sourceHandleId, targetHandleId } from "./gateway-graph";
-import type { PlatformLike, PortalDestination } from "./gateway-graph";
+import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOrientation, sourceHandleId, spreadTurns, targetHandleId } from "./gateway-graph";
+import type { PeerPortal, PlatformLike, PortalDestination } from "./gateway-graph";
 import PlatformRows from "./PlatformRows";
 import { useGatewayDebug } from "./debug-mode";
 import { PlanetIcon, usePlanetNames } from "../icons";
@@ -36,21 +36,60 @@ const NO_PORTAL_NOTE = "No portal: this server is not listed in the gateway mod'
 	+ "(surfexp-gateway-instances), so other servers cannot schedule platforms to it. "
 	+ "Drag a platform here to transfer it instead.";
 
-function ServerPortal({ destination }: { destination: PortalDestination | null }) {
-	if (!destination) {
-		return (
-			<div className="surface-export-instance-portal surface-export-instance-portal-none" title={NO_PORTAL_NOTE}>
-				<span className="surface-export-instance-portal-ring" />
-			</div>
-		);
-	}
+const NODE_CENTRE = 75;
+const PORTAL_RING_RADIUS = 94;
+
+function OutgoingPortals({ selfId, peers }: { selfId: string; peers: PeerPortal[] }) {
+	const centres = useStore(state => {
+		const lookup = state.nodeLookup;
+		const centre = (nodeId: string) => {
+			const found = lookup.get(nodeId);
+			const at = found?.internals?.positionAbsolute;
+			return at ? { x: at.x + (found.measured?.width ?? 150) / 2, y: at.y + (found.measured?.height ?? 150) / 2 } : null;
+		};
+		return JSON.stringify([centre(selfId), ...peers.map(peer => centre(instanceNodeId(peer.instanceId)))]);
+	});
+	const updateNodeInternals = useUpdateNodeInternals();
+	useEffect(() => {
+		updateNodeInternals(selfId);
+	}, [selfId, centres, updateNodeInternals]);
+	const [self, ...others] = JSON.parse(centres) as Array<{ x: number; y: number } | null>;
+	const turns = spreadTurns(peers.map((_peer, index) => {
+		const other = others[index];
+		return self && other ? facingTurn(self, other) : portalOrientation(index, peers.length);
+	}));
 	return (
-		<div
-			className="surface-export-instance-portal"
-			title={`Portal to ${destination.label}: schedule a platform to this stop to send it here`}
-		>
-			<img src={PORTAL_ART[destination.colour]} alt={`${destination.colour} portal`} draggable={false} />
-		</div>
+		<>
+			{peers.map((peer, index) => {
+				const turn = turns[index] * 2 * Math.PI;
+				const position = {
+					left: NODE_CENTRE + PORTAL_RING_RADIUS * Math.sin(turn),
+					top: NODE_CENTRE - PORTAL_RING_RADIUS * Math.cos(turn),
+				};
+				const label = peer.destination?.label ?? peer.instanceName;
+				return (
+					<div
+						key={peer.instanceId}
+						className={`surface-export-instance-portal${peer.destination ? "" : " surface-export-instance-portal-none"}`}
+						style={position}
+						title={peer.destination
+							? `Portal to ${label} (${peer.instanceName}): platforms scheduled to this stop travel there`
+							: `${peer.instanceName}: ${NO_PORTAL_NOTE}`}
+					>
+						{peer.destination
+							? <img src={PORTAL_ART[peer.destination.colour]} alt={`portal to ${label}`} draggable={false} />
+							: <span className="surface-export-instance-portal-ring" />}
+						<Handle
+							type="target"
+							position={Position.Top}
+							id={peerPortalHandleId(peer.instanceId)}
+							isConnectable={false}
+							className="surface-export-portal-handle"
+						/>
+					</div>
+				);
+			})}
+		</>
 	);
 }
 
@@ -162,6 +201,7 @@ export type InstanceNodeData = {
 	defaultPlanet: string;
 	disabledPlanets: string[];
 	destination: PortalDestination | null;
+	peers?: PeerPortal[];
 };
 
 export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
@@ -228,7 +268,7 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 				</div>
 			</div>
 
-			<ServerPortal destination={node.destination ?? null} />
+			<OutgoingPortals selfId={id} peers={node.peers || []} />
 			<ServerFooter
 				destination={node.destination ?? null}
 				instanceName={node.instanceName}

@@ -70,6 +70,54 @@ export function targetHandleId(gatewayName: string, side?: HandleSide): string {
 	return side ? `t:${gatewayName}@${side}` : `t:${gatewayName}`;
 }
 
+export type PeerPortal = { instanceId: number; instanceName: string; destination: PortalDestination | null };
+
+export function peerPortalHandleId(peerInstanceId: number): string {
+	return `portal:${peerInstanceId}`;
+}
+
+export function portalOrientation(index: number, count: number): number {
+	return (index + 0.5) / count;
+}
+
+function wrapTurn(turn: number): number {
+	let wrapped = turn % 1;
+	if (wrapped < 0) {
+		wrapped += 1;
+	}
+	return wrapped;
+}
+
+export function facingTurn(from: { x: number; y: number }, to: { x: number; y: number }): number {
+	return wrapTurn(Math.atan2(to.x - from.x, from.y - to.y) / (2 * Math.PI));
+}
+
+export const MIN_PORTAL_GAP = 1 / 10;
+
+export function spreadTurns(turns: readonly number[], gap: number = MIN_PORTAL_GAP): number[] {
+	const order = turns.map((turn, index) => ({ turn: wrapTurn(turn), index })).sort((a, b) => a.turn - b.turn);
+	const spaced = order.map(entry => entry.turn);
+	for (let pass = 0; pass < order.length; pass += 1) {
+		for (let i = 1; i < spaced.length; i += 1) {
+			const overlap = gap - (spaced[i] - spaced[i - 1]);
+			if (overlap > 0) {
+				spaced[i - 1] -= overlap / 2;
+				spaced[i] += overlap / 2;
+			}
+		}
+	}
+	const result = new Array<number>(turns.length);
+	order.forEach((entry, position) => { result[entry.index] = wrapTurn(spaced[position]); });
+	return result;
+}
+
+export function peerPortalsFor(instanceId: number, instances: readonly InstanceLike[]): PeerPortal[] {
+	return instances
+		.filter(peer => peer.instanceId !== instanceId)
+		.map(peer => ({ instanceId: peer.instanceId, instanceName: peer.instanceName, destination: peer.destination ?? null }))
+		.sort((a, b) => a.instanceName.localeCompare(b.instanceName) || a.instanceId - b.instanceId);
+}
+
 export function platformHandleId(platformIndex: number): string {
 	return `p:${platformIndex}`;
 }
@@ -250,6 +298,7 @@ export function buildGraph(
 	const filtering = hostFilter !== ALL_HOSTS && hosts.some(host => host.key === hostFilter);
 
 	const nodes: GraphNodeModel[] = [];
+	const everyInstance = columns.flatMap(column => column.instances);
 	const columnWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH);
 	const columnPitch = columnWidth + COLUMN_GAP;
 	const columnInset = Math.max(0, (columnWidth - NODE_DIAMETER) / 2);
@@ -285,6 +334,7 @@ export function buildGraph(
 					defaultPlanet: instance.defaultPlanet || "nauvis",
 					disabledPlanets: instance.disabledPlanets || [],
 					destination: instance.destination ?? null,
+					peers: peerPortalsFor(instance.instanceId, everyInstance),
 				},
 			});
 		});

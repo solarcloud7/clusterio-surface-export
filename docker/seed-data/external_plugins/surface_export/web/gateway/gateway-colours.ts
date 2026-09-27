@@ -8,6 +8,7 @@ export const PORTAL_HEX: Record<PortalColour, string> = {
 };
 
 export const DEFAULT_EDGE_COLOUR = "#1668dc";
+export const PORTAL_LINK_COLOUR = "#8c8c8c";
 
 export function portalColour(colour: PortalColour | null | undefined): string {
 	return (colour && PORTAL_HEX[colour]) || DEFAULT_EDGE_COLOUR;

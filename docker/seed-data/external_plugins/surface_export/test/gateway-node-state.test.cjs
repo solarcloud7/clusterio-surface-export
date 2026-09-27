@@ -113,3 +113,35 @@ test("a server's active planets are the installed planets less its unavailable o
 		"the default planet is shown even when it is also listed as unavailable");
 	assert.deepEqual(graph.activePlanets([], "vulcanus", []), ["vulcanus"], "without prototype data the default planet still shows");
 });
+
+test("each server card carries one outgoing portal per other server, spaced like the star map", () => {
+	const instances = [
+		{ instanceId: 3, instanceName: "Theta", destination: { label: "Theta", colour: "orange" } },
+		{ instanceId: 1, instanceName: "Delta", destination: { label: "Delta", colour: "blue" } },
+		{ instanceId: 2, instanceName: "Sigma", destination: null },
+	];
+	const peers = graph.peerPortalsFor(1, instances);
+	assert.deepEqual(peers.map(peer => peer.instanceId), [2, 3], "every other server, by name, never itself");
+	assert.equal(peers[0].destination, null, "a server without a destination still gets a (grey) portal");
+	assert.deepEqual(peers[1].destination, { label: "Theta", colour: "orange" });
+	assert.equal(graph.peerPortalHandleId(3), "portal:3");
+	assert.deepEqual([0, 1, 2, 3].map(index => graph.portalOrientation(index, 4)), [0.125, 0.375, 0.625, 0.875],
+		"four portals sit on the diagonals, leaving straight up clear, as on the star map");
+	const { nodes } = graph.buildGraph({ hosts: [{ hostId: 1, hostName: "h", connected: true, instances }] });
+	for (const node of nodes) {
+		assert.equal(node.data.peers.length, 2);
+		assert.ok(!node.data.peers.some(peer => peer.instanceId === node.data.instanceId));
+	}
+});
+
+test("outgoing portals face the server they lead to and never overlap", () => {
+	const centre = { x: 0, y: 0 };
+	assert.equal(graph.facingTurn(centre, { x: 0, y: -10 }), 0, "straight up");
+	assert.equal(graph.facingTurn(centre, { x: 10, y: 0 }), 0.25, "to the right");
+	assert.equal(graph.facingTurn(centre, { x: 0, y: 10 }), 0.5, "straight down");
+	assert.equal(graph.facingTurn(centre, { x: -10, y: 0 }), 0.75, "to the left");
+	const spread = graph.spreadTurns([0.25, 0.26, 0.5]);
+	assert.ok(spread[1] - spread[0] >= graph.MIN_PORTAL_GAP - 1e-9, "two peers in the same direction are pushed apart");
+	assert.ok(Math.abs(spread[2] - 0.5) < 1e-9, "a portal with room keeps its heading");
+	assert.deepEqual(graph.spreadTurns([0.1, 0.6]), [0.1, 0.6], "well-separated portals are untouched");
+});
