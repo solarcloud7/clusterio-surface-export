@@ -52,14 +52,14 @@ local hub = {
 	gravity_pull = -10,
 	distance = 0,
 	orientation = 0.245,
-	magnitude = 1.4,
+	magnitude = 4,
 	label_orientation = 0.15,
 }
 locations[#locations + 1] = hub
 
 local INSTANCE_PREFIX = "surfexp_gateway_i_"
 local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 5
+local INSTANCE_RING_DISTANCE = 6.5
 
 local function parse_instances(value)
 	local entries, seen = {}, {}

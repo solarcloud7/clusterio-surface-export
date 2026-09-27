@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.7.4
+Version: 0.7.5
   Features:
     - Add the "Server destinations" startup setting: each listed Clusterio instance id gets its own destination orbiting
       the Gateway, labelled with a friendly name, that platform schedules can stop at.
