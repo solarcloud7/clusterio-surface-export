@@ -296,3 +296,30 @@ assert(RouteAlerts.connect_from_gps(clicker, "surfexp_route_99", is_allowed, tar
 assert(RouteAlerts.connect_from_gps(clicker, "surfexp_route_22", is_allowed, target_for) == "connected"
 	and connects[1].address == "host:22" and connects[1].name == "Forge", "a permitted player gets the connect prompt for the alert's server")
 print("PASS alert links open the connect prompt only for players allowed to teleport")
+
+local announced = {}
+env.game = {print = function(message) announced[#announced + 1] = message end}
+env.storage = {}
+local config_env_require = env.require
+env.require = function(name)
+	if name:find("utils/util", 1, true) then return {json_to_table_compat = function(value) return value end} end
+	if name:find("interfaces/gui/gateway-transfer", 1, true) then return {refresh_open = function() end} end
+	return config_env_require(name)
+end
+local configure = assert(loadfile(root .. "interfaces/remote/configure.lua", "t", env))()
+local function push(slot1, slot2)
+	configure({gateways_json = {surfexp_gateway_hub = {targets = {}}, surfexp_gateway_1 = slot1 and {targets = {slot1}} or nil,
+		surfexp_gateway_2 = slot2, surfexp_gateway_3 = {targets = {}, own = true}}})
+end
+push(server(22, "Delta", true))
+push(server(22, "Delta", false))
+assert(#announced == 0, "the first config and unchanged leads announce nothing")
+push(server(44, "Omega", true))
+assert(#announced == 1 and announced[1][5][1] == "space-location-name.surfexp_gateway_1" and announced[1][7] == "Omega",
+	"every server hears that a colour now leads elsewhere")
+push(nil)
+push(nil, {targets = {}, own = true})
+assert(#announced == 1, "a freed colour or a colour that becomes this server's own is not a new lead")
+push(server(55, "Zeta", true))
+assert(#announced == 2 and announced[2][7] == "Zeta", "a freed colour taken by another server is announced")
+print("PASS a portal colour that changes holder is announced on every server")

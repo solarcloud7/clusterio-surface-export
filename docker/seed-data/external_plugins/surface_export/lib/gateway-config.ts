@@ -6,6 +6,10 @@ import { instanceAddress } from "./platform-tree";
 import { PortalSlots } from "./portal-slots";
 import { portalColour, portalGatewayName, type PortalAssignment } from "../shared/portals";
 
+function colourName(colour: string): string {
+	return colour.charAt(0).toUpperCase() + colour.slice(1);
+}
+
 export class GatewayConfig {
 	constructor(
 		private readonly controller: Pick<Controller, "config" | "instances" | "hosts" | "sendTo">,
@@ -39,7 +43,8 @@ export class GatewayConfig {
 	}
 
 	private liveInstances() {
-		return [...this.controller.instances.values()].filter(inst => !inst.isDeleted);
+		return [...this.controller.instances.values()]
+			.filter(inst => !inst.isDeleted && inst.config.get("surface_export.load_plugin") !== false);
 	}
 
 	private instanceName(instanceId: number): string {
@@ -48,7 +53,11 @@ export class GatewayConfig {
 
 	private assignedPortals(): Array<{ slot: number; instanceId: number }> {
 		const live = this.liveInstances().map(inst => inst.id);
-		this.slots.reconcile(live);
+		for (const change of this.slots.reconcile(live)) {
+			this.logger.warn(`The ${colourName(portalColour(change.slot))} Gateway now leads to ${this.instanceName(change.instanceId)} `
+				+ `(instance ${change.instanceId}) instead of ${this.instanceName(change.previousInstanceId)} (instance ${change.previousInstanceId}); `
+				+ "schedules that stop there now travel to the new server");
+		}
 		const liveSet = new Set(live);
 		return this.slots.assignments().filter(entry => liveSet.has(entry.instanceId));
 	}

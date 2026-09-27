@@ -475,5 +475,32 @@
 		"tests": [
 			"tests/lua/gateway-dialog.lua"
 		]
+	},
+	{
+		"name": "only a changed lead is announced",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if previous ~= nil and previous ~= target.instanceId then",
+		"replace": "if previous ~= target.instanceId then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "the last lead is remembered",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\t\t\tleads[name] = target.instanceId\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "a changed lead is printed",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/configure.lua",
+		"find": "        game.print({",
+		"replace": "        local _ = ({",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
 	}
 ]

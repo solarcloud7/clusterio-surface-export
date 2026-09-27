@@ -94,14 +94,18 @@ colour's portal leads to that server. A platform whose schedule stops there is
 sent to that server and arrives at its Gateway. A server's own colour is locked
 on that server, and a colour no server holds is locked everywhere.
 
-At most four servers take part. A new server gets the lowest free colour, and a
+At most four servers take part; servers whose `surface_export.load_plugin` is off
+are not counted. A new server gets the lowest free colour, and a
 deleted server frees its colour. A server created while all four colours are taken
 gets none. The controller log and the Gateways page report it. It takes the first
 colour that becomes free. A server without a colour can still send platforms
 through the Gateway, and other servers can reach it the same way.
 
 No restart is needed: the controller sends the assignment to every running server,
-which unlocks or locks the portals immediately. Server names shown in the transfer
+which unlocks or locks the portals immediately. When a colour passes to another
+server, the controller logs a warning and every running server announces in chat
+that the portal now leads there. Schedules that stop at that colour travel to the
+new server. Server names shown in the transfer
 dialog and in alerts are the Clusterio instance names.
 `npx clusterioctl surface-export gateways` prints the assignment.
 

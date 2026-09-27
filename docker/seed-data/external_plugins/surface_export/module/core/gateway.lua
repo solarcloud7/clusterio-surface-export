@@ -250,6 +250,25 @@ function Gateway.location_label(name)
 	return label
 end
 
+function Gateway.portal_lead_changes(gateways)
+	storage.surface_export_portal_leads = storage.surface_export_portal_leads or {}
+	local leads = storage.surface_export_portal_leads
+	local changes = {}
+	for slot = 1, Gateway.PORTAL_COUNT do
+		local name = Gateway.PREFIX .. slot
+		local cfg = gateways[name]
+		local target = type(cfg) == "table" and cfg.own ~= true and type(cfg.targets) == "table" and cfg.targets[1]
+		if type(target) == "table" and target.instanceId ~= nil then
+			local previous = leads[name]
+			if previous ~= nil and previous ~= target.instanceId then
+				changes[#changes + 1] = {portal = name, instance_name = tostring(target.instanceName or target.instanceId)}
+			end
+			leads[name] = target.instanceId
+		end
+	end
+	return changes
+end
+
 function Gateway.find_target(instance_id)
 	local cfg = storage.surface_export_config
 	for _, gateway in pairs(cfg and cfg.gateways or {}) do
