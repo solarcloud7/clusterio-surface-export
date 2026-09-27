@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.7
+  Changes:
+    - Server destinations orbit closer to the Gateway, and their routes are drawn as straight lines.
+---------------------------------------------------------------------------------------------------
 Version: 0.7.6
   Features:
     - Add the "Server destinations" startup setting: each listed Clusterio instance id gets its own destination orbiting

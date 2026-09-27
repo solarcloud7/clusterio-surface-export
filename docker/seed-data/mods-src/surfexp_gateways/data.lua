@@ -59,7 +59,7 @@ locations[#locations + 1] = hub
 
 local INSTANCE_PREFIX = "surfexp_gateway_i_"
 local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 6.5
+local INSTANCE_RING_DISTANCE = 3.5
 
 local function parse_instances(value)
 	local entries, seen = {}, {}
@@ -119,6 +119,7 @@ for i, instance in ipairs(instances) do
 		to = name,
 		order = "z[surfexp-gateway]-i-" .. string.format("%03d", i),
 		length = INSTANCE_ROUTE_LENGTH,
+		shape = "line",
 	}
 end
 

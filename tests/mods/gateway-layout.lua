@@ -94,7 +94,7 @@ for name, label in pairs(labels) do
   assert(location.localised_description[2] == label)
   assert(location.hidden == false and location.draw_orbit == true, name .. " orbits the Gateway")
   assert(math.abs(location.origin.x - hub_x) < 1e-9 and math.abs(location.origin.y - hub_y) < 1e-9, name .. " should sit beside the hub")
-  assert(location.distance > 0 and location.distance < 10)
+  assert(location.distance > 0 and location.distance <= 4, name .. " should orbit close to the Gateway")
   assert(not orientations[location.orientation], "destinations must not overlap")
   assert(location.label_orientation == location.orientation, name .. " labels point away from the Gateway")
   orientations[location.orientation] = true
@@ -102,6 +102,7 @@ for name, label in pairs(labels) do
   file:close()
   local route = assert(connections["surfexp_gateway_link_i_" .. name], name .. " route")
   assert(route.from == "surfexp_gateway_hub" and route.to == location.name and route.length > 0 and route.length < 15001)
+  assert(route.shape == "line", name .. " route is drawn straight from the Gateway")
 end
 local extra = 0
 for name in pairs(locations) do if name:find("^surfexp_gateway_i_") then extra = extra + 1 end end
