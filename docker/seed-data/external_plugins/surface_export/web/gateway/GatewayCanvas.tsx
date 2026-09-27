@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
+import { Button, Empty, Select, Space, Spin, Switch, Tooltip, Typography, message as antMessage } from "antd";
 import { BugOutlined, LockOutlined, ReloadOutlined, UnlockOutlined, UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
@@ -37,7 +37,7 @@ import {
 } from "./gateway-graph";
 import { portalColour } from "./gateway-colours";
 import type { PlatformLike, PortalDestination, TrafficRouteModel } from "./gateway-graph";
-import { NodeActionsContext, platformActionKey } from "./node-actions";
+import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
 import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
 import {
@@ -57,7 +57,7 @@ import {
 import type { DebugScenario, DebugState } from "./debug-mode";
 import { installCanvasDebugApi } from "./debug-api";
 import {
-	EDGE_SHAPES, applySavedLayout, clearLayout, loadEdgeShape, loadLayout, saveEdgeShape, saveLayout,
+	EDGE_SHAPES, applySavedLayout, clearLayout, loadEdgeShape, loadLayout, loadShowPlanets, saveEdgeShape, saveLayout, saveShowPlanets,
 } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
 import { SHIP_LEGEND, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
@@ -134,6 +134,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, []);
 	const [savedScenario, setScenario] = useState<DebugScenario | null>(null);
 	const scenario = debugAllowed ? savedScenario : null;
+	const [showPlanets, setShowPlanets] = useState<boolean>(loadShowPlanets);
+	const changeShowPlanets = useCallback((show: boolean) => {
+		setShowPlanets(show);
+		saveShowPlanets(show);
+	}, []);
 	const [edgeShape, setEdgeShape] = useState<EdgeShape>(loadEdgeShape);
 	const changeEdgeShape = useCallback((shape: EdgeShape) => {
 		setEdgeShape(shape);
@@ -430,7 +435,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}
 
 	return (
-		<NodeActionsContext.Provider value={nodeActions}>
+		<NodeActionsContext.Provider value={nodeActions}><ShowPlanetsContext.Provider value={showPlanets}>
 		<GatewayDebugContext.Provider value={{ showGeometry: debug.enabled && debug.showGeometry }}>
 		<div className="surface-export-canvas">
 			{!nodes.length ? (
@@ -544,6 +549,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 									options={EDGE_SHAPES.map(shape => ({ value: shape, label: shape }))}
 								/>
 							</Tooltip>
+							<Tooltip title="Show each server's active planets under its portal">
+								<Space size={4}>
+									<Switch size="small" checked={showPlanets} onChange={changeShowPlanets} aria-label="Show planets" />
+									<Text type="secondary" style={{ fontSize: 12 }}>Planets</Text>
+								</Space>
+							</Tooltip>
 							<Tooltip title="Forget the saved positions and frame every instance">
 								<Button size="small" icon={<ReloadOutlined />} onClick={resetLayout}>Reset</Button>
 							</Tooltip>
@@ -586,6 +597,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			/>
 		</div>
 		</GatewayDebugContext.Provider>
-		</NodeActionsContext.Provider>
+		</ShowPlanetsContext.Provider></NodeActionsContext.Provider>
 	);
 }

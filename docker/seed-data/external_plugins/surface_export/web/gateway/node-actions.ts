@@ -10,6 +10,8 @@ export type GatewayNodeActions = {
 
 export const NodeActionsContext = createContext<GatewayNodeActions | null>(null);
 
+export const ShowPlanetsContext = createContext(true);
+
 export function platformActionKey(instanceId: number, platformIndex: number): string {
 	return `${instanceId}:${platformIndex}`;
 }

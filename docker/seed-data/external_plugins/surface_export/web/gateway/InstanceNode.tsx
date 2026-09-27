@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { Handle, Position, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
@@ -17,6 +17,7 @@ import gatewayGreenArt from "./assets/gateway-green-64.png";
 import gatewayOrangeArt from "./assets/gateway-orange-64.png";
 import gatewayPurpleArt from "./assets/gateway-purple-64.png";
 import AutoPauseIcon from "./AutoPauseIcon";
+import { ShowPlanetsContext } from "./node-actions";
 
 const { Text } = Typography;
 
@@ -53,24 +54,32 @@ function ServerPortal({ destination }: { destination: PortalDestination | null }
 	);
 }
 
-function ServerFooter({ destination, defaultPlanet, disabledPlanets }: {
+function ServerFooter({ destination, instanceName, defaultPlanet, disabledPlanets }: {
 	destination: PortalDestination | null;
+	instanceName: string;
 	defaultPlanet: string;
 	disabledPlanets: string[];
 }) {
+	const showPlanets = useContext(ShowPlanetsContext);
 	const installed = usePlanetNames();
-	const planets = activePlanets(installed, defaultPlanet, disabledPlanets);
+	const planets = showPlanets ? activePlanets(installed, defaultPlanet, disabledPlanets) : [];
+	const showLabel = !destination || destination.label.trim() !== instanceName.trim();
+	if (!showLabel && planets.length === 0) {
+		return null;
+	}
 	return (
 		<div className="surface-export-instance-footer">
-			<Text
-				className="surface-export-instance-portal-label"
-				style={destination ? { color: portalColour(destination.colour) } : undefined}
-				type={destination ? undefined : "secondary"}
-				title={destination ? `Portal to ${destination.label}` : NO_PORTAL_NOTE}
-			>
-				{destination ? destination.label : "no portal"}
-			</Text>
-			<div className="surface-export-instance-planets">
+			{showLabel ? (
+				<Text
+					className="surface-export-instance-portal-label"
+					style={destination ? { color: portalColour(destination.colour) } : undefined}
+					type={destination ? undefined : "secondary"}
+					title={destination ? `Portal to ${destination.label}` : NO_PORTAL_NOTE}
+				>
+					{destination ? destination.label : "no portal"}
+				</Text>
+			) : null}
+			{planets.length === 0 ? null : <div className="surface-export-instance-planets">
 				{planets.map(name => (
 					<span
 						key={name}
@@ -80,7 +89,7 @@ function ServerFooter({ destination, defaultPlanet, disabledPlanets }: {
 						<PlanetIcon name={name} size={16} title="" />
 					</span>
 				))}
-			</div>
+			</div>}
 		</div>
 	);
 }
@@ -222,6 +231,7 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 			<ServerPortal destination={node.destination ?? null} />
 			<ServerFooter
 				destination={node.destination ?? null}
+				instanceName={node.instanceName}
 				defaultPlanet={node.defaultPlanet || "nauvis"}
 				disabledPlanets={node.disabledPlanets || []}
 			/>

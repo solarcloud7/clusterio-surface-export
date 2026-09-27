@@ -71,6 +71,25 @@ export function saveEdgeShape(shape: EdgeShape): void {
 	}
 }
 
+const SHOW_PLANETS_KEY = "surface_export.gateway_show_planets.v1";
+
+export function loadShowPlanets(): boolean {
+	try {
+		return window.localStorage.getItem(SHOW_PLANETS_KEY) !== "false";
+	} catch (err: unknown) {
+		console.warn("surface_export: could not read the planets toggle; showing planets", err);
+		return true;
+	}
+}
+
+export function saveShowPlanets(show: boolean): void {
+	try {
+		window.localStorage.setItem(SHOW_PLANETS_KEY, show ? "true" : "false");
+	} catch (err: unknown) {
+		console.warn("surface_export: could not save the planets toggle; it will reset on reload", err);
+	}
+}
+
 export function clearLayout(): void {
 	try {
 		window.localStorage.removeItem(STORAGE_KEY);
