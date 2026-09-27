@@ -39,14 +39,14 @@
 		"discord_bridge.channel_id": "1521306605386338335"
 	},
 	"instances": {
-		"Nauvis": {
+		"Delta": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "nauvis",
 			"surface_export.disabled_planets": "vulcanus,fulgora,gleba,aquilo",
 			"research_sync.load_plugin": true,
 			"factorio.settings": {
-				"name": "Clusterio: PlatformExport - [planet=nauvis] Nauvis",
+				"name": "Clusterio: PlatformExport - [planet=nauvis] Delta",
 				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
 				"tags": [
 					"clusterio",
@@ -67,14 +67,14 @@
 				"non_blocking_saving": true
 			}
 		},
-		"Vulcanus": {
+		"Sigma": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "vulcanus",
 			"surface_export.disabled_planets": "nauvis,fulgora,gleba,aquilo,maraxsis",
 			"research_sync.load_plugin": true,
 			"factorio.settings": {
-				"name": "Clusterio: PlatformExport - [planet=vulcanus] Vulcanus",
+				"name": "Clusterio: PlatformExport - [planet=vulcanus] Sigma",
 				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
 				"tags": [
 					"clusterio",
@@ -95,14 +95,14 @@
 				"non_blocking_saving": true
 			}
 		},
-		"Fulgora": {
+		"Theta": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "fulgora",
 			"surface_export.disabled_planets": "nauvis,vulcanus,gleba,aquilo,maraxsis",
 			"research_sync.load_plugin": true,
 			"factorio.settings": {
-				"name": "Clusterio: PlatformExport - [planet=fulgora] Fulgora",
+				"name": "Clusterio: PlatformExport - [planet=fulgora] Theta",
 				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
 				"tags": [
 					"clusterio",
@@ -123,14 +123,14 @@
 				"non_blocking_saving": true
 			}
 		},
-		"Gleba": {
+		"Omega": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "gleba",
 			"surface_export.disabled_planets": "nauvis,vulcanus,fulgora,maraxsis",
 			"research_sync.load_plugin": true,
 			"factorio.settings": {
-				"name": "Clusterio: PlatformExport - [planet=gleba] Gleba",
+				"name": "Clusterio: PlatformExport - [planet=gleba] Omega",
 				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
 				"tags": [
 					"clusterio",
@@ -153,10 +153,10 @@
 		}
 	},
 	"serverDestinations": {
-		"Nauvis": "[planet=nauvis] Nauvis",
-		"Vulcanus": "[planet=vulcanus] Vulcanus",
-		"Fulgora": "[planet=fulgora] Fulgora",
-		"Gleba": "[planet=gleba] Gleba"
+		"Delta": "Delta",
+		"Sigma": "Sigma",
+		"Theta": "Theta",
+		"Omega": "Omega"
 	},
 	"hosts": {
 		"clusterio-host-1": {
@@ -167,32 +167,32 @@
 		}
 	},
 	"gatewayLinks": {
-		"Nauvis": {
+		"Delta": {
 			"surfexp_gateway_hub": [
-				"Vulcanus",
-				"Fulgora",
-				"Gleba"
+				"Sigma",
+				"Theta",
+				"Omega"
 			]
 		},
-		"Vulcanus": {
+		"Sigma": {
 			"surfexp_gateway_hub": [
-				"Nauvis",
-				"Fulgora",
-				"Gleba"
+				"Delta",
+				"Theta",
+				"Omega"
 			]
 		},
-		"Fulgora": {
+		"Theta": {
 			"surfexp_gateway_hub": [
-				"Nauvis",
-				"Vulcanus",
-				"Gleba"
+				"Delta",
+				"Sigma",
+				"Omega"
 			]
 		},
-		"Gleba": {
+		"Omega": {
 			"surfexp_gateway_hub": [
-				"Nauvis",
-				"Vulcanus",
-				"Fulgora"
+				"Delta",
+				"Sigma",
+				"Theta"
 			]
 		}
 	}
