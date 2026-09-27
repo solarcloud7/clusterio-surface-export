@@ -142,3 +142,23 @@ end
 assert(not data.raw["space-location"]["solar-system-edge"].platform_surface_render_parameters, "other locations keep their backdrop")
 assert(template.platform_backdrop.radius == 1, "the planet template should not be modified")
 print("backdrop: PASS (gateways drawn under parked platforms)")
+
+for _, mode in ipairs({"one_gate", "multi"}) do
+  local original = {type = "sprite", filename = "__core__/graphics/icons/starmap-star.png", size = 512}
+  settings = {startup = {[setting.name] = {value = mode}, ["surfexp-gateway-instances"] = {value = ""}}}
+  data = {raw = {["utility-sprites"] = {default = {starmap_star = original}}}}
+  dofile(root .. "data-final-fixes.lua")
+  local star = data.raw["utility-sprites"].default.starmap_star
+  if mode == "one_gate" then
+    assert(star.filename == "__surfexp_gateways__/graphics/icons/starmap-clear.png" and star.size == 64, "the sun is blacked out")
+    local file = assert(io.open(root .. star.filename:gsub("__surfexp_gateways__/", ""), "rb"))
+    file:close()
+  else
+    assert(star == original, "the four-gateway layout keeps the sun")
+  end
+end
+local hub_one_gate = load_layout("one_gate", "").surfexp_gateway_hub
+assert(hub_one_gate.starmap_icon:find("starmap-gateway-hub.png", 1, true) and hub_one_gate.starmap_icon_size == 512,
+  "the Gateway draws its own portal where the sun was")
+assert(hub_one_gate.magnitude >= 3, "the Gateway is sun-sized so its label clears the portal")
+print("eclipse: PASS (the sun is blacked out and the Gateway takes its place)")

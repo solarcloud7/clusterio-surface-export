@@ -57,6 +57,15 @@ assert(not player.gui.screen.surfexp_discord_frame, "Escape closes the window")
 Links.on_join(player)
 assert(#printed == 1 and printed[1][3] == "https://discord.gg/example", "joining players see the invite in chat")
 
+Links.on_gui_click{player_index = 1, element = button}
+local open_box = find(player.gui.screen.surfexp_discord_frame, "surfexp_discord_link")
+open_box.selected_all = nil
+local changed = Links.configure("https://discord.gg/replacement")
+assert(changed.discord_invite == "https://discord.gg/replacement", "the replacement invite is acknowledged")
+assert(open_box.valid and open_box.text == "https://discord.gg/replacement", "an open window shows the replacement invite, not the old one")
+assert(open_box.selected_all, "the replacement link is selected, ready for Ctrl+C")
+
 Links.configure(nil)
 assert(not player.gui.top.surfexp_discord_button, "clearing the invite removes the button")
+assert(not player.gui.screen.surfexp_discord_frame, "clearing the invite closes an open window")
 print("PASS the Discord button appears only with an invite, shows a copyable read-only link, and joining players get the link in chat")

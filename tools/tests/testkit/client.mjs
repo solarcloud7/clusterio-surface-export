@@ -17,7 +17,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const recipe = fileURLToPath(new URL("client/", import.meta.url));
 const artifacts = join(root, "ci-artifacts/client");
 const label = "surface-export.client-run";
-const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding.png", "no-planets.png", "no-boarding.png", "empty.png", "hidden.png", "debug.png"] };
+const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], starmap: ["starmap-remote.png", "starmap.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding.png", "no-planets.png", "no-boarding.png", "empty.png", "hidden.png", "debug.png"] };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const sha = data => createHash("sha256").update(data).digest("hex");
 const json = path => JSON.parse(readFileSync(path, "utf8"));
@@ -32,7 +32,7 @@ export function validateRunId(id) {
 export function parseClientOptions(args) {
 	const [action, ...rest] = args;
 	assert.ok(["doctor", "run", "inspect", "cleanup"].includes(action),
-		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] | inspect <run-id> | cleanup <run-id>");
+		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors|starmap> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] | inspect <run-id> | cleanup <run-id>");
 	if (action === "doctor") { assert.equal(rest.length, 0); return { action }; }
 	if (action !== "run") { assert.equal(rest.length, 1); return { action, id: validateRunId(rest[0]) }; }
 	const scenario = rest.shift();
@@ -135,6 +135,10 @@ function stage(dir, id, options, version) {
 	save(join(probe, "info.json"), { name: "se_client_probe", version: "0.0.1", title: "Disposable client probe", author: "local",
 		factorio_version: version.split(".").slice(0, 2).join("."), dependencies: names.filter(name => name !== "se_client_probe") });
 	copy(join(recipe, "scenario.lua"), join(probe, "control.lua"));
+	if (options.scenario === "starmap") {
+		writeFileSync(join(probe, "settings-updates.lua"), "local setting = data.raw[\"string-setting\"][\"surfexp-gateway-instances\"]\n"
+			+ "if setting then setting.default_value = \"11=[planet=nauvis] Test One,22=[planet=vulcanus] Test Two\" end\n");
+	}
 	copy(join(recipe, "pointer.sh"), join(work, "pointer.sh"));
 	writeFileSync(join(probe, "run.lua"), `return {id="${id}",scenario="${options.scenario}",width=${options.width},height=${options.height}}\n`);
 	save(join(mods, "mod-list.json"), { mods: names.map(name => ({ name, enabled: true })) });

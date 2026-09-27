@@ -51,7 +51,9 @@ script.on_event(defines.events.on_tick, function()
 	if not player or storage.finished then return end
 	if not storage.started then
 		if player.controller_type == defines.controllers.cutscene then player.exit_cutscene() end
-		if Panel then
+		if run.scenario == "starmap" then
+			assert(Policy.ensure_player(player, true))
+		elseif Panel then
 			assert(Policy.ensure_player(player, true))
 			assert(player.enter_space_platform(storage.ships[1]))
 			Panel.refresh_button(player)
@@ -78,7 +80,19 @@ script.on_event(defines.events.on_tick, function()
 	local elapsed = game.tick - storage.started
 	if Panel then Panel.refresh(player) end
 	local capture
-	if run.scenario == "gui-anchors" then
+	if run.scenario == "starmap" then
+		if elapsed == 30 then
+			game.forces.player.unlock_space_location("surfexp_gateway_i_11")
+			player.set_controller{type = defines.controllers.remote, surface = game.surfaces.nauvis}
+		end
+		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click 64 94 0 0", [240] = "capture starmap.png 0 0 0"})[elapsed]
+		if request then
+			storage.pointer_requests = (storage.pointer_requests or 0) + 1
+			helpers.write_file("pointer-request-" .. storage.pointer_requests .. ".txt", request .. "\n", false)
+			local name = request:match("^capture (%S+)")
+			if name then storage.captures[#storage.captures + 1] = name end
+		end
+	elseif run.scenario == "gui-anchors" then
 		if elapsed == 75 then player.opened = storage.ships[1].hub end
 		capture = ({[45] = "remote", [120] = "hub"})[elapsed]
 	elseif Panel then
@@ -137,7 +151,7 @@ script.on_event(defines.events.on_tick, function()
 			helpers.write_file(capture .. "-positions.json", helpers.table_to_json(state), false)
 		end
 	end
-	if elapsed == (run.scenario == "gui-anchors" and 150 or (Panel and 680 or 75)) then
+	if elapsed == (run.scenario == "starmap" and 360 or run.scenario == "gui-anchors" and 150 or (Panel and 680 or 75)) then
 		helpers.write_file("client-result.json", helpers.table_to_json({runId = run.id,
 			scenario = run.scenario, status = "captured", engineVersion = script.active_mods.base,
 			resolution = player.display_resolution, scale = player.display_scale, screenshots = storage.captures}), false)
