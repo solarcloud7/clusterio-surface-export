@@ -24,16 +24,12 @@
 			"SpidertronPatrols": "e05fb50107a0e3fa793fced4f65468180948ba0f"
 		},
 		"settings": {
-			"startup": {
-				"surfexp-gateway-layout": "one_gate"
-			},
 			"runtime-global": {
 				"surfexp-platform-boarding": true
 			}
 		}
 	},
 	"controller": {
-		"surface_export.gateway_mode": "one_gate",
 		"surface_export.platform_source_of_truth": "plugin_history",
 		"surface_export.discord_invite": "https://discord.gg/K3rhKD2zb",
 		"discord_bridge.channel_id": "1521306605386338335"

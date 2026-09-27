@@ -26,9 +26,10 @@ manually unlocking or deleting anything.
 
 ## Travel through an in-game gateway
 
-The default layout has one Gateway per instance, connected to Nauvis,
-Vulcanus, Gleba, Fulgora and Aquilo. It is a space location, not another planet.
-Your administrator configures which other instances it connects to.
+Each instance has one Gateway at the centre of the star map, connected to Nauvis.
+It is a space location, not another planet. Your administrator configures which
+other instances it connects to, and may add a destination beside the Gateway for
+each server.
 
 Send a platform to the gateway and wait until it is parked. Choose the destination
 in the arrival dialog. An administrator can also open the chooser with

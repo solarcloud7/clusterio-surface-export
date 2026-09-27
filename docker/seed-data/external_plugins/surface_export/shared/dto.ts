@@ -2,10 +2,7 @@ export type JsonObject = Record<string, unknown>;
 
 export const GATEWAY_PREFIX = "surfexp_gateway_";
 
-export type GatewayMode = "one_gate" | "multi";
-export const DEFAULT_GATEWAY_MODE: GatewayMode = "one_gate";
-
-export const MULTI_GATEWAY_NAMES: string[] = Array.from(
+export const LEGACY_GATEWAY_NAMES: string[] = Array.from(
 	{ length: 4 },
 	(_unused, i) => `${GATEWAY_PREFIX}${i + 1}`,
 );
@@ -13,11 +10,7 @@ export const MULTI_GATEWAY_NAMES: string[] = Array.from(
 export const ONE_GATE_NAME = `${GATEWAY_PREFIX}hub`;
 export const ONE_GATE_NAMES: string[] = [ONE_GATE_NAME];
 
-export const ALL_GATEWAY_NAMES: string[] = [...MULTI_GATEWAY_NAMES, ...ONE_GATE_NAMES];
-
-export function gatewayNamesFor(mode: GatewayMode): string[] {
-	return mode === "multi" ? [...MULTI_GATEWAY_NAMES] : [...ONE_GATE_NAMES];
-}
+export const ALL_GATEWAY_NAMES: string[] = [...LEGACY_GATEWAY_NAMES, ...ONE_GATE_NAMES];
 
 export const INSTANCE_GATEWAY_PREFIX = `${GATEWAY_PREFIX}i_`;
 export function instanceGatewayName(instanceId: number): string {
@@ -32,39 +25,6 @@ export interface InstanceDestination {
 	gatewayName: string;
 	instanceId: number;
 	instanceName: string;
-}
-
-export function parseGatewayMode(value: unknown): { mode: GatewayMode; warning: string | null } {
-	if (value === "one_gate" || value === "multi") {
-		return { mode: value, warning: null };
-	}
-	return {
-		mode: DEFAULT_GATEWAY_MODE,
-		warning: `Unknown gateway_mode ${JSON.stringify(value)} — falling back to ${DEFAULT_GATEWAY_MODE}`,
-	};
-}
-
-export function checkMultiModeLink(
-	gatewayName: string,
-	targets: readonly GatewayLink[],
-	otherGateways: ReadonlyMap<string, readonly GatewayLink[]>,
-): string | null {
-	if (targets.length > 1) {
-		return `In Multi Cluster mode each gateway carries one destination (${gatewayName} was given ${targets.length}).`;
-	}
-	const target = targets[0];
-	if (!target) {
-		return null;
-	}
-	for (const [otherName, otherTargets] of otherGateways) {
-		if (otherName === gatewayName) {
-			continue;
-		}
-		if (otherTargets.some(other => other.targetInstanceId === target.targetInstanceId)) {
-			return `In Multi Cluster mode each destination gets one gateway (${otherName} already links to instance ${target.targetInstanceId}).`;
-		}
-	}
-	return null;
 }
 
 export interface GatewayLink {

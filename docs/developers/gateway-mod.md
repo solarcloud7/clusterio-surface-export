@@ -22,11 +22,12 @@ client synchronization. `-Upload` changes the configured mod pack and restarts
 hosts; schedule this as a deployment, not a compile-only check. Inspect its
 `-ModPack` argument if the installation does not use the development pack.
 
-The default layout is one gateway connected to the five basic planets. Legacy
-numbered locations remain defined for save compatibility. The alternative layout
-is retained in code but hidden from the plugin Settings form. Changing layout
-removes inactive connections, so return platforms to planets before switching.
-Instance configuration and the mod pack's startup setting must agree.
+The mod defines one Gateway, `surfexp_gateway_hub`, at the centre of the star map
+and connected to Nauvis only. Each entry of the `surfexp-gateway-instances`
+startup setting adds a destination `surfexp_gateway_i_<instance id>` orbiting the
+Gateway and connected to it; see [server destinations](../admins/configuration.md#server-destinations).
+The numbered locations `surfexp_gateway_1` to `surfexp_gateway_4` remain defined,
+hidden and without connections, so older saves still load.
 
 ## Publish to the Mod Portal
 
@@ -65,7 +66,7 @@ small icons. The web gateway image is derived separately through the registered
 downscaler; see [its asset README](../../docker/seed-data/external_plugins/surface_export/web/gateway/assets/README.md).
 Retain the source art and regenerate derivatives when it changes.
 
-`lua tests/mods/gateway-layout.lua` checks layouts and referenced artwork without
+`lua tests/mods/gateway-layout.lua` checks the locations, routes and referenced artwork without
 starting Factorio. It cannot prove native map rendering.
 
 For a deployment comparison, capture stationary platforms before and after:

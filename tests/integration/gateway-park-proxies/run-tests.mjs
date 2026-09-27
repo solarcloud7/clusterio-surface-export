@@ -10,7 +10,7 @@ const SRC_INSTANCE = "clusterio-host-1-instance-1";
 const DST_INSTANCE = "clusterio-host-2-instance-1";
 const DST_CONTAINER = "surface-export-host-2";
 const DST_SCRIPT_OUTPUT = "/clusterio/data/instances/clusterio-host-2-instance-1/script-output";
-const GATEWAY = "surfexp_gateway_1";
+const GATEWAY = "surfexp_gateway_hub";
 const PROBE = `gwpark-probe-${Date.now().toString(36)}`;
 
 function rcon(instance, luaBody) {

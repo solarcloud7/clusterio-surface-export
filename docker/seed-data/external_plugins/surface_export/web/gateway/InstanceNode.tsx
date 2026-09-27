@@ -3,8 +3,7 @@ import { Handle, Position, useStore, useUpdateNodeInternals } from "@xyflow/reac
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
-import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
-import type { GatewayMode } from "../../shared/dto";
+import { ONE_GATE_NAME } from "../../shared/dto";
 import { sourceHandleId, targetHandleId } from "./gateway-graph";
 import type { GatewayUsage, PlatformLike } from "./gateway-graph";
 import PlatformRows from "./PlatformRows";
@@ -19,7 +18,6 @@ const NODE_FACE_ART: Record<string, string> = {
 	surfexp_gateway_hub: gatewayHubArt,
 };
 
-const MULTI_HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 const PLATFORM_LIST_VISIBLE_MS = 3000;
 
@@ -77,7 +75,6 @@ function GeometryOverlay() {
 }
 
 export type InstanceNodeData = {
-	mode?: GatewayMode;
 	instanceId: number;
 	instanceName: string;
 	address: string;
@@ -88,40 +85,6 @@ export type InstanceNodeData = {
 	platforms: PlatformLike[];
 	gateways: Record<string, GatewayUsage>;
 };
-
-function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
-	gatewayName: string;
-	position: Position;
-	usage: GatewayUsage;
-	connectable: boolean;
-}) {
-	const state = usage.outgoing > 0 ? "active" : usage.incoming > 0 ? "arrival-only" : "idle";
-	const title = usage.outgoing || usage.incoming
-		? `${gatewayName} — ${usage.outgoing} out, ${usage.incoming} in`
-		: `${gatewayName} — no targets, this gateway is disabled`;
-
-	return (
-		<>
-			<Handle
-				type="target"
-				position={position}
-				id={targetHandleId(gatewayName)}
-				isConnectable={connectable}
-				className="surface-export-gw-handle surface-export-gw-handle-target"
-			/>
-			<Handle
-				type="source"
-				position={position}
-				id={sourceHandleId(gatewayName)}
-				isConnectable={connectable}
-				title={title}
-				className={`surface-export-gw-handle surface-export-gw-handle-source surface-export-gw-${state}`}
-			>
-				<PlanetIcon name={gatewayName} size={26} title={gatewayName} />
-			</Handle>
-		</>
-	);
-}
 
 export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
@@ -139,55 +102,40 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 	useEffect(() => {
 		updateNodeInternals(id);
 	}, [id, list.visible, node.platforms.length, updateNodeInternals]);
-	const mode = node.mode || DEFAULT_GATEWAY_MODE;
-	const names = gatewayNamesFor(mode);
-	const oneGate = mode !== "multi";
-	const gateway = names[0];
+	const gateway = ONE_GATE_NAME;
 	const usage = node.gateways?.[gateway] || { outgoing: 0, incoming: 0 };
 
 	return (
 		<div
 			className={
 				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
-				+ (oneGate ? " surface-export-instance-node-shaped" : "")
+				+ " surface-export-instance-node-shaped"
 			}
 			onPointerDown={list.rearm}
 		>
-			{oneGate ? (
-				<>
-					<Handle
-						type="target"
-						position={Position.Left}
-						id={targetHandleId(gateway)}
-						isConnectable={Boolean(isConnectable)}
-						className="surface-export-gw-cover"
-					/>
-					<Handle
-						type="source"
-						position={Position.Right}
-						id={sourceHandleId(gateway)}
-						isConnectable={Boolean(isConnectable)}
-						className="surface-export-gw-cover"
-						title={`${gateway} — ${usage.outgoing} out, ${usage.incoming} in. Drag through the portal to link.`}
-					/>
-					<div
-						className="surface-export-instance-face"
-						style={NODE_FACE_ART[gateway] ? { backgroundImage: `url(${NODE_FACE_ART[gateway]})` } : undefined}
-					>
-						{NODE_FACE_ART[gateway] ? null : <PlanetIcon name={gateway} size={96} title={gateway} />}
-					</div>
-				</>
-			) : names.map((gatewayName, index) => (
-				<MultiGatewayHandle
-					key={gatewayName}
-					gatewayName={gatewayName}
-					position={MULTI_HANDLE_POSITIONS[index]}
-					usage={node.gateways?.[gatewayName] || { outgoing: 0, incoming: 0 }}
-					connectable={Boolean(isConnectable)}
-				/>
-			))}
+			<Handle
+				type="target"
+				position={Position.Left}
+				id={targetHandleId(gateway)}
+				isConnectable={Boolean(isConnectable)}
+				className="surface-export-gw-cover"
+			/>
+			<Handle
+				type="source"
+				position={Position.Right}
+				id={sourceHandleId(gateway)}
+				isConnectable={Boolean(isConnectable)}
+				className="surface-export-gw-cover"
+				title={`${gateway} — ${usage.outgoing} out, ${usage.incoming} in. Drag through the portal to link.`}
+			/>
+			<div
+				className="surface-export-instance-face"
+				style={NODE_FACE_ART[gateway] ? { backgroundImage: `url(${NODE_FACE_ART[gateway]})` } : undefined}
+			>
+				{NODE_FACE_ART[gateway] ? null : <PlanetIcon name={gateway} size={96} title={gateway} />}
+			</div>
 
-			<div className={`surface-export-instance-node-body${oneGate ? " surface-export-instance-node-caption" : ""}`}>
+			<div className="surface-export-instance-node-body surface-export-instance-node-caption">
 				<Text
 					strong
 					className="surface-export-instance-node-name"

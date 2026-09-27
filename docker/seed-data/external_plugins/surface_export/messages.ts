@@ -36,19 +36,14 @@ export type {
 } from "./shared/dto";
 export {
 	ALL_GATEWAY_NAMES,
-	DEFAULT_GATEWAY_MODE,
 	GATEWAY_PREFIX,
-	MULTI_GATEWAY_NAMES,
+	LEGACY_GATEWAY_NAMES,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
 	INSTANCE_GATEWAY_PREFIX,
-	checkMultiModeLink,
-	gatewayNamesFor,
 	instanceGatewayName,
 	isInstanceGatewayName,
-	parseGatewayMode,
 } from "./shared/dto";
-export type { GatewayMode } from "./shared/dto";
 import type { TimingRecord, OperationTiming } from "./shared/timing";
 const PLUGIN_NAME = "surface_export";
 
@@ -928,7 +923,6 @@ export class GetGatewaysRequest {
 		jsonSchema: {
 			type: "object",
 			properties: {
-				gatewayNames: { type: "array", items: { type: "string" } },
 				links: {
 					type: "array",
 					items: {
@@ -956,11 +950,10 @@ export class GetGatewaysRequest {
 					},
 				},
 			},
-			required: ["gatewayNames", "links"],
+			required: ["links"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as {
-				gatewayNames: string[];
 				links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }>;
 				destinations?: InstanceDestination[];
 			};

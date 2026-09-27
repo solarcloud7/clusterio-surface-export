@@ -27,7 +27,7 @@ local env = setmetatable({
 }, {__index = _G})
 env.require = function(name)
 	if name:find("teleport-gui", 1, true) then
-		return {ICON = "space-location/surfexp_gateway_3", is_allowed = function() return allowed end,
+		return {ICON = "space-location/surfexp_gateway_hub", is_allowed = function() return allowed end,
 			is_open = function() return teleport_open end,
 			close = function() teleport_open = false; calls[#calls + 1] = "teleport-close" end,
 			request_roster = function() calls[#calls + 1] = "roster" end,
@@ -54,13 +54,13 @@ assert(not player.gui.top[GATEWAY] and not player.gui.top[TELEPORT], "a player a
 allowed = true
 portal.refresh(player)
 local teleport = player.gui.top[TELEPORT]
-assert(teleport and teleport.sprite == "space-location/surfexp_gateway_3" and teleport.style == "mod_gui_button",
-	"a player allowed to teleport should see the orange teleport button")
+assert(teleport and teleport.sprite == "space-location/surfexp_gateway_hub" and teleport.style == "mod_gui_button",
+	"a player allowed to teleport should see the teleport button")
 assert(not player.gui.top[GATEWAY], "the gateway button should need a parked platform")
 allowed = false
 portal.refresh(player)
 assert(not player.gui.top[TELEPORT], "losing teleport permission should remove the teleport button")
-print("PASS the orange teleport button is shown only to players allowed to teleport")
+print("PASS the teleport button is shown only to players allowed to teleport")
 
 parked = "surfexp_gateway_hub"
 portal.refresh(player)

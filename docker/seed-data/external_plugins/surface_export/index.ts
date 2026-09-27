@@ -107,24 +107,6 @@ export const plugin = {
 	},
 	controllerConfigFields: {
 		[`${PLUGIN_NAME}.max_inflight_transfers_per_instance`]: { description: "Experimental: admitted transfers per instance (1–4). Default 1 retains serial transfers. Lua jobs share the instance tick budget; recovery blocks new admissions.", type: "number", initialValue: 1 },
-		[`${PLUGIN_NAME}.gateway_mode`]: {
-			title: "Gateway mode",
-			description: "Which gateway layout the cluster uses. \"one_gate\" (the default, \"1 Gate "
-				+ "Cluster\") gives every instance a SINGLE gateway that can link to any number of other "
-				+ "instances; a platform parked there is offered every destination to choose from. "
-				+ "\"multi\" (\"Multi Cluster\", advanced) gives every instance FOUR colour-coded gateways, "
-				+ "each carrying exactly one destination and no two pointing at the same instance — so the "
-				+ "gateway a platform flies to decides where it lands, with nothing to choose on arrival. "
-				+ "Only the active mode's gateways are unlocked in game. Set the mod pack's startup setting "
-				+ "surfexp-gateway-layout to the same value to hide the other layout on the space map. "
-				+ "Configured instance destinations are retained for each mode. Map layout changes remove "
-				+ "inactive travel routes, which can strand parked platforms or reset travel progress; "
-				+ "return all platforms to a planet before switching. Instances and clients must be restarted to pick up the "
-				+ "change, because the unlock happens at startup. Unrecognised values fall back to "
-				+ "\"one_gate\" and are logged.",
-			type: "string",
-			initialValue: messages.DEFAULT_GATEWAY_MODE,
-		},
 		[`${PLUGIN_NAME}.passenger_carry_armor`]: {
 			title: "Armor carry over?",
 			description: "Players aboard a platform that transfers through a gateway take their equipped armor with them. "

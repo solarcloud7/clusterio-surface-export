@@ -11,7 +11,7 @@ const messages = require("../dist/node/messages");
 async function fixture(t) {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-handlers-"));
 	const handlers = new Map(), warnings = [], sends = [];
-	const config = new Map([["controller.database_directory", dir], ["surface_export.gateway_mode", "one_gate"]]);
+	const config = new Map([["controller.database_directory", dir]]);
 	const plugin = Object.create(ControllerPlugin.prototype);
 	Object.assign(plugin, {
 		logger: { info() {}, verbose() {}, warn: x => warnings.push(x), error: x => warnings.push(x) },
@@ -81,21 +81,13 @@ for (const reply of [undefined, {success: false, error: "rejected"}, new Error("
 	});
 }
 
-test("gateway mode is read dynamically and a rejected handler does not poison later updates", async t => {
-	const {plugin, config, warnings, call} = await fixture(t);
+test("a rejected handler does not poison later updates", async t => {
+	const {plugin, call} = await fixture(t);
 	await call(messages.SetGatewayLinkRequest, update());
-	config.set("surface_export.gateway_mode", "multi");
-	assert.deepEqual((await call(messages.GetGatewaysRequest, {})).links, []);
-	assert.deepEqual((await call(messages.GetGatewayConfigRequest, {instanceId: 1})).activeGatewayNames, messages.MULTI_GATEWAY_NAMES);
-	config.set("surface_export.gateway_mode", "invalid");
-	await call(messages.GetGatewaysRequest, {});
-	await call(messages.GetGatewaysRequest, {});
-	assert.equal(warnings.length, 1);
-	const get = plugin.controller.config.get;
-	plugin.controller.config.get = () => { throw Error("config unavailable"); };
-	await assert.rejects(call(messages.SetGatewayLinkRequest, update()), /config unavailable/);
-	plugin.controller.config.get = get;
-	config.set("surface_export.gateway_mode", "one_gate");
+	const get = plugin.controller.instances.get;
+	plugin.controller.instances.get = () => { throw Error("instances unavailable"); };
+	await assert.rejects(call(messages.SetGatewayLinkRequest, update()), /instances unavailable/);
+	plugin.controller.instances.get = get;
 	assert.equal((await call(messages.SetGatewayLinkRequest, update())).success, true);
 });
 
@@ -108,7 +100,7 @@ test("passenger carry setting changes re-push gateway config; other fields do no
 	};
 	await plugin.onControllerConfigFieldChanged("surface_export.passenger_carry_armor", false, true);
 	await plugin.onControllerConfigFieldChanged("surface_export.passenger_carry_inventory", true, false);
-	await plugin.onControllerConfigFieldChanged("surface_export.gateway_mode", "multi", "one_gate");
+	await plugin.onControllerConfigFieldChanged("surface_export.platform_source_of_truth", "save_game", "plugin_history");
 	assert.equal(pushes, 2);
 	assert.equal(warnings.filter(warning => /instance 2 unreachable/.test(warning)).length, 2);
 	assert.equal(warnings.some(warning => /instance 1 /.test(warning)), false);

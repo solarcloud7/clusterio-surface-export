@@ -159,7 +159,7 @@ the same items.
 - **Gateway button** (gateway icon): shown to a player aboard a platform parked at a
   gateway with destinations, and to a player with a passenger record. It opens the
   gateway dialog, or the transit or arrival window for a passenger.
-- **Teleport button** (orange gateway icon): shown to admins and to members of the
+- **Teleport button** (Gateway icon): shown to admins and to members of the
   `Teleport` permission group. It opens the teleport window, which connects the
   player alone to another instance. Manage group membership with `/permissions`.
   The group is created at server startup.

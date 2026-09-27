@@ -20,7 +20,7 @@ Module._load = function(request, parent, isMain) {
 	return originalLoad.call(this, request, parent, isMain);
 };
 const { GatewayConfig } = require("../dist/node/lib/gateway-config");
-const { ONE_GATE_NAME, MULTI_GATEWAY_NAMES } = require("../dist/node/messages");
+const { ONE_GATE_NAME, LEGACY_GATEWAY_NAMES } = require("../dist/node/messages");
 Module._load = originalLoad;
 
 const target = (id, gateway = ONE_GATE_NAME) => ({ targetInstanceId: id, targetGateway: gateway });
@@ -28,7 +28,7 @@ const request = (id, targets, gatewayName = ONE_GATE_NAME) => ({
 	sourceInstanceId: id, gateways: [{ gatewayName, targets }],
 });
 
-async function fixture(t, mode = "one_gate") {
+async function fixture(t) {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-persistence-"));
 	t.after(() => fs.rm(directory, { recursive: true, force: true }));
 	const logs = [];
@@ -37,7 +37,7 @@ async function fixture(t, mode = "one_gate") {
 		[level, message => logs.push({ level, message })]));
 	const controller = {
 		instances: new Map([1, 2, 3].map(id => [id, { id }])),
-		config: {get: key => key === "controller.database_directory" ? directory : mode},
+		config: {get: key => key === "controller.database_directory" ? directory : undefined},
 	};
 	const plugin = new GatewayConfig(controller, logger, {isInstanceOnline: () => true, resolveInstanceName: () => null});
 	plugin.pushGatewayConfigToInstance = async id => {
@@ -105,21 +105,6 @@ test("a failed overlapping save cannot leak into a later successful save", async
 	assert.deepEqual(pushes.map(push => push.id), [2]);
 });
 
-test("overlapping multi-gateway saves validate against committed routes", async t => {
-	const { plugin } = await fixture(t, "multi");
-	const [one, two] = MULTI_GATEWAY_NAMES;
-	const paused = pauseNextWrite(plugin);
-	const first = plugin.handleSetGatewayLinkRequest(request(1, [target(2, one)], one));
-	await paused.entered;
-	const second = plugin.handleSetGatewayLinkRequest(request(1, [target(2, two)], two));
-	paused.release();
-	assert.equal((await first).success, true);
-	const rejected = await second;
-	assert.equal(rejected.success, false);
-	assert.match(rejected.error, /each destination gets one gateway/);
-	assert.deepEqual([...plugin.gatewayLinks], [[`1:${one}`, [target(2, one)]]]);
-});
-
 test("overlapping successful saves preserve both instances and push in commit order", async t => {
 	const { plugin, pushes } = await fixture(t);
 	const paused = pauseNextWrite(plugin);
@@ -134,19 +119,6 @@ test("overlapping successful saves preserve both instances and push in commit or
 	assert.deepEqual(pushes.map(push => push.id), [1, 2]);
 	assert.deepEqual([...pushes[0].links], [[`1:${ONE_GATE_NAME}`, [target(2)]]]);
 	assert.deepEqual(JSON.parse(await fs.readFile(plugin.gatewayConfigPath, "utf8")), [...plugin.gatewayLinks]);
-});
-
-test("a failed multi-gateway save does not reserve its destination", async t => {
-	const { plugin } = await fixture(t, "multi");
-	const [one, two] = MULTI_GATEWAY_NAMES;
-	const paused = pauseNextWrite(plugin, "disk full");
-	const first = plugin.handleSetGatewayLinkRequest(request(1, [target(2, one)], one));
-	await paused.entered;
-	const second = plugin.handleSetGatewayLinkRequest(request(1, [target(2, two)], two));
-	paused.release();
-	assert.equal((await first).success, false);
-	assert.equal((await second).success, true);
-	assert.deepEqual([...plugin.gatewayLinks], [[`1:${two}`, [target(2, two)]]]);
 });
 
 for (const [label, bytes] of [
@@ -168,18 +140,26 @@ for (const [label, bytes] of [
 	});
 }
 
-test("a missing gateway file allows saves and a fresh load retains inactive layouts", async t => {
-	const { plugin } = await fixture(t);
+test("legacy numbered gateway links survive load and save, are not listed and cannot be edited", async t => {
+	const { plugin, pushes } = await fixture(t);
+	const legacy = LEGACY_GATEWAY_NAMES[0];
+	await fs.writeFile(plugin.gatewayConfigPath, JSON.stringify([[`1:${legacy}`, [target(3, legacy)]]]));
 	await plugin.loadGatewayConfig();
-	plugin.gatewayLinks.set(`1:${MULTI_GATEWAY_NAMES[0]}`, [target(3, MULTI_GATEWAY_NAMES[0])]);
+	assert.deepEqual(plugin.gatewayLinks.get(`1:${legacy}`), [target(3, legacy)]);
 	assert.equal((await plugin.handleSetGatewayLinkRequest(request(1, [target(2)]))).success, true);
 	const expected = structuredClone(plugin.gatewayLinks);
 	plugin.gatewayLinks = new Map();
 	await plugin.loadGatewayConfig();
 	assert.deepEqual(plugin.gatewayLinks, expected);
+	assert.deepEqual((await plugin.handleGetGatewaysRequest({})).links.map(link => link.gatewayName), [ONE_GATE_NAME]);
+	assert.ok(!plugin.activeGatewayNamesFor(1).includes(legacy), "a numbered gateway stays locked in game");
+	const refused = await plugin.handleSetGatewayLinkRequest(request(1, [target(2, legacy)], legacy));
+	assert.equal(refused.success, false);
+	assert.match(refused.error, /Unknown gateway/);
 	assert.equal((await plugin.handleSetGatewayLinkRequest(request(1, []))).success, true);
 	assert.equal(plugin.gatewayLinks.has(`1:${ONE_GATE_NAME}`), false);
-	assert.equal(plugin.gatewayLinks.has(`1:${MULTI_GATEWAY_NAMES[0]}`), true);
+	assert.deepEqual(plugin.gatewayLinks.get(`1:${legacy}`), [target(3, legacy)]);
+	assert.deepEqual(pushes.map(push => push.id), [1, 1]);
 });
 
 test("a push failure reports the durable save and allows a later update", async t => {
@@ -195,7 +175,7 @@ test("a push failure reports the durable save and allows a later update", async 
 
 test("legacy gateway migration excludes self routes and survives a new load", async t => {
 	const { plugin } = await fixture(t);
-	const name = MULTI_GATEWAY_NAMES[0];
+	const name = LEGACY_GATEWAY_NAMES[0];
 	await fs.writeFile(plugin.gatewayConfigPath, JSON.stringify([[name, [target(1, name), target(2, name)]]]));
 	await plugin.loadGatewayConfig();
 	assert.deepEqual(plugin.gatewayLinks.get(`1:${name}`), [target(2, name)]);
@@ -209,7 +189,7 @@ test("legacy gateway migration excludes self routes and survives a new load", as
 test("legacy links remain on disk until instances are available for migration", async t => {
 	const { plugin } = await fixture(t);
 	plugin.controller.instances.clear();
-	const name = MULTI_GATEWAY_NAMES[0];
+	const name = LEGACY_GATEWAY_NAMES[0];
 	const bytes = JSON.stringify([[name, [target(2, name)]]]);
 	await fs.writeFile(plugin.gatewayConfigPath, bytes);
 	await plugin.loadGatewayConfig();
@@ -222,7 +202,7 @@ test("legacy links remain on disk until instances are available for migration", 
 
 test("an unsaved migration reports its failure and keeps the legacy file", async t => {
 	const { plugin, logs } = await fixture(t);
-	const name = MULTI_GATEWAY_NAMES[0];
+	const name = LEGACY_GATEWAY_NAMES[0];
 	const bytes = JSON.stringify([[name, [target(2, name)]]]);
 	await fs.writeFile(plugin.gatewayConfigPath, bytes);
 	plugin.persistGatewayConfig = async () => "disk full";
@@ -268,8 +248,7 @@ test("an instance status change re-pushes gateway config to every live instance"
 async function addressFixture(t, settings = {}) {
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-address-"));
 	t.after(() => fs.rm(directory, { recursive: true, force: true }));
-	const config = new Map([["controller.database_directory", directory], ["surface_export.gateway_mode", "one_gate"],
-		...Object.entries(settings)]);
+	const config = new Map([["controller.database_directory", directory], ...Object.entries(settings)]);
 	const instance = (id, hostId, gamePort) => ({ id, gamePort, config: { get: key => key === "instance.assigned_host" ? hostId : undefined } });
 	const sends = [];
 	const controller = {
@@ -319,11 +298,11 @@ test("gateway pushes and pulls carry passenger carry settings with defaults", as
 	assert.ok(sends.slice(1).every(send => send.message.passengerCarry.inventory === true), "every server receives the changed setting");
 });
 
-function destinationFixture(t, names, mode = "one_gate") {
+function destinationFixture(t, names) {
 	const logger = Object.fromEntries(["info", "warn", "error", "verbose"].map(level => [level, () => {}]));
 	const instance = (id, name) => ({ id, gamePort: 34100 + id, config: { get: key => key === "instance.name" ? name : undefined } });
 	const controller = {
-		config: { get: key => key === "controller.database_directory" ? os.tmpdir() : mode },
+		config: { get: key => key === "controller.database_directory" ? os.tmpdir() : undefined },
 		instances: new Map(names.map((name, index) => [index + 1, instance(index + 1, name)])),
 		hosts: new Map(),
 		async sendTo() { return { success: true }; },
@@ -349,9 +328,6 @@ test("names do not identify destinations: shared, renamed or unusual names keep 
 	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_i_2", "surfexp_gateway_i_3"]);
 	controller.instances.get(3).isDeleted = true;
 	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_i_2"], "a deleted server has no destination");
-	const multi = destinationFixture(t, ["fact1", "fact2"], "multi");
-	assert.deepEqual(multi.plugin.activeGatewayNamesFor(1), MULTI_GATEWAY_NAMES);
-	assert.deepEqual((await multi.plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).gateways, []);
 });
 
 test("a server destination cannot be given manual links, and links cannot arrive at one", async t => {
