@@ -112,6 +112,23 @@ function RouteAlerts.server_from_gps(surface_name)
 	return id and tonumber(id) or nil
 end
 
+function RouteAlerts.connect_from_gps(player, surface_name, is_allowed, target_for)
+	local instance_id = RouteAlerts.server_from_gps(surface_name)
+	if not instance_id then return "ignored" end
+	if not is_allowed(player) then
+		player.print("Switching servers needs Teleport permission.")
+		return "refused"
+	end
+	local target = target_for(instance_id)
+	if not (target and target.address and target.address ~= "") then
+		player.print("That server is not reachable from here.")
+		return "unreachable"
+	end
+	player.connect_to_server{address = target.address, name = target.instanceName}
+	log(string.format("[Gateway] connect prompt from a route alert sent to '%s' for %s (%s)", player.name, tostring(target.instanceName), target.address))
+	return "connected"
+end
+
 function RouteAlerts.refresh()
 	local all = records()
 	for k, record in pairs(all) do

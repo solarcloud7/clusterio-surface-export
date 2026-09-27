@@ -3,8 +3,10 @@ import { getErrorMessage } from "../helpers";
 
 type RelayInstance = { id: number; isDeleted?: boolean; config: { get(key: string): unknown } };
 
+export const ROUTE_ALERT_STALE_MS = 60_000;
+
 export class RouteAlertRelay {
-	private active = new Map<string, { sourceInstanceId: number; alert: messages.RouteAlert }>();
+	private active = new Map<string, { sourceInstanceId: number; alert: messages.RouteAlert; seenAtMs: number }>();
 
 	constructor(
 		private readonly controller: {
@@ -13,16 +15,21 @@ export class RouteAlertRelay {
 		},
 		private readonly logger: { warn(message: string): void },
 		private readonly isInstanceOnline: (instanceId: number) => boolean,
+		private readonly nowMs: () => number = Date.now,
 	) {}
 
 	activeAlerts() {
+		const now = this.nowMs();
+		for (const [key, entry] of this.active) {
+			if (now - entry.seenAtMs > ROUTE_ALERT_STALE_MS) this.active.delete(key);
+		}
 		return [...this.active.values()];
 	}
 
 	async accept(sourceInstanceId: number, alert: messages.RouteAlert) {
 		const key = `${sourceInstanceId}:${alert.key}`;
 		if (alert.active) {
-			this.active.set(key, { sourceInstanceId, alert });
+			this.active.set(key, { sourceInstanceId, alert, seenAtMs: this.nowMs() });
 		} else {
 			this.active.delete(key);
 		}
@@ -32,7 +39,7 @@ export class RouteAlertRelay {
 	}
 
 	async replayTo(instanceId: number) {
-		for (const { sourceInstanceId, alert } of this.active.values()) {
+		for (const { sourceInstanceId, alert } of this.activeAlerts()) {
 			if (sourceInstanceId !== instanceId) await this.deliver(instanceId, sourceInstanceId, alert);
 		}
 	}

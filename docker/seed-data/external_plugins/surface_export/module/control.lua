@@ -127,18 +127,12 @@ SurfaceExportModule.events = {
 	[e.on_forces_merged] = function(event) PlanetPolicy.enforce(event.destination) end,
 	[e.on_player_created] = function(event) refresh_player(event, true) end,
 	[e.on_player_clicked_gps_tag] = function(event)
-		local instance_id = RouteAlerts.server_from_gps(event.surface)
-		if not instance_id then return end
 		local player = game.get_player(event.player_index)
 		if not player then return end
-		local cfg = Gateway.get_gateway_config(Gateway.INSTANCE_PREFIX .. instance_id)
-		local target = cfg and cfg.targets and cfg.targets[1]
-		if not (target and target.address and target.address ~= "") then
-			player.print("That server is not reachable from here.")
-			return
-		end
-		player.connect_to_server{address = target.address, name = target.instanceName}
-		log(string.format("[Gateway] connect prompt from a route alert sent to '%s' for %s (%s)", player.name, tostring(target.instanceName), target.address))
+		RouteAlerts.connect_from_gps(player, event.surface, TeleportGui.is_allowed, function(instance_id)
+			local cfg = Gateway.get_gateway_config(Gateway.INSTANCE_PREFIX .. instance_id)
+			return cfg and cfg.targets and cfg.targets[1]
+		end)
 	end,
 	[e.on_player_joined_game] = function(event)
 		local player = game.get_player(event.player_index)

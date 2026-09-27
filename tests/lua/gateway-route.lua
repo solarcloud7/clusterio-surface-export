@@ -198,3 +198,18 @@ RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "play
 	active = false, sourceInstanceId = 22, sourceName = "Forge"})
 assert(next(alert_env.storage.surface_export_remote_route_alerts) == nil and #removed > before, "a relayed clear removes the alert everywhere")
 print("PASS route alerts are relayed to every server, shown natively there with a GPS link to the platform's server, and clear or expire")
+
+local connects, notices = {}, {}
+local clicker = {name = "tester", connect_to_server = function(options) connects[#connects + 1] = options end,
+	print = function(message) notices[#notices + 1] = message end}
+local allowed = false
+local function is_allowed() return allowed end
+local function target_for(id) return id == 22 and {address = "host:22", instanceName = "Forge"} or nil end
+assert(RouteAlerts.connect_from_gps(clicker, "nauvis", is_allowed, target_for) == "ignored" and #notices == 0, "ordinary GPS links are left alone")
+assert(RouteAlerts.connect_from_gps(clicker, "surfexp_route_22", is_allowed, target_for) == "refused" and #connects == 0,
+	"a player without Teleport permission cannot switch servers from an alert link")
+allowed = true
+assert(RouteAlerts.connect_from_gps(clicker, "surfexp_route_99", is_allowed, target_for) == "unreachable" and #connects == 0)
+assert(RouteAlerts.connect_from_gps(clicker, "surfexp_route_22", is_allowed, target_for) == "connected"
+	and connects[1].address == "host:22" and connects[1].name == "Forge", "a permitted player gets the connect prompt for the alert's server")
+print("PASS alert links open the connect prompt only for players allowed to teleport")

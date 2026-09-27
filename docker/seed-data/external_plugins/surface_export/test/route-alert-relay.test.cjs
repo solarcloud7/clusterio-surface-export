@@ -64,3 +64,26 @@ test("a failed or refused delivery is logged without stopping delivery to other 
 	assert.match(warnings.join("\n"), /instance 2 failed: connection lost/);
 	assert.match(warnings.join("\n"), /Instance 3 refused the route alert from 1: not ready/);
 });
+
+test("alerts that stopped being re-announced are dropped before they can be replayed", async () => {
+	let now = 1_000;
+	const sends = [];
+	const instance = (id, name) => ({ id, config: { get: key => key === "instance.name" ? name : undefined } });
+	const controller = {
+		instances: new Map([[1, instance(1, "Forge")], [2, instance(2, "Cinder")], [3, instance(3, "Tide")]]),
+		async sendTo(target, message) { sends.push({ target, message }); return { success: true }; },
+	};
+	const { RouteAlertRelay: Relay, ROUTE_ALERT_STALE_MS } = require("../dist/node/lib/route-alert-relay");
+	const relay = new Relay(controller, { warn() {} }, () => true, () => now);
+	await relay.accept(1, alert());
+	now += ROUTE_ALERT_STALE_MS - 1;
+	await relay.accept(2, { ...alert(), key: "player:8" });
+	sends.length = 0;
+	await relay.replayTo(3);
+	assert.equal(sends.length, 2, "recently announced alerts are replayed");
+	now += 2;
+	sends.length = 0;
+	await relay.replayTo(3);
+	assert.deepEqual(sends.map(send => send.message.sourceInstanceId), [2], "an alert its server stopped announcing is not replayed");
+	assert.deepEqual(relay.activeAlerts().map(entry => entry.sourceInstanceId), [2]);
+});
