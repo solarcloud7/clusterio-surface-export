@@ -1,13 +1,18 @@
 # Gateway web artwork
 
 `gateway-hub-128.png` is derived from the gateway mod's 512-pixel starmap image.
+`gateway-<colour>-64.png` (blue, green, orange, purple) are derived the same way
+from the server destination starmap images, reduced 8x.
 Other Factorio icons use the instance mod pack's exported spritesheet.
 
 From the repository root:
 
 ```text
 node tools/surface-export/downscale-icon.mjs docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-hub.png docker/seed-data/external_plugins/surface_export/web/gateway/assets/gateway-hub-128.png --factor=4
+node tools/surface-export/downscale-icon.mjs docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-blue.png docker/seed-data/external_plugins/surface_export/web/gateway/assets/gateway-blue-64.png --factor=8
 ```
+
+Repeat the last command for green, orange and purple.
 
 The plugin's `scripts/lint-derived-art.mjs` rederives registered images and checks
 byte equality. Register another derived image in that guard rather than creating

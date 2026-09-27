@@ -1,7 +1,7 @@
 import React from "react";
 import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata } from "@clusterio/web_ui";
 import type { PrototypeMetadataEntry } from "@clusterio/web_ui";
-import { selectNavigableLocationNames, selectPlanetNames } from "../shared/planets";
+import { selectNavigableLocationNames, selectPlanetNames, selectStarMapPlanets } from "../shared/planets";
 import type { SpaceConnectionLike } from "../shared/planets";
 
 type Metadata = Map<string, Map<string, PrototypeMetadataEntry>> | undefined;
@@ -118,6 +118,15 @@ export const PlanetIcon = (props: IconProps) => <ProtoIcon preferTypes={["planet
 export const ItemIcon = (props: IconProps) => <ProtoIcon preferTypes={["item"]} {...props} />;
 export const FluidIcon = (props: IconProps) => <ProtoIcon preferTypes={["fluid"]} {...props} />;
 export const EntityIcon = (props: IconProps) => <ProtoIcon {...props} />;
+
+export function usePlanetNames(): string[] {
+	const { metadata } = useProtoLookup();
+	const navigable = useNavigableLocationNames();
+	return React.useMemo(() => {
+		const planets = selectPlanetNames([...(metadata?.values() ?? [])].map(typeMap => typeMap.values()));
+		return selectStarMapPlanets(planets, navigable);
+	}, [metadata, navigable]);
+}
 
 export function usePlanetOptions() {
 	const { metadata } = useProtoLookup();

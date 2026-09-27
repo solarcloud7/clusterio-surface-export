@@ -12,6 +12,14 @@ export function selectPlanetNames(buckets: Iterable<Iterable<PrototypeLike>>): s
 	return [...names].sort((a, b) => a.localeCompare(b));
 }
 
+export function selectStarMapPlanets(planets: readonly string[], navigable: readonly string[] | null): string[] {
+	if (!navigable) {
+		return [...planets];
+	}
+	const reachable = new Set(navigable);
+	return planets.filter(name => reachable.has(name));
+}
+
 export type SpaceConnectionLike = { from?: unknown; to?: unknown };
 
 export function selectNavigableLocationNames(connections: Iterable<SpaceConnectionLike>): string[] {

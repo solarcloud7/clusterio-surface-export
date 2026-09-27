@@ -36,11 +36,18 @@ async function centreOf(locator) {
 async function dragBetween(page, from, to) {
 	await page.mouse.move(from.x, from.y);
 	await page.mouse.down();
+	let midPath = null;
 	for (let step = 1; step <= 8; step += 1) {
 		await page.mouse.move(from.x + (to.x - from.x) * step / 8, from.y + (to.y - from.y) * step / 8);
 		await page.waitForTimeout(20);
+		if (step === 4) {
+			midPath = await page.evaluate(
+				() => document.querySelector(".react-flow__connectionline path")?.getAttribute("d") ?? null,
+			);
+		}
 	}
 	await page.mouse.up();
+	return midPath;
 }
 
 console.log("=== canvas-drag: a platform row can be dragged onto another instance's gateway ===");
@@ -107,14 +114,9 @@ try {
 	await page.keyboard.press("Escape");
 
 	check(
-		Boolean(dragPath),
-		"a gateway drag renders a connection line (control arm)",
-		"no .react-flow__connectionline path existed mid-drag — the shape check below would pass vacuously",
-	);
-	check(
-		Boolean(dragPath) && / L /.test(dragPath) && !/[CQAS]/.test(dragPath),
-		"the gateway drag line is straight, not a curve",
-		`connection line d="${dragPath ?? "(absent)"}"`,
+		!dragPath,
+		"dragging a server's gateway starts no link: every server already reaches every other",
+		`a connection line appeared mid-drag: d="${dragPath}"`,
 	);
 	const afterAbort = (await page.locator(".react-flow__panel.top.right").innerText()).trim();
 	check(
@@ -141,7 +143,17 @@ try {
 
 	const from = await centreOf(handle);
 	const to = await centreOf(targetNode.locator(".surface-export-gw-cover").first());
-	await dragBetween(page, from, to);
+	const platformPath = await dragBetween(page, from, to);
+	check(
+		Boolean(platformPath),
+		"a platform drag renders a connection line (control arm)",
+		"no .react-flow__connectionline path existed mid-drag — the shape check below would pass vacuously",
+	);
+	check(
+		Boolean(platformPath) && / L /.test(platformPath) && !/[CQAS]/.test(platformPath),
+		"the platform drag line is straight, not a curve",
+		`connection line d="${platformPath ?? "(absent)"}"`,
+	);
 
 	const modal = page.locator(".ant-modal-wrap:not([style*='display: none']) .ant-modal");
 	let modalVisible = true;

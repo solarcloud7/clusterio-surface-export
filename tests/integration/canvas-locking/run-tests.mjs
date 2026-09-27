@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// canvas-locking — the padlock stops edge deletion, and no edge renders the fallback blue.
+// canvas-locking — the padlock stops server cards moving, and no edge renders the fallback blue.
 // requires: a live cluster (controller on localhost:8080) with >= 2 instances, built dist/web
 // produces: PASS/FAIL per check on stdout; exit 1 on any failure
-// does not: save anything to the controller (it stages its own link and reverts), assert edge
+// does not: save anything to the controller (card positions are browser-local), assert edge
 //           geometry, or prove the lock survives a reload — it is deliberately per-session UI state
 
 import { execFileSync } from "node:child_process";
@@ -104,32 +104,11 @@ try {
 	);
 
 	const edges = page.locator(".react-flow__edge-path");
-	const panelText = async () => (await page.locator(".react-flow__panel.top.right").innerText()).trim();
-	const clickEdge = async () => {
-		await edges.first().dispatchEvent("click");
-		await page.waitForTimeout(500);
-	};
 
-	if (!await edges.count()) {
-		const nodeCount = await nodes.count();
-		if (nodeCount < 2) {
-			throw new Error(`need 2 instances to stage a link, found ${nodeCount}`);
-		}
-		const from = await centreOf(nodes.nth(0).locator(".surface-export-gw-cover").first());
-		const to = await centreOf(nodes.nth(1).locator(".surface-export-gw-cover").first());
-		await page.mouse.move(from.x, from.y);
-		await page.mouse.down();
-		for (let step = 1; step <= 8; step += 1) {
-			await page.mouse.move(from.x + (to.x - from.x) * step / 8, from.y + (to.y - from.y) * step / 8);
-			await page.waitForTimeout(20);
-		}
-		await page.mouse.up();
-		await page.waitForTimeout(800);
-	}
 	const edgeCount = await edges.count();
-	check(edgeCount >= 1, "there is a gateway link on the canvas to act on", `found ${edgeCount}`);
+	check(edgeCount >= 1, "every pair of servers is joined by a line to act on", `found ${edgeCount}`);
 	if (!edgeCount) {
-		throw new Error("could not obtain a gateway edge — neither configured nor stageable");
+		throw new Error("no line between servers — the canvas needs at least two instances");
 	}
 
 	const colours = await page.evaluate(() => {
@@ -182,36 +161,43 @@ try {
 		`strokes: ${[...new Set(strokes)].join(", ")}`,
 	);
 
-	const baseline = await panelText();
+	const card = nodes.nth(0);
+	const cardPosition = () => card.evaluate(element => element.style.transform);
+	const dragCard = async () => {
+		const start = await centreOf(card.locator(".surface-export-instance-node-caption"));
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		for (let step = 1; step <= 8; step += 1) {
+			await page.mouse.move(start.x + 10 * step, start.y + 6 * step);
+			await page.waitForTimeout(20);
+		}
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+	};
 
 	await lock.click();
 	await page.waitForTimeout(300);
 	check(await lock.getAttribute("data-locked") === "true", "clicking the padlock locks the canvas");
 
-	await clickEdge();
-	const whileLocked = await panelText();
+	const beforeLocked = await cardPosition();
+	await dragCard();
+	const afterLocked = await cardPosition();
 	check(
-		whileLocked === baseline,
-		"clicking an edge while LOCKED changes nothing",
-		`panel went from "${baseline}" to "${whileLocked}"`,
+		afterLocked === beforeLocked,
+		"dragging a server card while LOCKED does not move it",
+		`card moved from "${beforeLocked}" to "${afterLocked}"`,
 	);
 
 	await lock.click();
 	await page.waitForTimeout(300);
-	await clickEdge();
-	const whileUnlocked = await panelText();
+	check(await lock.getAttribute("data-locked") !== "true", "clicking the padlock again unlocks the canvas");
+	await dragCard();
+	const afterUnlocked = await cardPosition();
 	check(
-		whileUnlocked !== baseline,
-		"the same click UNLOCKED does change the staged state (control arm for the locked check)",
-		`panel still reads "${whileUnlocked}"`,
+		afterUnlocked !== afterLocked,
+		"the same drag UNLOCKED moves the card (control arm for the locked check)",
+		`card stayed at "${afterUnlocked}"`,
 	);
-
-	const revert = page.locator(".react-flow__panel.top.right button", { hasText: /revert/i });
-	if (await revert.count()) {
-		await revert.first().click();
-		await page.waitForTimeout(500);
-	}
-	check(!/unsaved change/.test(await panelText()), "nothing was left staged, nothing saved");
 
 } catch (err) {
 	console.log(`  FAIL harness error — ${err && err.message ? err.message : err}`);

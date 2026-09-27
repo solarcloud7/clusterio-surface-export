@@ -39,6 +39,11 @@ import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
+const TREE_INSTANCE_CONFIG_FIELDS = new Set([
+	`${PLUGIN_NAME}.default_planet`,
+	`${PLUGIN_NAME}.disabled_planets`,
+	"factorio.mod_pack_id",
+]);
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -180,7 +185,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			isInstanceOnline: id => this.isInstanceOnline(id),
 			resolveInstanceName: id => this.platformTree.resolveInstanceName(id),
 		});
-		await gateways.loadGatewayConfig();
 		this.gatewayConfig = gateways;
 		const routeAlerts = new RouteAlertRelay(this.c as never, this.logger, id => this.isInstanceOnline(id));
 		this.routeAlerts = routeAlerts;
@@ -209,7 +213,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.c.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 		this.c.handle(messages.GetGatewaysRequest, gateways.handleGetGatewaysRequest.bind(gateways));
-		this.c.handle(messages.SetGatewayLinkRequest, gateways.handleSetGatewayLinkRequest.bind(gateways));
 		this.c.handle(messages.GetGatewayConfigRequest, gateways.handleGetGatewayConfigRequest.bind(gateways));
 		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
@@ -290,7 +293,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
+	override async onInstanceConfigFieldChanged(_instance: InstanceRecord, field: string) {
+		if (TREE_INSTANCE_CONFIG_FIELDS.has(field)) this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
+	override async onModPacksUpdated() {
+		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
 	override async onControllerConfigFieldChanged(field: string) {
+		if (field === "controller.default_mod_pack_id") this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory"
 			&& field !== "surface_export.discord_invite") return;
 		const gateways = this.gatewayConfig;

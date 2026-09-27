@@ -49,7 +49,6 @@ const control = require(path.join(distNode, "control.js"));
 const messages = require(path.join(distNode, "messages.js"));
 
 const read = registered.find(c => String(c.definition[0]) === "gateways");
-const write = registered.find(c => String(c.definition[0]).startsWith("set-gateway-links"));
 
 async function invoke(command, args, reply, sent = []) {
 	const printed = [];
@@ -65,7 +64,7 @@ async function invoke(command, args, reply, sent = []) {
 
 test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => {
 	assert.ok(read, "the gateways command must be registered");
-	const reply = { links: [] };
+	const reply = { destinations: [{ gatewayName: "surfexp_gateway_i_2", instanceId: 2, instanceName: "fact2" }] };
 	const { sent, printed } = await invoke(read, {}, reply);
 	assert.equal(sent.length, 1);
 	assert.equal(sent[0].target, "controller");
@@ -74,58 +73,8 @@ test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => 
 	assert.deepEqual(JSON.parse(printed[0]), reply);
 });
 
-test("set-gateway-links sends one SetGatewayLinkRequest with parsed targets", async () => {
-	assert.ok(write, "the set-gateway-links command must be registered");
-	const { sent, printed } = await invoke(write,
-		{ sourceInstanceId: "489642928", gatewayName: "surfexp_gateway_hub", targets: ["280344241", 1329253049, "231718593:surfexp_gateway_2"] },
-		{ success: true });
-	assert.equal(sent.length, 1);
-	assert.ok(sent[0].message instanceof messages.SetGatewayLinkRequest);
-	assert.deepEqual(sent[0].message.toJSON(), {
-		sourceInstanceId: 489642928,
-		gateways: [{ gatewayName: "surfexp_gateway_hub", targets: [
-			{ targetInstanceId: 280344241, targetGateway: "surfexp_gateway_hub" },
-			{ targetInstanceId: 1329253049, targetGateway: "surfexp_gateway_hub" },
-			{ targetInstanceId: 231718593, targetGateway: "surfexp_gateway_2" },
-		] }],
-	});
-	assert.equal(JSON.parse(printed[0]).targets.length, 3);
-});
-
-test("no targets clears the gateway, and a refusal fails loudly", async () => {
-	const { sent } = await invoke(write, { sourceInstanceId: 1, gatewayName: "surfexp_gateway_hub" }, { success: true });
-	assert.deepEqual(sent[0].message.gateways, [{ gatewayName: "surfexp_gateway_hub", targets: [] }]);
-	await assert.rejects(() => invoke(write, { sourceInstanceId: 1, gatewayName: "surfexp_gateway_hub", targets: ["2"] },
-		{ success: false, error: "Unknown gateway" }), /Unknown gateway/);
-});
-
-test("malformed ids are refused before anything is sent", async () => {
-	for (const bad of ["abc", "", "0", "-3", "1.5", " 7"]) {
-		const sent = [];
-		await assert.rejects(() => invoke(write, { sourceInstanceId: bad, gatewayName: "g", targets: ["2"] }, { success: true }, sent),
-			/sourceInstanceId must be a positive instance id/, `source ${JSON.stringify(bad)}`);
-		assert.equal(sent.length, 0, `source ${JSON.stringify(bad)} must not reach the controller`);
-	}
-	for (const bad of ["two", "1.5", "", "0", "-2", "3:", "3:gw:extra", "3 ", ":gw", "3:g w"]) {
-		const sent = [];
-		await assert.rejects(() => invoke(write, { sourceInstanceId: 1, gatewayName: "g", targets: ["2", bad] }, { success: true }, sent),
-			/target must be <instanceId> or <instanceId>:<gatewayName>/,
-			`target ${JSON.stringify(bad)} must not become an instance or lose part of its input`);
-		assert.equal(sent.length, 0, `target ${JSON.stringify(bad)} must not reach the controller`);
-	}
-	assert.deepEqual(control.parseGatewayTargets(["12", "34:surfexp_gateway_2"], "surfexp_gateway_hub"), [
-		{ targetInstanceId: 12, targetGateway: "surfexp_gateway_hub" },
-		{ targetInstanceId: 34, targetGateway: "surfexp_gateway_2" },
-	]);
-});
-
-test("a self-target is refused instead of silently clearing the gateway", async () => {
-	const { sent } = await invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets: ["7"] }, { success: true });
-	assert.equal(sent.length, 1);
-	for (const targets of [["5"], ["7", "5:other"]]) {
-		const sent = [];
-		await assert.rejects(() => invoke(write, { sourceInstanceId: 5, gatewayName: "g", targets }, { success: true }, sent),
-			/cannot link to its own instance 5/);
-		assert.equal(sent.length, 0, `${JSON.stringify(targets)} must not send a replacement that clears the existing links`);
-	}
+test("gateway links cannot be written from the command line", () => {
+	assert.equal(registered.some(c => String(c.definition[0]).startsWith("set-gateway-links")), false);
+	assert.equal(messages.SetGatewayLinkRequest, undefined);
+	assert.equal(control.parseGatewayTargets, undefined);
 });

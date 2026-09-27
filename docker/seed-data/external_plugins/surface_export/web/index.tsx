@@ -30,8 +30,6 @@ const {
 	ListTransactionLogsRequest,
 	GetTransactionLogRequest,
 	StartPlatformTransferRequest,
-	GetGatewaysRequest,
-	SetGatewayLinkRequest,
 	SetSurfaceExportSubscriptionRequest,
 	SurfaceExportTreeUpdateEvent,
 	SurfaceExportTransferUpdateEvent,
@@ -366,17 +364,6 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
-	}
-
-	async getGateways() {
-		return this.link.send(new GetGatewaysRequest({}));
-	}
-
-	async setGatewayLink(payload: {
-		sourceInstanceId: number;
-		gateways: Array<{ gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }>;
-	}) {
-		return this.link.send(new SetGatewayLinkRequest(payload));
 	}
 
 	async loadTransactionLog(transferId: string) {

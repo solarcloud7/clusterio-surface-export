@@ -21,19 +21,19 @@ const SCENARIOS = {
 			{ name: "spoke-2", platforms: [] },
 			{ name: "spoke-3", online: false, platforms: ["epsilon"] },
 		],
-		links: [[0, 1], [0, 2], [0, 3]],
+		routes: [[0, 1], [0, 2], [0, 3]],
 		ships: [{ from: 0, to: 1, status: "awaiting_validation" }, { from: 3, to: 0, status: "failed" }],
 	},
 	chain: {
 		instances: [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }],
-		links: [[0, 1], [1, 2], [2, 3]],
+		routes: [[0, 1], [1, 2], [2, 3]],
 	},
 	"list-edges": {
 		instances: [
 			{ name: "twelve", platforms: Array.from({ length: 12 }, (_, i) => `pad-${i + 1}`) },
 			{ name: "empty", platforms: [] },
 		],
-		links: [[0, 1]],
+		routes: [[0, 1]],
 	},
 };
 

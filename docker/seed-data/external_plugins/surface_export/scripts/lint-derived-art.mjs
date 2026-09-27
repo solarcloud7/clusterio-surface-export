@@ -16,6 +16,11 @@ const DERIVED = [
 		source: "docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-hub.png",
 		factor: 4,
 	},
+	...["blue", "green", "orange", "purple"].map(colour => ({
+		asset: `web/gateway/assets/gateway-${colour}-64.png`,
+		source: `docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-${colour}.png`,
+		factor: 8,
+	})),
 ];
 
 function fail(message) {

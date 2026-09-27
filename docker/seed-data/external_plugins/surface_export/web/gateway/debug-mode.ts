@@ -1,8 +1,8 @@
 
 import { createContext, useContext } from "react";
 
-import type { GatewayEdits, InstanceLike, TreeLike } from "./gateway-graph";
-import { parseEditKey } from "./gateway-graph";
+import type { InstanceLike, PlatformLike, TreeLike } from "./gateway-graph";
+import { PORTAL_COLOURS, instanceGatewayName } from "./gateway-graph";
 import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
 import type { TransferSummary } from "../view-models";
@@ -123,6 +123,9 @@ export function withMockInstances(tree: TreeLike | null | undefined, state: Debu
 			address: `mock:${34000 + index}`,
 			connected: true,
 			status: "running",
+			defaultPlanet: "nauvis",
+			disabledPlanets: [],
+			destination: { label: `mock-instance-${index + 1}`, colour: PORTAL_COLOURS[index % PORTAL_COLOURS.length] },
 			platforms: Array.from({ length: state.mockPlatforms }, (_, platformIndex) => ({
 				platformIndex: platformIndex + 1,
 				platformName: `mock-pad-${platformIndex + 1}`,
@@ -222,7 +225,7 @@ export type DebugScenario = {
 		autoPause?: boolean;
 		platforms?: Array<string | { name?: string; location?: string; status?: string; locked?: boolean }>;
 	}>;
-	links?: Array<[number, number]>;
+	routes?: Array<[number, number]>;
 	ships?: Array<import("../../shared/transfer-status").PositionedTransfer & { from: number; to: number; status: string }>;
 };
 
@@ -230,9 +233,10 @@ const SCENARIO_HOST = "scenario (debug)";
 
 export function scenarioToTree(scenario: DebugScenario): TreeLike {
 	const byHost = new Map<string, InstanceLike[]>();
+	const names = scenario.instances.map((spec, index) => spec.name || `scenario-${index + 1}`);
 	scenario.instances.forEach((spec, index) => {
 		const host = spec.host || SCENARIO_HOST;
-		const platforms = (spec.platforms || []).map((platform, platformIndex) => {
+		const platforms: PlatformLike[] = (spec.platforms || []).map((platform, platformIndex) => {
 			const row = typeof platform === "string" ? { name: platform } : platform;
 			return {
 				platformIndex: platformIndex + 1,
@@ -244,14 +248,30 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 				isLocked: Boolean(row.locked),
 			};
 		});
+		for (const [from, to] of scenario.routes || []) {
+			if (from !== index || to === from || !names[to]) {
+				continue;
+			}
+			platforms.push({
+				platformIndex: platforms.length + 1,
+				platformName: `to-${names[to]}`,
+				forceName: "player",
+				hasSpaceHub: true,
+				spaceLocation: null,
+				currentTarget: instanceGatewayName(mockInstanceId(to)),
+			});
+		}
 		const list = byHost.get(host) || [];
 		list.push({
 			instanceId: mockInstanceId(index),
-			instanceName: spec.name || `scenario-${index + 1}`,
+			instanceName: names[index],
 			address: `scenario:${34000 + index}`,
 			connected: spec.online !== false,
 			status: spec.online === false ? "stopped" : "running",
 			autoPause: spec.autoPause === true,
+			defaultPlanet: "nauvis",
+			disabledPlanets: [],
+			destination: { label: names[index], colour: PORTAL_COLOURS[index % PORTAL_COLOURS.length] },
 			platforms,
 		});
 		byHost.set(host, list);
@@ -264,24 +284,6 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 			instances,
 		})),
 	};
-}
-
-export function scenarioToEdits(scenario: DebugScenario, gatewayName: string): GatewayEdits {
-	const edits: GatewayEdits = {};
-	const push = (from: number, to: number) => {
-		const key = `${mockInstanceId(from)}:${gatewayName}`;
-		const targets = edits[key] || [];
-		targets.push({ targetInstanceId: mockInstanceId(to), targetGateway: gatewayName });
-		edits[key] = targets;
-	};
-	for (const [from, to] of scenario.links || []) {
-		if (from === to) {
-			continue;
-		}
-		push(from, to);
-		push(to, from);
-	}
-	return edits;
 }
 
 export function scenarioToShips(scenario: DebugScenario): ShipTransfer[] {
@@ -300,31 +302,4 @@ export function scenarioToShips(scenario: DebugScenario): ShipTransfer[] {
 			sourceInstanceId: mockInstanceId(ship.from),
 			targetInstanceId: mockInstanceId(ship.to),
 		})) as ShipTransfer[];
-}
-
-export function isMockEditKey(key: string): boolean {
-	const parsed = parseEditKey(key);
-	return parsed ? isMockInstanceId(parsed.sourceInstanceId) : false;
-}
-
-export type GatewaySavePayload = ReadonlyMap<number, ReadonlyArray<{
-	gatewayName: string;
-	targets: ReadonlyArray<{ targetInstanceId: number; targetGateway: string }>;
-}>>;
-
-export function mockLeaksInPayload(payload: GatewaySavePayload): string[] {
-	const leaks: string[] = [];
-	for (const [sourceInstanceId, gateways] of payload) {
-		if (isMockInstanceId(sourceInstanceId)) {
-			leaks.push(`source instance ${sourceInstanceId}`);
-		}
-		for (const entry of gateways) {
-			for (const target of entry.targets) {
-				if (isMockInstanceId(target?.targetInstanceId)) {
-					leaks.push(`${entry.gatewayName} -> instance ${target.targetInstanceId}`);
-				}
-			}
-		}
-	}
-	return leaks;
 }
