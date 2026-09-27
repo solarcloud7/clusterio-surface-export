@@ -34,7 +34,7 @@ const PORTAL_ART: Record<PortalColour, string> = {
 };
 
 const NO_PORTAL_NOTE = "No portal: limit of 4 servers. The four portal colours are taken by other servers, "
-	+ "so no schedule can stop at a portal leading here. Drag a platform here or use the Gateway instead.";
+	+ "so no schedule can stop at a portal leading to that server. Drag a platform onto its card or use the Gateway instead.";
 
 function colourName(colour: PortalColour): string {
 	return colour.charAt(0).toUpperCase() + colour.slice(1);
