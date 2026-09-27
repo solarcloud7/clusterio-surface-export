@@ -14,4 +14,13 @@ data:extend({
 		allowed_values = { "one_gate", "multi" },
 		order = "a",
 	},
+	{
+		type = "string-setting",
+		name = "surfexp-gateway-instances",
+		setting_type = "startup",
+		default_value = "",
+		allow_blank = true,
+		auto_trim = true,
+		order = "c",
+	},
 })

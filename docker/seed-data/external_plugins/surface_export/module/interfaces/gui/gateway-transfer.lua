@@ -291,6 +291,52 @@ function GatewayTransferGui.on_gui_click(event)
 	end
 end
 
+function GatewayTransferGui.start_transfer(platform, force_name, gateway_name, target, initiator)
+	local gw_now = Gateway.parked_at_gateway(platform)
+	local aboard_players, char_count = Gateway.collect_passengers(platform)
+	local force = game.forces[force_name]
+	local guard = {
+		docked = (gw_now == gateway_name),
+		in_flight = SurfaceLock.is_locked(platform.index),
+		aboard_players = aboard_players,
+		aboard_characters = char_count,
+	}
+
+	local parked = {}
+	if GatewayGuard.evaluate(guard).allowed then
+		for _, passenger in ipairs(aboard_players) do
+			if not (initiator and passenger.index == initiator.index) then GatewayTransferGui.close(passenger) end
+		end
+		parked = PassengerTransit.park(platform, target, gateway_name, aboard_players)
+	end
+	local job_id
+	guard.start_fn = function()
+		local ok, id, err = pcall(TransferTrigger.start, force, platform.index, target.instanceId, target.targetGateway or gateway_name)
+		if not ok then
+			log("[Gateway] transfer start raised: " .. tostring(id))
+			local lock = SurfaceLock.get_lock_data(platform.index)
+			local exporting = false
+			for _, job in pairs(storage.async_jobs or {}) do
+				if job.platform_index == platform.index and job.force_name == force_name then exporting = true end
+			end
+			if lock and lock.kind == "transfer" and not exporting then
+				local released, release_err = SurfaceLock.unlock_current_lock(platform.index, lock)
+				if not released then log("[Gateway] releasing the lock after a failed start failed: " .. tostring(release_err)) end
+			end
+			return nil, tostring(id)
+		end
+		job_id = id
+		return id, err
+	end
+	local result = GatewayGuard.guard_and_transfer(guard)
+	if result.started then
+		PassengerTransit.assign_job(parked, job_id)
+	else
+		PassengerTransit.return_parked(parked)
+	end
+	return result
+end
+
 function GatewayTransferGui.confirm_transfer(player, state)
 	local target = state.targets and state.targets[state.selected]
 	if not target then
@@ -304,50 +350,11 @@ function GatewayTransferGui.confirm_transfer(player, state)
 		return
 	end
 
-	local gw_now = Gateway.parked_at_gateway(platform)
-	local aboard_players, char_count = Gateway.collect_passengers(platform)
-	local force = game.forces[state.force_name]
-	local guard = {
-		docked = (gw_now == state.gateway_name),
-		in_flight = SurfaceLock.is_locked(platform.index),
-		aboard_players = aboard_players,
-		aboard_characters = char_count,
-	}
-
-	local parked = {}
-	if GatewayGuard.evaluate(guard).allowed then
-		for _, passenger in ipairs(aboard_players) do
-			if passenger.index ~= player.index then GatewayTransferGui.close(passenger) end
-		end
-		parked = PassengerTransit.park(platform, target, state.gateway_name, aboard_players)
-	end
-	local job_id
-	guard.start_fn = function()
-		local ok, id, err = pcall(TransferTrigger.start, force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
-		if not ok then
-			log("[Gateway] transfer start raised: " .. tostring(id))
-			local lock = SurfaceLock.get_lock_data(platform.index)
-			local exporting = false
-			for _, job in pairs(storage.async_jobs or {}) do
-				if job.platform_index == state.platform_index and job.force_name == state.force_name then exporting = true end
-			end
-			if lock and lock.kind == "transfer" and not exporting then
-				local released, release_err = SurfaceLock.unlock_current_lock(platform.index, lock)
-				if not released then log("[Gateway] releasing the lock after a failed start failed: " .. tostring(release_err)) end
-			end
-			return nil, tostring(id)
-		end
-		job_id = id
-		return id, err
-	end
-	local result = GatewayGuard.guard_and_transfer(guard)
-
+	local result = GatewayTransferGui.start_transfer(platform, state.force_name, state.gateway_name, target, player)
 	if result.started then
-		PassengerTransit.assign_job(parked, job_id)
 		GatewayTransferGui.close(player)
 		return
 	end
-	PassengerTransit.return_parked(parked)
 
 	if result.reason == GatewayGuard.REASON.IN_FLIGHT then
 		player.print("✗ Cannot transfer: this platform is already transferring.")

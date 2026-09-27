@@ -12,6 +12,7 @@ import type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
+	InstanceDestination,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -31,6 +32,7 @@ export type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
+	InstanceDestination,
 } from "./shared/dto";
 export {
 	ALL_GATEWAY_NAMES,
@@ -39,8 +41,11 @@ export {
 	MULTI_GATEWAY_NAMES,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
+	INSTANCE_GATEWAY_PREFIX,
 	checkMultiModeLink,
 	gatewayNamesFor,
+	instanceGatewayName,
+	isInstanceGatewayName,
 	parseGatewayMode,
 } from "./shared/dto";
 export type { GatewayMode } from "./shared/dto";
@@ -937,11 +942,28 @@ export class GetGatewaysRequest {
 						additionalProperties: false,
 					},
 				},
+				destinations: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							gatewayName: { type: "string" },
+							instanceId: { type: "integer" },
+							instanceName: { type: "string" },
+						},
+						required: ["gatewayName", "instanceId", "instanceName"],
+						additionalProperties: false,
+					},
+				},
 			},
 			required: ["gatewayNames", "links"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gatewayNames: string[]; links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }> };
+			return json as {
+				gatewayNames: string[];
+				links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }>;
+				destinations?: InstanceDestination[];
+			};
 		},
 	};
 }
@@ -1096,6 +1118,60 @@ export class AnnouncePlayerTravelRequest {
 	toJSON() { return { playerName: this.playerName, sourceName: this.sourceName, targetName: this.targetName }; }
 	static fromJSON(json: { playerName: string; sourceName: string; targetName: string }) {
 		return new this(json.playerName, json.sourceName, json.targetName);
+	}
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
+export interface RouteAlert {
+	key: string;
+	platformName: string;
+	forceName: string;
+	icon: string;
+	active: boolean;
+	reason?: unknown;
+}
+
+const ROUTE_ALERT_SCHEMA: JsonSchema = {
+	type: "object",
+	properties: {
+		key: { type: "string" }, platformName: { type: "string" }, forceName: { type: "string" },
+		icon: { type: "string" }, active: { type: "boolean" }, reason: {},
+	},
+	required: ["key", "platformName", "forceName", "icon", "active"],
+	additionalProperties: false,
+};
+
+export class RouteAlertEvent {
+	declare ["constructor"]: typeof RouteAlertEvent;
+	static plugin = PLUGIN_NAME;
+	static type = "event" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = { type: "object", properties: { alert: ROUTE_ALERT_SCHEMA }, required: ["alert"], additionalProperties: false };
+	constructor(public alert: RouteAlert) {}
+	toJSON() { return { alert: this.alert }; }
+	static fromJSON(json: { alert: RouteAlert }) { return new this(json.alert); }
+}
+
+export class RelayRouteAlertRequest {
+	declare ["constructor"]: typeof RelayRouteAlertRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { alert: ROUTE_ALERT_SCHEMA, sourceInstanceId: { type: "integer" }, sourceName: { type: "string" } },
+		required: ["alert", "sourceInstanceId", "sourceName"],
+		additionalProperties: false,
+	};
+	constructor(public alert: RouteAlert, public sourceInstanceId: number, public sourceName: string) {}
+	toJSON() { return { alert: this.alert, sourceInstanceId: this.sourceInstanceId, sourceName: this.sourceName }; }
+	static fromJSON(json: { alert: RouteAlert; sourceInstanceId: number; sourceName: string }) {
+		return new this(json.alert, json.sourceInstanceId, json.sourceName);
 	}
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

@@ -27,6 +27,7 @@ env.require = function(name)
         if evacuation == "missing" then return nil end
         return {success = evacuation == "success", failures = evacuation == "success" and 0 or 1}
     end} end
+    if name:find("route-alerts", 1, true) then return {raise = function(p, kind, icon, reason) env.route_alert = {platform = p, kind = kind, icon = icon, reason = reason} end} end
     if name:find("platform-identity", 1, true) then return function() return uid end end
     if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
     if name:find("game-utils", 1, true) then return {
@@ -76,6 +77,35 @@ assert(holds.stage("preparing", platform, force, true, {platform_hidden = false,
 assert(holds.go_live("preparing"))
 assert(platform.hidden == false, "completed import retained temporary preparation visibility")
 print("PASS early preparation visibility is restored only through a validated hold")
+
+platform.paused = true
+platform.get_schedule = function() return {current = 2} end
+local staged, route_hold = holds.stage("route", platform, force, true)
+assert(staged and route_hold.original_paused == true)
+route_hold.resume_route = true
+assert(platform.paused == true, "the hold keeps a continuing route parked until release")
+assert(holds.go_live("route"))
+assert(platform.paused == false, "a continuing route must leave the destination moving at release")
+platform.paused = true
+assert(holds.stage("parked", platform, force, true))
+assert(holds.go_live("parked"))
+assert(platform.paused == true, "a hub arrival without a continuing route stays parked")
+assert(env.route_alert == nil, "an ordinary gateway arrival raises no route alert")
+platform.paused = true
+local _, blocked_hold = holds.stage("route-blocked", platform, force, true)
+blocked_hold.route_hold = true
+assert(holds.go_live("route-blocked"))
+assert(platform.paused == true and env.route_alert and env.route_alert.icon == "surfexp_gateway_hub", "an arrival that cannot continue stays parked and raises an alert")
+force.print = noop
+platform.paused = true
+local _, passenger_hold = holds.stage("route-passengers", platform, force, true)
+passenger_hold.resume_route = true
+assert(holds.go_live("route-passengers", nil, {{name = "Solar", items = {{name = "iron-plate", count = 5}}}}))
+assert(platform.paused == false, "a continuing route leaves without waiting for passengers to reconnect")
+local arrival = env.storage.surface_export_arrivals.Solar["route-passengers"]
+assert(arrival and arrival.items[1].count == 5, "the passenger still boards and receives their gear afterwards")
+env.storage.surface_export_arrivals = nil
+print("PASS a continuing route resumes only at release, without waiting for passengers, whose arrival is still recorded; other gateway arrivals stay parked")
 
 assert(holds.stage("print-failure", platform, force, true))
 local print_notice = env.game.print

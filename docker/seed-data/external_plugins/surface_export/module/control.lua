@@ -9,6 +9,11 @@ local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui"
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
+local GatewayRoute = require("modules/surface_export/core/gateway-route")
+local RouteAlerts = require("modules/surface_export/core/route-alerts")
+RouteAlerts.sender = function(payload)
+	if clusterio_api and clusterio_api.send_json then clusterio_api.send_json("surface_route_alert", payload) end
+end
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
@@ -76,6 +81,9 @@ SurfaceExportModule.events = {
 		if game.tick % 10 == 0 then
 			for _, player in pairs(game.connected_players) do InstancePanel.refresh(player) end
 		end
+		if game.tick % 600 == 0 then
+			GameUtils.pcall_warn("[Gateway] route alert refresh", RouteAlerts.refresh)
+		end
 		if game.tick % 60 == 0 then
 			for player_index in pairs(storage.surface_export_pending_arrivals or {}) do
 				if game.get_player(player_index) then refresh_player{player_index = player_index}
@@ -118,6 +126,14 @@ SurfaceExportModule.events = {
 	end,
 	[e.on_forces_merged] = function(event) PlanetPolicy.enforce(event.destination) end,
 	[e.on_player_created] = function(event) refresh_player(event, true) end,
+	[e.on_player_clicked_gps_tag] = function(event)
+		local player = game.get_player(event.player_index)
+		if not player then return end
+		RouteAlerts.connect_from_gps(player, event.surface, TeleportGui.is_allowed, function(instance_id)
+			local cfg = Gateway.get_gateway_config(Gateway.INSTANCE_PREFIX .. instance_id)
+			return cfg and cfg.targets and cfg.targets[1]
+		end)
+	end,
 	[e.on_player_joined_game] = function(event)
 		local player = game.get_player(event.player_index)
 		if player then
@@ -150,6 +166,11 @@ SurfaceExportModule.events = {
 		end
 
 		local sps = defines.space_platform_state
+		if platform.state == sps.on_the_path then
+			GameUtils.pcall_warn("[Gateway] route alert clear", function() RouteAlerts.clear(platform) end)
+		elseif platform.state == sps.no_path then
+			GameUtils.pcall_warn("[Gateway] route no_path alert", function() GatewayRoute.on_no_path(platform) end)
+		end
 
 		storage.platform_flight_data = storage.platform_flight_data or {}
 		if platform.state == sps.on_the_path then
@@ -181,7 +202,12 @@ SurfaceExportModule.events = {
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 
-			local gw_name = Gateway.parked_at_gateway(platform)
+			local route_ok, routed = pcall(GatewayRoute.on_arrival, platform, GatewayTransferGui.start_transfer)
+			if not route_ok then
+				log("[Gateway] route arrival failed; offering the manual chooser: " .. tostring(routed))
+				routed = false
+			end
+			local gw_name = not routed and Gateway.parked_at_gateway(platform)
 			if gw_name then
 				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
 					tostring(platform.name),

@@ -26,7 +26,7 @@ manually unlocking or deleting anything.
 
 ## Travel through an in-game gateway
 
-The default layout has one Transfer Gateway per instance, connected to Nauvis,
+The default layout has one Gateway per instance, connected to Nauvis,
 Vulcanus, Gleba, Fulgora and Aquilo. It is a space location, not another planet.
 Your administrator configures which other instances it connects to.
 

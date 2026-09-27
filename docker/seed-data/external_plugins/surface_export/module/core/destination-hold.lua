@@ -1,4 +1,5 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local RouteAlerts = require("modules/surface_export/core/route-alerts")
 local Gateway = require("modules/surface_export/core/gateway")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
@@ -310,6 +311,17 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		platform.hidden = hold.original_platform_hidden
 	end
 	platform.paused = hold.original_paused == true
+	if hold.resume_route then
+		local resumed, resume_error = pcall(function()
+			platform.paused = false
+			log(string.format("[Gateway] Route continues for '%s' toward record %s", platform.name, tostring(platform.get_schedule().current)))
+		end)
+		if not resumed then log("[Gateway] Route resume failed for '" .. platform.name .. "': " .. tostring(resume_error)) end
+	elseif hold.route_hold then
+		local alerted, alert_error = pcall(RouteAlerts.raise, platform, "held", "surfexp_gateway_hub",
+			"holding at the Gateway: its next stop is this server; edit the schedule and unpause it")
+		if not alerted then log("[Gateway] Route hold alert failed: " .. tostring(alert_error)) end
+	end
 	Receipts.put("destination_live", transfer_id, {
 		transfer_id = transfer_id, platform_index = hold.platform_index,
 		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,

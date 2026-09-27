@@ -31,10 +31,11 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    ctx.print(string.format("🛰  Gateway transfer: '%s' parked at '%s' → instance %d",
-      platform.name, gw_name, dest_instance_id))
+    local arrival = Gateway.is_instance_gateway(gw_name) and (Gateway.PREFIX .. "hub") or gw_name
+    ctx.print(string.format("🛰  Gateway transfer: '%s' parked at '%s' → instance %d, arriving at '%s'",
+      platform.name, gw_name, dest_instance_id, arrival))
 
-    local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id, gw_name)
+    local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id, arrival)
     if not job_id then
       log(string.format("[Gateway Transfer] start failed for '%s' (index %d): %s",
         platform.name, platform_index, err or "unknown"))

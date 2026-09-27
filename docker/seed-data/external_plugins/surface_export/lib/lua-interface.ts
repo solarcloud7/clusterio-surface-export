@@ -168,6 +168,12 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
+	async relayRouteAlert(request: { alert: import("../messages").RouteAlert; sourceInstanceId: number; sourceName: string }): Promise<import("../messages").SimpleResponse> {
+		const payload = JSON.stringify({ ...request.alert, sourceInstanceId: request.sourceInstanceId, sourceName: request.sourceName });
+		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "route_alert_remote", "${escapeString(payload)}")))`);
+		return JSON.parse(raw.trim());
+	}
+
 	async announcePlayerTravel(request: { playerName: string; sourceName: string; targetName: string }): Promise<import("../messages").SimpleResponse> {
 		const args = [request.playerName, request.sourceName, request.targetName].map(value => `"${escapeString(value)}"`).join(", ");
 		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "announce_player_travel", ${args})))`);

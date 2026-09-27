@@ -19,6 +19,21 @@ export function gatewayNamesFor(mode: GatewayMode): string[] {
 	return mode === "multi" ? [...MULTI_GATEWAY_NAMES] : [...ONE_GATE_NAMES];
 }
 
+export const INSTANCE_GATEWAY_PREFIX = `${GATEWAY_PREFIX}i_`;
+export function instanceGatewayName(instanceId: number): string {
+	return `${INSTANCE_GATEWAY_PREFIX}${instanceId}`;
+}
+
+export function isInstanceGatewayName(name: string): boolean {
+	return name.startsWith(INSTANCE_GATEWAY_PREFIX);
+}
+
+export interface InstanceDestination {
+	gatewayName: string;
+	instanceId: number;
+	instanceName: string;
+}
+
 export function parseGatewayMode(value: unknown): { mode: GatewayMode; warning: string | null } {
 	if (value === "one_gate" || value === "multi") {
 		return { mode: value, warning: null };

@@ -91,6 +91,39 @@ function emptyValueError(where, field, value) {
 		: null;
 }
 
+export const DESTINATIONS_SETTING = "surfexp-gateway-instances";
+
+export function destinationsSettingErrors(value, instanceIds) {
+	if (value === undefined) return [];
+	if (typeof value !== "string") return [`${DESTINATIONS_SETTING} must be a string`];
+	const errors = [];
+	const seen = new Set();
+	const live = new Set(instanceIds.map(String));
+	for (const entry of value.split(",").map(part => part.trim()).filter(Boolean)) {
+		const id = entry.split("=")[0].trim();
+		if (!/^[1-9]\d*$/.test(id)) errors.push(`${DESTINATIONS_SETTING}: "${id}" must be an instance id; the mod refuses to load otherwise`);
+		else if (seen.has(id)) errors.push(`${DESTINATIONS_SETTING}: instance id ${id} is listed twice; the mod refuses to load otherwise`);
+		else if (!live.has(id)) errors.push(`${DESTINATIONS_SETTING}: ${id} is not an instance on the cluster, so its destination would lead nowhere`);
+		seen.add(id);
+	}
+	return errors;
+}
+
+export function serverDestinationsSetting(serverDestinations, instanceIds) {
+	const errors = [];
+	const entries = [];
+	for (const [name, label] of Object.entries(serverDestinations)) {
+		const id = instanceIds[name];
+		if (!Number.isInteger(id)) { errors.push(`serverDestinations: ${name} is not an instance on the cluster`); continue; }
+		if (typeof label !== "string" || !label.trim() || /[,=]/.test(label)) {
+			errors.push(`serverDestinations: the label for ${name} must be non-empty text without "," or "="`);
+			continue;
+		}
+		entries.push(`${id}=${label.trim()}`);
+	}
+	return { value: entries.join(","), errors };
+}
+
 function configValue(value) {
 	return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -99,9 +132,21 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	const actions = [];
 	const errors = [];
 	const restart = new Set();
-	const want = desired.modPack;
+	let want = desired.modPack;
+	if (desired.serverDestinations) {
+		if (want?.settings?.startup?.[DESTINATIONS_SETTING] !== undefined) {
+			errors.push(`set serverDestinations or modPack.settings.startup["${DESTINATIONS_SETTING}"], not both`);
+		} else if (want) {
+			const computed = serverDestinationsSetting(desired.serverDestinations, live.instanceIds || {});
+			errors.push(...computed.errors);
+			want = { ...want, settings: { ...want.settings, startup: { ...want.settings?.startup, [DESTINATIONS_SETTING]: computed.value } } };
+		}
+	}
 	const existing = live.packs.find(pack => pack.name === want?.name);
 	const packDetail = existing ? live.packDetails[existing.id] : null;
+	const destinationsValue = want?.settings?.startup?.[DESTINATIONS_SETTING] ?? packDetail?.settings?.startup?.[DESTINATIONS_SETTING];
+	errors.push(...destinationsSettingErrors(destinationsValue, Object.values(live.instanceIds || {})));
+	if (desired.serverDestinations && !want) errors.push("serverDestinations needs a modPack to write the setting into");
 
 	const modSpecs = [];
 	for (const [name, version] of Object.entries(want?.mods || {})) {
