@@ -1,10 +1,10 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.7.3
+Version: 0.7.6
   Features:
     - Add the "Server destinations" startup setting: each listed Clusterio instance id gets its own destination orbiting
       the Gateway, labelled with a friendly name, that platform schedules can stop at.
   Changes:
-    - Rename the Transfer Gateway to Gateway, draw it smaller and place it at the sun.
+    - Rename the Transfer Gateway to Gateway and place it at the centre of the star map; the sun is no longer drawn.
     - Connect the Gateway to Nauvis only; platforms from other planets reach it through Nauvis.
 ---------------------------------------------------------------------------------------------------
 Version: 0.6.12

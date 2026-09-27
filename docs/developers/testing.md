@@ -96,6 +96,7 @@ node tools/tests/testkit/cli.mjs client doctor
 node tools/tests/testkit/cli.mjs client run smoke
 node tools/tests/testkit/cli.mjs client run remote-view-panels --resolution 1600x1000 --scale 1
 node tools/tests/testkit/cli.mjs client run gui-anchors
+node tools/tests/testkit/cli.mjs client run starmap
 node tools/tests/testkit/cli.mjs client inspect <run-id>
 node tools/tests/testkit/cli.mjs client cleanup <run-id>
 ```
@@ -114,10 +115,23 @@ after the policy is re-applied with no unavailable planets (`no-planets`), and t
 Boarding panel once every other ship is paused (`no-boarding`). Each capture
 writes `<name>-positions.json` with panel locations and tags; `location-events.jsonl`
 records every engine location event and display resolution or scale event with the
-values seen at that tick. The container's virtual display accepts pointer requests
-(`pointer-request-<n>.txt`, executed with `xdotool` and logged to `pointer.log`);
-no current capture issues one. It does not board a player; whether possessions
+values seen at that tick. It does not board a player; whether possessions
 survive boarding is unverified.
+
+The container's virtual display accepts pointer requests from the scenario:
+`pointer-request-<n>.txt` holds one line, `drag x1 y1 x2 y2`, `click x y 0 0` or
+`capture <name>.png 0 0 0`. Requests run in order with `xdotool`, and each is logged
+to `pointer.log`. `capture` records the whole virtual display with `xwd`, so it
+shows engine screens that `game.take_screenshot` cannot render, such as the space map.
+
+`starmap` stages the companion mod with two test server destinations
+(`11=[planet=nauvis] Test One,22=[planet=vulcanus] Test Two`, set through the probe
+mod's `settings-updates.lua`) and unlocks the first. It opens Remote View, captures
+it (`starmap-remote.png`), clicks **Space map** in the Surfaces list, and captures
+the space map (`starmap.png`). Use it to judge the Gateway, the destination orbit
+and labels after a gateway mod change. The click position is fixed for the default
+1600x1000 viewport at scale 1; other sizes need `starmap-remote.png` checked
+first to confirm the click reached **Space map**.
 
 `gui-anchors` probes the controller, additional entity information and platform
 hub anchors in Remote View, then opens the hub window as a control. It retains
