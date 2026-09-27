@@ -16,7 +16,7 @@ function Get-InstanceList {
 
 function Get-InstanceByHostNumber {
     param([Parameter(Mandatory)][string]$HostNumber)
-    return Select-InstanceForHost -Instances @(Get-InstanceList) -HostNumber $HostNumber
+    return Select-InstanceForHost -Instances @(Get-InstanceList) -HostNumber $HostNumber -SeedName (Get-SeedInstanceName -HostNumber $HostNumber)
 }
 
 function Get-InstanceDataDir {

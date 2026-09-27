@@ -182,13 +182,13 @@ $instanceList = Invoke-Step "enumerate running instances" {
 }
 
 $listedInstances = @(ConvertFrom-InstanceList -Raw @($instanceList | ForEach-Object { "$_" }))
-$hostInstances = @{}
-foreach ($h in 1, 2) {
-    $record = Select-InstanceForHost -Instances $listedInstances -HostNumber "$h"
-    $hostInstances[$h] = [pscustomobject]@{ Id = $record.Id; Name = $record.Name; Dir = Get-InstanceDataDir -InstanceId $record.Id -HostNumber "$h" }
-}
 $seedInstances = @{}
 foreach ($seed in Get-SeededInstances) { $seedInstances[$seed.HostNumber] = $seed }
+$hostInstances = @{}
+foreach ($h in 1, 2) {
+    $record = Select-InstanceForHost -Instances $listedInstances -HostNumber "$h" -SeedName $seedInstances[$h].Instance
+    $hostInstances[$h] = [pscustomobject]@{ Id = $record.Id; Name = $record.Name; Dir = Get-InstanceDataDir -InstanceId $record.Id -HostNumber "$h" }
+}
 
 $pendingSaves = @()
 foreach ($running in ($listedInstances | Where-Object { $_.Status -eq 'running' })) {

@@ -20,7 +20,14 @@ const args = process.argv.slice(2);
 const allowPaused = args.includes("--allow-paused");
 const instances = args.filter(a => !a.startsWith("--"));
 const targets = instances.length ? instances.map(value => ({ id: value, label: value }))
-	: Object.keys(HOSTS).map(host => developmentCluster.locate(host)).map(({ id, name }) => ({ id: String(id), label: name }));
+	: Object.keys(HOSTS).map(host => {
+		try {
+			const { id, name } = developmentCluster.locate(host);
+			return { id: String(id), label: name };
+		} catch (error) {
+			return { label: `host-${host}`, unresolved: error.message.split("\n")[0].slice(0, 300) };
+		}
+	});
 
 const PROBE = '/sc rcon.print(game.tick .. " " .. tostring(game.tick_paused))';
 
@@ -52,7 +59,12 @@ function sample(instance) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 let failures = 0;
-for (const { id, label: instance } of targets) {
+for (const { id, label: instance, unresolved } of targets) {
+	if (unresolved) {
+		console.log(`  ${"UNREACHABLE".padEnd(11)} ${instance} — ${unresolved}`);
+		failures += 1;
+		continue;
+	}
 	const first = sample(id);
 	if (first.state) {
 		console.log(`  ${first.state.padEnd(11)} ${instance} — ${first.detail}`);

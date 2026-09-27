@@ -1,10 +1,12 @@
 # requires: clusterioctl `instance list` output (name | id | assignedHost | status columns); for data
 #           directories, the output of $InstanceDirsScript run in the instance's host container
-# produces: parsed instance rows, the one instance assigned to a host number, and the host data
-#           directory whose instance.json carries a given instance id
-# does not: run docker, rename or assign instances, choose between several instances on one host, or
-#           treat seed or data directory names as live identity
+# produces: parsed instance rows, the instance assigned to a host number (when a host carries several,
+#           the one named like its seed directory), and the host data directory whose instance.json
+#           carries a given instance id
+# does not: run docker, rename or assign instances, guess between several instances none of which carries
+#           the seed name, or treat data directory names as live identity
 
+$script:InstanceIdentityRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 $script:InstanceDirsScript = 'for f in /clusterio/data/instances/*/instance.json; do [ -f "$f" ] && printf ''%s\t'' "$f" && tr -d ''\n\r'' < "$f" && echo; done'
 
 function ConvertFrom-InstanceList {
@@ -34,15 +36,35 @@ function ConvertFrom-InstanceList {
     return $instances
 }
 
+function Get-SeedInstanceName {
+    param(
+        [Parameter(Mandatory)][string]$HostNumber,
+        [string]$Root = $script:InstanceIdentityRoot
+    )
+    $hostsDir = Join-Path $Root 'docker/seed-data/hosts'
+    if (-not (Test-Path $hostsDir)) { return $null }
+    $names = @(Get-ChildItem $hostsDir -Directory |
+        Where-Object { $_.Name -match '(\d+)$' -and [int]$Matches[1] -eq [int]$HostNumber } |
+        ForEach-Object { Get-ChildItem $_.FullName -Directory } | ForEach-Object { $_.Name })
+    if ($names.Count -eq 1) { return $names[0] }
+    return $null
+}
+
 function Select-InstanceForHost {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Instances,
-        [Parameter(Mandatory)][string]$HostNumber
+        [Parameter(Mandatory)][string]$HostNumber,
+        [string]$SeedName
     )
     $match = @($Instances | Where-Object { $_.Host -eq $HostNumber })
+    if ($match.Count -gt 1 -and $SeedName) {
+        $seeded = @($match | Where-Object { $_.Name -ceq $SeedName })
+        if ($seeded.Count -eq 1) { return $seeded[0] }
+    }
     if ($match.Count -ne 1) {
         $known = ($Instances | ForEach-Object { "$($_.Name) (id $($_.Id), host $($_.Host))" }) -join ', '
-        throw "Host $HostNumber has $($match.Count) assigned instance(s); expected exactly one. Instances: $(if ($known) { $known } else { 'none' })."
+        $seedNote = if ($match.Count -gt 1) { ", none uniquely named like its seed ($(if ($SeedName) { $SeedName } else { 'no seed name' }))" } else { '' }
+        throw "Host $HostNumber has $($match.Count) assigned instance(s)$seedNote; expected exactly one. Instances: $(if ($known) { $known } else { 'none' })."
     }
     return $match[0]
 }

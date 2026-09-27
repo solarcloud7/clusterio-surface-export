@@ -1,10 +1,11 @@
 // cluster-instances — live instance identity by assigned host, independent of instance names
 // requires: clusterioctl `instance list` output (name | id | assignedHost columns); for data
 //           directories, a listing of /clusterio/data/instances/*/instance.json from the host container
-// produces: the one instance assigned to each host number (id, name, host, container), a name-or-id
-//           lookup for explicit overrides, and each instance's host data directory matched by instance.id
-// does not: rename, create or assign instances, choose between several instances on one host, or
-//           treat seed directory names or data directory names as live identity
+// produces: the instance assigned to each host number (id, name, host, container) — when a host carries
+//           several instances, the one named like its seed directory — a name-or-id lookup for explicit
+//           overrides, and each instance's host data directory matched by instance.id
+// does not: rename, create or assign instances, guess between several instances none of which carries the
+//           seed name, or treat data directory names as live identity
 
 export const INSTANCE_DIRS_SCRIPT = "for f in /clusterio/data/instances/*/instance.json; do "
 	+ "[ -f \"$f\" ] && printf '%s\\t' \"$f\" && tr -d '\\n\\r' < \"$f\" && echo; done";
@@ -37,10 +38,13 @@ function describe(rows) {
 	return rows.map(row => `${row.name} (id ${row.id}, host ${row.assignedHost || "unassigned"})`).join(", ") || "none";
 }
 
-export function instanceForHost(rows, host) {
+export function instanceForHost(rows, host, seedName) {
 	const matches = rows.filter(row => row.assignedHost === String(host));
 	if (matches.length === 1) return matches[0];
-	throw new Error(`host ${host} has ${matches.length ? `${matches.length} assigned instances` : "no assigned instance"}; `
+	const seeded = matches.length > 1 && seedName ? matches.filter(row => row.name === seedName) : [];
+	if (seeded.length === 1) return seeded[0];
+	throw new Error(`host ${host} has ${matches.length ? `${matches.length} assigned instances` : "no assigned instance"}`
+		+ `${matches.length > 1 ? `, none uniquely named like its seed (${seedName || "no seed name"})` : ""}; `
 		+ `expected exactly one. Instances: ${describe(rows)}. Name the instance explicitly (by name or id) instead.`);
 }
 
@@ -81,7 +85,7 @@ export function createInstanceResolver({ list, readDirs, hosts = {} }) {
 	};
 	return {
 		all,
-		forHost: host => locate(instanceForHost(all(), host)),
+		forHost: host => locate(instanceForHost(all(), host, hosts[host]?.instance)),
 		byNameOrId: value => locate(instanceByNameOrId(all(), value)),
 		dataDir(record) {
 			if (!dirs.has(record.container)) dirs.set(record.container, parseInstanceDirs(readDirs(record.container)));

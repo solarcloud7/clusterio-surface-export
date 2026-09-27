@@ -42,6 +42,20 @@ test("a failed or unrecognised list is an error carrying the raw output, never z
 	assert.throws(() => parseInstanceRows(table([["Dev One", "abc", 1]])), /has no integer id/);
 });
 
+test("a second instance on a host defers to the seed-named one, and refuses when none carries the seed name", () => {
+	const gallery = ["surface-export-lab-gallery", 907164846, 2];
+	const seedNamed = parseInstanceRows(table([["clusterio-host-1-instance-1", 836570928, 1], gallery, ["clusterio-host-2-instance-1", 902099405, 2]]));
+	assert.equal(instanceForHost(seedNamed, 2, "clusterio-host-2-instance-1").id, 902099405);
+	assert.equal(instanceForHost(seedNamed, 1, "Dev One").id, 836570928);
+	const renamed = parseInstanceRows(table([["Dev One", 836570928, 1], gallery, ["Dev Two", 902099405, 2]]));
+	assert.throws(() => instanceForHost(renamed, 2, "clusterio-host-2-instance-1"),
+		/host 2 has 2 assigned instances, none uniquely named like its seed \(clusterio-host-2-instance-1\)/);
+	assert.throws(() => instanceForHost(renamed, 2), /none uniquely named like its seed \(no seed name\)/);
+	const resolver = createInstanceResolver({ hosts: { 2: { container: "surface-export-host-2", instance: "clusterio-host-2-instance-1" } },
+		list: () => table([["clusterio-host-2-instance-1", 902099405, 2], gallery]), readDirs: () => "" });
+	assert.equal(resolver.forHost(2).id, 902099405);
+});
+
 test("overrides match an id before a name, and refuse ambiguity", () => {
 	const rows = parseInstanceRows(table([["Dev One", 836570928, 1], ["902099405", 7, 1], ["Dev Two", 902099405, 2]]));
 	assert.equal(instanceByNameOrId(rows, "Dev One").id, 836570928);
@@ -85,11 +99,16 @@ $rows = @(ConvertFrom-InstanceList -Raw @($env:SE_LIST -split "\\n"))
 $picked = Select-InstanceForHost -Instances $rows -HostNumber 2
 $dir = Select-InstanceDataDir -Raw @($env:SE_DIRS -split "\\n") -InstanceId $picked.Id -Container fixture
 try { Select-InstanceForHost -Instances $rows -HostNumber 3 | Out-Null; $refused = '' } catch { $refused = $_.Exception.Message }
+$crowded = @(ConvertFrom-InstanceList -Raw @($env:SE_CROWDED -split "\\n"))
+$tiebreak = (Select-InstanceForHost -Instances $crowded -HostNumber 2 -SeedName 'clusterio-host-2-instance-1').Id
+try { Select-InstanceForHost -Instances $crowded -HostNumber 2 -SeedName 'Dev Two' | Out-Null; $ambiguous = '' } catch { $ambiguous = $_.Exception.Message }
+$seed = Get-SeedInstanceName -HostNumber 2
 try { ConvertFrom-InstanceList -Raw @('Error: not connected') | Out-Null; $empty = '' } catch { $empty = $_.Exception.Message }
-@{ name = $picked.Name; id = $picked.Id; status = $picked.Status; dir = $dir; refused = $refused; empty = $empty } | ConvertTo-Json -Compress`;
+@{ name = $picked.Name; id = $picked.Id; status = $picked.Status; dir = $dir; refused = $refused; empty = $empty; tiebreak = $tiebreak; ambiguous = $ambiguous; seed = $seed } | ConvertTo-Json -Compress`;
 	const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], {
 		cwd: fileURLToPath(new URL("../../", import.meta.url)), encoding: "utf8",
-		env: { ...process.env, SE_LIST: RENAMED, SE_DIRS: dirLine("/clusterio/data/instances/clusterio-host-2-instance-1", 902099405) },
+		env: { ...process.env, SE_LIST: RENAMED, SE_DIRS: dirLine("/clusterio/data/instances/clusterio-host-2-instance-1", 902099405),
+			SE_CROWDED: table([["surface-export-lab-gallery", 907164846, 2], ["clusterio-host-2-instance-1", 902099405, 2]]) },
 	});
 	assert.equal(result.status, 0, result.stderr);
 	const parsed = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
@@ -97,4 +116,7 @@ try { ConvertFrom-InstanceList -Raw @('Error: not connected') | Out-Null; $empty
 		{ name: "Dev Two", id: "902099405", status: "stopped", dir: "/clusterio/data/instances/clusterio-host-2-instance-1" });
 	assert.match(parsed.refused, /Host 3 has 0 assigned instance\(s\)/);
 	assert.match(parsed.empty, /no name\/id\/assignedHost\/status column; raw output: Error: not connected/);
+	assert.equal(parsed.tiebreak, "902099405");
+	assert.match(parsed.ambiguous, /Host 2 has 2 assigned instance\(s\), none uniquely named like its seed \(Dev Two\)/);
+	assert.equal(parsed.seed, "clusterio-host-2-instance-1");
 });

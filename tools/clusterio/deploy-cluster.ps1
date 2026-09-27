@@ -78,6 +78,8 @@ foreach ($envLine in Get-Content $EnvFile) {
 }
 $seeded = Get-SeededInstances
 $expectedHosts = @($seeded | ForEach-Object { [string]$_.HostNumber } | Sort-Object -Unique)
+$seedNames = @{}
+foreach ($seed in $seeded) { $seedNames[[string]$seed.HostNumber] = $seed.Instance }
 if ($expectedHosts.Count -ne @($seeded).Count) {
     throw "deploy-cluster expects one seeded instance per host; seed-data names $(($seeded | ForEach-Object { "$($_.Host)/$($_.Instance)" }) -join ', ')."
 }
@@ -158,7 +160,7 @@ if (-not $ResetData) {
     $engineMismatches = @()
     foreach ($h in $expectedHosts) {
         if (-not @($retained | Where-Object { $_.Host -eq $h }).Count) { continue }
-        $instance = Select-InstanceForHost -Instances $retained -HostNumber $h
+        $instance = Select-InstanceForHost -Instances $retained -HostNumber $h -SeedName $seedNames[$h]
         $configText = (docker @ctlPrefix instance config list $instance.Id 2>&1 | Out-String)
         $configured = [regex]::Match($configText, '(?m)^factorio\.version\s+"([^"]+)"\s*$')
         if ($LASTEXITCODE -ne 0 -or -not $configured.Success) {
@@ -308,11 +310,9 @@ while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) 
     try { $rows = @(ConvertFrom-InstanceList -Raw @($listOut | ForEach-Object { "$_" })) } catch { continue }
     $stateMap = @{}
     foreach ($h in $expectedHosts) {
-        $onHost = @($rows | Where-Object { $_.Host -eq $h })
-        if ($onHost.Count -gt 1) {
-            throw "Host $h has $($onHost.Count) assigned instances ($(($onHost | ForEach-Object { "$($_.Name) id $($_.Id)" }) -join ', ')); expected one. The cluster is NOT deployed."
-        }
-        if ($onHost.Count -eq 1) { $byHost[$h] = $onHost[0]; $stateMap[$h] = $onHost[0].Status }
+        if (-not @($rows | Where-Object { $_.Host -eq $h }).Count) { continue }
+        $picked = Select-InstanceForHost -Instances $rows -HostNumber $h -SeedName $seedNames[$h]
+        $byHost[$h] = $picked; $stateMap[$h] = $picked.Status
     }
 
     $nowS = $deploySw.Elapsed.TotalSeconds

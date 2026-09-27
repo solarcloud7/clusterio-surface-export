@@ -150,7 +150,7 @@ function Get-HostInstanceId {
     $raw = docker exec $Controller npx clusterioctl --log-level error instance list --config $script:ControlConfig 2>&1
     if ($LASTEXITCODE -ne 0) { throw "clusterioctl instance list failed (exit $LASTEXITCODE): $(($raw | Out-String).Trim())" }
     $instances = @(ConvertFrom-InstanceList -Raw @($raw | ForEach-Object { "$_" }))
-    return (Select-InstanceForHost -Instances $instances -HostNumber "$HostNumber").Id
+    return (Select-InstanceForHost -Instances $instances -HostNumber "$HostNumber" -SeedName (Get-SeedInstanceName -HostNumber "$HostNumber")).Id
 }
 
 function Resolve-PlatformHost {
