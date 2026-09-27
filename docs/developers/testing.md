@@ -110,9 +110,10 @@ performance measurements.
 
 `smoke` captures a small test window in the game. `remote-view-panels` stages the
 current Lua UI and companion mod, then captures a short platform list, a growing
-list, a shrinking list, a long scrolling list, the Boarding menu, the left panel
-after the policy is re-applied with no unavailable planets (`no-planets`), and the
-Boarding panel once every other ship is paused (`no-boarding`). Each capture
+list, a shrinking list, a long scrolling list, the Boarding section alone with the
+planet section toggled off (`boarding-only`), the left panel after the policy is
+re-applied with no unavailable planets (`no-planets`), and the panel without its
+Boarding section once every other ship is paused (`no-boarding`). Each capture
 writes `<name>-positions.json` with panel locations and tags; `location-events.jsonl`
 records every engine location event and display resolution or scale event with the
 values seen at that tick. It does not board a player; whether possessions

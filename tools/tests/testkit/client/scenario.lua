@@ -57,7 +57,9 @@ script.on_event(defines.events.on_tick, function()
 			assert(Policy.ensure_player(player, true))
 			assert(player.enter_space_platform(storage.ships[1]))
 			Panel.refresh_button(player)
-			assert(not player.gui.screen.surfexp_instance_planets.visible)
+			local frame = player.gui.screen.surfexp_instance_planets
+			assert(frame.visible and frame.surfexp_boarding_section and not frame.surfexp_planet_section.visible)
+			assert(not player.gui.screen.surfexp_instance_title.visible)
 			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
 			if run.scenario == "gui-anchors" then
 				local roots = {}
@@ -99,10 +101,15 @@ script.on_event(defines.events.on_tick, function()
 		if elapsed == 75 then add_ships(5) end
 		if elapsed == 150 or elapsed == 300 then clear_extras() end
 		if elapsed == 225 then add_ships(25) end
-		if elapsed == 330 then Panel.open(player) end
+		if elapsed == 330 then
+			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
+			assert(not player.gui.screen.surfexp_instance_planets.surfexp_planet_section.visible)
+		end
 		if elapsed == 380 then
 			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora", disabledPlanets = {}, instanceName = "Fulgora instance"}.success)
 			Panel.refresh_button(player)
+			Panel.on_gui_click{player_index = player.index, element = player.gui.top.surfexp_instance_toggle_planets}
+			assert(player.gui.screen.surfexp_instance_planets.surfexp_planet_section.visible)
 		end
 		if elapsed == 430 then for i = 2, 3 do storage.ships[i].paused = true end end
 		if elapsed == 480 then
@@ -135,7 +142,7 @@ script.on_event(defines.events.on_tick, function()
 			DebugControls.refresh(player)
 			assert(player.gui.top.surfexp_selection_lab)
 		end
-		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding", [420] = "no-planets", [460] = "no-boarding", [525] = "empty", [585] = "hidden", [645] = "debug"})[elapsed]
+		capture = ({[45] = "small", [120] = "grown", [195] = "shrunk", [270] = "scrolling", [360] = "boarding-only", [420] = "no-planets", [460] = "no-boarding", [525] = "empty", [585] = "hidden", [645] = "debug"})[elapsed]
 	elseif elapsed == 45 then capture = "smoke" end
 	if capture then
 		local path = capture .. ".png"
