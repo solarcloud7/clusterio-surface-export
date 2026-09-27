@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: local controller with running debug-mode instances, current web build, Playwright Chromium
-// produces: auto-pause badge and legend checks, link endpoints outside every gateway and caption, captures in ci-artifacts/ui-captures
-// does not: change instance settings, save gateway links, perform transfers, or approve the visual design
+// produces: auto-pause badge and legend checks, traffic line endpoints outside every gateway and caption, captures in ci-artifacts/ui-captures
+// does not: change instance settings, perform transfers, or approve the visual design
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -99,7 +99,7 @@ try {
 				{ name: "south (auto-pause)", platforms: ["beta"], autoPause: true },
 				{ name: "east", host: "scenario east", platforms: ["gamma"] },
 			],
-			links: [[0, 1], [1, 0], [0, 2]],
+			routes: [[0, 1], [1, 0], [0, 2]],
 		}));
 		await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length === 2
 			&& document.querySelectorAll(".surface-export-autopause-badge").length === 1, null, { timeout: 10_000 });
@@ -126,7 +126,7 @@ try {
 			left: Math.min(box.left, node.box.left, node.caption?.left ?? Infinity), top: Math.min(box.top, node.caption?.top ?? node.box.top),
 			right: Math.max(box.right, node.box.right, node.caption?.right ?? -Infinity), bottom: Math.max(box.bottom, node.box.bottom),
 		}), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
-		await page.screenshot({ path: `${captures}/gateway-links${suffix}.png`, clip: {
+		await page.screenshot({ path: `${captures}/gateway-traffic${suffix}.png`, clip: {
 			x: Math.max(0, union.left - 30), y: Math.max(0, union.top - 30), width: union.right - union.left + 60, height: union.bottom - union.top + 60 } });
 		await page.screenshot({ path: `${captures}/auto-pause-badge${suffix}.png`, clip: {
 			x: south.box.left - 30, y: (south.caption?.top ?? south.box.top) - 20, width: south.box.right - south.box.left + 60,
@@ -134,7 +134,7 @@ try {
 		await legend.screenshot({ path: `${captures}/auto-pause-legend${suffix}.png` });
 		writeFileSync(`${captures}/gateway-geometry${suffix}.json`, JSON.stringify(staged, null, 2));
 		await page.close();
-		console.log(`PASS scale ${scale}: auto-pause badge follows the tree, legend key present, every link ends outside gateways and captions`);
+		console.log(`PASS scale ${scale}: auto-pause badge follows the tree, legend key present, every traffic line ends outside gateways and captions`);
 	}
 	assert.deepEqual(errors, []);
 } catch (error) {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
+import { Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
 import { BugOutlined, LockOutlined, ReloadOutlined, UnlockOutlined, UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
@@ -25,22 +25,18 @@ import {
 	CAPTION_WIDTH,
 	DIMMED_OPACITY,
 	NODE_DIAMETER,
-	applyConnect,
-	applyDisconnect,
 	buildGraph,
-	dirtyKeys,
-	editsFromLinks,
 	gatewayFromHandleId,
+	groupTraffic,
 	instanceIdFromNodeId,
 	instanceNodeId,
-	parseEditKey,
 	platformIndexFromHandleId,
 	preservePositions,
 	sourceHandleId,
 	targetHandleId,
 } from "./gateway-graph";
-import { gatewayColour } from "./gateway-colours";
-import type { ConnectRequest, GatewayEdits, PlatformLike } from "./gateway-graph";
+import { portalColour } from "./gateway-colours";
+import type { PlatformLike, PortalDestination, TrafficRouteModel } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
 import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
@@ -48,15 +44,12 @@ import {
 	GatewayDebugContext,
 	DEFAULT_DEBUG_STATE,
 	hasDebugInstance,
-	isMockEditKey,
 	isMockInstanceId,
 	loadDebugState,
-	mockLeaksInPayload,
 	mockShips,
 	replayCandidates,
 	replayShips,
 	saveDebugState,
-	scenarioToEdits,
 	scenarioToShips,
 	scenarioToTree,
 	withMockInstances,
@@ -67,15 +60,15 @@ import {
 	EDGE_SHAPES, applySavedLayout, clearLayout, loadEdgeShape, loadLayout, saveEdgeShape, saveLayout,
 } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
-import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
+import { SHIP_LEGEND, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
+import type { ShipTransfer } from "./transfer-motion";
 import { ONE_GATE_NAME } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
 import ConnectionLine from "./ConnectionLine";
 import TransferModal from "../TransferModal";
 import { exportPlatformToDownload } from "../platform-actions";
 import type { PlatformActionSource } from "../platform-actions";
-import { getErrorMessage, getProp } from "../utils";
-import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "../view-models";
+import type { SurfaceExportPlugin, SurfaceExportState } from "../view-models";
 
 const { Text } = Typography;
 
@@ -83,63 +76,38 @@ function miniMapNodeColor(node: Node) {
 	return (node.data as { online?: boolean }).online ? "#1668dc" : "#5a5a5a";
 }
 
-function toConnectRequest(link: Connection | Edge): ConnectRequest | null {
-	const sourceInstanceId = instanceIdFromNodeId(link.source);
-	const targetInstanceId = instanceIdFromNodeId(link.target);
-	const sourceGateway = gatewayFromHandleId(link.sourceHandle);
-	const targetGateway = gatewayFromHandleId(link.targetHandle);
-	if (sourceInstanceId == null || targetInstanceId == null || !sourceGateway || !targetGateway) {
-		return null;
-	}
-	return { sourceInstanceId, sourceGateway, targetInstanceId, targetGateway };
-}
-
-export function planBulkLink(
-	edits: GatewayEdits,
-	instanceIds: readonly number[],
-	gateway: string,
-	connect: boolean,
-): GatewayEdits {
-	let next = edits;
-	for (let a = 0; a < instanceIds.length; a += 1) {
-		for (let b = a + 1; b < instanceIds.length; b += 1) {
-			const request = {
-				sourceInstanceId: instanceIds[a],
-				sourceGateway: gateway,
-				targetInstanceId: instanceIds[b],
-				targetGateway: gateway,
-			};
-			next = connect ? applyConnect(next, request) : applyDisconnect(next, request);
-		}
-	}
-	return next;
-}
-
 function connectionRefusal(link: Connection | Edge): string | null {
 	const sourceInstanceId = instanceIdFromNodeId(link.source);
 	const targetInstanceId = instanceIdFromNodeId(link.target);
-	const fromPlatform = platformIndexFromHandleId(link.sourceHandle) != null;
 	if (sourceInstanceId == null || targetInstanceId == null) {
-		return "Could not read that connection — nothing was staged.";
+		return "Could not read that connection — no transfer was started.";
+	}
+	if (platformIndexFromHandleId(link.sourceHandle) == null) {
+		return "Drag a platform onto another server's portal to transfer it.";
 	}
 	if (sourceInstanceId === targetInstanceId) {
-		return fromPlatform
-			? "A platform cannot transfer to the instance it is already on."
-			: "An instance cannot gateway to itself.";
+		return "A platform cannot transfer to the instance it is already on.";
 	}
 	if (isMockInstanceId(sourceInstanceId) !== isMockInstanceId(targetInstanceId)) {
-		return "A mock instance can only link to another mock instance.";
+		return "A mock instance can only be dragged to another mock instance.";
 	}
 	if (platformIndexFromHandleId(link.targetHandle) != null) {
 		return "Drop it on the other instance's PORTAL, not on one of its platforms.";
 	}
-	if (fromPlatform) {
-		return gatewayFromHandleId(link.targetHandle) != null ? null : "Drop a platform on a gateway portal.";
-	}
-	if (gatewayFromHandleId(link.sourceHandle) == null || gatewayFromHandleId(link.targetHandle) == null) {
-		return "Both ends of a gateway link must be gateway portals.";
-	}
-	return null;
+	return gatewayFromHandleId(link.targetHandle) != null ? null : "Drop a platform on a gateway portal.";
+}
+
+const HEADING_NAMES_SHOWN = 2;
+
+function headingText(route: TrafficRouteModel, destination: PortalDestination | null, targetName: string) {
+	const names = route.platforms.map(platform => platform.platformName);
+	const label = destination?.label || targetName;
+	const shown = names.length > HEADING_NAMES_SHOWN ? `${names.length} platforms` : names.join(", ");
+	return {
+		text: `${shown} → ${label}`,
+		title: `Heading to the portal of ${targetName}: ${names.join(", ")}`,
+		colour: portalColour(destination?.colour),
+	};
 }
 
 export default function GatewayCanvas({ plugin, state, onOpenImport }: {
@@ -152,11 +120,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const [locked, setLocked] = useState(false);
 	const interactive = canEdit && !locked;
 
-	const [loading, setLoading] = useState(true);
-	const [saving, setSaving] = useState(false);
-	const [loadError, setLoadError] = useState<string | null>(null);
-	const [edits, setEdits] = useState<GatewayEdits>({});
-	const [baseline, setBaseline] = useState<GatewayEdits>({});
 	const [hostFilter, setHostFilter] = useState<string>(ALL_HOSTS);
 	const [transfer, setTransfer] = useState<
 		{ source: PlatformActionSource; presetTargetInstanceId: number | null } | null
@@ -197,42 +160,16 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const tree = state?.tree;
 
-	const load = useCallback(async () => {
-		setLoading(true);
-		try {
-			const response = (await plugin.getGateways()) as JsonObject;
-			const loaded = editsFromLinks(getProp(response, "links", []) as never);
-			setEdits(loaded);
-			setBaseline(loaded);
-			setLoadError(null);
-		} catch (err: unknown) {
-			const messageText = getErrorMessage(err, "Failed to load gateways");
-			setLoadError(messageText);
-			antMessage.error(messageText, 8);
-		} finally {
-			setLoading(false);
-		}
-	}, [plugin]);
-
-	useEffect(() => { void load(); }, [load]);
-
 	const effectiveTree = useMemo(
 		() => (scenario ? scenarioToTree(scenario) : withMockInstances(tree, debug)),
 		[scenario, tree, debug],
 	);
 
-	const scenarioEdits = useMemo(
-		() => (scenario ? scenarioToEdits(scenario, ONE_GATE_NAME) : null),
-		[scenario],
-	);
 	const graph = useMemo(
-		() => buildGraph(effectiveTree, scenarioEdits ?? edits, hostFilter),
-		[effectiveTree, edits, scenarioEdits, hostFilter],
+		() => buildGraph(effectiveTree, hostFilter),
+		[effectiveTree, hostFilter],
 	);
 
-	const allDirty = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
-
-	const pending = useMemo(() => allDirty.filter(key => !isMockEditKey(key)), [allDirty]);
 	const mockCount = useMemo(
 		() => graph.nodes.filter(node => isMockInstanceId(node.data.instanceId as number)).length,
 		[graph],
@@ -289,7 +226,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		if (!debug.enabled) {
 			return realShips;
 		}
-		const linked = graph.edges.map(edge => [edge.sourceInstanceId, edge.targetInstanceId] as const);
+		const linked = graph.routes.map(route => [route.sourceInstanceId, route.targetInstanceId] as const);
 		const drawnIds = graph.nodes
 			.map(node => instanceIdFromNodeId(node.id))
 			.filter((id): id is number => id !== null);
@@ -326,98 +263,50 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			previous,
 			applySavedLayout(graph.nodes as unknown as Node[], savedLayout.current),
 		));
-		setEdges(previous => {
-			const selected = new Set(previous.filter(edge => edge.selected).map(edge => edge.id));
+		setEdges(() => {
 			const focused = new Set(
 				graph.nodes.filter(node => !node.data.dimmed).map(node => instanceIdFromNodeId(node.id)),
 			);
-			const drawn = new Set(graph.nodes.map(node => node.id));
+			const byInstance = new Map(graph.nodes.map(node => [node.data.instanceId as number, node.data]));
+			const destinationOf = (instanceId: number) => (byInstance.get(instanceId)?.destination ?? null) as PortalDestination | null;
+			const nameOf = (instanceId: number) => String(byInstance.get(instanceId)?.instanceName || instanceId);
 			const dimStyle = (a: number, b: number) => (
 				focused.has(a) || focused.has(b) ? undefined : { opacity: DIMMED_OPACITY }
 			);
-
-			const unassigned = new Map(ships.map(ship => [ship.transferId, ship]));
-			const shipsFor = (a: number, b: number) => {
-				const wanted = instancePairKey(a, b);
-				const taken: typeof ships = [];
-				for (const [transferId, ship] of unassigned) {
-					if (instancePairKey(ship.sourceInstanceId, ship.targetInstanceId) === wanted) {
-						unassigned.delete(transferId);
-						taken.push(ship);
-					}
-				}
-				return taken;
-			};
-
-			const edges: Edge[] = graph.edges.map(edge => {
-				const riding = shipsFor(edge.sourceInstanceId, edge.targetInstanceId);
-				return {
-					id: edge.id,
-					source: edge.source,
-					sourceHandle: edge.sourceHandle,
-					target: edge.target,
-					targetHandle: edge.targetHandle,
-					type: GATEWAY_EDGE_TYPE,
-					selected: selected.has(edge.id),
-					deletable: interactive,
-					style: dimStyle(edge.sourceInstanceId, edge.targetInstanceId),
-					markerEnd: edge.forward
-						? { type: MarkerType.ArrowClosed, color: gatewayColour(edge.sourceGateway) }
-						: undefined,
-					markerStart: edge.reverse
-						? { type: MarkerType.ArrowClosed, color: gatewayColour(edge.sourceGateway) }
-						: undefined,
-					data: {
-						forward: edge.forward,
-						reverse: edge.reverse,
-						sourceGateway: edge.sourceGateway,
-						shape: edgeShape,
-						sourceInstanceId: edge.sourceInstanceId,
-						transfers: riding,
-					},
-				};
-			});
-
 			const anchorGateway = ONE_GATE_NAME;
-			const byPair = new Map<string, typeof ships>();
-			for (const ship of unassigned.values()) {
-				const key = instancePairKey(ship.sourceInstanceId, ship.targetInstanceId);
-				const group = byPair.get(key);
-				if (group) {
-					group.push(ship);
-				} else {
-					byPair.set(key, [ship]);
-				}
-			}
-			for (const group of byPair.values()) {
-				const [first] = group;
-				const source = instanceNodeId(first.sourceInstanceId);
-				const target = instanceNodeId(first.targetInstanceId);
-				if (!drawn.has(source) || !drawn.has(target)) {
-					continue;
-				}
-				edges.push({
-					id: transientEdgeId(instancePairKey(first.sourceInstanceId, first.targetInstanceId)),
-					source,
+
+			return groupTraffic<ShipTransfer>(graph.routes, ships, new Set(byInstance.keys())).map(pair => {
+				const colour = portalColour(destinationOf(pair.targetInstanceId)?.colour);
+				const reverseColour = portalColour(destinationOf(pair.sourceInstanceId)?.colour);
+				const heading = pair.routes.length > 0;
+				return {
+					id: heading ? `route:${pair.key}` : transientEdgeId(pair.key),
+					source: instanceNodeId(pair.sourceInstanceId),
 					sourceHandle: sourceHandleId(anchorGateway),
-					target,
+					target: instanceNodeId(pair.targetInstanceId),
 					targetHandle: targetHandleId(anchorGateway),
 					type: GATEWAY_EDGE_TYPE,
 					deletable: false,
-					style: { ...dimStyle(first.sourceInstanceId, first.targetInstanceId), strokeDasharray: "6 4" },
-					markerEnd: { type: MarkerType.ArrowClosed, color: gatewayColour(anchorGateway) },
-					data: {
-						transient: true,
-						sourceGateway: anchorGateway,
-						shape: edgeShape,
-						sourceInstanceId: first.sourceInstanceId,
-						transfers: group,
+					selectable: false,
+					style: {
+						...dimStyle(pair.sourceInstanceId, pair.targetInstanceId),
+						...(heading ? {} : { strokeDasharray: "6 4" }),
 					},
-				});
-			}
-			return edges;
+					markerEnd: pair.forward ? { type: MarkerType.ArrowClosed, color: colour } : undefined,
+					markerStart: pair.reverse ? { type: MarkerType.ArrowClosed, color: reverseColour } : undefined,
+					data: {
+						transient: !heading,
+						colour,
+						headings: pair.routes.map(route => headingText(
+							route, destinationOf(route.targetInstanceId), nameOf(route.targetInstanceId))),
+						shape: edgeShape,
+						sourceInstanceId: pair.sourceInstanceId,
+						transfers: pair.ships,
+					},
+				};
+			});
 		});
-	}, [graph, ships, interactive, edgeShape, setNodes, setEdges]);
+	}, [graph, ships, edgeShape, setNodes, setEdges]);
 
 	const nodeActions = useMemo(() => ({
 		exportingKey,
@@ -438,17 +327,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			label: `${platform.platformName || `platform ${platform.platformIndex}`} — ${instanceName}`,
 		}));
 	}), [graph]);
-
-	const selectedInstanceIds = useMemo(
-		() => nodes.filter(node => node.selected)
-			.map(node => instanceIdFromNodeId(node.id))
-			.filter((id): id is number => id !== null),
-		[nodes],
-	);
-
-	const bulkLink = useCallback((connect: boolean) => {
-		setEdits(planBulkLink(edits, selectedInstanceIds, ONE_GATE_NAME, connect));
-	}, [edits, selectedInstanceIds]);
 
 	const platformFromHandle = useCallback((nodeId: string | null | undefined, handleId: string | null | undefined) => {
 		const platformIndex = platformIndexFromHandleId(handleId);
@@ -491,13 +369,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			});
 			return;
 		}
-
-		const request = toConnectRequest(connection);
-		if (!request) {
-			antMessage.error("Could not read that connection — nothing was staged.", 6);
-			return;
-		}
-		setEdits(previous => applyConnect(previous, request));
+		antMessage.warning({ content: "Drag a platform onto another server's portal to transfer it.", key: "canvas-refusal", duration: 6 });
 	}, [platformFromHandle]);
 
 	const onConnectEnd = useCallback((_event: MouseEvent | TouchEvent, connection: FinalConnectionState) => {
@@ -520,107 +392,13 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, []);
 
 	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-		if (edge.data?.transient) {
-			antMessage.info({
-				content: "That is a transfer in flight, not a configured link — it clears itself.",
-				key: "canvas-edge-click", duration: 4,
-			});
-			return;
-		}
-		if (!canEdit) {
-			return;
-		}
-		if (locked) {
-			antMessage.info({
-				content: "The canvas is locked. Use the padlock in the controls to unlock it.",
-				key: "canvas-edge-click", duration: 4,
-			});
-			return;
-		}
-		const request = toConnectRequest(edge);
-		if (!request) {
-			antMessage.error("Could not read that edge — nothing was removed.", 6);
-			return;
-		}
-		setEdits(previous => applyDisconnect(previous, request));
-	}, [canEdit, locked]);
-
-	const onEdgesDelete = useCallback((deleted: Edge[]) => {
-		if (!interactive) {
-			return;
-		}
-		setEdits(previous => deleted.filter(edge => !edge.data?.transient).reduce((acc, edge) => {
-			const request = toConnectRequest(edge);
-			return request ? applyDisconnect(acc, request) : acc;
-		}, previous));
-	}, [interactive]);
-
-	const save = useCallback(async () => {
-		setSaving(true);
-		const failures: string[] = [];
-		const warnings: string[] = [];
-		try {
-			const byInstance = new Map<number, Array<{ gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }>>();
-			for (const key of pending) {
-				const parsed = parseEditKey(key);
-				if (!parsed) {
-					failures.push(`${key}: unreadable key`);
-					continue;
-				}
-				const group = byInstance.get(parsed.sourceInstanceId) || [];
-				group.push({
-					gatewayName: parsed.gatewayName,
-					targets: (edits[key] || []).map(target => ({
-						targetInstanceId: Number(target.targetInstanceId),
-						targetGateway: target.targetGateway || parsed.gatewayName,
-					})),
-				});
-				byInstance.set(parsed.sourceInstanceId, group);
-			}
-
-			const leaks = mockLeaksInPayload(byInstance);
-			if (leaks.length) {
-				antMessage.error(
-					`Refusing to save: ${leaks.join("; ")} names a mock instance. `
-					+ "This is a bug — no gateway config was written.",
-					15,
-				);
-				return;
-			}
-
-			for (const [sourceInstanceId, gateways] of byInstance) {
-				const label = gateways.map(entry => entry.gatewayName).join(", ");
-				try {
-					const response = (await plugin.setGatewayLink({ sourceInstanceId, gateways })) as JsonObject;
-					const reason = String(getProp(response, "error", "") || "");
-					if (!getProp(response, "success", false)) {
-						failures.push(`${label}: ${reason || "save failed"}`);
-					} else if (reason) {
-						warnings.push(reason);
-					}
-				} catch (err: unknown) {
-					failures.push(`${label}: ${getErrorMessage(err, "save failed")}`);
-				}
-			}
-
-			if (failures.length) {
-				antMessage.error(`${failures.length} of ${pending.length} failed — ${failures.join("; ")}`, 12);
-				return;
-			}
-			setBaseline(Object.fromEntries(
-				Object.entries(edits).filter(([key]) => !isMockEditKey(key)),
-			));
-			if (warnings.length) {
-				antMessage.warning(warnings.join("; "), 15);
-				return;
-			}
-			antMessage.success(`Saved ${pending.length} gateway${pending.length === 1 ? "" : "s"}.`, 4);
-		} finally {
-			setSaving(false);
-		}
-	}, [edits, pending, plugin]);
-
-	const revert = useCallback(() => setEdits(baseline), [baseline]);
+		antMessage.info({
+			content: edge.data?.transient
+				? "That is a transfer in flight — the line clears itself when it finishes."
+				: "Platforms on this line are scheduled to another server's portal — the line clears itself once they leave.",
+			key: "canvas-edge-click", duration: 4,
+		});
+	}, []);
 
 	const liveRef = useRef({ debug, scenario, graph, summaries: state?.transferSummaries });
 	liveRef.current = { debug, scenario, graph, summaries: state?.transferSummaries };
@@ -637,7 +415,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				instances: current.nodes.length,
 				mockInstances: current.nodes.filter(n => isMockInstanceId(n.data.instanceId as number)).length,
 				platforms: current.nodes.reduce((n, node) => n + ((node.data.platforms as unknown[]) || []).length, 0),
-				links: current.edges.length,
+				trafficLines: new Set(current.routes.map(route =>
+					[route.sourceInstanceId, route.targetInstanceId].sort((a, b) => a - b).join("|"))).size,
 				debugMode: state.enabled,
 				shipPhases: state.shipPhases,
 				replaying: state.replayTransferIds.length,
@@ -646,7 +425,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		},
 	}) : undefined, [setDebug, debugAllowed]);
 
-	if (loading && !nodes.length) {
+	if (state?.loadingTree && !nodes.length) {
 		return <Spin style={{ margin: "24px auto", display: "block" }} />;
 	}
 
@@ -654,8 +433,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		<NodeActionsContext.Provider value={nodeActions}>
 		<GatewayDebugContext.Provider value={{ showGeometry: debug.enabled && debug.showGeometry }}>
 		<div className="surface-export-canvas">
-			{loadError ? <Alert type="error" showIcon message={loadError} style={{ marginBottom: 8 }} /> : null}
-			{!loading && !nodes.length ? (
+			{!nodes.length ? (
 				<Empty description="No instances available — gateways can't be shown until the platform tree loads." />
 			) : (
 				<ReactFlow
@@ -666,20 +444,19 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					onConnect={onConnect}
 					onConnectEnd={onConnectEnd}
 					isValidConnection={isValidConnection}
-					onEdgesDelete={onEdgesDelete}
 					onEdgeClick={onEdgeClick}
 					onNodeDragStop={onNodeDragStop}
 					onInit={instance => { flow.current = instance as unknown as typeof flow.current; }}
 					nodeTypes={CANVAS_NODE_TYPES}
 					edgeTypes={CANVAS_EDGE_TYPES}
 					connectionLineComponent={ConnectionLine}
-					connectionMode={ConnectionMode.Loose}
+					connectionMode={ConnectionMode.Strict}
 					nodesConnectable={interactive}
-					edgesFocusable={interactive}
+					edgesFocusable={false}
 					nodesDraggable={!locked}
 					elementsSelectable
 					multiSelectionKeyCode={["Control", "Meta"]}
-					deleteKeyCode={interactive ? ["Backspace", "Delete"] : null}
+					deleteKeyCode={null}
 					colorMode="dark"
 					fitView
 					fitViewOptions={fitViewOptions}
@@ -690,8 +467,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						<ControlButton
 							onClick={() => setLocked(!locked)}
 							title={locked
-								? "Unlock the canvas — allow connecting, deleting and dragging"
-								: "Lock the canvas — no connecting, no edge deletion, no dragging"}
+								? "Unlock the canvas — allow dragging servers and platforms"
+								: "Lock the canvas — no dragging servers or platforms"}
 							aria-label={locked ? "unlock the canvas" : "lock the canvas"}
 							data-testid="canvas-lock"
 							data-locked={locked ? "true" : "false"}
@@ -757,7 +534,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								options={platformOptions}
 								onChange={value => value && focusNode(String(value).split(":").slice(0, -1).join(":"))}
 							/>
-							<Tooltip title="The shape every gateway link is drawn with">
+							<Tooltip title="The shape traffic lines are drawn with">
 								<Select
 									size="small"
 									value={edgeShape}
@@ -792,53 +569,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						</span>
 					</Panel>
 					<Panel position="top-right">
-						<Space direction="vertical" size={4} align="end">
-							{canEdit ? (
-								<Text type="secondary" style={{ fontSize: 12 }}>
-									{pending.length
-										? `${pending.length} unsaved change${pending.length === 1 ? "" : "s"}`
-										: "drag between gateways to link"}
-								</Text>
-							) : (
-								<Text type="secondary" style={{ fontSize: 12 }}>read-only</Text>
-							)}
-							{interactive && selectedInstanceIds.length >= 2 ? (
-								<Text className="surface-export-select-hint">
-									{selectedInstanceIds.length} selected · Ctrl+click to select more
-								</Text>
-							) : null}
-							{interactive && selectedInstanceIds.length === 1 ? (
-								<Text className="surface-export-select-hint">Ctrl+click another instance to link them</Text>
-							) : null}
-							{canEdit || (interactive && selectedInstanceIds.length >= 2) ? (
-								<Space size="small">
-									{interactive && selectedInstanceIds.length >= 2 ? (
-										<>
-											<Tooltip title="Link every selected instance to every other one">
-												<Button size="small" onClick={() => bulkLink(true)}>Link selected</Button>
-											</Tooltip>
-											<Tooltip title="Remove the links between the selected instances">
-												<Button size="small" onClick={() => bulkLink(false)}>Unlink selected</Button>
-											</Tooltip>
-										</>
-									) : null}
-									{canEdit && allDirty.length ? (
-										<Button size="small" onClick={revert} disabled={saving}>Revert</Button>
-									) : null}
-									{canEdit ? (
-										<Button
-											type="primary"
-											size="small"
-											loading={saving}
-											disabled={!pending.length}
-											onClick={() => void save()}
-										>
-											Save
-										</Button>
-									) : null}
-								</Space>
-							) : null}
-						</Space>
+						<Text type="secondary" style={{ fontSize: 12 }}>
+							{canEdit
+								? "every server reaches every other · drag a platform onto a portal to transfer it"
+								: "every server reaches every other · read-only"}
+						</Text>
 					</Panel>
 				</ReactFlow>
 			)}

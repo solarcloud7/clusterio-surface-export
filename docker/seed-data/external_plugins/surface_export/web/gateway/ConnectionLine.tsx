@@ -1,18 +1,14 @@
-import { useConnection } from "@xyflow/react";
 import type { ConnectionLineComponentProps } from "@xyflow/react";
 
-import { gatewayFromHandleId } from "./gateway-graph";
-import { gatewayColour } from "./gateway-colours";
+import { DEFAULT_EDGE_COLOUR } from "./gateway-colours";
 
 export const CONNECTION_VALID = "#52c41a";
 export const CONNECTION_INVALID = "#dc4446";
 
 export default function ConnectionLine({ fromX, fromY, toX, toY, connectionStatus }: ConnectionLineComponentProps) {
-	const { fromHandle } = useConnection();
-	const gateway = gatewayColour(gatewayFromHandleId(fromHandle?.id));
 	const colour = connectionStatus === "valid" ? CONNECTION_VALID
 		: connectionStatus === "invalid" ? CONNECTION_INVALID
-			: gateway;
+			: DEFAULT_EDGE_COLOUR;
 
 	return (
 		<g data-connection-status={connectionStatus ?? "none"}>

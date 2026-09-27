@@ -41,12 +41,14 @@ A scenario is one object. Instances are referred to by index:
       { name: "spoke-1", platforms: ["gamma"] },
       { name: "spoke-2", online: false, autoPause: true },
     ],
-    links: [[0, 1], [0, 2]],
+    routes: [[0, 1], [0, 2]],
     ships: [{ from: 0, to: 1, status: "awaiting_validation" }],
   })
 
-Nothing here can change cluster config: every scenario instance gets a negative id, which the save
-path filters and then re-checks. It only changes what this browser draws.`;
+A route [from, to] adds a platform on "from" whose schedule heads to the portal of "to".
+
+Nothing here can change the cluster: every scenario instance gets a negative id, and platforms on
+mock instances cannot be exported or transferred. It only changes what this browser draws.`;
 
 export function installCanvasDebugApi(controls: CanvasDebugControls): () => void {
 	const settled = () => new Promise<Record<string, unknown>>(resolve => {
@@ -97,9 +99,12 @@ export function installCanvasDebugApi(controls: CanvasDebugControls): () => void
 				throw new Error("a scenario needs an `instances` array — see surfaceExportCanvas.help()");
 			}
 			const count = scenario.instances.length;
-			for (const [from, to] of scenario.links || []) {
+			if ((scenario as { links?: unknown }).links !== undefined) {
+				throw new Error("scenarios no longer take `links`; draw traffic with `routes` — see surfaceExportCanvas.help()");
+			}
+			for (const [from, to] of scenario.routes || []) {
 				if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= count || to >= count) {
-					throw new Error(`link [${from}, ${to}] is out of range — instances are indexed 0..${count - 1}`);
+					throw new Error(`route [${from}, ${to}] is out of range — instances are indexed 0..${count - 1}`);
 				}
 			}
 			for (const ship of scenario.ships || []) {

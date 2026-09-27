@@ -1,7 +1,10 @@
 import { CAPTION_WIDTH } from "../../shared/edge-geometry";
-import type { GatewayLink } from "../../shared/dto";
-import { ONE_GATE_NAMES } from "../../shared/dto";
+import { INSTANCE_GATEWAY_PREFIX, instanceGatewayName } from "../../shared/dto";
+import type { PortalColour } from "../../shared/server-destinations";
 import type { PlatformStatusFields } from "../platform-actions";
+
+export { PORTAL_COLOURS } from "../../shared/server-destinations";
+export { instanceGatewayName };
 
 
 export type PlatformLike = PlatformStatusFields & {
@@ -12,6 +15,8 @@ export type PlatformLike = PlatformStatusFields & {
 	hasSpaceHub?: boolean;
 };
 
+export type PortalDestination = { label: string; colour: PortalColour };
+
 export type InstanceLike = {
 	instanceId: number;
 	instanceName: string;
@@ -20,6 +25,9 @@ export type InstanceLike = {
 	status?: string;
 	connected?: boolean;
 	autoPause?: boolean;
+	defaultPlanet?: string;
+	disabledPlanets?: string[];
+	destination?: PortalDestination | null;
 	platforms?: PlatformLike[];
 };
 
@@ -35,32 +43,6 @@ export type TreeLike = {
 	hosts?: HostLike[];
 	unassignedInstances?: InstanceLike[];
 };
-
-export type GatewayEdits = Record<string, GatewayLink[]>;
-
-export type RawGatewayLinkRow = {
-	sourceInstanceId: number;
-	gatewayName: string;
-	targets?: GatewayLink[];
-};
-
-
-export function editKey(sourceInstanceId: number, gatewayName: string): string {
-	return `${sourceInstanceId}:${gatewayName}`;
-}
-
-export function parseEditKey(key: string): { sourceInstanceId: number; gatewayName: string } | null {
-	const split = key.indexOf(":");
-	if (split <= 0) {
-		return null;
-	}
-	const sourceInstanceId = Number(key.slice(0, split));
-	const gatewayName = key.slice(split + 1);
-	if (!Number.isFinite(sourceInstanceId) || !gatewayName) {
-		return null;
-	}
-	return { sourceInstanceId, gatewayName };
-}
 
 export function instanceNodeId(instanceId: number): string {
 	return `instance:${instanceId}`;
@@ -115,193 +97,94 @@ export function gatewayFromHandleId(handleId: string | null | undefined): string
 }
 
 
-export interface GatewayEdgeModel {
-	id: string;
-	source: string;
-	sourceHandle: string;
-	target: string;
-	targetHandle: string;
+export function activePlanets(installed: readonly string[], defaultPlanet: string, disabled: readonly string[]): string[] {
+	const off = new Set(disabled);
+	const names = installed.includes(defaultPlanet) ? [...installed] : [defaultPlanet, ...installed];
+	return names.filter(name => name === defaultPlanet || !off.has(name));
+}
+
+export interface TrafficRouteModel {
 	sourceInstanceId: number;
-	sourceGateway: string;
 	targetInstanceId: number;
-	targetGateway: string;
-	forward: boolean;
-	reverse: boolean;
+	platforms: Array<{ platformIndex: number; platformName: string }>;
 }
 
-type Endpoint = { instanceId: number; gatewayName: string };
-
-function endpointKey(endpoint: Endpoint): string {
-	return `${endpoint.instanceId}/${endpoint.gatewayName}`;
+export function headingInstanceId(target: string | null | undefined): number | null {
+	if (!target || !target.startsWith(INSTANCE_GATEWAY_PREFIX)) {
+		return null;
+	}
+	const text = target.slice(INSTANCE_GATEWAY_PREFIX.length);
+	if (!/^-?[1-9]\d*$/.test(text)) {
+		return null;
+	}
+	const id = Number(text);
+	return Number.isSafeInteger(id) ? id : null;
 }
 
-function orient(a: Endpoint, b: Endpoint): { low: Endpoint; high: Endpoint; flipped: boolean } {
-	const flipped = endpointKey(a) > endpointKey(b);
-	return flipped ? { low: b, high: a, flipped } : { low: a, high: b, flipped };
-}
-
-export function edgeId(a: Endpoint, b: Endpoint): string {
-	const { low, high } = orient(a, b);
-	return `link:${endpointKey(low)}|${endpointKey(high)}`;
-}
-
-function directedLinks(edits: GatewayEdits): Array<{ from: Endpoint; to: Endpoint }> {
-	const out: Array<{ from: Endpoint; to: Endpoint }> = [];
-	for (const [key, targets] of Object.entries(edits)) {
-		const parsed = parseEditKey(key);
-		if (!parsed) {
-			continue;
-		}
-		for (const target of targets || []) {
-			if (target == null || !Number.isFinite(target.targetInstanceId)) {
+export function buildTrafficRoutes(instances: readonly InstanceLike[]): TrafficRouteModel[] {
+	const drawn = new Set(instances.map(instance => instance.instanceId));
+	const routes = new Map<string, TrafficRouteModel>();
+	for (const instance of instances) {
+		for (const platform of instance.platforms || []) {
+			const targetInstanceId = platform?.hasSpaceHub ? headingInstanceId(platform.currentTarget) : null;
+			if (targetInstanceId === null || targetInstanceId === instance.instanceId || !drawn.has(targetInstanceId)) {
 				continue;
 			}
-			out.push({
-				from: { instanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName },
-				to: { instanceId: target.targetInstanceId, gatewayName: target.targetGateway || parsed.gatewayName },
-			});
+			const key = `${instance.instanceId}>${targetInstanceId}`;
+			let route = routes.get(key);
+			if (!route) {
+				route = { sourceInstanceId: instance.instanceId, targetInstanceId, platforms: [] };
+				routes.set(key, route);
+			}
+			route.platforms.push({ platformIndex: platform.platformIndex, platformName: platform.platformName });
 		}
 	}
-	return out;
+	return [...routes.values()].sort((a, b) =>
+		a.sourceInstanceId - b.sourceInstanceId || a.targetInstanceId - b.targetInstanceId);
 }
 
-export function buildEdges(edits: GatewayEdits): GatewayEdgeModel[] {
-	const byPair = new Map<string, GatewayEdgeModel>();
-	for (const link of directedLinks(edits)) {
-		const { low, high, flipped } = orient(link.from, link.to);
-		const id = edgeId(low, high);
-		let edge = byPair.get(id);
-		if (!edge) {
-			edge = {
-				id,
-				source: instanceNodeId(low.instanceId),
-				sourceHandle: sourceHandleId(low.gatewayName),
-				target: instanceNodeId(high.instanceId),
-				targetHandle: targetHandleId(high.gatewayName),
-				sourceInstanceId: low.instanceId,
-				sourceGateway: low.gatewayName,
-				targetInstanceId: high.instanceId,
-				targetGateway: high.gatewayName,
-				forward: false,
-				reverse: false,
-			};
-			byPair.set(id, edge);
-		}
-		if (flipped) {
-			edge.reverse = true;
-		} else {
-			edge.forward = true;
-		}
-	}
-	return [...byPair.values()].sort((a, b) => a.id.localeCompare(b.id));
-}
-
-
-export type GatewayUsage = { outgoing: number; incoming: number };
-
-export function gatewayUsage(edits: GatewayEdits): Map<number, Map<string, GatewayUsage>> {
-	const usage = new Map<number, Map<string, GatewayUsage>>();
-	const bump = (instanceId: number, gatewayName: string, field: keyof GatewayUsage) => {
-		let perInstance = usage.get(instanceId);
-		if (!perInstance) {
-			perInstance = new Map();
-			usage.set(instanceId, perInstance);
-		}
-		const entry = perInstance.get(gatewayName) || { outgoing: 0, incoming: 0 };
-		entry[field] += 1;
-		perInstance.set(gatewayName, entry);
-	};
-	for (const link of directedLinks(edits)) {
-		bump(link.from.instanceId, link.from.gatewayName, "outgoing");
-		bump(link.to.instanceId, link.to.gatewayName, "incoming");
-	}
-	return usage;
-}
-
-
-export type ConnectRequest = {
+export interface TrafficPair<S> {
+	key: string;
 	sourceInstanceId: number;
-	sourceGateway: string;
 	targetInstanceId: number;
-	targetGateway: string;
-};
-
-function withTarget(targets: GatewayLink[], add: GatewayLink): GatewayLink[] {
-	const exists = targets.some(t => t.targetInstanceId === add.targetInstanceId && t.targetGateway === add.targetGateway);
-	return exists ? targets : [...targets, add];
+	forward: boolean;
+	reverse: boolean;
+	routes: TrafficRouteModel[];
+	ships: S[];
 }
 
-function withoutTarget(targets: GatewayLink[], drop: GatewayLink): GatewayLink[] {
-	return targets.filter(t => !(t.targetInstanceId === drop.targetInstanceId && t.targetGateway === drop.targetGateway));
-}
-
-export function applyConnect(edits: GatewayEdits, request: ConnectRequest): GatewayEdits {
-	const { sourceInstanceId, sourceGateway, targetInstanceId, targetGateway } = request;
-	if (sourceInstanceId === targetInstanceId) {
-		return edits;
-	}
-	if (!sourceGateway || !targetGateway) {
-		return edits;
-	}
-	const forwardKey = editKey(sourceInstanceId, sourceGateway);
-	const reverseKey = editKey(targetInstanceId, targetGateway);
-	return {
-		...edits,
-		[forwardKey]: withTarget(edits[forwardKey] || [], { targetInstanceId, targetGateway }),
-		[reverseKey]: withTarget(edits[reverseKey] || [], {
-			targetInstanceId: sourceInstanceId,
-			targetGateway: sourceGateway,
-		}),
-	};
-}
-
-export function applyDisconnect(edits: GatewayEdits, request: ConnectRequest): GatewayEdits {
-	const { sourceInstanceId, sourceGateway, targetInstanceId, targetGateway } = request;
-	const forwardKey = editKey(sourceInstanceId, sourceGateway);
-	const reverseKey = editKey(targetInstanceId, targetGateway);
-	return {
-		...edits,
-		[forwardKey]: withoutTarget(edits[forwardKey] || [], { targetInstanceId, targetGateway }),
-		[reverseKey]: withoutTarget(edits[reverseKey] || [], {
-			targetInstanceId: sourceInstanceId,
-			targetGateway: sourceGateway,
-		}),
-	};
-}
-
-export function editsFromLinks(links: RawGatewayLinkRow[] | null | undefined): GatewayEdits {
-	const edits: GatewayEdits = {};
-	for (const row of links || []) {
-		if (!row || !Number.isFinite(row.sourceInstanceId) || !row.gatewayName) {
-			continue;
+export function groupTraffic<S extends { sourceInstanceId: number; targetInstanceId: number }>(
+	routes: readonly TrafficRouteModel[],
+	ships: readonly S[],
+	drawnInstanceIds: ReadonlySet<number>,
+): TrafficPair<S>[] {
+	const pairs = new Map<string, TrafficPair<S>>();
+	const pairFor = (sourceInstanceId: number, targetInstanceId: number) => {
+		if (sourceInstanceId === targetInstanceId
+			|| !drawnInstanceIds.has(sourceInstanceId) || !drawnInstanceIds.has(targetInstanceId)) {
+			return null;
 		}
-		edits[editKey(row.sourceInstanceId, row.gatewayName)] = (row.targets || []).map(t => ({
-			targetInstanceId: t.targetInstanceId,
-			targetGateway: t.targetGateway || row.gatewayName,
-		}));
-	}
-	return edits;
-}
-
-function sameTargets(a: GatewayLink[], b: GatewayLink[]): boolean {
-	if (a.length !== b.length) {
-		return false;
-	}
-	const encode = (list: GatewayLink[]) => list.map(t => `${t.targetInstanceId}/${t.targetGateway}`).sort();
-	const left = encode(a);
-	const right = encode(b);
-	return left.every((value, index) => value === right[index]);
-}
-
-export function dirtyKeys(edits: GatewayEdits, baseline: GatewayEdits): string[] {
-	const keys = new Set([...Object.keys(edits), ...Object.keys(baseline)]);
-	const dirty: string[] = [];
-	for (const key of keys) {
-		if (!sameTargets(edits[key] || [], baseline[key] || [])) {
-			dirty.push(key);
+		const key = sourceInstanceId <= targetInstanceId
+			? `${sourceInstanceId}|${targetInstanceId}` : `${targetInstanceId}|${sourceInstanceId}`;
+		let pair = pairs.get(key);
+		if (!pair) {
+			pair = { key, sourceInstanceId, targetInstanceId, forward: false, reverse: false, routes: [], ships: [] };
+			pairs.set(key, pair);
 		}
+		if (sourceInstanceId === pair.sourceInstanceId) {
+			pair.forward = true;
+		} else {
+			pair.reverse = true;
+		}
+		return pair;
+	};
+	for (const route of routes) {
+		pairFor(route.sourceInstanceId, route.targetInstanceId)?.routes.push(route);
 	}
-	return dirty.sort();
+	for (const ship of ships) {
+		pairFor(ship.sourceInstanceId, ship.targetInstanceId)?.ships.push(ship);
+	}
+	return [...pairs.values()];
 }
 
 
@@ -335,11 +218,10 @@ function isOnline(instance: InstanceLike): boolean {
 
 export function buildGraph(
 	tree: TreeLike | null | undefined,
-	edits: GatewayEdits,
 	hostFilter: string = ALL_HOSTS,
 ): {
 	nodes: GraphNodeModel[];
-	edges: GatewayEdgeModel[];
+	routes: TrafficRouteModel[];
 	hosts: GraphHostModel[];
 } {
 	const columns: Array<{ key: string; name: string; connected: boolean; instances: InstanceLike[] }> = [];
@@ -367,7 +249,6 @@ export function buildGraph(
 	}));
 	const filtering = hostFilter !== ALL_HOSTS && hosts.some(host => host.key === hostFilter);
 
-	const usage = gatewayUsage(edits);
 	const nodes: GraphNodeModel[] = [];
 	const columnWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH);
 	const columnPitch = columnWidth + COLUMN_GAP;
@@ -375,10 +256,6 @@ export function buildGraph(
 
 	columns.forEach((column, columnIndex) => {
 		column.instances.forEach((instance, index) => {
-			const perGateway: Record<string, GatewayUsage> = {};
-			for (const gatewayName of ONE_GATE_NAMES) {
-				perGateway[gatewayName] = usage.get(instance.instanceId)?.get(gatewayName) || { outgoing: 0, incoming: 0 };
-			}
 			const dimmed = filtering && column.key !== hostFilter;
 			const platforms = (instance.platforms || [])
 				.filter(platform => platform && platform.hasSpaceHub)
@@ -405,13 +282,16 @@ export function buildGraph(
 					hostKey: column.key,
 					hostName: column.name,
 					platforms,
-					gateways: perGateway,
+					defaultPlanet: instance.defaultPlanet || "nauvis",
+					disabledPlanets: instance.disabledPlanets || [],
+					destination: instance.destination ?? null,
 				},
 			});
 		});
 	});
 
-	return { nodes, edges: buildEdges(edits), hosts };
+	const instances = columns.flatMap(column => column.instances);
+	return { nodes, routes: buildTrafficRoutes(instances), hosts };
 }
 
 export type PositionedNode = {

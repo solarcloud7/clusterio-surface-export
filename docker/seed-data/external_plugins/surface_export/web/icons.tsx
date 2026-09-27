@@ -119,6 +119,14 @@ export const ItemIcon = (props: IconProps) => <ProtoIcon preferTypes={["item"]} 
 export const FluidIcon = (props: IconProps) => <ProtoIcon preferTypes={["fluid"]} {...props} />;
 export const EntityIcon = (props: IconProps) => <ProtoIcon {...props} />;
 
+export function usePlanetNames(): string[] {
+	const { metadata } = useProtoLookup();
+	return React.useMemo(
+		() => selectPlanetNames([...(metadata?.values() ?? [])].map(typeMap => typeMap.values())),
+		[metadata],
+	);
+}
+
 export function usePlanetOptions() {
 	const { metadata } = useProtoLookup();
 	const navigable = useNavigableLocationNames();

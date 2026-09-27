@@ -6,7 +6,7 @@ import type { EdgeProps, Position } from "@xyflow/react";
 import { NODE_DIAMETER } from "./gateway-graph";
 import { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeFootprint } from "../../shared/edge-geometry";
 import type { NodeCircle } from "../../shared/edge-geometry";
-import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
+import { DEFAULT_EDGE_COLOUR } from "./gateway-colours";
 import { DEFAULT_EDGE_SHAPE } from "./layout-store";
 import type { EdgeShape } from "./layout-store";
 import type { ShipTransfer } from "./transfer-motion";
@@ -42,18 +42,20 @@ export default function FloatingEdge({
 		targetPosition: endpointSide(targetCircle, sourceCircle) as Position,
 	};
 	const shape = (data as { shape?: EdgeShape } | undefined)?.shape ?? DEFAULT_EDGE_SHAPE;
-	const [path] = shape === "straight" ? getStraightPath({ sourceX, sourceY, targetX, targetY })
+	const [path, labelX, labelY] = shape === "straight" ? getStraightPath({ sourceX, sourceY, targetX, targetY })
 		: shape === "step" ? getSmoothStepPath({ ...geometry, borderRadius: 0 })
 			: shape === "smoothstep" ? getSmoothStepPath(geometry)
 				: getBezierPath(geometry);
 
 	const edgeData = data as {
-		sourceGateway?: string;
+		colour?: string;
+		headings?: Array<{ text: string; title: string; colour: string }>;
 		transfers?: ShipTransfer[];
 		sourceInstanceId?: number;
 	} | undefined;
-	const colour = gatewayColour(edgeData?.sourceGateway) || DEFAULT_EDGE_COLOUR;
+	const colour = edgeData?.colour || DEFAULT_EDGE_COLOUR;
 	const anchorInstanceId = edgeData?.sourceInstanceId;
+	const headings = edgeData?.headings || [];
 
 	return (
 		<>
@@ -71,9 +73,18 @@ export default function FloatingEdge({
 			}}
 			className="surface-export-edge"
 		/>
-		{}
 		<EdgeLabelRenderer>
 			<EdgeTransfers path={path} ships={edgeData?.transfers || []} anchorInstanceId={anchorInstanceId} />
+			{headings.length ? (
+				<div
+					className="surface-export-edge-heading nodrag nopan"
+					style={{ transform: `translate(-50%, -135%) translate(${labelX}px, ${labelY}px)` }}
+				>
+					{headings.map(heading => (
+						<span key={heading.text} title={heading.title} style={{ color: heading.colour }}>{heading.text}</span>
+					))}
+				</div>
+			) : null}
 		</EdgeLabelRenderer>
 		</>
 	);
