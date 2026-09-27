@@ -53,13 +53,13 @@ local hub = {
 	distance = 0,
 	orientation = 0.245,
 	magnitude = 4,
-	label_orientation = 0.15,
+	label_orientation = 0,
 }
 locations[#locations + 1] = hub
 
 local INSTANCE_PREFIX = "surfexp_gateway_i_"
 local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 6.5
+local INSTANCE_RING_DISTANCE = 3.5
 
 local function parse_instances(value)
 	local entries, seen = {}, {}
@@ -107,9 +107,9 @@ for i, instance in ipairs(instances) do
 		gravity_pull = -10,
 		origin = hub_position,
 		distance = INSTANCE_RING_DISTANCE,
-		orientation = (hub.orientation + (i - 1) / #instances) % 1,
+		orientation = (i - 0.5) / #instances,
 		magnitude = 0.5,
-		label_orientation = (hub.orientation + (i - 1) / #instances) % 1,
+		label_orientation = (i - 0.5) / #instances,
 	}
 	connections[#connections + 1] = {
 		type = "space-connection",
@@ -119,6 +119,7 @@ for i, instance in ipairs(instances) do
 		to = name,
 		order = "z[surfexp-gateway]-i-" .. string.format("%03d", i),
 		length = INSTANCE_ROUTE_LENGTH,
+		shape = "line",
 	}
 end
 
