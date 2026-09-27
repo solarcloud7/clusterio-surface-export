@@ -18,15 +18,29 @@ export function workflowLockSource() {
 		commit: gitValue(["rev-parse", "--short=12", "HEAD"]), startedAt: new Date().toISOString() };
 }
 
-export function acquireWorkflowLock(path = workflowLockPath) {
+export function processExists(pid) {
+	if (!Number.isInteger(pid) || pid <= 0) return true;
+	try { process.kill(pid, 0); return true; } catch (error) { return error.code !== "ESRCH"; }
+}
+
+function readOwner(path) {
+	try { return JSON.parse(readFileSync(path, "utf8")); } catch (error) {
+		if (error.code === "ENOENT") return undefined;
+		throw new Error(`Cannot read workflow lock ${path}: ${error.message}`);
+	}
+}
+
+export function acquireWorkflowLock(path = workflowLockPath, { exists = processExists, log = message => console.warn(message) } = {}) {
 	mkdirSync(dirname(path), { recursive: true });
 	const previous = process.env.SE_WORKFLOW_TOKEN;
 	const source = workflowLockSource();
-	let owner;
-	try { owner = JSON.parse(readFileSync(path, "utf8")); } catch (error) {
-		if (error.code !== "ENOENT") throw new Error(`Cannot read workflow lock ${path}: ${error.message}`);
-	}
+	let owner = readOwner(path);
 	if (previous && owner?.token === previous) return () => {};
+	if (owner?.token && !exists(owner.pid) && readOwner(path)?.token === owner.token) {
+		unlinkSync(path);
+		log(`Reclaimed a stale workflow lock: PID ${owner.pid} (branch ${owner.branch} at ${owner.commit}, started ${owner.startedAt}) is no longer running.`);
+		owner = undefined;
+	}
 	let fd;
 	try { fd = openSync(path, "wx"); } catch (error) {
 		if (error.code !== "EEXIST") throw error;

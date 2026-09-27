@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { withWorkflowLock } from "../../tools/shared/workflow-lock.mjs";
+import { withWorkflowLock, acquireWorkflowLock } from "../../tools/shared/workflow-lock.mjs";
 import { assertControllerBundle } from "../../tools/surface-export/canvas-bundle.mjs";
 import { waitForRuntime, compareWorlds, INSTANCE_ROLES } from "../../tools/tests/cluster-readiness.mjs";
 
@@ -147,4 +147,42 @@ test("preservation check catches lost platforms and relocated players, but ignor
 	after[INSTANCE_ROLES[0].instance].platforms = [];
 	after[INSTANCE_ROLES[1].instance].playerStates = ["engineer:nauvis:99:2:1"];
 	assert.equal(compareWorlds(before, after).length, 2);
+});
+
+test("a lock whose recorded process is gone is reclaimed; a live owner still refuses", async t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-stale-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	const stale = { pid: 999999, token: "stale-token", branch: "old", commit: "abc", startedAt: "2026-01-01T00:00:00.000Z" };
+	writeFileSync(path, JSON.stringify(stale));
+	const warnings = [];
+	const release = acquireWorkflowLock(path, { exists: pid => pid !== 999999, log: message => warnings.push(message) });
+	assert.notEqual(JSON.parse(readFileSync(path, "utf8")).token, "stale-token");
+	assert.match(warnings.join(""), /Reclaimed a stale workflow lock: PID 999999/);
+	release();
+	writeFileSync(path, JSON.stringify({ ...stale, pid: process.pid }));
+	assert.throws(() => acquireWorkflowLock(path, { exists: () => true }), /already owns/);
+	assert.equal(JSON.parse(readFileSync(path, "utf8")).token, "stale-token", "a live owner's lock is left in place");
+});
+
+test("PowerShell reclaims a lock left by a process that no longer exists", {
+	skip: spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0,
+}, async t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-stale-ps-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	const gone = spawnSync(process.execPath, ["-e", "console.log(process.pid)"], { encoding: "utf8" });
+	const pid = Number(gone.stdout.trim());
+	const env = { ...process.env, SE_WORKFLOW_TOKEN: "", LOCK_FIXTURE: path,
+		LOCK_HELPER: fileURLToPath(new URL("../../tools/shared/workflow-lock.ps1", import.meta.url)) };
+	const command = '. $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { "ran" }';
+	writeFileSync(path, JSON.stringify({ pid, token: "stale-token", branch: "old", commit: "abc", startedAt: new Date().toISOString() }));
+	const reclaimed = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8", env });
+	assert.equal(reclaimed.status, 0, reclaimed.stderr);
+	assert.match(reclaimed.stdout, /ran/);
+	assert.equal(existsSync(path), false);
+	writeFileSync(path, JSON.stringify({ pid: process.pid, token: "live-token", branch: "b", commit: "c", startedAt: new Date(Date.now() + 60_000).toISOString() }));
+	const blocked = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8", env });
+	assert.notEqual(blocked.status, 0);
+	assert.match(blocked.stderr, /already owns/);
 });

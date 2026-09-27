@@ -195,8 +195,7 @@ async function cmdMutation() {
 			fail("usage: mutation --lua --cases <file.json>\n"
 				+ "       mutation --lua --file <module .lua path> --find <exact string> --replace <string> --test <tests/...lua> [--test ...] [--name <label>]");
 		}
-		let report;
-		try { report = luaMutationRun(input); } catch (error) { fail(error.message, 1); }
+		const report = luaMutationRun(input);
 		const { killed, survived, invalid, notApplied } = report.summary;
 		console.log(`${killed} killed, ${survived} survived, ${invalid} invalid, ${notApplied} not applied`);
 		process.exit(report.summary.ok ? 0 : 1);
