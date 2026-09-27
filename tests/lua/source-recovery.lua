@@ -352,7 +352,7 @@ gui_env.require=function(name)
     if name:find("passenger-transit",1,true) then return {park=function() return {} end,assign_job=function() end,return_parked=function() end} end
     if name:find("transfer-trigger",1,true) then return {start=function() started=started+1;return true end} end
     if name:find("surface-lock",1,true) then return {is_locked=function() return false end} end
-    return {parked_at_gateway=function() return "gateway" end,collect_passengers=function() return {},0 end}
+    return {parked_at_gateway=function() return "gateway" end,collect_passengers=function() return {},0 end,is_portal=function() return false end}
 end
 local gui=assert(loadfile(root.."interfaces/gui/gateway-transfer.lua","t",gui_env))()
 local selection={platform_index=3,platform_uid="copy-a",force_name="player",gateway_name="gateway",selected=1,

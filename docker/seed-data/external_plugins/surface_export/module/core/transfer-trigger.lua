@@ -5,7 +5,7 @@ local clusterio_api = require("modules/clusterio/api")
 
 local TransferTrigger = {}
 
-function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_target)
+function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_target, route_portal)
 	if not clusterio_api then
 		return nil, "Clusterio API not available"
 	end
@@ -41,7 +41,7 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	end
 
 	local observed_lock = SurfaceLock.get_lock_data(platform.index)
-	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id, gateway_target)
+	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id, gateway_target, nil, nil, nil, route_portal)
 	if not job_id then
 		SurfaceLock.unlock_current_lock(platform.index, observed_lock)
 		return nil, "Export failed: " .. tostring(export_err or "unknown")

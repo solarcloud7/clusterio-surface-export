@@ -69,7 +69,7 @@ local function scenario(side, fault)
         local rejected, reason = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "stale-copy")
         assert(not rejected and reason:find("identity",1,true) and #calls==0,
             "stale selection reached source preparation")
-        id, err = pipeline.queue(3, "player", "test", 2, nil, nil, nil, "fixture:3")
+        id, err = pipeline.queue(3, "player", "test", 2, "surfexp_gateway_hub", nil, nil, "fixture:3", "surfexp_gateway_2")
     else id, err = pipeline.queue({_transferId = "operation", platform = {schedule = schedule},
         verification = {item_counts = {}, fluid_counts = {}}, entities = {}}, "destination", "player", "test") end
     if fault then
@@ -79,6 +79,11 @@ local function scenario(side, fault)
         assert(deleted == (side == "import" and fault ~= "platform_creation"))
     else
         assert(id and env.storage.async_jobs[id])
+        if side == "export" then
+            local exported = env.storage.async_jobs[id].export_data.platform
+            assert(exported.gateway_target == "surfexp_gateway_hub" and exported.route_portal == "surfexp_gateway_2",
+                "the transfer payload carries the Gateway it arrives at and the portal it reached")
+        end
         if side == "import" then
             assert(env.storage.async_jobs[id].target_platform.hidden == true, "queued destination exposed")
             assert(env.storage.async_jobs[id].preparation_visibility.platform_hidden == false)

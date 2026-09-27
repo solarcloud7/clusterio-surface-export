@@ -279,11 +279,20 @@ function Gateway.reached_portal(platform)
 	return location.name
 end
 
-function Gateway.advance_past_arrival(schedule_payload)
+function Gateway.advance_past_arrival(schedule_payload, route_portal)
 	local records = schedule_payload.records or {}
 	local current = schedule_payload.current
 	local reached = type(current) == "number" and records[current]
-	if not (type(reached) == "table" and Gateway.is_own_portal(reached.station)) or #records < 2 then
+	if type(reached) ~= "table" or #records < 2 then
+		return nil
+	end
+	local arrived
+	if route_portal ~= nil then
+		arrived = reached.station == route_portal
+	else
+		arrived = Gateway.is_own_portal(reached.station)
+	end
+	if not arrived then
 		return nil
 	end
 	return {
@@ -297,6 +306,42 @@ end
 function Gateway.can_resume(schedule_payload)
 	local record = schedule_payload and (schedule_payload.records or {})[schedule_payload.current]
 	return type(record) == "table" and type(record.station) == "string" and not Gateway.is_own_portal(record.station)
+end
+
+function Gateway.arrival_park(requested_park, gateway_target)
+	if gateway_target and not Gateway.is_gateway(gateway_target) then
+		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance", tostring(gateway_target)))
+		gateway_target = nil
+	end
+	local park_target = requested_park or gateway_target
+	if park_target and Gateway.is_portal(park_target) then
+		log(string.format("[Gateway] park target '%s' is a coloured portal; arriving at '%s' instead", park_target, Gateway.HUB))
+		park_target = Gateway.is_gateway(Gateway.HUB) and Gateway.HUB or nil
+	end
+	return park_target
+end
+
+function Gateway.route_schedule(park_target, schedule_payload, route_portal)
+	if not (park_target and Gateway.is_gateway(park_target) and schedule_payload) then
+		return schedule_payload, false
+	end
+	if route_portal ~= nil and not Gateway.is_portal(route_portal) then
+		log(string.format("[Gateway] Ignoring route_portal '%s' — not a coloured portal on this instance", tostring(route_portal)))
+		route_portal = nil
+	end
+	local advanced = Gateway.advance_past_arrival(schedule_payload, route_portal)
+	if advanced then
+		return advanced, true
+	end
+	local stripped = Gateway.strip_gateway_records(schedule_payload)
+	if not stripped then
+		log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it", park_target))
+		return schedule_payload, false
+	end
+	log(string.format("[Gateway] Gateway transfer to '%s' — not a route arrival (route portal %s, own portal %s); stripping gateway hops (records %d -> %d)",
+		park_target, tostring(route_portal or "none"), tostring(Gateway.own_portal() or "none configured"),
+		#(schedule_payload.records or {}), #stripped.records))
+	return stripped, false
 end
 
 function Gateway.strip_gateway_records(schedule_payload)

@@ -117,15 +117,6 @@
 		]
 	},
 	{
-		"name": "route arrival only at own portal",
-		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
-		"find": "Gateway.is_own_portal(reached.station)) or #records < 2",
-		"replace": "Gateway.is_portal(reached.station)) or #records < 2",
-		"tests": [
-			"tests/lua/gateway-route.lua"
-		]
-	},
-	{
 		"name": "records kept on advance",
 		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
 		"find": "\t\trecords = records,\n",
@@ -312,6 +303,177 @@
 		"replace": "\tif false then\n",
 		"tests": [
 			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "route arrival follows the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\t\tarrived = reached.station == route_portal\n",
+		"replace": "\t\tarrived = Gateway.is_own_portal(reached.station)\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "reached portal must be the current stop",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\t\tarrived = reached.station == route_portal\n",
+		"replace": "\t\tarrived = true\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "own-colour fallback without a reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\telse\n\t\tarrived = Gateway.is_own_portal(reached.station)\n",
+		"replace": "\telse\n\t\tarrived = false\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "reached portal must be a portal here",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if route_portal ~= nil and not Gateway.is_portal(route_portal) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "portal park arrives at the Gateway",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if park_target and Gateway.is_portal(park_target) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "gateway target must be a gateway here",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if gateway_target and not Gateway.is_gateway(gateway_target) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "route schedule needs a gateway park",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if not (park_target and Gateway.is_gateway(park_target) and schedule_payload) then",
+		"replace": "if not schedule_payload then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "non-arrivals strip gateway hops",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\treturn stripped, false\n",
+		"replace": "\treturn schedule_payload, false\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "import passes the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua",
+		"find": "Gateway.route_schedule(park_target, imported_schedule, platform_meta.route_portal)",
+		"replace": "Gateway.route_schedule(park_target, imported_schedule)",
+		"tests": [
+			"tests/lua/import-setup-cleanup.lua"
+		]
+	},
+	{
+		"name": "import parks through arrival_park",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua",
+		"find": "local park_target = Gateway.arrival_park(requested_park, platform_meta.gateway_target)",
+		"replace": "local park_target = requested_park",
+		"tests": [
+			"tests/lua/import-setup-cleanup.lua"
+		]
+	},
+	{
+		"name": "import job records resume",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua",
+		"find": "\t\t\tresume_route = resume_route,\n",
+		"replace": "\t\t\tresume_route = false,\n",
+		"tests": [
+			"tests/lua/import-setup-cleanup.lua"
+		]
+	},
+	{
+		"name": "import job records route hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua",
+		"find": "\t\t\troute_hold = route_arrival and not resume_route,\n",
+		"replace": "\t\t\troute_hold = false,\n",
+		"tests": [
+			"tests/lua/import-setup-cleanup.lua"
+		]
+	},
+	{
+		"name": "completion hands resume to the hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua",
+		"find": "if job.resume_route then hold_or_error.resume_route = true end",
+		"replace": "",
+		"tests": [
+			"tests/lua/import-phase-yields.lua"
+		]
+	},
+	{
+		"name": "completion hands route hold to the hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua",
+		"find": "if job.route_hold then hold_or_error.route_hold = true end",
+		"replace": "",
+		"tests": [
+			"tests/lua/import-phase-yields.lua"
+		]
+	},
+	{
+		"name": "standalone imports never continue a route",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua",
+		"find": "if job.park_target and job.platform_data._standaloneImport ~= true then",
+		"replace": "if job.park_target then",
+		"tests": [
+			"tests/lua/import-phase-yields.lua"
+		]
+	},
+	{
+		"name": "export carries the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "\t\t\t\troute_portal = route_portal,\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/preparation-timing.lua"
+		]
+	},
+	{
+		"name": "scheduler passes the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua",
+		"find": "clone_dest_name, operation_id, expected_uid, route_portal)\nend",
+		"replace": "clone_dest_name, operation_id, expected_uid)\nend",
+		"tests": [
+			"tests/lua/import-setup-cleanup.lua"
+		]
+	},
+	{
+		"name": "trigger passes the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/transfer-trigger.lua",
+		"find": "gateway_target, nil, nil, nil, route_portal)",
+		"replace": "gateway_target)",
+		"tests": [
+			"tests/lua/gateway-dialog.lua"
+		]
+	},
+	{
+		"name": "portal transfers carry the reached portal",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/gui/gateway-transfer.lua",
+		"find": "local route_portal = Gateway.is_portal(gateway_name) and gateway_name or nil",
+		"replace": "local route_portal = nil",
+		"tests": [
+			"tests/lua/gateway-dialog.lua"
 		]
 	}
 ]

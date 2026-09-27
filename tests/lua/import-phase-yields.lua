@@ -62,7 +62,8 @@ local function scenario(options)
         mark("hold")
         if options.holdFailure then return false, "injected hold failure" end
         platform.paused = true
-        return true
+        options.stagedHold = {}
+        return true, options.stagedHold
     end}
     cache["core/deserializer"] = {
         create_entity = function() mark("beacon"); return {valid = true, type = "beacon"} end,
@@ -161,6 +162,11 @@ local function scenario(options)
         job.entity_map[1].unit_number, job.entity_map[1].active = 1, true
     end
     if not options.standalone then job.transfer_id = "transfer" end
+    if options.route then
+        job.park_target = "surfexp_gateway_hub"
+        job.target_platform.space_location = {name = "surfexp_gateway_hub"}
+        job.resume_route, job.route_hold = options.route == "resume", options.route == "hold"
+    end
     if options.identity then
         job.force_name = "player"
         job.target_surface.index = 8
@@ -328,10 +334,22 @@ local function scenario(options)
         end
     end
     if not options.standalone then assert(spans.exact_verification.startTick == spans.fluids.endTick) end
+    if options.route then
+        local hold = options.stagedHold
+        if options.snapshot then
+            assert(hold and not hold.resume_route and not hold.route_hold, "a standalone snapshot never continues a route")
+        else
+            assert(hold and (hold.resume_route == true) == (options.route == "resume") and (hold.route_hold == true) == (options.route == "hold"),
+                "the import job's route decision reaches the destination hold that go_live acts on")
+        end
+    end
     print("PASS " .. options.label .. ": phase yields, persisted progress and final callback boundaries")
 end
 
 scenario({label = "transfer"})
+scenario({label = "route arrival that resumes", route = "resume"})
+scenario({label = "route arrival that holds", route = "hold"})
+scenario({label = "route flags on a standalone snapshot", route = "resume", snapshot = true})
 scenario({label = "bounded beacon and inventory passes", largeInventory = true, smallBatches = true})
 scenario({label = "standalone", standalone = true})
 scenario({label = "retained import identity", standalone = true, identity = true})

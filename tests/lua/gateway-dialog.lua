@@ -67,8 +67,8 @@ env.require = function(name)
 			end}
 	end
 	if name:find("transfer-trigger", 1, true) then
-		return {start = function(_, index, instance, gateway)
-			started[#started + 1] = {index, instance, gateway, parked_before = #passenger_calls}
+		return {start = function(_, index, instance, gateway, route_portal)
+			started[#started + 1] = {index, instance, gateway, parked_before = #passenger_calls, route_portal = route_portal}
 			if start_error == "throw" then
 				lock_state = {kind = "transfer"}
 				error("injected start exception")
@@ -99,6 +99,7 @@ env.require = function(name)
 		get_gateway_config = function() return {targets = gateway_targets} end,
 		parked_at_gateway = function() return parked end,
 		location_label = function(name) return name == "surfexp_gateway_1" and "Blue Gateway → Two" or name end,
+		is_portal = function(name) return name == "surfexp_gateway_1" end,
 		collect_passengers = function() return {player}, 0 end,
 	}
 end
@@ -149,6 +150,7 @@ frame = player.gui.screen[FRAME]
 assert(named(frame, "surfexp_gw_target_1").state == true and env.storage.surface_export_gateway_dialogs[1].chosen)
 dialog.on_gui_click{player_index = 1, element = named(frame, "surfexp_gw_transfer")}
 assert(#started == 1 and started[1][1] == 7 and started[1][2] == 2 and not player.gui.screen[FRAME], "Transfer should start the chosen destination and close")
+assert(started[1].route_portal == nil, "a transfer from the Gateway carries no reached portal")
 assert(started[1].parked_before == 1 and passenger_calls[1][1] == "park" and passenger_calls[1][3] == 2 and passenger_calls[1][5] == 1,
 	"passengers should be parked before the transfer starts")
 assert(passenger_calls[2][1] == "assign" and passenger_calls[2][2] == 1 and passenger_calls[2][3] == "job-1",
@@ -227,3 +229,32 @@ assert(not threw and passenger_calls[1][1] == "park" and passenger_calls[2] and 
 assert(released_locks == 1 and lock_state == nil, "the lock taken by a start that raised should be released")
 start_error = nil
 print("PASS a transfer start that raises returns the parked passengers and releases its lock")
+
+parked, gateway_targets = "surfexp_gateway_1", {{instanceId = 2, instanceName = "Two", targetGateway = "surfexp_gateway_hub", online = true}}
+if player.gui.screen[FRAME] then dialog.close(player) end
+assert(dialog.open(player, platform, "surfexp_gateway_1"))
+dialog.on_gui_click{player_index = 1, element = named(player.gui.screen[FRAME], "surfexp_gw_transfer")}
+assert(started[#started][3] == "surfexp_gateway_hub" and started[#started].route_portal == "surfexp_gateway_1",
+	"a transfer from a coloured portal arrives at the Gateway and carries the portal it reached")
+print("PASS a portal transfer carries the reached portal so the destination can continue the route")
+
+local queued
+local trigger_env = setmetatable({game = {tick = 5}, log = function() end}, {__index = _G})
+trigger_env.require = function(name)
+	if name:find("async-processor", 1, true) then
+		return {queue_export = function(...) queued = table.pack(...); return "job-route" end}
+	end
+	if name:find("surface-lock", 1, true) then
+		return {is_locked = function() return false end, lock_platform = function() return true end,
+			get_lock_data = function() return {} end, DEFAULT_TRANSFER_LOCK_TTL_TICKS = 1}
+	end
+	if name:find("core/gateway", 1, true) then return {collect_passengers = function() return {}, 0 end} end
+	return {send_json = function() end}
+end
+local Trigger = assert(loadfile(root .. "core/transfer-trigger.lua", "t", trigger_env))()
+local trigger_force = {name = "player", platforms = {[7] = {valid = true, index = 7, name = "Ship"}}}
+assert(Trigger.start(trigger_force, 7, 22, "surfexp_gateway_hub", "surfexp_gateway_1") == "job-route")
+assert(queued[4] == 22 and queued[5] == "surfexp_gateway_hub" and queued[9] == "surfexp_gateway_1",
+	"the transfer trigger hands the reached portal to the export")
+assert(Trigger.start(trigger_force, 7, 22, "surfexp_gateway_hub") == "job-route" and queued[9] == nil)
+print("PASS the transfer trigger carries the reached portal into the export")

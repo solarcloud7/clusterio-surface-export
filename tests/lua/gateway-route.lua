@@ -151,10 +151,49 @@ assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gat
 	"a lone portal stop keeps the legacy park")
 assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_hub", "nauvis")}) == nil,
 	"a manual hub transfer keeps the legacy strip")
-env.storage.surface_export_config = nil
-assert(Gateway.own_portal() == nil and Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_3", "nauvis")}) == nil,
-	"before its first config a server has no own portal")
 print("PASS the destination advances past its own portal, keeps every record and holds before its own portal")
+
+env.storage.surface_export_config = nil
+assert(Gateway.own_portal() == nil, "before its first config a server does not know its own portal")
+local unconfigured = {current = 1, records = records("surfexp_gateway_3", "nauvis", "surfexp_gateway_1", "vulcanus"),
+	interrupts = {{name = "refuel"}}, group = "loop"}
+advanced = Gateway.advance_past_arrival(unconfigured, "surfexp_gateway_3")
+assert(advanced and advanced.current == 2 and #advanced.records == 4 and advanced.records[1].station == "surfexp_gateway_3",
+	"the portal the platform reached decides the arrival, with or without config, and every stop is kept")
+assert(advanced.interrupts[1].name == "refuel" and advanced.group == "loop")
+assert(Gateway.advance_past_arrival(unconfigured) == nil, "without the reached portal and without config nothing advances")
+assert(Gateway.advance_past_arrival(unconfigured, "surfexp_gateway_1") == nil, "a different reached portal is not this stop")
+configure(true)
+assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_1", "nauvis")}, "surfexp_gateway_1").current == 2,
+	"the reached portal wins over the own-colour config")
+assert(Gateway.advance_past_arrival({current = 1, records = records("surfexp_gateway_3", "nauvis")}, "surfexp_gateway_1") == nil,
+	"a reached portal that is not the current stop is not an arrival, even at this server's own colour")
+print("PASS the reached portal carried by the transfer decides the arrival without depending on config")
+
+env.storage.surface_export_config = nil
+local route_loop = function() return {current = 1, records = records("surfexp_gateway_3", "nauvis", "surfexp_gateway_1"), interrupts = {}} end
+local routed, arrival = Gateway.route_schedule("surfexp_gateway_hub", route_loop(), "surfexp_gateway_3")
+assert(arrival == true and routed.current == 2 and #routed.records == 3, "a portal arrival keeps the loop")
+routed, arrival = Gateway.route_schedule("surfexp_gateway_hub", route_loop())
+assert(arrival == false and #routed.records == 1 and routed.records[1].station == "nauvis",
+	"a manual or older transfer without a reached portal keeps the legacy strip")
+routed, arrival = Gateway.route_schedule("surfexp_gateway_hub", {current = 1, records = records("vulcanus", "surfexp_gateway_3", "nauvis")}, "vulcanus")
+assert(arrival == false and #routed.records == 2 and routed.records[1].station == "vulcanus", "a reached portal that is not a portal here is ignored")
+local lone = {current = 1, records = records("surfexp_gateway_3")}
+routed, arrival = Gateway.route_schedule("surfexp_gateway_hub", lone, "surfexp_gateway_2")
+assert(arrival == false and routed == lone, "a gateway-only schedule is kept")
+local untouched = route_loop()
+routed, arrival = Gateway.route_schedule(nil, untouched, "surfexp_gateway_3")
+assert(arrival == false and routed == untouched, "a transfer that does not park at a gateway keeps its schedule")
+routed, arrival = Gateway.route_schedule("nauvis", untouched, "surfexp_gateway_3")
+assert(arrival == false and routed == untouched, "a planet park keeps its schedule")
+assert(Gateway.arrival_park(nil, "surfexp_gateway_2") == "surfexp_gateway_hub", "a portal park target arrives at the Gateway")
+assert(Gateway.arrival_park("surfexp_gateway_4", nil) == "surfexp_gateway_hub")
+assert(Gateway.arrival_park(nil, "surfexp_gateway_hub") == "surfexp_gateway_hub")
+assert(Gateway.arrival_park(nil, "nauvis") == nil, "a gateway target that is not a gateway here is ignored")
+assert(Gateway.arrival_park(nil, nil) == nil)
+assert(Gateway.arrival_park("vulcanus", "surfexp_gateway_hub") == "vulcanus", "an explicit park request wins")
+print("PASS portal park targets arrive at the Gateway and route arrivals keep their loop")
 
 assert(Gateway.is_active_gateway("surfexp_gateway_hub"), "the Gateway is open before the first config push")
 for slot = 1, 4 do
