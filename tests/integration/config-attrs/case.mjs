@@ -1,6 +1,6 @@
 
 export function createCase(context) {
-	const { lua, sleep, docker, HOSTS, say, fail, pass, platformLua, SOURCE_HOST, DEST_HOST, CLONE } = context;
+	const { lua, sleep, docker, HOSTS, instancePath, say, fail, pass, platformLua, SOURCE_HOST, DEST_HOST, CLONE } = context;
 	const LABEL_PREFIX = CLONE + "-config";
 	const storedImportField = context.storedField;
 
@@ -1549,7 +1549,7 @@ export function createCase(context) {
 
 	function reportPruneLog(host) {
 		say("\n=== MEASUREMENT: the destination's own pole-copper prune lines ===");
-		const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+		const path = instancePath(host, "factorio-current.log");
 		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
 			`grep -F -e 'Pole copper pruned' -e 'pole copper prune' ${path} | tail -20 || true`]);
 		const lines = out.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -1564,7 +1564,7 @@ export function createCase(context) {
 	const DECLINE_LOG_ATTEMPTS = 6;
 
 	async function findDeclineLogLine(host, uniqueName) {
-		const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+		const path = instancePath(host, "factorio-current.log");
 		for (let attempt = 1; attempt <= DECLINE_LOG_ATTEMPTS; attempt++) {
 			const out = docker(["exec", HOSTS[host].container, "sh", "-c",
 				`grep -F '${uniqueName}' ${path} || true`]);
@@ -1649,7 +1649,7 @@ export function createCase(context) {
 			const declineLine = await findDeclineLogLine(host, absentName);
 			if (declineLine === null) {
 				fail(`last_user absent_name: the restore left the entity unattributed but emitted NO decline line `
-					+ `naming ${JSON.stringify(absentName)} in ${HOSTS[host].instance}'s factorio-current.log. A nil `
+					+ `naming ${JSON.stringify(absentName)} in host ${host}'s factorio-current.log. A nil `
 					+ "read alone cannot tell the conditional apart from its own deletion: writing the raw name "
 					+ "unconditionally makes the engine throw Invalid PlayerIdentification, the existing pcall "
 					+ "swallows it, and last_user stays nil either way. The log line is what distinguishes them");

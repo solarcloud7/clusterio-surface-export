@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const browser = await launchChromiumOrSkip("transfer-modal");
 try {
@@ -35,8 +36,9 @@ try {
 	const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
 	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
 	await page.goto("http://localhost:8080/surface-export?tab=gateways", { waitUntil: "domcontentloaded" });
-	const instance = page.locator(".react-flow__node").filter({ has: page.getByText("clusterio-host-1-instance-1", { exact: true }) }).first();
-	await instance.getByText("clusterio-host-1-instance-1", { exact: true }).click();
+	const sourceName = developmentCluster.instanceName(1);
+	const instance = page.locator(".react-flow__node").filter({ has: page.getByText(sourceName, { exact: true }) }).first();
+	await instance.getByText(sourceName, { exact: true }).click();
 	const row = instance.locator(".surface-export-platform-node-row").first();
 	await row.waitFor();
 	await row.locator(".surface-export-platform-handle").click();

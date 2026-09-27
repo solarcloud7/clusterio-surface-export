@@ -6,37 +6,28 @@ function ConvertTo-LuaLiteral {
     return $Value.Replace('\', '\\').Replace("'", "\'")
 }
 
+. "$PSScriptRoot/instance-identity.ps1"
+
 function Get-InstanceList {
     $raw = docker exec surface-export-controller npx clusterioctl --log-level error --config $script:ControlConfig instance list 2>&1
-
-    $lines = ($raw -split "`n") | Select-Object -Skip 2 | Where-Object { $_.Trim() -ne "" }
-
-    $instances = @()
-    foreach ($line in $lines) {
-        $parts = $line -split '\|' | ForEach-Object { $_.Trim() }
-        if ($parts.Count -ge 2) {
-            $instances += [PSCustomObject]@{
-                Name     = $parts[0]
-                Id       = $parts[1]
-                Host     = $parts[2]
-                GamePort = $parts[3]
-                Status   = $parts[4]
-            }
-        }
-    }
-    return $instances
+    if ($LASTEXITCODE -ne 0) { throw "clusterioctl instance list failed (exit $LASTEXITCODE): $(($raw | Out-String).Trim())" }
+    return ConvertFrom-InstanceList -Raw @($raw | ForEach-Object { "$_" })
 }
 
 function Get-InstanceByHostNumber {
-    param([string]$HostNumber)
+    param([Parameter(Mandatory)][string]$HostNumber)
+    return Select-InstanceForHost -Instances @(Get-InstanceList) -HostNumber $HostNumber
+}
 
-    $all = Get-InstanceList
-    $match = $all | Where-Object { $_.Name -match "host-$HostNumber" }
-    if (-not $match) {
-        Write-Error "No instance found for host number $HostNumber"
-        return $null
-    }
-    return $match
+function Get-InstanceDataDir {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][string]$HostNumber
+    )
+    $container = "surface-export-host-$HostNumber"
+    $raw = docker exec $container sh -c $script:InstanceDirsScript 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Listing instance directories on $container failed (exit $LASTEXITCODE): $(($raw | Out-String).Trim())" }
+    return Select-InstanceDataDir -Raw @($raw | ForEach-Object { "$_" }) -InstanceId $InstanceId -Container $container
 }
 
 function Get-TransactionLogStore {

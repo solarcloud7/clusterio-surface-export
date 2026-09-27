@@ -4,16 +4,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
-	CONTROLLER, CTL_CONFIG, bumpExportIdCounter, docker, lastLine, lua, rcon, sleep,
+	CONTROLLER, CTL_CONFIG, bumpExportIdCounter, docker, instance, instancePath, lastLine, lua, rcon, sleep,
 } from "./batch-lifecycle.mjs";
 import { startPatchedSave } from "./start-patched-save.mjs";
 
 const GALLERY_INSTANCE = "surface-export-lab-gallery";
 const GALLERY_INSTANCE_ID = 907164846;
 const GALLERY_CONTAINER = "surface-export-host-2";
-const HOST1_INSTANCE = "clusterio-host-1-instance-1";
 const HOST1_CONTAINER = "surface-export-host-1";
-const HOST1_SAVES = `/clusterio/data/instances/${HOST1_INSTANCE}/saves`;
 const DELIVER_SAVE = "lab-gallery-deliver-all.zip";
 const RESTORE_SAVE = "lab-gallery-source.zip";
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -179,6 +177,8 @@ async function main() {
 	const alreadyOnGallery = new Set(galleryPlatformNames());
 	summary.galleryBefore = [...alreadyOnGallery];
 
+	const HOST1_INSTANCE = instance(1);
+	const HOST1_SAVES = instancePath(1, "saves");
 	let displaced = false;
 	try {
 		ctl("instance", "stop", HOST1_INSTANCE);

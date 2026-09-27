@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { withWorkflowLock } from '../../../tools/shared/workflow-lock.mjs';
-import { lua, preflightState } from '../../lab-gallery/batch-lifecycle.mjs';
+import { lua, preflightState, instanceDir } from '../../lab-gallery/batch-lifecycle.mjs';
 
 export function analyze(report) {
   assert.equal(report.verdict,'PASS',report.error);
@@ -28,7 +28,7 @@ else await withWorkflowLock(async()=>{
   const code=readFileSync(new URL('./probe.cjs',import.meta.url),'utf8');
   const artifact=`ci-artifacts/rcon-throughput-${Date.now().toString(36)}.json`;
   const report=await new Promise((resolve,reject)=>{
-    const child=spawn('docker',['exec','-i','surface-export-host-1','node','-',...(comparison?['--compare-100k-10k']:[])],{stdio:['pipe','pipe','pipe']});
+    const child=spawn('docker',['exec','-i','surface-export-host-1','node','-','--instance-dir',instanceDir(1),...(comparison?['--compare-100k-10k']:[])],{stdio:['pipe','pipe','pipe']});
     let pending='',result,stderr='';
     const timer=setTimeout(()=>{child.kill();reject(new Error('Runner exceeded 210 second budget; stateless commands may still be in flight'));},210000);
     child.stdout.on('data',chunk=>{pending+=chunk;const lines=pending.split('\n');pending=lines.pop();for(const line of lines){if(!line.trim())continue;try{const event=JSON.parse(line);if(event.event==='report')result=event.report;else console.log(event);}catch(error){console.warn("Probe emitted a non-JSON line:",error.message);stderr+=line.slice(0,300);}}});

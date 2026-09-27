@@ -36,7 +36,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	REPO_ROOT, createBatchLifecycle, docker, instanceIds, lua as luaRaw, rcon, readContainerJson, sleep, HOSTS,
+	REPO_ROOT, createBatchLifecycle, docker, instanceIds, instanceName, lua as luaRaw, rcon, readContainerJson, sleep, HOSTS,
 } from "../../lab-gallery/batch-lifecycle.mjs";
 import { loadPlacementRules } from "./lattice.mjs";
 import { buildTable, completeness, createGateLatch, tallyVerdicts } from "./sweep-model.mjs";
@@ -344,7 +344,7 @@ async function main() {
 		pin: UNIVERSE.application_version,
 		fixture: FIXTURE,
 		clone: CLONE,
-		route: `${HOSTS[SOURCE_HOST].instance} -> ${HOSTS[DEST_HOST].instance}`,
+		route: `${instanceName(SOURCE_HOST)} -> ${instanceName(DEST_HOST)}`,
 		tolerance_tiles: 0.5,
 	};
 

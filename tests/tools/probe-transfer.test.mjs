@@ -23,8 +23,8 @@ cp.execFileSync = (file, args) => {
  if (file === 'node') return JSON.stringify({result:'SUCCESS',transferId:'other-operation'}, null, 2);
  if (file !== 'docker') throw new Error('Unexpected executable: '+file);
  const command = args.find(a => a.startsWith('/sc ')) || '';
- const host = args.some(a => a === 'clusterio-host-2-instance-1') ? 2 : 1;
- if (args.includes('save') && args.includes('list')) return ' '+host+' | save.zip';
+ if (args.at(-2) === 'instance' && args.at(-1) === 'list') return 'name | id | assignedHost | gamePort | status\\n---\\nDev One | 1 | 1 | 34100 | running\\nDev Two | 2 | 2 | 34200 | running';
+ const host = args.some(a => a === '2') ? 2 : 1;
  if (command.includes('clone_platform')) { cloned=true; return JSON.stringify({success:true,job_id:'export_1',entity_count:3}); }
  if (command.includes('platforms=remote.call')) return JSON.stringify({success:true,platforms:host===1 ? [platform(21,'fixture','fixture'),...(cloned?[platform(22,'clone','probe-test')]:[])]:[]});
  if (command.includes("['probe_preflight']")) return JSON.stringify({success:true});

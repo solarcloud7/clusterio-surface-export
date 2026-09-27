@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { allocate, loadPlacementRules } from "./lattice.mjs";
 import { cloneStatusLua, waitForFixtureClone } from "../../lab-gallery/clone-fixture.mjs";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const UNIVERSE = JSON.parse(readFileSync(path.join(here, "universe.json"), "utf8"));
@@ -39,16 +40,22 @@ const arg = (name, fallback) => {
 	return index === -1 ? fallback : process.argv[index + 1];
 };
 
-const INSTANCE = arg("--instance", "clusterio-host-1-instance-1");
+const INSTANCE_OVERRIDE = arg("--instance", undefined);
 const SOURCE_INDEX = Number(arg("--source-index", "21"));
 const REPORT_PATH = arg("--report", null);
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const jlit = value => JSON.stringify(value).replace(/'/g, "\\'");
 
+let target;
+function targetInstance() {
+	if (process.argv.includes("--instance") && !INSTANCE_OVERRIDE) throw new Error("--instance needs a value");
+	return String((target ??= developmentCluster.locate(1, { override: INSTANCE_OVERRIDE })).id);
+}
+
 function rcon(command, timeout = 300_000) {
 	return execFileSync("docker", ["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",
-		"instance", "send-rcon", INSTANCE, command, "--config", CTL_CONFIG],
+		"instance", "send-rcon", targetInstance(), command, "--config", CTL_CONFIG],
 	{ encoding: "utf8", timeout, maxBuffer: 64 * 1024 * 1024 }).trim();
 }
 
@@ -374,7 +381,7 @@ error('Completed staging clone missing')`);
 	const report = {
 		schema: "one-of-each/staging-report@1",
 		platform: PLATFORM_NAME,
-		instance: INSTANCE,
+		instance: targetInstance(),
 		source_index: SOURCE_INDEX,
 		pin: UNIVERSE.application_version,
 		lattice: { origin: ORIGIN, columns: COLUMNS, rows: ROWS, hub_cell: HUB_CELL },

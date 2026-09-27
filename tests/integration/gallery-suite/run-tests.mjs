@@ -124,7 +124,7 @@ async function main() {
 		console.log(collision.message);
 		if (collision.fatal) throw new Error(collision.message);
 
-		for (const host of [1, 2]) console.log(`roster: ${pushRoster(L.HOSTS[host].instance)}`);
+		for (const host of [1, 2]) console.log(`roster: ${pushRoster(String(ids[host]))}`);
 
 		const boardA = runBoard(1);
 		const verdictA = adjudicateBoard(boardA, manifest);

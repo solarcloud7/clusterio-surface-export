@@ -22,7 +22,7 @@ if ($instances.Count -ne 2 -or @($instances | Where-Object { $_.Status -ne 'runn
     throw 'Save-preserving reload requires both existing instances running. Refusing to guess which world to load.'
 }
 foreach ($instance in $instances) {
-    $config = Invoke-Control instance config list $instance.Name
+    $config = Invoke-Control instance config list $instance.Id
     if ($config -notmatch '(?m)^factorio.enable_save_patching\s+true\s*$' -or $config -notmatch '(?m)^instance.auto_start\s+true\s*$') {
         throw "$($instance.Name): save patching and auto-start must be enabled for a preserving host reload. Nothing has been stopped."
     }
@@ -37,11 +37,11 @@ $expectedVersion = (Get-Content (Join-Path $modulePath 'module.json') -Raw | Con
 $moduleBuildId = Update-ModuleBuildStamp -ModuleDir $modulePath
 
 foreach ($instance in $instances) {
-    Invoke-Control instance send-rcon $instance.Name "/sc game.server_save('predeploy-$stamp')" | Out-Null
+    Invoke-Control instance send-rcon $instance.Id "/sc game.server_save('predeploy-$stamp')" | Out-Null
 }
 foreach ($instance in $instances) {
     $container = "surface-export-host-$($instance.Host)"
-    $save = "/clusterio/data/instances/$($instance.Name)/saves/predeploy-$stamp.zip"
+    $save = "$(Get-InstanceDataDir -InstanceId $instance.Id -HostNumber $instance.Host)/saves/predeploy-$stamp.zip"
     $deadline = (Get-Date).AddSeconds(120)
     $last = ''; $stable = 0
     do {
@@ -56,14 +56,14 @@ foreach ($instance in $instances) {
     if ($stable -lt 2) { throw "Backup not confirmed for $($instance.Name). Refusing to stop either instance." }
     Write-Host "Backup confirmed: ${container}:$save"
 }
-foreach ($instance in $instances) { Invoke-Control instance stop $instance.Name | Out-Null }
+foreach ($instance in $instances) { Invoke-Control instance stop $instance.Id | Out-Null }
 Sync-ControllerWebBundle -Force
 docker restart surface-export-host-1 surface-export-host-2 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Host restart failed; backups and existing saves are retained.' }
 node "$PSScriptRoot/../tests/cluster-readiness.mjs" --runtime --compare $evidence
 if ($LASTEXITCODE -ne 0) { throw "Preserving reload did not pass verification. Before-state: $evidence. Existing saves and backups are retained." }
 foreach ($instance in $instances) {
-    $loaded = Invoke-Control instance send-rcon $instance.Name (Get-ModuleDeploymentProbe)
+    $loaded = Invoke-Control instance send-rcon $instance.Id (Get-ModuleDeploymentProbe)
     if (-not (Test-ModuleDeploymentResponse $loaded $expectedVersion $moduleBuildId)) {
         throw "$($instance.Name): expected Lua build $moduleBuildId was not loaded. Existing saves and backups are retained."
     }

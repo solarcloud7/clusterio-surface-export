@@ -9,9 +9,10 @@
 // looked identical to a working one for a full merge cycle. This asserts the emit.
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const HOST = "surface-export-host-2";
-const INSTANCE = "clusterio-host-2-instance-1";
+const INSTANCE = String(developmentCluster.locate(2).id);
 const PROBE = `deleteprobe-${Date.now().toString(36)}`;
 
 const rcon = (lua) => execFileSync("docker", [

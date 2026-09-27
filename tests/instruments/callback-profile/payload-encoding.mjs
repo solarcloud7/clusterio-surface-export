@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFileSync, writeFileSync} from "node:fs";
 import {createHash} from "node:crypto";
 import {withWorkflowLock} from "../../../tools/shared/workflow-lock.mjs";
-import {docker, HOSTS, preflightState, assertLeaseClean} from "../../lab-gallery/batch-lifecycle.mjs";
+import {docker, instance, preflightState, assertLeaseClean} from "../../lab-gallery/batch-lifecycle.mjs";
 
 function analyze(report) {
   assert.equal(report.mutated, false);
@@ -37,7 +37,7 @@ if (process.argv[2] === "--analyze") {
     const command = `/sc local ok,result=pcall(function() ${body} end);rcon.print(helpers.table_to_json(ok and result or {success=false,error=tostring(result)}))`;
     assert.ok(Buffer.byteLength(command) <= 32768);
     const output = docker(["exec", "surface-export-controller", "npx", "clusterioctl", "--config", "/clusterio/tokens/config-control.json",
-      "--log-level", "error", "instance", "send-rcon", HOSTS[1].instance, command], {timeout: 20000, maxBuffer: 4194304});
+      "--log-level", "error", "instance", "send-rcon", instance(1), command], {timeout: 20000, maxBuffer: 4194304});
     Object.assign(report, JSON.parse(output.trim().split(/\r?\n/).at(-1)));
     assert.equal(report.success, true, report.error);
     Object.assign(report, analyze(report));

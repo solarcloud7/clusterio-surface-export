@@ -15,15 +15,16 @@
 //           prune_pole_copper's per-pole pcall and named by its THREW line
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const SCRATCH_NAME = "pole-copper-prune-selftest-scratch";
 
 const instanceArg = process.argv.indexOf("--instance");
-const INSTANCE = instanceArg !== -1 ? process.argv[instanceArg + 1]
-	: (process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1");
-if (!INSTANCE) throw new Error("--instance needs a value");
+const override = instanceArg !== -1 ? process.argv[instanceArg + 1] : process.env.SE_LAB_INSTANCE;
+if (instanceArg !== -1 && !override) throw new Error("--instance needs a value");
+const INSTANCE = String(developmentCluster.locate(1, { override }).id);
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 

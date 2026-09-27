@@ -405,8 +405,9 @@ async function main() {
 	}
 	if (phase === "checkpoint") {
 		const saveName = "gallery-source-of-truth-2026-07-19";
-		const container = "surface-export-host-2";
-		const savePath = `/clusterio/data/instances/${GALLERY}/saves/${saveName}.zip`;
+		const gallery = transport.locate(2, { override: GALLERY });
+		const container = gallery.container;
+		const savePath = `${transport.instanceDir(gallery)}/saves/${saveName}.zip`;
 		console.log("server_save:", rcon(`/sc game.server_save('${saveName}')`).slice(0, 200));
 		let prev = -1, stableReads = 0;
 		for (let i = 0; i < 60 && stableReads < 3; i += 1) {

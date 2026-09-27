@@ -1,5 +1,6 @@
 $script:DefaultController = "surface-export-controller"
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
+. "$PSScriptRoot/../../../tools/shared/instance-identity.ps1"
 
 $script:TransferFixturePlatform = 'lab-transfer-fixture-v1'
 $script:PadGridPlatform         = 'lab-omnibus-state-v1'
@@ -139,6 +140,19 @@ function Get-PlatformIndex {
     return [int]$result
 }
 
+function Get-HostInstanceId {
+    param(
+        [Parameter(Mandatory=$true)]
+        [int]$HostNumber,
+        [string]$Controller = $script:DefaultController
+    )
+
+    $raw = docker exec $Controller npx clusterioctl --log-level error instance list --config $script:ControlConfig 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "clusterioctl instance list failed (exit $LASTEXITCODE): $(($raw | Out-String).Trim())" }
+    $instances = @(ConvertFrom-InstanceList -Raw @($raw | ForEach-Object { "$_" }))
+    return (Select-InstanceForHost -Instances $instances -HostNumber "$HostNumber").Id
+}
+
 function Resolve-PlatformHost {
     param(
         [Parameter(Mandatory=$true)]
@@ -147,7 +161,7 @@ function Resolve-PlatformHost {
     )
 
     foreach ($h in $Hosts) {
-        $instance = "clusterio-host-$h-instance-1"
+        $instance = Get-HostInstanceId -HostNumber $h
         $idx = Get-PlatformIndex -Instance $instance -PlatformName $PlatformName
         if ($idx) { return $h }
     }
@@ -601,6 +615,7 @@ function Get-ClusterioInstanceId {
         [string]$Controller = $script:DefaultController
     )
     
+    if ($InstanceName -match '^\d+$') { return [long]$InstanceName }
     $output = docker exec $Controller bash -c "npx clusterioctl --config $script:ControlConfig instance list 2>/dev/null"
     foreach ($line in $output) {
         if ($line -match "^\s*$([regex]::Escape($InstanceName))\s*\|\s*(\d+)") {
@@ -621,6 +636,7 @@ Export-ModuleMember -Function @(
 
     'New-TestPlatform',
     'Get-PlatformIndex',
+    'Get-HostInstanceId',
     'Resolve-PlatformHost',
     'Get-Platforms',
     'Remove-PlatformSurfacesWhere',

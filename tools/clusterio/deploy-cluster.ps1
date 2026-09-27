@@ -77,7 +77,10 @@ foreach ($envLine in Get-Content $EnvFile) {
     if ($envLine -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$') { $envValues[$Matches[1]] = $Matches[2] }
 }
 $seeded = Get-SeededInstances
-$expectedInstances = @($seeded | Select-Object -ExpandProperty Instance)
+$expectedHosts = @($seeded | ForEach-Object { [string]$_.HostNumber } | Sort-Object -Unique)
+if ($expectedHosts.Count -ne @($seeded).Count) {
+    throw "deploy-cluster expects one seeded instance per host; seed-data names $(($seeded | ForEach-Object { "$($_.Host)/$($_.Instance)" }) -join ', ')."
+}
 $expectedHostContainers = @($seeded | Select-Object -ExpandProperty Container -Unique)
 $pinnedFactorioVersions = @($seeded | ForEach-Object {
     (Get-Content (Join-Path $WorkspaceRoot "docker/seed-data/hosts/$($_.Host)/$($_.Instance)/instance.json") -Raw | ConvertFrom-Json).'factorio.version'
@@ -151,17 +154,18 @@ if (-not $ResetData) {
         }
         Start-Sleep -Seconds 3
     }
-    $listText = $listOut | Out-String
+    $retained = @(ConvertFrom-InstanceList -Raw @($listOut | ForEach-Object { "$_" }))
     $engineMismatches = @()
-    foreach ($name in $expectedInstances) {
-        if ($listText -notmatch "(?m)^\s*$([regex]::Escape($name))\b") { continue }
-        $configText = (docker @ctlPrefix instance config list $name 2>&1 | Out-String)
+    foreach ($h in $expectedHosts) {
+        if (-not @($retained | Where-Object { $_.Host -eq $h }).Count) { continue }
+        $instance = Select-InstanceForHost -Instances $retained -HostNumber $h
+        $configText = (docker @ctlPrefix instance config list $instance.Id 2>&1 | Out-String)
         $configured = [regex]::Match($configText, '(?m)^factorio\.version\s+"([^"]+)"\s*$')
         if ($LASTEXITCODE -ne 0 -or -not $configured.Success) {
-            throw "Could not read factorio.version for retained instance ${name}: $($configText.Trim()). The cluster is NOT deployed."
+            throw "Could not read factorio.version for retained instance $($instance.Name): $($configText.Trim()). The cluster is NOT deployed."
         }
         if ($configured.Groups[1].Value -ne $pinnedFactorioVersion) {
-            $engineMismatches += [pscustomobject]@{ Name = $name; Version = $configured.Groups[1].Value }
+            $engineMismatches += [pscustomobject]@{ Name = $instance.Name; Id = $instance.Id; Version = $configured.Groups[1].Value }
         }
     }
     if ($engineMismatches.Count -and -not $MigrateEngine) {
@@ -169,26 +173,27 @@ if (-not $ResetData) {
         throw "Retained instance(s) $summary do not match the seed engine pin $pinnedFactorioVersion. The client host runs only the pinned engine, so they would not start there. A save written by the newer engine cannot be loaded by the older one: back up the data volumes, then rerun with -MigrateEngine to set factorio.version to $pinnedFactorioVersion. The cluster is NOT deployed."
     }
     foreach ($mismatch in $engineMismatches) {
-        $setText = (docker @ctlPrefix instance config set $mismatch.Name factorio.version $pinnedFactorioVersion 2>&1 | Out-String)
+        $setText = (docker @ctlPrefix instance config set $mismatch.Id factorio.version $pinnedFactorioVersion 2>&1 | Out-String)
         if ($LASTEXITCODE -ne 0) { throw "Could not set factorio.version on $($mismatch.Name): $($setText.Trim()). The cluster is NOT deployed." }
         Write-Host "  $($mismatch.Name): factorio.version $($mismatch.Version) -> $pinnedFactorioVersion" -ForegroundColor Yellow
-        $migratedInstances += $mismatch.Name
+        $migratedInstances += $mismatch.Id
     }
 }
 
 function Restart-AfterScenarioMigration {
-    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Since, [switch]$Migrated)
-    $container = ($seeded | Where-Object { $_.Instance -eq $Name } | Select-Object -First 1).Container
+    param([Parameter(Mandatory)][object]$Instance, [Parameter(Mandatory)][string]$Since, [switch]$Migrated)
+    $Name = $Instance.Name
+    $container = ($seeded | Where-Object { [string]$_.HostNumber -eq $Instance.Host } | Select-Object -First 1).Container
     $log = (docker logs --since $Since $container 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Could not read $container logs to diagnose ${Name}: $($log.Trim()). The cluster is NOT deployed." }
     if (-not (Test-ScenarioMigrationFailure -Log $log -Instance $Name)) {
         if ($Migrated) {
-            throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read /clusterio/data/instances/$Name/factorio-current.log on $container. The cluster is NOT deployed."
+            throw "$Name stopped after -MigrateEngine without Clusterio's documented scenario-migration error. Read factorio-current.log in instance $($Instance.Id)'s directory under /clusterio/data/instances on $container. The cluster is NOT deployed."
         }
         return $false
     }
     Write-Host "  $Name hit Clusterio's documented first start after an engine change; starting it once more" -ForegroundColor Yellow
-    $startText = (docker @ctlStartPrefix instance start $Name 2>&1 | Out-String)
+    $startText = (docker @ctlStartPrefix instance start $Instance.Id 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Restarting $Name after the engine migration failed: $($startText.Trim()). The cluster is NOT deployed." }
     return $true
 }
@@ -284,12 +289,13 @@ while ($true) {
     Start-Sleep -Seconds $pollS
 }
 
-Write-Host "Expecting $($expectedInstances.Count) instance(s): $($expectedInstances -join ', ')" -ForegroundColor Cyan
+Write-Host "Expecting one running instance on each seeded host: $($expectedHosts -join ', ')" -ForegroundColor Cyan
 $instanceTimeout = 300
 $phaseStartS = $deploySw.Elapsed.TotalSeconds
 $lastStates = @{}
 $stoppedSince = @{}
 $migrationRestarted = @{}
+$byHost = @{}
 $instancesDone = $false
 
 while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) -lt $instanceTimeout) {
@@ -299,17 +305,21 @@ while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) 
     $listOut = docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null' 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $listOut) { continue }
 
+    try { $rows = @(ConvertFrom-InstanceList -Raw @($listOut | ForEach-Object { "$_" })) } catch { continue }
     $stateMap = @{}
-    foreach ($line in ($listOut -split "`n")) {
-        if ($line -match '(clusterio-\S+-instance-\d+).*\b(running|starting|stopped|stopping|creating_save|exporting_data|unassigned|unknown|deleted)\b') {
-            $stateMap[$Matches[1]] = $Matches[2]
+    foreach ($h in $expectedHosts) {
+        $onHost = @($rows | Where-Object { $_.Host -eq $h })
+        if ($onHost.Count -gt 1) {
+            throw "Host $h has $($onHost.Count) assigned instances ($(($onHost | ForEach-Object { "$($_.Name) id $($_.Id)" }) -join ', ')); expected one. The cluster is NOT deployed."
         }
+        if ($onHost.Count -eq 1) { $byHost[$h] = $onHost[0]; $stateMap[$h] = $onHost[0].Status }
     }
 
     $nowS = $deploySw.Elapsed.TotalSeconds
-    foreach ($name in ($stateMap.Keys | Sort-Object)) {
-        $state = $stateMap[$name]
-        if ($lastStates[$name] -ne $state) {
+    foreach ($h in ($stateMap.Keys | Sort-Object)) {
+        $state = $stateMap[$h]
+        $name = "$($byHost[$h].Name) (host $h)"
+        if ($lastStates[$h] -ne $state) {
             $stateColor = switch ($state) {
                 "running"       { "Green"  }
                 "stopped"       { "Red"    }
@@ -317,27 +327,27 @@ while (-not $instancesDone -and ($deploySw.Elapsed.TotalSeconds - $phaseStartS) 
                 default         { "Yellow" }
             }
             Write-Host "  [+$([int]$nowS)s] $name -> $state" -ForegroundColor $stateColor
-            $lastStates[$name] = $state
+            $lastStates[$h] = $state
         }
         if ($state -eq "stopped") {
-            if (-not $stoppedSince.ContainsKey($name)) {
-                $stoppedSince[$name] = $nowS
-            } elseif (($nowS - $stoppedSince[$name]) -ge $stoppedFailFastS -and $expectedInstances -contains $name) {
-                if (-not $migrationRestarted.ContainsKey($name)) {
-                    $migrationRestarted[$name] = $true
-                    if (Restart-AfterScenarioMigration -Name $name -Since $deployStartedUtc -Migrated:($migratedInstances -contains $name)) {
-                        $stoppedSince.Remove($name)
+            if (-not $stoppedSince.ContainsKey($h)) {
+                $stoppedSince[$h] = $nowS
+            } elseif (($nowS - $stoppedSince[$h]) -ge $stoppedFailFastS) {
+                if (-not $migrationRestarted.ContainsKey($h)) {
+                    $migrationRestarted[$h] = $true
+                    if (Restart-AfterScenarioMigration -Instance $byHost[$h] -Since $deployStartedUtc -Migrated:($migratedInstances -contains $byHost[$h].Id)) {
+                        $stoppedSince.Remove($h)
                         continue
                     }
                 }
-                throw "$name has been 'stopped' for ${stoppedFailFastS}s — a save-load failure, not a slow boot. Read /clusterio/data/instances/$name/factorio-current.log on its host. The cluster is NOT deployed."
+                throw "$name has been 'stopped' for ${stoppedFailFastS}s — a save-load failure, not a slow boot. Read factorio-current.log in instance $($byHost[$h].Id)'s directory under /clusterio/data/instances on its host. The cluster is NOT deployed."
             }
         } else {
-            $stoppedSince.Remove($name)
+            $stoppedSince.Remove($h)
         }
     }
 
-    $missing = @($expectedInstances | Where-Object { -not $stateMap.ContainsKey($_) -or $stateMap[$_] -ne "running" })
+    $missing = @($expectedHosts | Where-Object { -not $stateMap.ContainsKey($_) -or $stateMap[$_] -ne "running" })
     if ($missing.Count -eq 0) {
         $instancesDone = $true
     }
@@ -348,8 +358,8 @@ if ($instancesDone) {
     $elapsed = [int]$deploySw.Elapsed.TotalSeconds
     Write-Host "All instances running! (+${elapsed}s)" -ForegroundColor Green
 } else {
-    $holdouts = @($expectedInstances | Where-Object { -not $lastStates.ContainsKey($_) -or $lastStates[$_] -ne "running" } |
-        ForEach-Object { "$_=$(if ($lastStates.ContainsKey($_)) { $lastStates[$_] } else { 'never registered' })" }) -join ", "
+    $holdouts = @($expectedHosts | Where-Object { -not $lastStates.ContainsKey($_) -or $lastStates[$_] -ne "running" } |
+        ForEach-Object { "host $_=$(if ($lastStates.ContainsKey($_)) { $lastStates[$_] } else { 'never registered' })" }) -join ", "
     Write-Host "X Instance startup TIMED OUT after ${instanceTimeout}s: $holdouts" -ForegroundColor Red
     throw "Instances did not reach running within ${instanceTimeout}s ($holdouts). The cluster is NOT deployed; do not trust a later success message."
 }
@@ -357,9 +367,10 @@ if ($instancesDone) {
 Write-Host ""
 Write-Host "Verifying the save-patched module VERSION on every seeded instance..." -ForegroundColor Cyan
 $versionProbe = Get-ModuleDeploymentProbe
-foreach ($probeInstance in $expectedInstances) {
+foreach ($h in $expectedHosts) {
+    $probeInstance = $byHost[$h].Name
     $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
-        --log-level error instance send-rcon $probeInstance $versionProbe 2>&1
+        --log-level error instance send-rcon $byHost[$h].Id $versionProbe 2>&1
     $probeText = ($probe | Out-String).Trim()
     $reported = Get-ModuleDeploymentResponse $probeText
     if ($LASTEXITCODE -ne 0 -or $probeText -match 'plugin-missing' -or
@@ -408,7 +419,7 @@ Write-Host ""
 Write-Host "Cluster topology:" -ForegroundColor Cyan
 Write-Host "  Controller (http://localhost:$httpPort)" -ForegroundColor White
 Write-Host "    ├── surface-export-host-1 (ports 34100-34109)" -ForegroundColor White
-Write-Host "    │     └── clusterio-host-1-instance-1" -ForegroundColor White
+Write-Host "    │     └── $($byHost['1'].Name)" -ForegroundColor White
 Write-Host "    └── surface-export-host-2 (ports 34200-34209)" -ForegroundColor White
-Write-Host "          └── clusterio-host-2-instance-1" -ForegroundColor White
+Write-Host "          └── $($byHost['2'].Name)" -ForegroundColor White
 Write-Host ""

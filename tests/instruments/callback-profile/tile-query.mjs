@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {isDeepStrictEqual} from 'node:util';
 import {withWorkflowLock} from '../../../tools/shared/workflow-lock.mjs';
-import {docker,HOSTS,preflightState,assertLeaseClean,lua} from '../../lab-gallery/batch-lifecycle.mjs';
+import {docker,instance,preflightState,assertLeaseClean,lua} from '../../lab-gallery/batch-lifecycle.mjs';
 const {parseProfiler}=createRequire(import.meta.url)('../../../docker/seed-data/external_plugins/surface_export/dist/node/lib/timing.js');
 const code=readFileSync(new URL('./tile-query.lua',import.meta.url),'utf8');
 const normalize=values=>Array.isArray(values)?values:Object.values(values??{});
@@ -37,7 +37,7 @@ else await withWorkflowLock(async()=>{
   for(const p of selected) for(const first of [false,true]) {
    const command=`/sc local ok,result=pcall(function() return (function() ${code} end)()(${p.index},${first}) end); rcon.print(helpers.table_to_json(ok and result or {success=false,error=tostring(result)}))`;
    assert.ok(Buffer.byteLength(command)<=32768);
-   const raw=docker(['exec','surface-export-controller','npx','clusterioctl','--config','/clusterio/tokens/config-control.json','--log-level','error','instance','send-rcon',HOSTS[p.host].instance,command],{timeout:20000,maxBuffer:16*1024*1024});
+   const raw=docker(['exec','surface-export-controller','npx','clusterioctl','--config','/clusterio/tokens/config-control.json','--log-level','error','instance','send-rcon',instance(p.host),command],{timeout:20000,maxBuffer:16*1024*1024});
    const r=JSON.parse(raw.trim().split(/\r?\n/).at(-1)); assert.equal(r.success,true,r.error);
    r.host=p.host;r.raw={};r.ms={};
    for(const line of raw.split(/\r?\n/)) {

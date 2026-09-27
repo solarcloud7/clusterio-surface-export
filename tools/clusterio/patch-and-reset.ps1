@@ -181,21 +181,28 @@ $instanceList = Invoke-Step "enumerate running instances" {
     docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance list
 }
 
+$listedInstances = @(ConvertFrom-InstanceList -Raw @($instanceList | ForEach-Object { "$_" }))
+$hostInstances = @{}
+foreach ($h in 1, 2) {
+    $record = Select-InstanceForHost -Instances $listedInstances -HostNumber "$h"
+    $hostInstances[$h] = [pscustomobject]@{ Id = $record.Id; Name = $record.Name; Dir = Get-InstanceDataDir -InstanceId $record.Id -HostNumber "$h" }
+}
+$seedInstances = @{}
+foreach ($seed in Get-SeededInstances) { $seedInstances[$seed.HostNumber] = $seed }
+
 $pendingSaves = @()
-foreach ($line in ($instanceList -split "`r?`n")) {
-    if ($line -match '^\s*([A-Za-z0-9._-]+)\s*\|\s*\d+\s*\|\s*(\d+)\s*\|\s*\d+\s*\|\s*running\s*\|') {
-        $inst = $Matches[1]
-        $hostContainer = "surface-export-host-$($Matches[2])"
-        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        Invoke-Step "save $inst before restart" -AllowFail {
-            docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
-                instance send-rcon $inst "/sc game.server_save('predeploy-$stamp')"
-        } | Out-Null
-        $pendingSaves += [pscustomobject]@{
-            Instance  = $inst
-            Container = $hostContainer
-            Path      = "/clusterio/data/instances/$inst/saves/predeploy-$stamp.zip"
-        }
+foreach ($running in ($listedInstances | Where-Object { $_.Status -eq 'running' })) {
+    $inst = $running.Name
+    $hostContainer = "surface-export-host-$($running.Host)"
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    Invoke-Step "save $inst before restart" -AllowFail {
+        docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
+            instance send-rcon $running.Id "/sc game.server_save('predeploy-$stamp')"
+    } | Out-Null
+    $pendingSaves += [pscustomobject]@{
+        Instance  = $inst
+        Container = $hostContainer
+        Path      = "$(Get-InstanceDataDir -InstanceId $running.Id -HostNumber $running.Host)/saves/predeploy-$stamp.zip"
     }
 }
 
@@ -226,8 +233,8 @@ if ($pendingSaves.Count -eq 0) {
 
 Write-Host ""
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-Invoke-InstanceLifecycle "stop host-1 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-1-instance-1" }
-Invoke-InstanceLifecycle "stop host-2 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-2-instance-1" }
+Invoke-InstanceLifecycle "stop host-1 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop $hostInstances[1].Id }
+Invoke-InstanceLifecycle "stop host-2 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop $hostInstances[2].Id }
 Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
@@ -236,30 +243,30 @@ Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
 
 
 
-$inst1SavePath = "/clusterio/data/instances/clusterio-host-1-instance-1/saves"
+$inst1SavePath = "$($hostInstances[1].Dir)/saves"
 Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "find $inst1SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to clear instance 1 saves" -ForegroundColor Red
 }
-$inst1SeedSave = "/clusterio/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/lab-gallery-source.zip"
-Invoke-Step "upload host-1 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-1-instance-1" $inst1SeedSave } | Out-Null
+$inst1SeedSave = "/clusterio/seed-data/hosts/$($seedInstances[1].Host)/$($seedInstances[1].Instance)/lab-gallery-source.zip"
+Invoke-Step "upload host-1 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload $hostInstances[1].Id $inst1SeedSave } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Re-uploaded seed save for instance 1 (lab-gallery-source.zip)" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to upload seed save for instance 1" -ForegroundColor Red
 }
 
-$inst2SavePath = "/clusterio/data/instances/clusterio-host-2-instance-1/saves"
+$inst2SavePath = "$($hostInstances[2].Dir)/saves"
 Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "find $inst2SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to clear instance 2 saves" -ForegroundColor Red
 }
-$inst2SeedSave = "/clusterio/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip"
-Invoke-Step "upload host-2 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-2-instance-1" $inst2SeedSave } | Out-Null
+$inst2SeedSave = "/clusterio/seed-data/hosts/$($seedInstances[2].Host)/$($seedInstances[2].Instance)/lab-gallery-destination.zip"
+Invoke-Step "upload host-2 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload $hostInstances[2].Id $inst2SeedSave } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Re-uploaded seed save for instance 2 (lab-gallery-destination.zip)" -ForegroundColor Green
 } else {
@@ -307,14 +314,14 @@ $inst2Settings = $settingsBase.Clone(); $inst2Settings["name"] = "instance 2"
 $inst1Json = ($inst1Settings | ConvertTo-Json -Compress)
 $inst2Json = ($inst2Settings | ConvertTo-Json -Compress)
 
-Invoke-Step "set host-1 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-1-instance-1" "factorio.settings" $inst1Json } | Out-Null
-Invoke-Step "set host-2 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-2-instance-1" "factorio.settings" $inst2Json } | Out-Null
+Invoke-Step "set host-1 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set $hostInstances[1].Id "factorio.settings" $inst1Json } | Out-Null
+Invoke-Step "set host-2 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set $hostInstances[2].Id "factorio.settings" $inst2Json } | Out-Null
 Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1" }
-Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1" }
+Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[1].Id }
+Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[2].Id }
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 
@@ -322,14 +329,14 @@ Write-Host ""
 Write-Host "Boot check: verifying the patched saves loaded with module version $NewVersion and build $ModuleBuildId..." -ForegroundColor Yellow
 $versionProbe = Get-ModuleDeploymentProbe
 foreach ($h in 1, 2) {
-    $inst = "clusterio-host-$h-instance-1"
+    $inst = $hostInstances[$h].Name
     $bootDeadline = (Get-Date).AddSeconds(90)
     $bootOk = $false
     $lastPing = ""
     while ((Get-Date) -lt $bootDeadline) {
         # Deliberately quiet: RCON POLL inside a bounded loop — a transient failure just means
         $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
-            instance send-rcon $inst $versionProbe 2>&1
+            instance send-rcon $hostInstances[$h].Id $versionProbe 2>&1
         $lastPing = ($ping | Out-String).Trim()
         if ($LASTEXITCODE -eq 0 -and (Test-ModuleDeploymentResponse -Output $lastPing -Version $NewVersion -BuildId $ModuleBuildId)) { $bootOk = $true; break }
         if ($LASTEXITCODE -eq 0 -and (Get-ModuleDeploymentResponse $lastPing)) { break }
@@ -345,7 +352,7 @@ foreach ($h in 1, 2) {
             Write-Host "    The save was not re-patched (a plain restart reuses old script.dat) — rerun patch-and-reset." -ForegroundColor Red
         } else {
             Write-Host "    A Lua error at save-load kills the server — read the actual error with:" -ForegroundColor Red
-            Write-Host "    docker exec surface-export-host-$h sh -c 'tail -100 /clusterio/data/instances/$inst/factorio-current.log'" -ForegroundColor Red
+            Write-Host "    docker exec surface-export-host-$h sh -c 'tail -100 ""$($hostInstances[$h].Dir)/factorio-current.log""'" -ForegroundColor Red
         }
         throw "$inst did not come up with module version $NewVersion loaded. Do not trust this deploy."
     }
