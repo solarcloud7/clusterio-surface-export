@@ -94,8 +94,23 @@ export function facingTurn(from: { x: number; y: number }, to: { x: number; y: n
 
 export const MIN_PORTAL_GAP = 1 / 10;
 
+export const CAPTION_CLEAR_TURN = 1 / 8;
+
+export function clearOfCaption(turn: number): number {
+	const wrapped = wrapTurn(turn);
+	if (wrapped < CAPTION_CLEAR_TURN) {
+		return CAPTION_CLEAR_TURN;
+	}
+	if (wrapped > 1 - CAPTION_CLEAR_TURN) {
+		return 1 - CAPTION_CLEAR_TURN;
+	}
+	return wrapped;
+}
+
 export function spreadTurns(turns: readonly number[], gap: number = MIN_PORTAL_GAP): number[] {
-	const order = turns.map((turn, index) => ({ turn: wrapTurn(turn), index })).sort((a, b) => a.turn - b.turn);
+	const low = CAPTION_CLEAR_TURN;
+	const high = 1 - CAPTION_CLEAR_TURN;
+	const order = turns.map((turn, index) => ({ turn: clearOfCaption(turn), index })).sort((a, b) => a.turn - b.turn);
 	const spaced = order.map(entry => entry.turn);
 	for (let pass = 0; pass < order.length; pass += 1) {
 		for (let i = 1; i < spaced.length; i += 1) {
@@ -106,8 +121,14 @@ export function spreadTurns(turns: readonly number[], gap: number = MIN_PORTAL_G
 			}
 		}
 	}
+	for (let i = 0; i < spaced.length; i += 1) {
+		spaced[i] = Math.max(spaced[i], i === 0 ? low : spaced[i - 1] + gap);
+	}
+	for (let i = spaced.length - 1; i >= 0; i -= 1) {
+		spaced[i] = Math.min(spaced[i], i === spaced.length - 1 ? high : spaced[i + 1] - gap);
+	}
 	const result = new Array<number>(turns.length);
-	order.forEach((entry, position) => { result[entry.index] = wrapTurn(spaced[position]); });
+	order.forEach((entry, position) => { result[entry.index] = Math.min(high, Math.max(low, spaced[position])); });
 	return result;
 }
 

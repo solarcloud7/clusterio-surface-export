@@ -143,5 +143,15 @@ test("outgoing portals face the server they lead to and never overlap", () => {
 	const spread = graph.spreadTurns([0.25, 0.26, 0.5]);
 	assert.ok(spread[1] - spread[0] >= graph.MIN_PORTAL_GAP - 1e-9, "two peers in the same direction are pushed apart");
 	assert.ok(Math.abs(spread[2] - 0.5) < 1e-9, "a portal with room keeps its heading");
-	assert.deepEqual(graph.spreadTurns([0.1, 0.6]), [0.1, 0.6], "well-separated portals are untouched");
+	assert.deepEqual(graph.spreadTurns([0.3, 0.6]), [0.3, 0.6], "well-separated portals are untouched");
+	assert.deepEqual(graph.spreadTurns([0]), [graph.CAPTION_CLEAR_TURN], "a server straight above gets a portal clear of the title");
+	assert.deepEqual(graph.spreadTurns([0.97]), [1 - graph.CAPTION_CLEAR_TURN], "leaning left, it swings to the left of the title");
+	const crowded = graph.spreadTurns([0.02, 0.05, 0.1]);
+	for (const turn of crowded) {
+		assert.ok(turn >= graph.CAPTION_CLEAR_TURN - 1e-9 && turn <= 1 - graph.CAPTION_CLEAR_TURN + 1e-9, `turn ${turn} is over the title`);
+	}
+	const sorted = [...crowded].sort((a, b) => a - b);
+	for (let i = 1; i < sorted.length; i += 1) {
+		assert.ok(sorted[i] - sorted[i - 1] >= graph.MIN_PORTAL_GAP - 1e-9, "portals pushed off the title still never overlap");
+	}
 });

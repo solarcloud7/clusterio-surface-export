@@ -79,6 +79,8 @@ async function geometry(page) {
 }
 
 const within = (point, box) => box && point.x > box.left + 1 && point.x < box.right - 1 && point.y > box.top + 1 && point.y < box.bottom - 1;
+const insideGateway = (point, box) => Math.hypot(point.x - (box.left + box.right) / 2, point.y - (box.top + box.bottom) / 2)
+	< (box.right - box.left) / 2 - 1;
 
 try {
 	for (const scale of [1, 2]) {
@@ -101,7 +103,7 @@ try {
 			],
 			routes: [[0, 1], [1, 0], [0, 2]],
 		}));
-		await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length === 2
+		await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length === 3
 			&& document.querySelectorAll(".surface-export-autopause-badge").length === 1, null, { timeout: 10_000 });
 		await page.locator(".react-flow__controls-fitview").click();
 		await page.waitForTimeout(400);
@@ -115,7 +117,7 @@ try {
 		for (const edge of staged.edges) {
 			for (const [end, point] of [["source", edge.source], ["target", edge.target]]) {
 				for (const node of staged.nodes) {
-					assert.equal(within(point, node.box) || within(point, node.caption), false,
+					assert.equal(insideGateway(point, node.box) || within(point, node.caption), false,
 						`${edge.id} ${end} ${JSON.stringify(point)} ends inside ${node.name}: ${JSON.stringify(node)}`);
 				}
 			}
