@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-const INSTANCE = "clusterio-host-1-instance-1";
+const INSTANCE = String(developmentCluster.locate(1).id);
 const CHUNK_SIZE = 8_000;
 
 let failed = 0;

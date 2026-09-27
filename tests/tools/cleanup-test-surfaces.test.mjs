@@ -50,6 +50,7 @@ test("a refused platform sweep stops later surface and group deletion", { skip: 
 	const script = `
 function Import-Module {}
 function Get-ProtectedFixtures { @('protected') }
+function Get-HostInstanceId { 'fixture' }
 function Get-PlatformInventory { @{name='itemstate-retained';force='player';hasSurface=$true;hasHub=$true;entities=1} }
 function Remove-PlatformSurfacesWhere { throw 'retained transfer' }
 $global:later=0

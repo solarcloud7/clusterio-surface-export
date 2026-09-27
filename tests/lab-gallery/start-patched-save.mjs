@@ -13,7 +13,7 @@ export function startPatchedSave(ctl, instance, save) {
 		if (!detail.includes("clusterio_private.update_instance")
 			|| !detail.includes("attempt to index global 'clusterio_private' (a nil value)")) throw error;
 		const rows = ctl("instance", "list").split(/\r?\n/).map(line => line.split("|").map(cell => cell.trim()));
-		if (rows.find(row => row[0] === instance)?.[4] !== "stopped") throw error;
+		if (rows.find(row => row[0] === String(instance) || row[1] === String(instance))?.[4] !== "stopped") throw error;
 		console.warn(`Scenario migration replaced patched scripts for ${instance}; retrying ${save} once: ${error.message}`);
 		return start();
 	}

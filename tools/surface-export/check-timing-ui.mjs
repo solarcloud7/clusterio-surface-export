@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { developmentCluster } from "../shared/cluster-transport.mjs";
 import { launchChromiumOrSkip } from "../tests/integration-skip.mjs";
 import { selectOption, showGatewayPlatform } from "../tests/browser-interactions.mjs";
 
@@ -43,7 +44,7 @@ try {
 	assert.ok(text.includes("legacy recording"));
 	assert.ok(!text.includes("<1 tick") && !text.includes("Not tick-attributed"));
 	await page.goto("http://localhost:8080/surface-export?tab=gateways", { waitUntil: "domcontentloaded" });
-	await showGatewayPlatform(page, "clusterio-host-1-instance-1", "lab-transfer-fixture-v1");
+	await showGatewayPlatform(page, developmentCluster.instanceName(1), "lab-transfer-fixture-v1");
 	assert.deepEqual(errors, []);
 	console.log("PASS: separate local clocks, recorded profiler values, tick-only geometry exclusion, honest historical display; no browser errors");
 } finally { await browser.close(); }

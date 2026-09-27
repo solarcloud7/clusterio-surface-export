@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const EPHEMERA_PATH = path.join(here, "ephemera-exclusions.json");
@@ -496,22 +497,23 @@ export function readDump(argv) {
 	}
 
 	const instanceArg = argv.indexOf("--instance");
-	const instance = instanceArg !== -1 ? argv[instanceArg + 1] : "clusterio-host-1-instance-1";
+	const override = instanceArg !== -1 ? argv[instanceArg + 1] : undefined;
+	if (instanceArg !== -1 && !override) throw new Error("--instance needs a value");
 	const platformArg = argv.indexOf("--platform");
 	const platform = platformArg !== -1 ? argv[platformArg + 1] : "lab-omnibus-state-v1";
 	const hostArg = argv.indexOf("--host");
-	const container = hostArg !== -1 ? `surface-export-host-${argv[hostArg + 1]}` : "surface-export-host-1";
+	const target = developmentCluster.locate(hostArg !== -1 ? argv[hostArg + 1] : 1, { override });
 
 	const command = DUMP_LUA.replaceAll("__PLATFORM__", platform);
 	const printed = execFileSync("docker", ["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",
-		"instance", "send-rcon", instance, command, "--config", CTL_CONFIG],
+		"instance", "send-rcon", String(target.id), command, "--config", CTL_CONFIG],
 	{ encoding: "utf8", timeout: 300_000, maxBuffer: 32 * 1024 * 1024 }).trim();
 	const summary = JSON.parse(printed.split(/\r?\n/).filter(Boolean).at(-1));
 	if (summary.error) throw new Error(`dump refused: ${summary.error}`);
 	if (summary.errs > 0) throw new Error(`${summary.errs} prototype(s) threw during the dump`);
 
-	const raw = execFileSync("docker", ["exec", container, "cat",
-		`/clusterio/data/instances/${instance}/script-output/${DUMP_FILE}`],
+	const raw = execFileSync("docker", ["exec", target.container, "cat",
+		`${developmentCluster.instanceDir(target)}/script-output/${DUMP_FILE}`],
 	{ encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
 	return JSON.parse(raw);
 }

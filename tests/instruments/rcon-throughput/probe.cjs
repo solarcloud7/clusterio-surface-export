@@ -5,6 +5,8 @@ const { performance } = require('node:perf_hooks');
 const { createHash } = require('node:crypto');
 const { Rcon } = require('rcon-client');
 const comparison = process.argv.includes('--compare-100k-10k');
+const instanceDirArg = process.argv.indexOf('--instance-dir');
+const instanceDir = instanceDirArg === -1 ? undefined : process.argv[instanceDirArg + 1];
 const chunkSizes = comparison ? [100000, 10000] : [1000, 10000, 100000];
 const report = { version: 1, startedAt: new Date().toISOString(), cases: [],
   contract: { totalPayloadBytesPerCase: 100000, chunkSizes,
@@ -32,7 +34,8 @@ async function main() {
     endpoints.set(port,{host:'127.0.0.1',port,password:args[args.indexOf('--rcon-password')+1],timeout:30000,maxPending:1});
   }
   assert.equal(endpoints.size,1,'expected exactly one Factorio RCON endpoint');
-  const settings=JSON.parse(fs.readFileSync('/clusterio/data/instances/clusterio-host-1-instance-1/server-settings.json'));
+  assert.ok(instanceDir,'--instance-dir required');
+  const settings=JSON.parse(fs.readFileSync(`${instanceDir}/server-settings.json`));
   report.segmentSettings=Object.fromEntries(Object.entries(settings).filter(([k])=>!k.startsWith('_')&&/segment/.test(k)));
   const client = new Rcon([...endpoints.values()][0]);
   client.on('error',()=>{}); // Send/connect promises carry the failure into the report.

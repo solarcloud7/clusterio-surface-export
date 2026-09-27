@@ -2,7 +2,7 @@
 // tick-liveness — is each instance's MAIN THREAD alive? The container healthcheck and the
 // surface_export_export_stall_seconds metric structurally cannot answer this: both live on the
 // thread being asked about, so a wedge reports healthy and a silent log reads as "nothing happened".
-// requires: docker + the surface-export-controller container running
+// requires: docker + the surface-export-controller container running; one instance assigned to each seeded host
 // produces: one line per instance — ADVANCING / PAUSED / FROZEN / STALLED / STOPPED / UNREACHABLE —
 //           with tick numbers; exit 0 only if every instance is ADVANCING (or PAUSED with --allow-paused)
 // does not: explain WHY a main thread is stalled, restart anything, or measure UPS precisely —
@@ -12,15 +12,22 @@ import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-import { seededInstanceNames } from "../shared/seeded-instances.mjs";
-const DEFAULT_INSTANCES = seededInstanceNames();
+import { developmentCluster, HOSTS } from "../shared/cluster-transport.mjs";
 const RCON_TIMEOUT_MS = 15_000;
 const SAMPLE_GAP_MS = 400;
 
 const args = process.argv.slice(2);
 const allowPaused = args.includes("--allow-paused");
 const instances = args.filter(a => !a.startsWith("--"));
-const targets = instances.length ? instances : DEFAULT_INSTANCES;
+const targets = instances.length ? instances.map(value => ({ id: value, label: value }))
+	: Object.keys(HOSTS).map(host => {
+		try {
+			const { id, name } = developmentCluster.locate(host);
+			return { id: String(id), label: name };
+		} catch (error) {
+			return { label: `host-${host}`, unresolved: error.message.split("\n")[0].slice(0, 300) };
+		}
+	});
 
 const PROBE = '/sc rcon.print(game.tick .. " " .. tostring(game.tick_paused))';
 
@@ -52,15 +59,20 @@ function sample(instance) {
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 let failures = 0;
-for (const instance of targets) {
-	const first = sample(instance);
+for (const { id, label: instance, unresolved } of targets) {
+	if (unresolved) {
+		console.log(`  ${"UNREACHABLE".padEnd(11)} ${instance} — ${unresolved}`);
+		failures += 1;
+		continue;
+	}
+	const first = sample(id);
 	if (first.state) {
 		console.log(`  ${first.state.padEnd(11)} ${instance} — ${first.detail}`);
 		failures += 1;
 		continue;
 	}
 	await sleep(SAMPLE_GAP_MS);
-	const second = sample(instance);
+	const second = sample(id);
 	if (second.state) {
 		console.log(`  ${second.state.padEnd(11)} ${instance} — first sample answered (tick ${first.tick}), second: ${second.detail}`);
 		failures += 1;

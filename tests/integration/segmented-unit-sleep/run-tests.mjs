@@ -26,7 +26,7 @@
 //           transfer verdict)
 
 import {
-	lua as luaRaw, rcon, sleep, docker, instanceIds, createBatchLifecycle, readContainerJson, HOSTS,
+	lua as luaRaw, rcon, sleep, docker, instanceIds, instanceName, instancePath, createBatchLifecycle, readContainerJson, HOSTS,
 } from "../../lab-gallery/batch-lifecycle.mjs";
 
 const SOURCE_HOST = 1;
@@ -200,7 +200,7 @@ return { success = true, name = placed.name, tried = tried,
 }
 
 function destinationLogLines(pattern) {
-	const path = `/clusterio/data/instances/${HOSTS[DEST_HOST].instance}/factorio-current.log`;
+	const path = instancePath(DEST_HOST, "factorio-current.log");
 	const out = docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
 		`grep -aE '${pattern}' ${path} | tail -12 || true`]);
 	return out.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -479,7 +479,7 @@ main().then(() => {
 		for (const problem of problems) say(`  - ${problem}`);
 		process.exitCode = 1;
 	} else {
-		say(`\n=== segmented-unit-sleep: ALL PASS (${HOSTS[SOURCE_HOST].instance} -> ${HOSTS[DEST_HOST].instance}) ===`);
+		say(`\n=== segmented-unit-sleep: ALL PASS (${instanceName(SOURCE_HOST)} -> ${instanceName(DEST_HOST)}) ===`);
 	}
 }).catch(error => {
 	console.error(`segmented-unit-sleep: fatal — ${error && error.stack ? error.stack : error}`);

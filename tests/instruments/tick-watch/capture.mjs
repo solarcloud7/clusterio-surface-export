@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { lua, docker, sleep } from '../../lab-gallery/batch-lifecycle.mjs';
+import { lua, docker, sleep, instancePath } from '../../lab-gallery/batch-lifecycle.mjs';
 import { analyze } from './analyze.mjs';
 
 // Host-1 and its locally connected Steam client. No readings share a clock.
@@ -24,7 +24,7 @@ export async function capture(work) {
         report.finish=invoke('finish');
         report.residue=invoke('status');assert.equal(report.residue.present,false);
         const file=report.finish.file;assert.equal(file,`surface-export-tests/${id}.tsv`);
-        const server=docker(['exec','surface-export-host-1','cat',`/clusterio/data/instances/clusterio-host-1-instance-1/script-output/${file}`]);
+        const server=docker(['exec','surface-export-host-1','cat',instancePath(1,`script-output/${file}`)]);
         writeFileSync(`ci-artifacts/${id}-server.tsv`,server);report.server=analyze(server);
         const clientFile=join(process.env.APPDATA,'Factorio','script-output',file);
         for(let attempt=0;attempt<5;attempt++) {

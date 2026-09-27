@@ -9,8 +9,8 @@ import {
 } from "../../tools/tests/cluster-readiness.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const HOST1 = "clusterio-host-1-instance-1";
-const HOST2 = "clusterio-host-2-instance-1";
+const HOST1 = "host-1";
+const HOST2 = "host-2";
 
 const manifest = loadReadinessManifest(repoRoot);
 const expectations = expectationsFor(manifest);

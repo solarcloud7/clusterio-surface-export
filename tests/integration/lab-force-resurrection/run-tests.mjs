@@ -18,8 +18,9 @@
 //           the hub is the platform's own) — only the foreign-force arm of that guard is measured
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
-const INSTANCE = process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1";
+const INSTANCE = String(developmentCluster.locate(1, { override: process.env.SE_LAB_INSTANCE }).id);
 const TAG = Date.now().toString(36);
 const PROBE = `labforce-${TAG}`;
 const PROBE_PREFIX = "labforce-";

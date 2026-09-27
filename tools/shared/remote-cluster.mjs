@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import url from "node:url";
 import { CONTROLLER, createClusterTransport } from "./cluster-transport.mjs";
+export { parseInstanceList } from "./cluster-instances.mjs";
 
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 export const REMOTE_CLUSTERS_FILE = path.resolve(HERE, "../clusterio/remote-clusters.local.json");
@@ -67,14 +68,4 @@ export async function withCluster(name, fn, { exec = execFileSync, controller = 
 		"control.max_reconnect_delay": 60,
 	});
 	return await fn(createClusterTransport({ controller, config: REMOTE_CONFIG_PLACEHOLDER, hosts: {}, exec: remoteExec(exec, controller, config) }));
-}
-
-export function parseInstanceList(output) {
-	const lines = String(output).split(/\r?\n/).filter(line => line.includes("|"));
-	const header = lines.shift()?.split("|").map(cell => cell.trim());
-	if (!header?.includes("name") || !header.includes("status")) return [];
-	return lines.filter(line => !/^[-\s|]+$/.test(line)).map(line => {
-		const cells = line.split("|").map(cell => cell.trim());
-		return Object.fromEntries(header.map((key, index) => [key, cells[index] ?? ""]));
-	}).filter(row => row.name);
 }

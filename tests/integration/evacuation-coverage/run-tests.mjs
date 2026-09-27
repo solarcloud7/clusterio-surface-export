@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const CONTROLLER = process.env.SE_LAB_CONTROLLER || "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-const INSTANCE = process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1";
+const INSTANCE = String(developmentCluster.locate(1, { override: process.env.SE_LAB_INSTANCE }).id);
 const PROBE = `evac-coverage-probe-${Date.now().toString(36)}`;
 
 function rcon(luaBody) {

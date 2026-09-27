@@ -1,6 +1,7 @@
 // Implementation of check-cluster-logs.ps1. User filters never enter a shell command.
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { developmentCluster } from "../shared/cluster-transport.mjs";
 import { diagnosticLine } from "../shared/diagnostics.mjs";
 
 export function lineCollector(onLine, maxChars = 64 * 1024) {
@@ -77,8 +78,16 @@ export async function main(args = process.argv.slice(2)) {
 	await read("Controller stdout", ["logs", "surface-export-controller", "--tail", String(scanLines)]);
 	for (const host of [1, 2]) {
 		await read(`Host ${host} plugin log`, ["exec", `surface-export-host-${host}`, "sh", "-c", `tail -n ${scanLines} /clusterio/logs/host/host-*.log`]);
+		let instanceDir;
+		try { instanceDir = developmentCluster.instanceDir(host); }
+		catch (error) {
+			console.log(`\nHost ${host} Factorio log`);
+			console.log(diagnosticLine(`Instance directory unresolved: ${error.message}. Search is incomplete.`));
+			process.exitCode = 1;
+			continue;
+		}
 		await read(`Host ${host} Factorio log`, ["exec", `surface-export-host-${host}`, "tail", "-n", String(lines),
-			`/clusterio/data/instances/clusterio-host-${host}-instance-1/factorio-current.log`], /./);
+			`${instanceDir}/factorio-current.log`], /./);
 	}
 	await read("Instance status", ["exec", "surface-export-controller", "npx", "clusterioctl", "--config",
 		"/clusterio/tokens/config-control.json", "--log-level", "error", "instance", "list"], /./);

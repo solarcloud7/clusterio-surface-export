@@ -222,9 +222,9 @@ function global:docker {
  } elseif ($args[0] -eq 'ps') {
   "surface-export-controller|$env:RELOAD_ROOT"
  } elseif (($args -join ' ') -match 'instance list') {
-  'header'; '-----'
-  'clusterio-host-1-instance-1 | 1 | 1 | 34100 | running |'
-  'clusterio-host-2-instance-1 | 2 | 2 | 34200 | running |'
+  'name | id | assignedHost | gamePort | status |'; '-----'
+  'Dev One | 1 | 1 | 34100 | running |'
+  'Dev Two | 2 | 2 | 34200 | running |'
  } else { throw 'UNEXPECTED_MUTATION' }
 }
 function global:node { throw 'UNEXPECTED_PROBE_OR_MUTATION' }

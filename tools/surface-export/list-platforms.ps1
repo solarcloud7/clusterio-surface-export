@@ -8,11 +8,11 @@ param(
 if ($Instance -eq "" -or $Instance -eq "1") {
     $Inst1 = Get-InstanceByHostNumber "1"
     Write-Host "=== Instance 1 ($($Inst1.Name)) ===" -ForegroundColor Cyan
-    Send-RCON -InstanceName $Inst1.Name -Command "/list-platforms"
+    Send-RCON -InstanceName $Inst1.Id -Command "/list-platforms"
 }
 
 if ($Instance -eq "" -or $Instance -eq "2") {
     $Inst2 = Get-InstanceByHostNumber "2"
     Write-Host "=== Instance 2 ($($Inst2.Name)) ===" -ForegroundColor Cyan
-    Send-RCON -InstanceName $Inst2.Name -Command "/list-platforms"
+    Send-RCON -InstanceName $Inst2.Id -Command "/list-platforms"
 }

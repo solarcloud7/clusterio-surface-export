@@ -15,14 +15,15 @@ const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const RCON_TIMEOUT_MS = 20_000;
 
-import { seededInstanceNames } from "../shared/seeded-instances.mjs";
-const SEEDED = seededInstanceNames();
-if (SEEDED.length !== 2) {
-	throw new Error(`cluster-readiness assigns source/destination roles to exactly two seeded instances; seed-data names ${SEEDED.length}: ${SEEDED.join(", ")}`);
+import { developmentCluster } from "../shared/cluster-transport.mjs";
+import { seededInstances } from "../shared/seeded-instances.mjs";
+const SEEDED = seededInstances();
+if (SEEDED.length !== 2 || SEEDED[0].hostNumber === SEEDED[1].hostNumber) {
+	throw new Error(`cluster-readiness assigns source/destination roles to exactly two seeded hosts with one instance each; seed-data names ${SEEDED.map(r => `${r.host}/${r.instance}`).join(", ")}`);
 }
 export const INSTANCE_ROLES = Object.freeze([
-	Object.freeze({ instance: SEEDED[0], role: "source" }),
-	Object.freeze({ instance: SEEDED[1], role: "destination" }),
+	Object.freeze({ host: SEEDED[0].hostNumber, instance: `host-${SEEDED[0].hostNumber}`, role: "source" }),
+	Object.freeze({ host: SEEDED[1].hostNumber, instance: `host-${SEEDED[1].hostNumber}`, role: "destination" }),
 ]);
 
 export const CHECK_RCON = "rcon-probe";
@@ -190,12 +191,13 @@ export function evaluateReadiness(expectations, probes) {
 	return { ok: results.length > 0 && results.every(r => r.ok), results };
 }
 
-export function probeCluster(instances = INSTANCE_ROLES.map(r => r.instance)) {
+export function probeCluster(instances = INSTANCE_ROLES.map(r => r.instance), { target = developmentCluster.instance } = {}) {
 	const probes = {};
 	for (const instance of instances) {
 		try {
+			const role = INSTANCE_ROLES.find(r => r.instance === instance);
 			const raw = execFileSync("docker", ["exec", CONTROLLER, "npx", "clusterioctl",
-				"--config", CTL_CONFIG, "--log-level", "error", "instance", "send-rcon", instance, PROBE_LUA],
+				"--config", CTL_CONFIG, "--log-level", "error", "instance", "send-rcon", role ? target(role.host) : instance, PROBE_LUA],
 			{ encoding: "utf8", timeout: RCON_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 8 * 1024 * 1024 }).trim();
 			const line = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean).at(-1) || "";
 			try {

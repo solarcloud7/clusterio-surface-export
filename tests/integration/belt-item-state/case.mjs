@@ -1,7 +1,7 @@
 import { parseStateCounters } from "./state-counters.mjs";
 
 export function createCase(context) {
-	const { lua, sleep, docker, HOSTS, say, fail, pass, platformLua, SOURCE_HOST, DEST_HOST, CLONE } = context;
+	const { lua, sleep, docker, HOSTS, instancePath, say, fail, pass, platformLua, SOURCE_HOST, DEST_HOST, CLONE } = context;
 	const LABEL_PREFIX = CLONE + "-belt";
 	const storedField = (id, field) => context.storedField(field);
 	const SPOIL_HEADROOM_TICKS = 108_000;
@@ -350,7 +350,7 @@ export function createCase(context) {
 	}
 
 	async function readStateCounters(host) {
-		const path = `/clusterio/data/instances/${HOSTS[host].instance}/factorio-current.log`;
+		const path = instancePath(host, "factorio-current.log");
 		for (let attempt = 1; attempt <= STATE_LOG_ATTEMPTS; attempt++) {
 			const out = docker(["exec", HOSTS[host].container, "sh", "-c",
 				`grep -aF '${STATE_LOG_MARKER}' ${path} || true`]);

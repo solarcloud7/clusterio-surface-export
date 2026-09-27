@@ -1,6 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { posix } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { developmentCluster } from "../../shared/cluster-transport.mjs";
 
 import { exitCodeFor, resolvePath } from "./path-oracle.mjs";
 
@@ -88,11 +91,11 @@ export function listDumps(host, glob = "*.json") {
 		throw new Error(`refusing glob "${glob}": only [A-Za-z0-9_.*?-] are allowed. Quoting a hostile `
 			+ "glob is harder to get right than refusing one.");
 	}
-	const instance = `clusterio-host-${host}-instance-1`;
+	const instance = posix.basename(developmentCluster.instanceDir(host));
 	const container = `surface-export-host-${host}`;
 	const dir = PATHS.instanceScriptOutput.pathTemplate.replace("<instance>", instance);
 	const raw = dockerRead(["exec", container, "sh", "-c",
-		`find ${dir} -maxdepth 1 -name '${glob}' -printf '%T@ %s %p\\n' 2>/dev/null | sort -rn`],
+		`find '${dir}' -maxdepth 1 -name '${glob}' -printf '%T@ %s %p\\n' 2>/dev/null | sort -rn`],
 	{ what: `listing dumps on host ${host}` });
 	return String(raw).split("\n").map(line => line.trim()).filter(Boolean).map(line => {
 		const [mtime, size, ...rest] = line.split(" ");

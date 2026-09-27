@@ -4,16 +4,17 @@ import { createSaveSession } from "./save-session.mjs";
 import { startPatchedSave } from "./start-patched-save.mjs";
 import { probeCluster, compareWorlds, evaluateRuntime, expectedModuleVersion } from "../../tools/tests/cluster-readiness.mjs";
 import { developmentCluster, CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
+import { parseInstanceRows } from "../../tools/shared/cluster-instances.mjs";
 import { fileURLToPath } from "node:url";
 
 export { CONTROLLER, CTL_CONFIG, HOSTS, sleep, lastLine } from "../../tools/shared/cluster-transport.mjs";
-export const { docker, ctl, rcon, lua, instanceIds } = developmentCluster;
+export const { docker, ctl, rcon, lua, instanceIds, instance, instanceName, instanceDir, locate } = developmentCluster;
 export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const FLUID_EPSILON = 1e-6;
 export const DOUBLE_EPSILON = 1e-9;
 
 export function instancePath(host, suffix) {
-	return `/clusterio/data/instances/${HOSTS[host].instance}/${suffix}`;
+	return `${instanceDir(host)}/${suffix}`;
 }
 
 
@@ -151,7 +152,7 @@ export function assertLeaseClean(host, state, phase) {
 }
 
 export function loadedSave(host) {
-	const out = ctl("instance", "save", "list", HOSTS[host].instance);
+	const out = ctl("instance", "save", "list", instance(host));
 	for (const line of out.split(/\r?\n/)) {
 		const cells = line.split("|").map(c => c.trim());
 		if (cells.length >= 5 && cells[4] === "true") return cells[2];
@@ -250,11 +251,10 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 			throw new Error(`Snapshot incomplete: host ${host} / ${name}; neither test world will be loaded`, { cause: lastError });
 		},
 		async reload(host, name) {
-			const rows = ctl("instance", "list").split(/\r?\n/).map(line => line.split("|").map(cell => cell.trim()));
-			const status = rows.find(cells => cells[0] === HOSTS[host].instance)?.[4];
-			if (status === "running") ctl("instance", "stop", HOSTS[host].instance);
+			const status = parseInstanceRows(ctl("instance", "list")).find(row => String(row.id) === instance(host))?.status;
+			if (status === "running") ctl("instance", "stop", instance(host));
 			else if (status !== "stopped") throw new Error(`Cannot restore host ${host} while status is ${status}`);
-			ctl("instance", "start", HOSTS[host].instance, "--save", name);
+			ctl("instance", "start", instance(host), "--save", name);
 			await waitReady(host);
 		},
 		verify(before) {
@@ -273,11 +273,11 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		}
 		await session.prepare();
 		await session.enter(async () => {
-			for (const host of [1, 2]) ctl("instance", "stop", HOSTS[host].instance);
+			for (const host of [1, 2]) ctl("instance", "stop", instance(host));
 			for (const [host, role, name] of [[1, "source", goldenSourceSave], [2, "destination", goldenDestSave]]) {
 				docker(["cp", `${REPO_ROOT}${manifest.saves[role].artifact}`,
 					`${HOSTS[host].container}:${instancePath(host, `saves/${name}`)}`], { timeout: 180000 });
-				startPatchedSave(ctl, HOSTS[host].instance, name);
+				startPatchedSave(ctl, instance(host), name);
 				await waitReady(host);
 				assertLeaseClean(host, preflightState(host), phase);
 			}

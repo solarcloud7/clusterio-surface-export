@@ -10,9 +10,7 @@ param(
 $cmd = $Command -join " "
 
 if ($Target -match '^([12])([12])$') {
-    $inst = Get-InstanceByHostNumber $Matches[1]
-    if (-not $inst) { Write-Error "No instance for host $($Matches[1]). Is the cluster up?"; exit 1 }
-    $name = $inst.Name
+    $name = (Get-InstanceByHostNumber $Matches[1]).Id
 } else {
     $name = $Target
 }

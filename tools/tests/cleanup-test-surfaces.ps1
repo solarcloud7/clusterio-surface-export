@@ -18,7 +18,7 @@ $unknownTotal = 0
 $strandedTotal = 0
 
 foreach ($h in $Hosts) {
-    $instance = "clusterio-host-$h-instance-1"
+    $instance = Get-HostInstanceId -HostNumber $h
     $inventory = Get-PlatformInventory -Instance $instance
 
     Write-Host ("  host-{0} — {1} platform(s)" -f $h, @($inventory).Count) -ForegroundColor White
@@ -60,7 +60,7 @@ foreach ($h in $Hosts) {
 
 $surfacesRemovedTotal = 0
 foreach ($h in $Hosts) {
-    $instance = "clusterio-host-$h-instance-1"
+    $instance = Get-HostInstanceId -HostNumber $h
     $prefixLua = ($Prefixes | ForEach-Object { "'" + ($_ -replace "'", "\'") + "'" }) -join ","
     $protectedLua = ($protected | ForEach-Object { "['" + ($_ -replace "'", "\'") + "']=true" }) -join ", "
     $deleteLua = if ($DryRun) { "" } else { "for _, s in ipairs(doomed) do game.delete_surface(s) end " }
@@ -86,7 +86,7 @@ foreach ($h in $Hosts) {
 
 $groupsRemovedTotal = 0
 foreach ($h in $Hosts) {
-    $instance = "clusterio-host-$h-instance-1"
+    $instance = Get-HostInstanceId -HostNumber $h
     $prefixLua = ($Prefixes | ForEach-Object { "'" + ($_ -replace "'", "\'") + "'" }) -join ","
     $deleteLua = if ($DryRun) { "" } else { "for _, name in ipairs(doomed) do game.forces.player.delete_logistic_group(name) end " }
     $code = "local prefixes={$prefixLua} local doomed={} " +

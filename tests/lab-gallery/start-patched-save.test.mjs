@@ -29,3 +29,15 @@ for (const [name, errors, status, starts, throws] of [
 			Array.from({ length: starts }, () => ["instance", "start", "fixture", "--save", "checkpoint.zip"]));
 	});
 }
+
+test("a stopped instance addressed by its ID retries after a rename", () => {
+	const calls = [];
+	const ctl = (...args) => {
+		calls.push(args);
+		if (args[1] === "list") return "Dev One | 836570928 | 1 | 34100 | stopped";
+		if (calls.filter(call => call[1] === "start").length === 1) throw new Error(migration);
+		return "started";
+	};
+	assert.equal(startPatchedSave(ctl, "836570928", "checkpoint.zip"), "started");
+	assert.equal(calls.filter(call => call[1] === "start").length, 2);
+});

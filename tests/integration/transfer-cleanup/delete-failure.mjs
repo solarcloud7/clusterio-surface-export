@@ -21,7 +21,7 @@ if (args[0] === "--analyze") {
   assert.ok(!(args.includes("--large") && args.includes("--empty-hub-control")), "large and empty hub are separate fixtures");
   assert.ok(!(args.includes("--profile-callbacks") && args.includes("--restart-controller")), "profile and restart are separate fixtures");
   const { withWorkflowLock } = await import("../../../tools/shared/workflow-lock.mjs");
-  const { docker, HOSTS, instanceIds, preflightState, assertLeaseClean, fetchTransferSummaries, sleep } =
+  const { docker, instance, instanceIds, preflightState, assertLeaseClean, fetchTransferSummaries, sleep } =
     await import("../../lab-gallery/batch-lifecycle.mjs");
   const code = readFileSync(new URL("./probe.lua", import.meta.url), "utf8");
   const prefix = `transfer-cleanup-${Date.now().toString(36)}`;
@@ -60,7 +60,7 @@ if (args[0] === "--analyze") {
     const cmd = `/sc local ok,result=pcall(function() ${body} end); rcon.print(helpers.table_to_json(ok and result or {success=false,error=tostring(result)}))`;
     assert.ok(Buffer.byteLength(cmd) <= 32768, "RCON command exceeds contract");
     const raw = docker(["exec", "surface-export-controller", "npx", "clusterioctl", "--log-level", "error",
-      "--config", "/clusterio/tokens/config-control.json", "instance", "send-rcon", HOSTS[host].instance, cmd],
+      "--config", "/clusterio/tokens/config-control.json", "instance", "send-rcon", instance(host), cmd],
     { timeout: 20_000, maxBuffer: args.includes("--large") ? 4194304 : profiling ? 262144 : 65536 });
     if (profiling) for (const line of raw.split(/\r?\n/)) {
       const marker = line.indexOf("[SE_CALLBACK_V1]");

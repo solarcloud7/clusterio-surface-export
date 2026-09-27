@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {readFileSync, writeFileSync} from "node:fs";
 import {createHash} from "node:crypto";
 import {withWorkflowLock} from "../../../tools/shared/workflow-lock.mjs";
-import {docker, HOSTS, preflightState, assertLeaseClean, sleep} from "../../lab-gallery/batch-lifecycle.mjs";
+import {docker, instance, preflightState, assertLeaseClean, sleep} from "../../lab-gallery/batch-lifecycle.mjs";
 const entity = JSON.parse(readFileSync(new URL("./crafter-input.json", import.meta.url), "utf8"));
 const beacons = process.argv.includes("--beacons");
 assert.equal(entity.name, "crusher");
@@ -16,7 +16,7 @@ function run(body) {
   const cmd = `/sc local ok,result=pcall(function() ${prefix} ${body} end);rcon.print(helpers.table_to_json(ok and result or {success=false,error=tostring(result)}))`;
   assert.ok(Buffer.byteLength(cmd) < 32768);
   const raw = docker(["exec", "surface-export-controller", "npx", "clusterioctl", "--config", "/clusterio/tokens/config-control.json",
-    "--log-level", "error", "instance", "send-rcon", HOSTS[2].instance, cmd], {timeout: 20000, maxBuffer: 262144});
+    "--log-level", "error", "instance", "send-rcon", instance(2), cmd], {timeout: 20000, maxBuffer: 262144});
   const r = JSON.parse(raw.trim().split(/\r?\n/).at(-1)); assert.equal(r.success, true, r.error); return r;
 }
 const report = {entity, beacons, sourceHash: createHash("sha256").update(readFileSync(import.meta.filename)).digest("hex"), samples: []};

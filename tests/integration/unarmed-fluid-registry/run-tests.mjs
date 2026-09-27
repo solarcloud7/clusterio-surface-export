@@ -12,8 +12,9 @@
 //           exercise the interactive selection-lab tool
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
-const INSTANCE = process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1";
+const INSTANCE = String(developmentCluster.locate(1, { override: process.env.SE_LAB_INSTANCE }).id);
 const TAG = Date.now().toString(36);
 const PROBE = `selab-armed-${TAG}`;
 const PROBE_PREFIX = "selab-armed-";

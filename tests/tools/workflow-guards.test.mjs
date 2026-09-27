@@ -138,7 +138,7 @@ test("runtime readiness waits for a delayed host and identifies the failing inst
 		sleep: async ms => { now += ms; }, probe: () => ++calls < 3 ? {} : probes() });
 	assert.equal(calls, 3); assert.ok(result.results.every(r => r.ok));
 	await assert.rejects(waitForRuntime({ expectedVersion: "new", timeoutMs: 0, probe: () => probes() }),
-		/clusterio-host-1-instance-1: Lua version fixture; expected new/);
+		/host-1: Lua version fixture; expected new/);
 });
 test("preservation check catches lost platforms and relocated players, but ignores advancing ticks", () => {
 	const before = probes(), after = probes();

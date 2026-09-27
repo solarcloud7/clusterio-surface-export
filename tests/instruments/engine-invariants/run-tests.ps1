@@ -17,7 +17,7 @@ if ($SourceHost -eq 0) {
         exit 1
     }
 }
-$instance = "clusterio-host-$SourceHost-instance-1"
+$instance = Get-HostInstanceId -HostNumber $SourceHost
 Write-Host "  Host: $SourceHost   Source: $SourcePlatform" -ForegroundColor Gray
 Write-Host ""
 
