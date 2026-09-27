@@ -61,43 +61,98 @@ test("assignments are saved on change and survive a controller restart", async t
 	const first = new PortalSlots(recorder().logger);
 	await first.load(file);
 	writes = 0;
-	assert.equal(first.reconcile([7, 9]), true);
-	await first.flush();
-	first.reconcile([9, 7]);
-	await first.flush();
+	await first.settle([7, 9]);
+	await first.settle([9, 7]);
 	assert.equal(writes, 1, "an unchanged assignment is not rewritten");
 	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[1, 7], [2, 9]], released: [] });
 
 	const restarted = new PortalSlots(recorder().logger);
 	await restarted.load(file);
 	assert.deepEqual(restarted.assignments(), [{ slot: 1, instanceId: 7 }, { slot: 2, instanceId: 9 }]);
-	assert.equal(restarted.reconcile([9, 12]), true, "deleting a holder retires its colour");
-	await restarted.flush();
+	await restarted.settle([9, 12]);
 	assert.deepEqual(restarted.assignments(), [{ slot: 2, instanceId: 9 }, { slot: 3, instanceId: 12 }],
 		"a new server takes a never-held colour; the retired colour stays unassigned; the others keep theirs");
 	assert.deepEqual(restarted.retired(), [{ slot: 1, previousInstanceId: 7 }]);
 	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[2, 9], [3, 12]], released: [[1, 7]] });
 	const reloaded = new PortalSlots(recorder().logger);
 	await reloaded.load(file);
-	reloaded.reconcile([9, 12, 13, 14]);
+	await reloaded.settle([9, 12, 13, 14]);
 	assert.deepEqual(reloaded.assignments(), [{ slot: 2, instanceId: 9 }, { slot: 3, instanceId: 12 }, { slot: 4, instanceId: 13 }],
 		"a retired colour stays retired across a reload");
 	assert.deepEqual(reloaded.unassigned([9, 12, 13, 14]), [14]);
 });
 
-test("a failed save is logged and retried on the next reconcile", async t => {
+async function committedFile(t, saved) {
 	const file = await tempFile(t);
+	await fs.writeFile(file, JSON.stringify(saved));
 	const { lines, logger } = recorder();
 	const slots = new PortalSlots(logger);
 	await slots.load(file);
+	return { file, lines, slots };
+}
+
+async function withFailingWrites(action) {
 	failWrites = true;
-	slots.reconcile([1]);
-	await slots.flush();
-	failWrites = false;
-	assert.match(lines.error.join("\n"), /could not be saved.*disk full/);
-	slots.reconcile([1]);
-	await slots.flush();
-	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")).slots, [[1, 1]]);
+	try {
+		return await action();
+	} finally {
+		failWrites = false;
+	}
+}
+
+test("a release that cannot be saved is not applied, and a restart never shows a destination nobody committed", async t => {
+	const committed = { version: 1, slots: [[1, 10], [2, 20]], released: [] };
+	const { file, lines, slots } = await committedFile(t, committed);
+	await withFailingWrites(async () => {
+		await assert.rejects(slots.release(1), /could not be saved, so it was not applied/);
+		await slots.settle([10, 20]);
+		await slots.settle([10, 20]);
+	});
+	assert.deepEqual(slots.assignments(), [{ slot: 1, instanceId: 10 }, { slot: 2, instanceId: 20 }],
+		"the advertised state stays the last saved one: Blue still leads to 10 and no colour moves");
+	assert.deepEqual(slots.retired(), []);
+	assert.equal(slots.slotOf(10), 1, "the released server never appears on another colour");
+	assert.equal(lines.error.filter(line => /disk full/.test(line)).length, 1, "a repeated write failure is logged once");
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), committed);
+	const restarted = new PortalSlots(recorder().logger);
+	await restarted.load(file);
+	await restarted.settle([10, 20, 30]);
+	assert.deepEqual(restarted.assignments(), [{ slot: 1, instanceId: 10 }, { slot: 2, instanceId: 20 }, { slot: 3, instanceId: 30 }],
+		"after the restart the new server takes a colour no other server was ever shown holding");
+	assert.deepEqual(await slots.release(1), 10, "once writes succeed the administrator's release applies");
+	assert.deepEqual(slots.retired(), [{ slot: 1, previousInstanceId: 10 }]);
+});
+
+test("an assignment that cannot be saved is not applied", async t => {
+	const committed = { version: 1, slots: [[1, 10]], released: [[2, 20]] };
+	const { file, slots } = await committedFile(t, committed);
+	await withFailingWrites(() => assert.rejects(slots.assign(2, 10), /could not be saved/));
+	assert.deepEqual([slots.assignments(), slots.retired()], [[{ slot: 1, instanceId: 10 }], [{ slot: 2, previousInstanceId: 20 }]]);
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), committed);
+	assert.deepEqual(await slots.assign(2, 10), [{ slot: 2, previousInstanceId: 20, instanceId: 10 }]);
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[2, 10]], released: [[1, 10]] });
+});
+
+test("an automatic assignment or retirement that cannot be saved is neither advertised nor pushed, and applies once saving works", async t => {
+	const committed = { version: 1, slots: [[1, 10]], released: [] };
+	const { file, slots } = await committedFile(t, committed);
+	const controller = { config: { get: () => undefined }, hosts: new Map(), pushed: [],
+		instances: new Map([[20, { id: 20, config: { get: () => undefined } }], [30, { id: 30, config: { get: () => undefined } }]]),
+		async sendTo(target, message) { this.pushed.push([target.instanceId, message.toJSON().ownGatewayName, message.toJSON().activeGatewayNames]); return { success: true }; } };
+	const gateways = new GatewayConfig(controller, recorder().logger, { isInstanceOnline: () => true, resolveInstanceName: id => `s${id}` }, slots);
+	await withFailingWrites(async () => {
+		await gateways.pushGatewayConfigToAllSources();
+		assert.deepEqual(slots.assignments(), [{ slot: 1, instanceId: 10 }], "the unsaved retirement and assignments are not in effect");
+		assert.deepEqual(controller.pushed, [[20, undefined, [ONE_GATE_NAME]], [30, undefined, [ONE_GATE_NAME]]],
+			"no server is told about a colour that was not saved, and the deleted holder is no destination");
+		assert.deepEqual((await gateways.handleGetGatewaysRequest({})).portals, []);
+		await slots.flush();
+	});
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), committed);
+	await gateways.pushGatewayConfigToAllSources();
+	assert.deepEqual(slots.assignments(), [{ slot: 2, instanceId: 20 }, { slot: 3, instanceId: 30 }]);
+	assert.deepEqual(slots.retired(), [{ slot: 1, previousInstanceId: 10 }], "the deleted holder's colour is retired, not reused");
+	assert.deepEqual(controller.pushed.slice(2).map(entry => entry.slice(0, 2)), [[20, "surfexp_gateway_2"], [30, "surfexp_gateway_3"]]);
 });
 
 test("a fifth server is reported once while it waits for a colour", async () => {
@@ -140,10 +195,10 @@ test("an administrator assigns and releases colours; a new holder of a retired c
 	const file = await tempFile(t);
 	const slots = new PortalSlots(recorder().logger);
 	await slots.load(file);
-	slots.reconcile([1, 2]);
-	slots.reconcile([1]);
+	await slots.settle([1, 2]);
+	await slots.settle([1]);
 	assert.deepEqual(slots.retired(), [{ slot: 2, previousInstanceId: 2 }]);
-	slots.reconcile([1, 7]);
+	await slots.settle([1, 7]);
 	assert.equal(slots.slotOf(7), 3, "a new server skips the retired colour");
 	assert.deepEqual(await slots.assign(2, 7), [{ slot: 2, previousInstanceId: 2, instanceId: 7 }], "taking a retired colour names its former holder");
 	assert.deepEqual(slots.retired(), [{ slot: 3, previousInstanceId: 7 }], "a server moving colour retires the one it left");
@@ -151,7 +206,7 @@ test("an administrator assigns and releases colours; a new holder of a retired c
 	await assert.rejects(slots.assign(1, 7), /the blue portal is held by instance 1; release it first/);
 	assert.equal(await slots.release(1), 1);
 	await assert.rejects(slots.release(1), /the blue portal is not held by any server/);
-	slots.reconcile([1, 7]);
+	await slots.settle([1, 7]);
 	assert.equal(slots.slotOf(1), 4, "a released server may take a never-held colour");
 	assert.deepEqual(slots.retired(), [{ slot: 1, previousInstanceId: 1 }, { slot: 3, previousInstanceId: 7 }]);
 	await slots.flush();
@@ -175,8 +230,7 @@ test("an admin change that cannot be saved is reported to the command", async t 
 	const file = await tempFile(t);
 	const slots = new PortalSlots(recorder().logger);
 	await slots.load(file);
-	slots.reconcile([1, 2]);
-	await slots.flush();
+	await slots.settle([1, 2]);
 	failWrites = true;
 	try {
 		await assert.rejects(slots.release(2), /could not be saved/);

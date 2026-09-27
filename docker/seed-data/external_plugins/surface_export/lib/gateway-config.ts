@@ -58,6 +58,10 @@ export class GatewayConfig {
 		return this.slots.assignments().filter(entry => liveSet.has(entry.instanceId));
 	}
 
+	async settle(): Promise<void> {
+		await this.slots.settle(this.liveInstances().map(inst => inst.id));
+	}
+
 	portalOf(instanceId: number): PortalAssignment | null {
 		const entry = this.assignedPortals().find(portal => portal.instanceId === instanceId);
 		return entry ? { slot: entry.slot, colour: portalColour(entry.slot), label: this.instanceName(instanceId) } : null;
@@ -163,6 +167,7 @@ export class GatewayConfig {
 	}
 
 	async pushGatewayConfigToAllSources(): Promise<Map<number, string | null>> {
+		await this.settle();
 		const results = new Map<number, string | null>();
 		for (const inst of this.liveInstances()) {
 			results.set(inst.id, await this.pushGatewayConfigToInstance(inst.id));
@@ -195,7 +200,7 @@ export class GatewayConfig {
 
 	async handleSetPortalRequest(request: { action: "assign" | "release"; portal: string; instance?: string }) {
 		const slot = this.resolvePortal(request.portal);
-		this.assignedPortals();
+		await this.settle();
 		const name = colourName(portalColour(slot));
 		if (request.action === "assign") {
 			if (request.instance === undefined) throw new Error("assign needs an instance");
@@ -214,10 +219,12 @@ export class GatewayConfig {
 	}
 
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
+		await this.settle();
 		return this.portals();
 	}
 
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
+		await this.settle();
 		return this.configFor(Number(request.instanceId));
 	}
 }

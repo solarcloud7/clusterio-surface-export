@@ -189,6 +189,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			resolveInstanceName: id => this.platformTree.resolveInstanceName(id),
 		}, portalSlots);
 		this.gatewayConfig = gateways;
+		await gateways.settle();
+		portalSlots.onCommitted = () => {
+			this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+			void gateways.pushGatewayConfigToAllSources().then(results => {
+				for (const [sourceInstanceId, error] of results) {
+					if (error) this.logger.warn(`Portal colour refresh for instance ${sourceInstanceId} failed: ${error}`);
+				}
+			});
+		};
 		const routeAlerts = new RouteAlertRelay(this.c as never, this.logger, id => this.isInstanceOnline(id));
 		this.routeAlerts = routeAlerts;
 		this.c.handle(messages.RouteAlertEvent, async (event: messages.RouteAlertEvent, src: { id: number }) => routeAlerts.accept(src.id, event.alert));
