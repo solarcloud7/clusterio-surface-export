@@ -319,7 +319,7 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		if not resumed then log("[Gateway] Route resume failed for '" .. platform.name .. "': " .. tostring(resume_error)) end
 	elseif hold.route_hold then
 		local alerted, alert_error = pcall(RouteAlerts.raise, platform, "held", "surfexp_gateway_hub",
-			"holding at the Transfer Gateway: its next stop is this server; edit the schedule and unpause it")
+			"holding at the Gateway: its next stop is this server; edit the schedule and unpause it")
 		if not alerted then log("[Gateway] Route hold alert failed: " .. tostring(alert_error)) end
 	end
 	Receipts.put("destination_live", transfer_id, {

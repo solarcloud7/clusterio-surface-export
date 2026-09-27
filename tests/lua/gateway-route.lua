@@ -1,6 +1,6 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local states = {waiting_at_station = 7, on_the_path = 3, paused = 8, no_path = 6}
-local locations = {surfexp_gateway_hub = {localised_name = {"", "Transfer Gateway"}}, nauvis = {}, vulcanus = {},
+local locations = {surfexp_gateway_hub = {localised_name = {"", "Gateway"}}, nauvis = {}, vulcanus = {},
 	["surfexp_gateway_i_fact1"] = {localised_name = {"", "Forge"}}, ["surfexp_gateway_i_fact2"] = {localised_name = {"", "Cinder"}}}
 local env = setmetatable({defines = {space_platform_state = states}, prototypes = {space_location = locations},
 	storage = {}, log = function() end}, {__index = _G})

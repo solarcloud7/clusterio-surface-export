@@ -92,7 +92,7 @@ for name, label in pairs(labels) do
   local location = assert(locations["surfexp_gateway_i_" .. name], name .. " destination")
   assert(location.localised_name[1] == "" and location.localised_name[2] == label, name .. " label")
   assert(location.localised_description[2] == label)
-  assert(location.hidden == false and location.draw_orbit == false)
+  assert(location.hidden == false and location.draw_orbit == true, name .. " orbits the Gateway")
   assert(math.abs(location.origin.x - hub_x) < 1e-9 and math.abs(location.origin.y - hub_y) < 1e-9, name .. " should sit beside the hub")
   assert(location.distance > 0 and location.distance < 10)
   assert(not orientations[location.orientation], "destinations must not overlap")

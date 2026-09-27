@@ -52,15 +52,14 @@ local hub = {
 	gravity_pull = -10,
 	distance = 25.5,
 	orientation = 0.245,
-	magnitude = 2.25,
+	magnitude = 1.4,
 	label_orientation = 0.15,
 }
 locations[#locations + 1] = hub
 
 local INSTANCE_PREFIX = "surfexp_gateway_i_"
 local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 6
-local INSTANCE_ARC = 0.4
+local INSTANCE_RING_DISTANCE = 3.5
 
 local function parse_instances(value)
 	local entries, seen = {}, {}
@@ -90,8 +89,6 @@ end
 
 local instances = multi and {} or parse_instances(settings.startup["surfexp-gateway-instances"].value)
 local hub_position = polar({ x = 0, y = 0 }, hub.distance, hub.orientation)
-local step = #instances > 1 and INSTANCE_ARC / (#instances - 1) or 0
-local first = #instances > 1 and hub.orientation - INSTANCE_ARC / 2 or hub.orientation
 for i, instance in ipairs(instances) do
 	local name = INSTANCE_PREFIX .. instance.name
 	local colour = GATEWAY_COLOURS[(i - 1) % GATEWAY_COUNT + 1]
@@ -101,7 +98,7 @@ for i, instance in ipairs(instances) do
 		localised_name = { "", instance.label },
 		localised_description = { "space-location-description.surfexp_gateway_instance", instance.label },
 		hidden = false,
-		draw_orbit = false,
+		draw_orbit = true,
 		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
 		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
 		starmap_icon_size = 512,
@@ -110,8 +107,8 @@ for i, instance in ipairs(instances) do
 		gravity_pull = -10,
 		origin = hub_position,
 		distance = INSTANCE_RING_DISTANCE,
-		orientation = first + step * (i - 1),
-		magnitude = 0.8,
+		orientation = (hub.orientation + (i - 1) / #instances) % 1,
+		magnitude = 0.5,
 		label_orientation = 0.25,
 	}
 	connections[#connections + 1] = {
