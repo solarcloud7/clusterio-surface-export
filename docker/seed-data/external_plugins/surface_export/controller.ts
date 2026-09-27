@@ -8,6 +8,7 @@ import { BaseControllerPlugin } from "@clusterio/controller";
 import type { Controller, InstanceRecord } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
 import { GatewayConfig } from "./lib/gateway-config";
+import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots";
 import { RouteAlertRelay } from "./lib/route-alert-relay";
 
 type InstanceStatusChange = { id: number; status?: string };
@@ -42,7 +43,7 @@ const PLUGIN_NAME = "surface_export";
 const TREE_INSTANCE_CONFIG_FIELDS = new Set([
 	`${PLUGIN_NAME}.default_planet`,
 	`${PLUGIN_NAME}.disabled_planets`,
-	"factorio.mod_pack_id",
+	"instance.name",
 ]);
 
 export class ControllerPlugin extends BaseControllerPlugin {
@@ -181,10 +182,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
 		await this.loadAuditIndex();
+		const portalSlots = new PortalSlots(this.logger);
+		await portalSlots.load(path.resolve(String(this.c.config.get("controller.database_directory")), PORTAL_SLOTS_FILENAME));
 		const gateways = new GatewayConfig(this.c, this.logger, {
 			isInstanceOnline: id => this.isInstanceOnline(id),
 			resolveInstanceName: id => this.platformTree.resolveInstanceName(id),
-		});
+		}, portalSlots);
 		this.gatewayConfig = gateways;
 		const routeAlerts = new RouteAlertRelay(this.c as never, this.logger, id => this.isInstanceOnline(id));
 		this.routeAlerts = routeAlerts;
@@ -295,14 +298,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	override async onInstanceConfigFieldChanged(_instance: InstanceRecord, field: string) {
 		if (TREE_INSTANCE_CONFIG_FIELDS.has(field)) this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
-	}
-
-	override async onModPacksUpdated() {
-		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+		const gateways = this.gatewayConfig;
+		if (field !== "instance.name" || !gateways) return;
+		const results = await gateways.pushGatewayConfigToAllSources();
+		for (const [sourceInstanceId, error] of results) {
+			if (error) this.logger.warn(`Gateway name refresh for instance ${sourceInstanceId} failed: ${error}`);
+		}
 	}
 
 	override async onControllerConfigFieldChanged(field: string) {
-		if (field === "controller.default_mod_pack_id") this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory"
 			&& field !== "surface_export.discord_invite") return;
 		const gateways = this.gatewayConfig;

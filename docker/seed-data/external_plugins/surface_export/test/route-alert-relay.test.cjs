@@ -24,7 +24,7 @@ function fixture(online = [1, 2, 3]) {
 	return { relay, controller, sends, warnings };
 }
 
-const alert = (active = true) => ({ key: "player:5", platformName: "Hauler", forceName: "player", icon: "surfexp_gateway_i_2", active, reason: ["", "cannot reach"] });
+const alert = (active = true) => ({ key: "player:5", platformName: "Hauler", forceName: "player", icon: "surfexp_gateway_2", active, reason: ["", "cannot reach"] });
 
 test("a route alert is relayed to every other online server with its source name", async () => {
 	const { relay, sends } = fixture([1, 2]);

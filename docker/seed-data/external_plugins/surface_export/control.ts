@@ -193,7 +193,7 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
-	definition: ["gateways", "Print every server destination as JSON (gateway name, instance id and name); every server reaches every other server"],
+	definition: ["gateways", "Print the coloured portal held by each server as JSON (slot, colour, gateway name, instance id and name) and the servers without one; the Gateway reaches every other server"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const response = await control.sendTo("controller", new messages.GetGatewaysRequest());
 		console.log(JSON.stringify(response));

@@ -64,7 +64,7 @@ async function invoke(command, args, reply, sent = []) {
 
 test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => {
 	assert.ok(read, "the gateways command must be registered");
-	const reply = { destinations: [{ gatewayName: "surfexp_gateway_i_2", instanceId: 2, instanceName: "fact2" }] };
+	const reply = { portals: [{ slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "fact2" }], unassigned: [{ instanceId: 5, instanceName: "fact5" }] };
 	const { sent, printed } = await invoke(read, {}, reply);
 	assert.equal(sent.length, 1);
 	assert.equal(sent[0].target, "controller");

@@ -36,7 +36,7 @@ import {
 	targetHandleId,
 } from "./gateway-graph";
 import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
-import type { PlatformLike, PortalDestination, TrafficPair, TrafficRouteModel } from "./gateway-graph";
+import type { PlatformLike, Portal, TrafficPair, TrafficRouteModel } from "./gateway-graph";
 import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
 import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
@@ -99,14 +99,14 @@ function connectionRefusal(link: Connection | Edge): string | null {
 
 const HEADING_NAMES_SHOWN = 2;
 
-function headingText(route: TrafficRouteModel, destination: PortalDestination | null, targetName: string) {
+function headingText(route: TrafficRouteModel, portal: Portal | null, targetName: string) {
 	const names = route.platforms.map(platform => platform.platformName);
-	const label = destination?.label || targetName;
+	const label = portal?.label || targetName;
 	const shown = names.length > HEADING_NAMES_SHOWN ? `${names.length} platforms` : names.join(", ");
 	return {
 		text: `${shown} → ${label}`,
 		title: `Heading to the portal of ${targetName}: ${names.join(", ")}`,
-		colour: portalColour(destination?.colour),
+		colour: portalColour(portal?.colour),
 	};
 }
 
@@ -273,7 +273,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				graph.nodes.filter(node => !node.data.dimmed).map(node => instanceIdFromNodeId(node.id)),
 			);
 			const byInstance = new Map(graph.nodes.map(node => [node.data.instanceId as number, node.data]));
-			const destinationOf = (instanceId: number) => (byInstance.get(instanceId)?.destination ?? null) as PortalDestination | null;
+			const portalOf = (instanceId: number) => (byInstance.get(instanceId)?.portal ?? null) as Portal | null;
 			const nameOf = (instanceId: number) => String(byInstance.get(instanceId)?.instanceName || instanceId);
 			const dimStyle = (a: number, b: number) => (
 				focused.has(a) || focused.has(b) ? undefined : { opacity: DIMMED_OPACITY }
@@ -296,8 +296,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			const reachable = { type: MarkerType.ArrowClosed, color: PORTAL_LINK_COLOUR };
 
 			return pairs.map(pair => {
-				const colour = portalColour(destinationOf(pair.targetInstanceId)?.colour);
-				const reverseColour = portalColour(destinationOf(pair.sourceInstanceId)?.colour);
+				const colour = portalColour(portalOf(pair.targetInstanceId)?.colour);
+				const reverseColour = portalColour(portalOf(pair.sourceInstanceId)?.colour);
 				const heading = pair.routes.length > 0;
 				if (!heading && pair.ships.length === 0) {
 					return {
@@ -334,7 +334,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						transient: !heading,
 						colour,
 						headings: pair.routes.map(route => headingText(
-							route, destinationOf(route.targetInstanceId), nameOf(route.targetInstanceId))),
+							route, portalOf(route.targetInstanceId), nameOf(route.targetInstanceId))),
 						shape: edgeShape,
 						sourceInstanceId: pair.sourceInstanceId,
 						transfers: pair.ships,

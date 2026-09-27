@@ -216,7 +216,7 @@ body.surface-export-page .site-layout-content-container {
 
 .surface-export-instance-node-online .surface-export-instance-face {
 	opacity: 1;
-	filter: drop-shadow(0 0 8px rgba(22, 104, 220, 0.85));
+	filter: drop-shadow(0 0 8px var(--surface-export-portal-glow, rgba(22, 104, 220, 0.85)));
 }
 
 .surface-export-instance-node-offline .surface-export-instance-face {

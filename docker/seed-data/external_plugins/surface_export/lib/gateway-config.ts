@@ -3,6 +3,8 @@ import * as messages from "../messages";
 import { getErrorMessage } from "../helpers";
 import { timed } from "./timing";
 import { instanceAddress } from "./platform-tree";
+import { PortalSlots } from "./portal-slots";
+import { portalColour, portalGatewayName, type PortalAssignment } from "../shared/portals";
 
 export class GatewayConfig {
 	constructor(
@@ -12,6 +14,7 @@ export class GatewayConfig {
 			isInstanceOnline(instanceId: number): boolean;
 			resolveInstanceName(instanceId: number): string | null;
 		},
+		private readonly slots: PortalSlots = new PortalSlots(logger),
 	) {}
 
 	passengerCarry(): messages.PassengerCarry {
@@ -39,22 +42,46 @@ export class GatewayConfig {
 		return [...this.controller.instances.values()].filter(inst => !inst.isDeleted);
 	}
 
-	destinations(): { destinations: messages.InstanceDestination[] } {
-		return {
-			destinations: this.liveInstances().map(inst => ({
-				gatewayName: messages.instanceGatewayName(inst.id),
-				instanceId: inst.id,
-				instanceName: this.context.resolveInstanceName(inst.id) ?? String(inst.id),
-			})),
-		};
+	private instanceName(instanceId: number): string {
+		return this.context.resolveInstanceName(instanceId) ?? String(instanceId);
+	}
+
+	private assignedPortals(): Array<{ slot: number; instanceId: number }> {
+		const live = this.liveInstances().map(inst => inst.id);
+		this.slots.reconcile(live);
+		const liveSet = new Set(live);
+		return this.slots.assignments().filter(entry => liveSet.has(entry.instanceId));
+	}
+
+	portalOf(instanceId: number): PortalAssignment | null {
+		const entry = this.assignedPortals().find(portal => portal.instanceId === instanceId);
+		return entry ? { slot: entry.slot, colour: portalColour(entry.slot), label: this.instanceName(instanceId) } : null;
+	}
+
+	portals(): messages.PortalListingResponse {
+		const portals = this.assignedPortals().map(entry => ({
+			slot: entry.slot,
+			colour: portalColour(entry.slot),
+			gatewayName: portalGatewayName(entry.slot),
+			instanceId: entry.instanceId,
+			instanceName: this.instanceName(entry.instanceId),
+		}));
+		const unassigned = this.slots.loadError ? [] : this.slots.unassigned(this.liveInstances().map(inst => inst.id))
+			.map(instanceId => ({ instanceId, instanceName: this.instanceName(instanceId) }));
+		return this.slots.loadError ? { portals, unassigned, error: this.slots.loadError } : { portals, unassigned };
 	}
 
 	activeGatewayNamesFor(sourceInstanceId: number): string[] {
 		const names = [...messages.ONE_GATE_NAMES];
-		for (const destination of this.destinations().destinations) {
-			if (destination.instanceId !== sourceInstanceId) names.push(destination.gatewayName);
+		for (const portal of this.assignedPortals()) {
+			if (portal.instanceId !== sourceInstanceId) names.push(portalGatewayName(portal.slot));
 		}
 		return names;
+	}
+
+	ownGatewayNameFor(sourceInstanceId: number): string | undefined {
+		const own = this.assignedPortals().find(portal => portal.instanceId === sourceInstanceId);
+		return own ? portalGatewayName(own.slot) : undefined;
 	}
 
 	private resolveTarget(instanceId: number, targetGateway: string): messages.ResolvedGatewayTarget {
@@ -68,17 +95,29 @@ export class GatewayConfig {
 	}
 
 	private resolveGateways(sourceInstanceId: number): messages.ResolvedGateway[] {
-		const others = this.destinations().destinations.filter(destination => destination.instanceId !== sourceInstanceId);
+		const others = this.liveInstances().filter(inst => inst.id !== sourceInstanceId);
 		return [
 			{
 				gatewayName: messages.ONE_GATE_NAME,
-				targets: others.map(destination => this.resolveTarget(destination.instanceId, messages.ONE_GATE_NAME)),
+				targets: others.map(inst => this.resolveTarget(inst.id, messages.ONE_GATE_NAME)),
 			},
-			...others.map(destination => ({
-				gatewayName: destination.gatewayName,
-				targets: [this.resolveTarget(destination.instanceId, messages.ONE_GATE_NAME)],
+			...this.assignedPortals().filter(portal => portal.instanceId !== sourceInstanceId).map(portal => ({
+				gatewayName: portalGatewayName(portal.slot),
+				targets: [this.resolveTarget(portal.instanceId, messages.ONE_GATE_NAME)],
 			})),
 		];
+	}
+
+	private configFor(sourceInstanceId: number): messages.GatewayConfigPayload {
+		const config: messages.GatewayConfigPayload = {
+			gateways: this.resolveGateways(sourceInstanceId),
+			activeGatewayNames: this.activeGatewayNamesFor(sourceInstanceId),
+			passengerCarry: this.passengerCarry(),
+			discordInvite: this.discordInvite(),
+		};
+		const own = this.ownGatewayNameFor(sourceInstanceId);
+		if (own) config.ownGatewayName = own;
+		return config;
 	}
 
 	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<string | null> {
@@ -86,15 +125,9 @@ export class GatewayConfig {
 			return null;
 		}
 		try {
-			const gateways = this.resolveGateways(sourceInstanceId);
 			const response = await timed("Clusterio request round trip", "round-trip", () => this.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new messages.PushGatewayConfigRequest({
-					gateways,
-					activeGatewayNames: this.activeGatewayNamesFor(sourceInstanceId),
-					passengerCarry: this.passengerCarry(),
-					discordInvite: this.discordInvite(),
-				}),
+				new messages.PushGatewayConfigRequest(this.configFor(sourceInstanceId)),
 			)) as { success?: boolean; error?: string } | undefined;
 			if (!response?.success) {
 				const reason = response?.error || "the instance rejected the gateway config";
@@ -118,15 +151,10 @@ export class GatewayConfig {
 	}
 
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
-		return this.destinations();
+		return this.portals();
 	}
 
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
-		return {
-			gateways: this.resolveGateways(Number(request.instanceId)),
-			activeGatewayNames: this.activeGatewayNamesFor(Number(request.instanceId)),
-			passengerCarry: this.passengerCarry(),
-			discordInvite: this.discordInvite(),
-		};
+		return this.configFor(Number(request.instanceId));
 	}
 }

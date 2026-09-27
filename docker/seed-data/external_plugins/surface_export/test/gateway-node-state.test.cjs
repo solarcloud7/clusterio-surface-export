@@ -11,7 +11,7 @@ const graph = {};
 const sharedModules = {
 	"../../shared/dto": "../dist/node/shared/dto",
 	"../../shared/edge-geometry": "../dist/node/shared/edge-geometry",
-	"../../shared/server-destinations": "../dist/node/shared/server-destinations",
+	"../../shared/portals": "../dist/node/shared/portals",
 };
 new Function("require", "exports", compiled.outputText)(id => {
 	assert.ok(Object.hasOwn(sharedModules, id), `unexpected import ${id}`);
@@ -47,44 +47,51 @@ test("the graph carries a reported auto-pause state into gateway node data", () 
 const platform = (platformIndex, platformName, currentTarget, extra = {}) =>
 	({ platformIndex, platformName, currentTarget, hasSpaceHub: true, ...extra });
 
-test("gateway nodes carry each server's planets and portal", () => {
+test("gateway nodes carry each server's planets and portal colour", () => {
 	const tree = { hosts: [{ hostId: 1, hostName: "host", connected: true, instances: [
 		{ instanceId: 1, instanceName: "forge", defaultPlanet: "vulcanus", disabledPlanets: ["gleba"],
-			destination: { label: "Forge", colour: "orange" } },
+			portal: { slot: 3, colour: "orange", label: "forge" } },
 		{ instanceId: 2, instanceName: "plain" },
 	] }] };
 	const { nodes } = graph.buildGraph(tree);
-	assert.deepEqual(nodes.map(node => [node.data.defaultPlanet, node.data.disabledPlanets, node.data.destination]), [
-		["vulcanus", ["gleba"], { label: "Forge", colour: "orange" }],
+	assert.deepEqual(nodes.map(node => [node.data.defaultPlanet, node.data.disabledPlanets, node.data.portal]), [
+		["vulcanus", ["gleba"], { slot: 3, colour: "orange", label: "forge" }],
 		["nauvis", [], null],
 	]);
 });
 
-test("only platforms scheduled to another drawn server's portal make traffic", () => {
+test("a platform heading for a coloured portal is traffic to the server holding that colour", () => {
+	const portal = slot => ({ slot, colour: ["blue", "green", "orange", "purple"][slot - 1], label: "" });
 	const tree = { hosts: [{ hostId: 1, hostName: "host", connected: true, instances: [
-		{ instanceId: 11, instanceName: "a", platforms: [
-			platform(1, "one", "surfexp_gateway_i_22"),
-			platform(2, "two", "surfexp_gateway_i_22"),
-			platform(3, "home", "surfexp_gateway_i_11"),
-			platform(4, "gone", "surfexp_gateway_i_99"),
+		{ instanceId: 11, instanceName: "a", portal: portal(1), platforms: [
+			platform(1, "one", "surfexp_gateway_2"),
+			platform(2, "two", "surfexp_gateway_2"),
+			platform(3, "home", "surfexp_gateway_1"),
+			platform(4, "unassigned", "surfexp_gateway_4"),
 			platform(5, "hub", "surfexp_gateway_hub"),
 			platform(6, "planet", "vulcanus"),
-			platform(7, "hubless", "surfexp_gateway_i_22", { hasSpaceHub: false }),
-			platform(8, "junk", "surfexp_gateway_i_2x"),
+			platform(7, "hubless", "surfexp_gateway_2", { hasSpaceHub: false }),
+			platform(8, "old", "surfexp_gateway_i_22"),
+			platform(9, "third", "surfexp_gateway_3"),
 		] },
-		{ instanceId: 22, instanceName: "b", platforms: [platform(1, "back", "surfexp_gateway_i_11")] },
-		{ instanceId: 33, instanceName: "c", platforms: [] },
+		{ instanceId: 22, instanceName: "b", portal: portal(2), platforms: [platform(1, "back", "surfexp_gateway_1")] },
+		{ instanceId: 33, instanceName: "c", portal: portal(3), platforms: [] },
+		{ instanceId: 55, instanceName: "e", portal: null, platforms: [platform(1, "out", "surfexp_gateway_3")] },
 	] }] };
 	const { routes } = graph.buildGraph(tree);
 	assert.deepEqual(routes, [
 		{ sourceInstanceId: 11, targetInstanceId: 22, platforms: [
 			{ platformIndex: 1, platformName: "one" }, { platformIndex: 2, platformName: "two" }] },
+		{ sourceInstanceId: 11, targetInstanceId: 33, platforms: [{ platformIndex: 9, platformName: "third" }] },
 		{ sourceInstanceId: 22, targetInstanceId: 11, platforms: [{ platformIndex: 1, platformName: "back" }] },
-	]);
+		{ sourceInstanceId: 55, targetInstanceId: 33, platforms: [{ platformIndex: 1, platformName: "out" }] },
+	], "a server's own colour, an unassigned colour, the Gateway and planets make no traffic");
 	assert.deepEqual(graph.buildGraph({ hosts: [] }).routes, [], "no servers, no lines");
-	assert.equal(graph.headingInstanceId("surfexp_gateway_i_-3"), -3, "debug scenarios use negative ids");
-	assert.equal(graph.headingInstanceId("surfexp_gateway_i_0"), null);
-	assert.equal(graph.headingInstanceId(null), null);
+	const holders = new Map([[1, 11], [2, -3]]);
+	assert.equal(graph.headingInstanceId("surfexp_gateway_2", 11, holders), -3, "debug scenarios use negative ids");
+	assert.equal(graph.headingInstanceId("surfexp_gateway_1", 11, holders), null, "a server's own colour leads nowhere");
+	assert.equal(graph.headingInstanceId("surfexp_gateway_3", 11, holders), null);
+	assert.equal(graph.headingInstanceId(null, 11, holders), null);
 });
 
 test("traffic is one line per pair of servers, with a direction per side and transfers in flight", () => {
@@ -116,20 +123,21 @@ test("a server's active planets are the installed planets less its unavailable o
 
 test("each server card carries one outgoing portal per other server, spaced like the star map", () => {
 	const instances = [
-		{ instanceId: 3, instanceName: "Theta", destination: { label: "Theta", colour: "orange" } },
-		{ instanceId: 1, instanceName: "Delta", destination: { label: "Delta", colour: "blue" } },
-		{ instanceId: 2, instanceName: "Sigma", destination: null },
+		{ instanceId: 3, instanceName: "Theta", portal: { slot: 3, colour: "orange", label: "Theta" } },
+		{ instanceId: 1, instanceName: "Delta", portal: { slot: 1, colour: "blue", label: "Delta" } },
+		{ instanceId: 2, instanceName: "Sigma", portal: null },
+		{ instanceId: 4, instanceName: "Alpha", portal: { slot: 2, colour: "green", label: "Alpha" } },
 	];
 	const peers = graph.peerPortalsFor(1, instances);
-	assert.deepEqual(peers.map(peer => peer.instanceId), [2, 3], "every other server, by name, never itself");
-	assert.equal(peers[0].destination, null, "a server without a destination still gets a (grey) portal");
-	assert.deepEqual(peers[1].destination, { label: "Theta", colour: "orange" });
+	assert.deepEqual(peers.map(peer => peer.instanceId), [4, 3, 2], "every other server by colour, a server without one last, never itself");
+	assert.deepEqual(peers[1].portal, { slot: 3, colour: "orange", label: "Theta" });
+	assert.equal(peers[2].portal, null, "a server without a colour still gets a (grey) portal");
 	assert.equal(graph.peerPortalHandleId(3), "portal:3");
 	assert.deepEqual([0, 1, 2, 3].map(index => graph.portalOrientation(index, 4)), [0.125, 0.375, 0.625, 0.875],
 		"four portals sit on the diagonals, leaving straight up clear, as on the star map");
 	const { nodes } = graph.buildGraph({ hosts: [{ hostId: 1, hostName: "h", connected: true, instances }] });
 	for (const node of nodes) {
-		assert.equal(node.data.peers.length, 2);
+		assert.equal(node.data.peers.length, 3);
 		assert.ok(!node.data.peers.some(peer => peer.instanceId === node.data.instanceId));
 	}
 });

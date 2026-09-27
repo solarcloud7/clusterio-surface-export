@@ -1,10 +1,9 @@
 import { CAPTION_WIDTH } from "../../shared/edge-geometry";
-import { INSTANCE_GATEWAY_PREFIX, instanceGatewayName } from "../../shared/dto";
-import type { PortalColour } from "../../shared/server-destinations";
+import { portalSlotOf } from "../../shared/portals";
+import type { PortalAssignment } from "../../shared/portals";
 import type { PlatformStatusFields } from "../platform-actions";
 
-export { PORTAL_COLOURS } from "../../shared/server-destinations";
-export { instanceGatewayName };
+export { PORTAL_COLOURS, portalColour as portalColourOfSlot, portalGatewayName } from "../../shared/portals";
 
 
 export type PlatformLike = PlatformStatusFields & {
@@ -15,7 +14,7 @@ export type PlatformLike = PlatformStatusFields & {
 	hasSpaceHub?: boolean;
 };
 
-export type PortalDestination = { label: string; colour: PortalColour };
+export type Portal = PortalAssignment;
 
 export type InstanceLike = {
 	instanceId: number;
@@ -27,7 +26,7 @@ export type InstanceLike = {
 	autoPause?: boolean;
 	defaultPlanet?: string;
 	disabledPlanets?: string[];
-	destination?: PortalDestination | null;
+	portal?: Portal | null;
 	platforms?: PlatformLike[];
 };
 
@@ -70,7 +69,7 @@ export function targetHandleId(gatewayName: string, side?: HandleSide): string {
 	return side ? `t:${gatewayName}@${side}` : `t:${gatewayName}`;
 }
 
-export type PeerPortal = { instanceId: number; instanceName: string; destination: PortalDestination | null };
+export type PeerPortal = { instanceId: number; instanceName: string; portal: Portal | null };
 
 export function peerPortalHandleId(peerInstanceId: number): string {
 	return `portal:${peerInstanceId}`;
@@ -135,8 +134,9 @@ export function spreadTurns(turns: readonly number[], gap: number = MIN_PORTAL_G
 export function peerPortalsFor(instanceId: number, instances: readonly InstanceLike[]): PeerPortal[] {
 	return instances
 		.filter(peer => peer.instanceId !== instanceId)
-		.map(peer => ({ instanceId: peer.instanceId, instanceName: peer.instanceName, destination: peer.destination ?? null }))
-		.sort((a, b) => a.instanceName.localeCompare(b.instanceName) || a.instanceId - b.instanceId);
+		.map(peer => ({ instanceId: peer.instanceId, instanceName: peer.instanceName, portal: peer.portal ?? null }))
+		.sort((a, b) => (a.portal?.slot ?? Infinity) - (b.portal?.slot ?? Infinity)
+			|| a.instanceName.localeCompare(b.instanceName) || a.instanceId - b.instanceId);
 }
 
 export function platformHandleId(platformIndex: number): string {
@@ -178,25 +178,35 @@ export interface TrafficRouteModel {
 	platforms: Array<{ platformIndex: number; platformName: string }>;
 }
 
-export function headingInstanceId(target: string | null | undefined): number | null {
-	if (!target || !target.startsWith(INSTANCE_GATEWAY_PREFIX)) {
-		return null;
+export function portalHolders(instances: readonly InstanceLike[]): Map<number, number> {
+	const holders = new Map<number, number>();
+	for (const instance of instances) {
+		const slot = instance.portal?.slot;
+		if (typeof slot === "number" && !holders.has(slot)) {
+			holders.set(slot, instance.instanceId);
+		}
 	}
-	const text = target.slice(INSTANCE_GATEWAY_PREFIX.length);
-	if (!/^-?[1-9]\d*$/.test(text)) {
-		return null;
-	}
-	const id = Number(text);
-	return Number.isSafeInteger(id) ? id : null;
+	return holders;
+}
+
+export function headingInstanceId(
+	target: string | null | undefined,
+	sourceInstanceId: number,
+	holders: ReadonlyMap<number, number>,
+): number | null {
+	const slot = portalSlotOf(target);
+	const holder = slot === null ? undefined : holders.get(slot);
+	return holder === undefined || holder === sourceInstanceId ? null : holder;
 }
 
 export function buildTrafficRoutes(instances: readonly InstanceLike[]): TrafficRouteModel[] {
 	const drawn = new Set(instances.map(instance => instance.instanceId));
+	const holders = portalHolders(instances);
 	const routes = new Map<string, TrafficRouteModel>();
 	for (const instance of instances) {
 		for (const platform of instance.platforms || []) {
-			const targetInstanceId = platform?.hasSpaceHub ? headingInstanceId(platform.currentTarget) : null;
-			if (targetInstanceId === null || targetInstanceId === instance.instanceId || !drawn.has(targetInstanceId)) {
+			const targetInstanceId = platform?.hasSpaceHub ? headingInstanceId(platform.currentTarget, instance.instanceId, holders) : null;
+			if (targetInstanceId === null || !drawn.has(targetInstanceId)) {
 				continue;
 			}
 			const key = `${instance.instanceId}>${targetInstanceId}`;
@@ -354,7 +364,7 @@ export function buildGraph(
 					platforms,
 					defaultPlanet: instance.defaultPlanet || "nauvis",
 					disabledPlanets: instance.disabledPlanets || [],
-					destination: instance.destination ?? null,
+					portal: instance.portal ?? null,
 					peers: peerPortalsFor(instance.instanceId, everyInstance),
 				},
 			});

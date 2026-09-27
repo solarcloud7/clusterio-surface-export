@@ -1,7 +1,6 @@
 import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 import { recoveryMode } from "../shared/recovery";
-import { SERVER_DESTINATIONS_SETTING, serverDestinationFor } from "../shared/server-destinations";
 
 export function planetList(value: unknown): string[] {
 	return typeof value === "string" ? value.split(",").map(name => name.trim()).filter(Boolean) : [];
@@ -67,18 +66,11 @@ export class PlatformTree {
 		return null;
 	}
 
-	resolveDestination(instanceId: number, modPackId: unknown): InstanceNodeModel["destination"] {
+	resolvePortal(instanceId: number): InstanceNodeModel["portal"] {
 		try {
-			const controller = this.plugin.controller;
-			const fallback = controller.config?.get("controller.default_mod_pack_id");
-			const packId = Number.isInteger(modPackId) ? modPackId as number : fallback;
-			if (!Number.isInteger(packId)) {
-				return null;
-			}
-			const setting = controller.modPacks?.get(packId as number)?.settings?.startup?.get(SERVER_DESTINATIONS_SETTING);
-			return serverDestinationFor(setting?.value, instanceId);
+			return this.plugin.gatewayConfig?.portalOf(instanceId) ?? null;
 		} catch (err: unknown) {
-			this.plugin.logger.warn(`Failed to resolve the server destination of instance ${instanceId}: ${getErrorMessage(err)}`);
+			this.plugin.logger.warn(`Failed to resolve the portal colour of instance ${instanceId}: ${getErrorMessage(err)}`);
 			return null;
 		}
 	}
@@ -190,7 +182,7 @@ export class PlatformTree {
 				configuredRecoveryMode: recoveryMode(this.plugin.controller.config?.get("surface_export.platform_source_of_truth")),
 				defaultPlanet: String(instance.config.get("surface_export.default_planet") || "nauvis").trim() || "nauvis",
 				disabledPlanets: planetList(instance.config.get("surface_export.disabled_planets")),
-				destination: this.resolveDestination(instanceId, instance.config.get("factorio.mod_pack_id")),
+				portal: this.resolvePortal(instanceId),
 			};
 
 			if (hostId !== null && hostNodes.has(hostId)) {

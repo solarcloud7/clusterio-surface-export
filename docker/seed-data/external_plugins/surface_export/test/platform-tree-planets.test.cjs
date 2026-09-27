@@ -6,7 +6,7 @@ const path = require("node:path");
 
 const { PlatformTree } = require(path.join(__dirname, "..", "dist", "node", "lib", "platform-tree.js"));
 
-function makeTree({ instances, controllerConfig = {}, modPacks, warnings = [] }) {
+function makeTree({ instances, controllerConfig = {}, warnings = [] }) {
 	const plugin = {
 		controller: {
 			hosts: new Map([[1, { id: 1, name: "host-1", connected: true, isDeleted: false }]]),
@@ -18,7 +18,6 @@ function makeTree({ instances, controllerConfig = {}, modPacks, warnings = [] })
 				config: { get: key => key === "instance.name" ? `instance-${id}` : key === "instance.assigned_host" ? 1 : config[key] },
 			}])),
 			config: { get: key => controllerConfig[key] },
-			modPacks,
 			async sendTo() { throw new Error("stopped instances are not polled"); },
 		},
 		activeTransfers: new Map(),
@@ -26,10 +25,6 @@ function makeTree({ instances, controllerConfig = {}, modPacks, warnings = [] })
 		logger: { info() {}, verbose() {}, warn: message => warnings.push(message) },
 	};
 	return new PlatformTree(plugin, { InstanceListPlatformsRequest: class {} });
-}
-
-function pack(value) {
-	return { settings: { startup: new Map(value === undefined ? [] : [["surfexp-gateway-instances", { value }]]) } };
 }
 
 async function nodes(tree) {
@@ -49,46 +44,25 @@ test("each server carries its configured default planet and its unavailable plan
 	]);
 });
 
-test("a server's portal comes from the server destinations of the mod pack it runs", async () => {
-	const modPacks = new Map([
-		[7, pack("1=Forge,2,3=Cinder")],
-		[8, pack("3=Elsewhere,1=Other")],
+test("a server's portal colour and label come from the controller's portal assignment", async () => {
+	const tree = makeTree({ instances: [[1, {}], [2, {}], [3, {}]] });
+	tree.plugin.gatewayConfig = { portalOf: id => id === 3 ? null : { slot: id, colour: id === 1 ? "blue" : "green", label: `instance-${id}` } };
+	assert.deepEqual((await nodes(tree)).map(node => node.portal), [
+		{ slot: 1, colour: "blue", label: "instance-1" },
+		{ slot: 2, colour: "green", label: "instance-2" },
+		null,
 	]);
-	const tree = makeTree({
-		instances: [[1, { "factorio.mod_pack_id": 7 }], [2, { "factorio.mod_pack_id": null }], [3, { "factorio.mod_pack_id": 8 }]],
-		controllerConfig: { "controller.default_mod_pack_id": 7 },
-		modPacks,
-	});
-	assert.deepEqual((await nodes(tree)).map(node => node.destination), [
-		{ label: "Forge", colour: "blue" },
-		{ label: "Server 2", colour: "green" },
-		{ label: "Elsewhere", colour: "blue" },
-	], "an instance without a pack of its own uses the controller's default pack");
 });
 
-test("a server without a destination entry, pack or setting has no portal", async () => {
+test("an unreadable portal assignment leaves the portal empty and is logged", async () => {
 	const warnings = [];
-	const tree = makeTree({
-		instances: [[1, { "factorio.mod_pack_id": 7 }], [2, { "factorio.mod_pack_id": 9 }], [3, { "factorio.mod_pack_id": 6 }], [4, {}]],
-		modPacks: new Map([[7, pack("5=Five")], [6, pack(undefined)]]),
-		warnings,
-	});
-	assert.deepEqual((await nodes(tree)).map(node => node.destination), [null, null, null, null]);
-	assert.deepEqual(warnings, []);
+	const tree = makeTree({ instances: [[1, {}]], warnings });
+	tree.plugin.gatewayConfig = { portalOf() { throw new Error("assignment unavailable"); } };
+	assert.equal((await nodes(tree))[0].portal, null);
+	assert.match(warnings.join("\n"), /portal colour of instance 1: assignment unavailable/);
 });
 
-test("an unreadable mod pack store leaves the portal empty and is logged", async () => {
-	const warnings = [];
-	const tree = makeTree({
-		instances: [[1, { "factorio.mod_pack_id": 7 }]],
-		modPacks: { get() { throw new Error("datastore unavailable"); } },
-		warnings,
-	});
-	assert.equal((await nodes(tree))[0].destination, null);
-	assert.match(warnings.join("\n"), /server destination of instance 1: datastore unavailable/);
-});
-
-test("a controller without a mod pack store still builds the tree", async () => {
-	const tree = makeTree({ instances: [[1, { "factorio.mod_pack_id": 7 }]] });
-	assert.equal((await nodes(tree))[0].destination, null);
+test("a controller without gateway config still builds the tree", async () => {
+	const tree = makeTree({ instances: [[1, {}]] });
+	assert.equal((await nodes(tree))[0].portal, null);
 });
