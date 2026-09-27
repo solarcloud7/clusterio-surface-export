@@ -1038,9 +1038,9 @@ export class GetGatewayConfigRequest {
 	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA }, required: ["gateways"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry };
+			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string };
 		},
 	};
 }
@@ -1187,7 +1187,7 @@ export class PushGatewayConfigRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA },
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } },
 		required: ["gateways"],
 		additionalProperties: false,
 	};
@@ -1195,17 +1195,19 @@ export class PushGatewayConfigRequest {
 	gateways: ResolvedGateway[];
 	activeGatewayNames?: string[];
 	passengerCarry?: PassengerCarry;
+	discordInvite?: string;
 
-	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry }) {
+	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string }) {
 		this.gateways = json.gateways;
 		this.activeGatewayNames = json.activeGatewayNames;
 		this.passengerCarry = json.passengerCarry;
+		this.discordInvite = json.discordInvite;
 	}
 
-	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry }) {
+	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string }) {
 		return new PushGatewayConfigRequest(json);
 	}
-	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames, passengerCarry: this.passengerCarry }; }
+	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames, passengerCarry: this.passengerCarry, discordInvite: this.discordInvite }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

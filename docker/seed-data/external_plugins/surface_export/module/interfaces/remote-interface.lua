@@ -58,6 +58,7 @@ local test_roster = require("modules/surface_export/interfaces/remote/test-roste
 local lifecycle = require("modules/surface_export/interfaces/remote/lifecycle")
 local teleport_roster_update = require("modules/surface_export/interfaces/remote/teleport-roster")
 local route_alert_remote = require("modules/surface_export/interfaces/remote/route-alert")
+local configure_community = require("modules/surface_export/interfaces/remote/configure-community")
 local announce_player_travel = require("modules/surface_export/interfaces/gui/teleport-gui").announce_arrival
 
 test_runner.run_tests = Base.debug_wrap("run_tests", test_runner.run_tests)
@@ -88,6 +89,7 @@ RemoteInterface.get_module_version = get_module_version
 RemoteInterface.get_module_build_id = get_module_build_id
 RemoteInterface.teleport_roster_update = teleport_roster_update
 RemoteInterface.route_alert_remote = route_alert_remote
+RemoteInterface.configure_community = configure_community
 RemoteInterface.announce_player_travel = announce_player_travel
 RemoteInterface.selection_lab_drive = selection_lab_drive
 RemoteInterface.belt_side_restore_selftest = belt_side_restore_selftest
@@ -180,6 +182,7 @@ function RemoteInterface.register()
     get_module_build_id = get_module_build_id,
     teleport_roster_update = teleport_roster_update,
     route_alert_remote = route_alert_remote,
+    configure_community = configure_community,
     announce_player_travel = announce_player_travel,
     selection_lab_drive = selection_lab_drive,
     selection_lab_drive_json = Base.json_wrap(selection_lab_drive),

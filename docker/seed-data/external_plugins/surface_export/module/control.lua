@@ -20,6 +20,7 @@ local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
 local DebugControls = require("modules/surface_export/interfaces/gui/debug-controls")
 local GatewayPortal = require("modules/surface_export/interfaces/gui/gateway-portal")
+local CommunityLinks = require("modules/surface_export/interfaces/gui/community-links")
 local PassengerTransit = require("modules/surface_export/core/passenger-transit")
 local PassengerArrival = require("modules/surface_export/core/passenger-arrival")
 
@@ -30,6 +31,7 @@ local function refresh_player(event, use_default)
 	InstancePanel.refresh_button(player)
 	DebugControls.refresh(player)
 	GatewayPortal.refresh(player)
+	CommunityLinks.refresh(player)
 end
 
 local SurfaceExportModule = {}
@@ -142,6 +144,7 @@ SurfaceExportModule.events = {
 		end
 		refresh_player(event)
 		if player then GatewayTransferGui.offer(player) end
+		if player then GameUtils.pcall_warn("[Community] join notice", function() CommunityLinks.on_join(player) end) end
 	end,
 	[e.on_player_respawned] = refresh_player,
 	[e.on_player_changed_surface] = refresh_player,
@@ -256,6 +259,7 @@ SurfaceExportModule.events = {
 		DebugControls.on_gui_click(event)
 		GatewayPortal.on_gui_click(event)
 		PassengerTransit.on_gui_click(event)
+		CommunityLinks.on_gui_click(event)
 	end,
 
 	[e.on_gui_checked_state_changed] = GatewayTransferGui.on_gui_click,
@@ -266,6 +270,7 @@ SurfaceExportModule.events = {
 		TeleportGui.on_gui_closed(event)
 		InstancePanel.on_gui_closed(event)
 		PassengerTransit.on_gui_closed(event)
+		CommunityLinks.on_gui_closed(event)
 	end,
 
 	[e.on_player_selected_area] = function(event)
