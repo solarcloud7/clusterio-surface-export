@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import * as lib from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { getErrorMessage } from "../helpers";
-import { PORTAL_SLOT_COUNT } from "../shared/portals";
+import { PORTAL_SLOT_COUNT, portalColour } from "../shared/portals";
 
 export const PORTAL_SLOTS_FILENAME = "surface_export_portal_slots.json";
 
@@ -12,10 +12,6 @@ export interface PortalHolderChange {
 	slot: number;
 	previousInstanceId: number;
 	instanceId: number;
-}
-
-export interface PortalSlotsOptions {
-	reuseFreedColours?: boolean;
 }
 
 export function assignPortalSlots(
@@ -64,16 +60,13 @@ function validSaved(saved: unknown): saved is { version: 1; slots: Array<[number
 export class PortalSlots {
 	private slots = new Map<number, number>();
 	private released = new Map<number, number>();
-	private readonly reuseFreedColours: boolean;
 	private file: string | null = null;
 	private dirty = false;
 	private lastWaiting = "";
 	private writing: Promise<void> = Promise.resolve();
 	loadError: string | null = null;
 
-	constructor(private readonly logger: Logger, options: PortalSlotsOptions = {}) {
-		this.reuseFreedColours = options.reuseFreedColours !== false;
-	}
+	constructor(private readonly logger: Logger) {}
 
 	async load(file: string): Promise<void> {
 		this.file = file;
@@ -90,26 +83,21 @@ export class PortalSlots {
 		}
 	}
 
-	reconcile(liveInstanceIds: readonly number[]): PortalHolderChange[] {
-		if (this.loadError) return [];
-		const withheld = this.reuseFreedColours ? new Set<number>() : new Set(this.released.keys());
-		const next = assignPortalSlots(this.slots, liveInstanceIds, withheld);
-		const changes: PortalHolderChange[] = [];
-		if (JSON.stringify([...next]) !== JSON.stringify([...this.slots])) {
-			for (const [slot, instanceId] of this.slots) {
-				if (next.get(slot) !== instanceId) {
-					this.logger.info(`Portal ${slot} released by instance ${instanceId}`);
-					this.released.set(slot, instanceId);
-				}
+	reconcile(liveInstanceIds: readonly number[]): boolean {
+		if (this.loadError) return false;
+		const kept = assignPortalSlots(this.slots, [...this.slots.values()].filter(id => liveInstanceIds.includes(id)),
+			new Set(Array.from({ length: PORTAL_SLOT_COUNT }, (_, index) => index + 1)));
+		for (const [slot, instanceId] of this.slots) {
+			if (kept.get(slot) !== instanceId) {
+				this.logger.info(`Portal ${slot} retired: instance ${instanceId} no longer takes part`);
+				this.released.set(slot, instanceId);
 			}
+		}
+		const next = assignPortalSlots(kept, liveInstanceIds, new Set(this.released.keys()));
+		const changed = JSON.stringify([...next]) !== JSON.stringify([...this.slots]);
+		if (changed) {
 			for (const [slot, instanceId] of next) {
-				if (this.slots.get(slot) === instanceId) continue;
-				this.logger.info(`Portal ${slot} assigned to instance ${instanceId}`);
-				const previousInstanceId = this.released.get(slot);
-				if (previousInstanceId !== undefined && previousInstanceId !== instanceId) {
-					changes.push({ slot, previousInstanceId, instanceId });
-				}
-				this.released.delete(slot);
+				if (kept.get(slot) !== instanceId) this.logger.info(`Portal ${slot} assigned to instance ${instanceId}`);
 			}
 			this.slots = next;
 			this.dirty = true;
@@ -120,7 +108,53 @@ export class PortalSlots {
 		}
 		this.lastWaiting = waiting;
 		if (this.dirty) this.writing = this.persist();
-		return changes;
+		return changed;
+	}
+
+	async assign(slot: number, instanceId: number): Promise<PortalHolderChange[]> {
+		this.assertWritable();
+		const holder = this.slots.get(slot);
+		if (holder === instanceId) return [];
+		if (holder !== undefined) {
+			throw new Error(`the ${portalColour(slot)} portal is held by instance ${holder}; release it first`);
+		}
+		const current = this.slotOf(instanceId);
+		if (current !== null) {
+			this.slots.delete(current);
+			this.released.set(current, instanceId);
+		}
+		const previousInstanceId = this.released.get(slot);
+		this.released.delete(slot);
+		this.slots = new Map([...this.slots, [slot, instanceId] as [number, number]].sort((a, b) => a[0] - b[0]));
+		this.logger.info(`Portal ${slot} assigned to instance ${instanceId} by an administrator`);
+		await this.save();
+		return previousInstanceId !== undefined && previousInstanceId !== instanceId ? [{ slot, previousInstanceId, instanceId }] : [];
+	}
+
+	async release(slot: number): Promise<number> {
+		this.assertWritable();
+		const holder = this.slots.get(slot);
+		if (holder === undefined) throw new Error(`the ${portalColour(slot)} portal is not held by any server`);
+		this.slots.delete(slot);
+		this.released.set(slot, holder);
+		this.logger.info(`Portal ${slot} released from instance ${holder} by an administrator`);
+		await this.save();
+		return holder;
+	}
+
+	retired(): Array<{ slot: number; previousInstanceId: number }> {
+		return [...this.released].sort((a, b) => a[0] - b[0]).map(([slot, previousInstanceId]) => ({ slot, previousInstanceId }));
+	}
+
+	private assertWritable() {
+		if (this.loadError) throw new Error(this.loadError);
+	}
+
+	private async save(): Promise<void> {
+		this.dirty = true;
+		this.writing = this.persist();
+		await this.flush();
+		if (this.dirty && this.file) throw new Error("the portal assignment changed but could not be saved; see the controller log");
 	}
 
 	slotOf(instanceId: number): number | null {

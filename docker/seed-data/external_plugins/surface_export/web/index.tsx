@@ -24,6 +24,7 @@ import "./style.css";
 const {
 	PERMISSIONS,
 	GetPlatformTreeRequest,
+	GetGatewaysRequest,
 	GetStoredExportRequest,
 	ImportUploadedExportRequest,
 	ExportPlatformForDownloadRequest,
@@ -349,6 +350,10 @@ export class WebPlugin extends BaseWebPlugin {
 				treeError: getErrorMessage(err, "Failed to refresh Surface Export state"),
 			});
 		}
+	}
+
+	async getPortals() {
+		return this.link.send(new GetGatewaysRequest()) as Promise<messageDefs.PortalListingResponse>;
 	}
 
 	async getStoredExport(exportId: string) {

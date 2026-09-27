@@ -88,31 +88,38 @@ planets. A configuration edit does not change that panel until restart applies i
 ## Portals
 
 The gateway mod places four coloured portals around the Gateway on every server:
-Blue, Green, Orange and Purple Gateway. The controller gives each server one
-colour and keeps it across restarts and renames. On every other server, that
-colour's portal leads to that server. A platform whose schedule stops there is
-sent to that server and arrives at its Gateway. A server's own colour is locked
-on that server, and a colour no server holds is locked everywhere.
+Blue, Green, Orange and Purple. The controller gives each server one colour and
+keeps it across restarts and renames. On every other server, that colour's portal
+leads to that server. A platform whose schedule stops there is sent to that server
+and arrives at its Gateway. A server's own colour is locked on that server, and a
+colour no server holds is locked everywhere.
 
 At most four servers take part; servers whose `surface_export.load_plugin` is off
-are not counted. A new server gets the lowest free colour, and a
-deleted server frees its colour. A server created while all four colours are taken
-gets none. The controller log and the Gateways page report it. It takes the first
-colour that becomes free. A server without a colour can still send platforms
-through the Gateway, and other servers can reach it the same way.
+are not counted. A new server gets the lowest colour that no server has held.
+Deleting a server retires its colour: the colour stays locked everywhere and is
+never assigned automatically, because schedules on other servers may still stop
+there. A server that finds no unused colour gets none. The controller log and
+`clusterioctl surface-export gateways` report it, and the Gateways page shows it
+and every retired colour greyed out. A server without a colour can still send
+platforms through the Gateway, and other servers can reach it the same way.
+
+An administrator decides what happens to a retired colour with
+`clusterioctl surface-export portal assign <instance> <portal>`, and frees a colour
+without deleting its server with `clusterioctl surface-export portal release <portal>`;
+see [commands](commands.md#clusterio-control-client).
 
 No restart is needed: the controller sends the assignment to every running server,
 which unlocks or locks the portals immediately. When a colour passes to another
 server, the controller logs a warning and every running server announces in chat
 that the portal now leads there. Schedules that stop at that colour travel to the
-new server. Server names shown in the transfer
-dialog and in alerts are the Clusterio instance names.
-`npx clusterioctl surface-export gateways` prints the assignment.
+new server. Server names shown in the transfer dialog and in alerts are the
+Clusterio instance names.
 
-The assignment is stored in `surface_export_portal_slots.json` in the controller
-database directory. If that file cannot be read, every coloured portal stays locked
-and the file is left unchanged until it is repaired or removed. Removing it lets the
-controller assign the colours again in instance id order.
+The assignment and the retired colours are stored in `surface_export_portal_slots.json`
+in the controller database directory. If that file cannot be read, every coloured
+portal stays locked, the portal commands are refused, and the file is left unchanged
+until it is repaired or removed. Removing it lets the controller assign the colours
+again in instance id order and forgets the retired colours.
 
 ## Mod map setting
 

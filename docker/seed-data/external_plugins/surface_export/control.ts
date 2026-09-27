@@ -193,12 +193,44 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
-	definition: ["gateways", "Print the coloured portal held by each server as JSON (slot, colour, gateway name, instance id and name) and the servers without one; the Gateway reaches every other server"],
+	definition: ["gateways", "Print the coloured portal held by each server, the retired colours and the servers without a colour as JSON; the Gateway reaches every other server"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const response = await control.sendTo("controller", new messages.GetGatewaysRequest());
 		console.log(JSON.stringify(response));
 	},
 }));
+
+const portalCommands = new CommandTree({
+	name: "portal",
+	description: "Assign or release the coloured portals (Blue, Green, Orange, Purple) that lead to each server",
+});
+
+portalCommands.add(new Command({
+	definition: ["assign <instance> <portal>", "Make a portal colour lead to a server; a colour held by another server must be released first",
+		(yargs: YargsLike) => {
+			yargs.positional("instance", { type: "string", describe: "Instance name or id" });
+			yargs.positional("portal", { type: "string", describe: "1-4 or blue, green, orange, purple" });
+		}],
+	handler: async (args: { instance: string | number; portal: string | number }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.SetPortalRequest({
+			action: "assign", portal: String(args.portal), instance: String(args.instance),
+		}));
+		console.log(JSON.stringify(response));
+	},
+}));
+
+portalCommands.add(new Command({
+	definition: ["release <portal>", "Free a portal colour; it stays locked everywhere until it is assigned again",
+		(yargs: YargsLike) => {
+			yargs.positional("portal", { type: "string", describe: "1-4 or blue, green, orange, purple" });
+		}],
+	handler: async (args: { portal: string | number }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.SetPortalRequest({ action: "release", portal: String(args.portal) }));
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(portalCommands);
 
 export class CtlPlugin extends BaseCtlPlugin {
 	override async addCommands(rootCommand: CommandTree) {

@@ -191,6 +191,7 @@ export const plugin = {
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
 		messages.GetGatewaysRequest,
+		messages.SetPortalRequest,
 		messages.GetGatewayConfigRequest,
 		messages.RecoveryPolicyRequest,
 		messages.GetInstanceRosterRequest,

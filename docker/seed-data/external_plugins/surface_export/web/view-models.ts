@@ -72,4 +72,5 @@ export type SurfaceExportPlugin = {
 	startTransfer(payload: JsonObject): Promise<JsonObject>;
 	loadTransactionLog(transferId: string): Promise<void>;
 	refreshSnapshots?(): Promise<void>;
+	getPortals?(): Promise<import("../shared/dto").PortalListingResponse>;
 };

@@ -60,7 +60,7 @@ test("registered gateway handlers lead every server to every other server with r
 	assert.deepEqual(await call(messages.GetGatewaysRequest, {}), {portals: [
 		{slot: 1, colour: "blue", gatewayName: "surfexp_gateway_1", instanceId: 1, instanceName: "1"},
 		{slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "Destination"},
-	], unassigned: []});
+	], unassigned: [], retired: []});
 	await plugin.gatewayConfig.slots.flush();
 	assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "surface_export_portal_slots.json"), "utf8")), {version: 1, slots: [[1, 1], [2, 2]], released: []},
 		"colour assignments are kept in the controller database directory");

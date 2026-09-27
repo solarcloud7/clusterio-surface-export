@@ -688,3 +688,18 @@ body.surface-export-page .site-layout-content-container {
 	padding-top: 2px;
 	border-top: 1px solid rgba(128, 128, 128, 0.25);
 }
+
+.surface-export-retired-portals {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-bottom: 4px;
+}
+
+.surface-export-retired-portals img {
+	width: 24px;
+	height: 24px;
+	filter: grayscale(1);
+	opacity: 0.5;
+	cursor: help;
+}

@@ -61,7 +61,7 @@ test("assignments are saved on change and survive a controller restart", async t
 	const first = new PortalSlots(recorder().logger);
 	await first.load(file);
 	writes = 0;
-	assert.deepEqual(first.reconcile([7, 9]), []);
+	assert.equal(first.reconcile([7, 9]), true);
 	await first.flush();
 	first.reconcile([9, 7]);
 	await first.flush();
@@ -71,12 +71,18 @@ test("assignments are saved on change and survive a controller restart", async t
 	const restarted = new PortalSlots(recorder().logger);
 	await restarted.load(file);
 	assert.deepEqual(restarted.assignments(), [{ slot: 1, instanceId: 7 }, { slot: 2, instanceId: 9 }]);
-	assert.deepEqual(restarted.reconcile([9, 12]), [{ slot: 1, previousInstanceId: 7, instanceId: 12 }], "a deleted holder replaced at once is a change");
+	assert.equal(restarted.reconcile([9, 12]), true, "deleting a holder retires its colour");
 	await restarted.flush();
-	assert.deepEqual(restarted.assignments(), [{ slot: 1, instanceId: 12 }, { slot: 2, instanceId: 9 }],
-		"a deleted server frees its colour for the next new server; the others keep theirs");
-	assert.deepEqual(restarted.reconcile([9, 12]), []);
-	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")).slots, [[1, 12], [2, 9]]);
+	assert.deepEqual(restarted.assignments(), [{ slot: 2, instanceId: 9 }, { slot: 3, instanceId: 12 }],
+		"a new server takes a never-held colour; the retired colour stays unassigned; the others keep theirs");
+	assert.deepEqual(restarted.retired(), [{ slot: 1, previousInstanceId: 7 }]);
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[2, 9], [3, 12]], released: [[1, 7]] });
+	const reloaded = new PortalSlots(recorder().logger);
+	await reloaded.load(file);
+	reloaded.reconcile([9, 12, 13, 14]);
+	assert.deepEqual(reloaded.assignments(), [{ slot: 2, instanceId: 9 }, { slot: 3, instanceId: 12 }, { slot: 4, instanceId: 13 }],
+		"a retired colour stays retired across a reload");
+	assert.deepEqual(reloaded.unassigned([9, 12, 13, 14]), [14]);
 });
 
 test("a failed save is logged and retried on the next reconcile", async t => {
@@ -130,46 +136,115 @@ for (const [label, bytes] of [["unreadable", "not json"], ["duplicate", JSON.str
 	});
 }
 
-test("a colour that changes holder is reported with its former holder, also across a restart", async t => {
+test("an administrator assigns and releases colours; a new holder of a retired colour is reported", async t => {
 	const file = await tempFile(t);
 	const slots = new PortalSlots(recorder().logger);
 	await slots.load(file);
-	assert.deepEqual(slots.reconcile([1, 2]), [], "first assignments have no former holder");
-	assert.deepEqual(slots.reconcile([1]), [], "a freed colour is not yet a change");
+	slots.reconcile([1, 2]);
+	slots.reconcile([1]);
+	assert.deepEqual(slots.retired(), [{ slot: 2, previousInstanceId: 2 }]);
+	slots.reconcile([1, 7]);
+	assert.equal(slots.slotOf(7), 3, "a new server skips the retired colour");
+	assert.deepEqual(await slots.assign(2, 7), [{ slot: 2, previousInstanceId: 2, instanceId: 7 }], "taking a retired colour names its former holder");
+	assert.deepEqual(slots.retired(), [{ slot: 3, previousInstanceId: 7 }], "a server moving colour retires the one it left");
+	assert.deepEqual(await slots.assign(2, 7), [], "assigning the same colour again changes nothing");
+	await assert.rejects(slots.assign(1, 7), /the blue portal is held by instance 1; release it first/);
+	assert.equal(await slots.release(1), 1);
+	await assert.rejects(slots.release(1), /the blue portal is not held by any server/);
+	slots.reconcile([1, 7]);
+	assert.equal(slots.slotOf(1), 4, "a released server may take a never-held colour");
+	assert.deepEqual(slots.retired(), [{ slot: 1, previousInstanceId: 1 }, { slot: 3, previousInstanceId: 7 }]);
 	await slots.flush();
-	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[1, 1]], released: [[2, 2]] });
-	const restarted = new PortalSlots(recorder().logger);
-	await restarted.load(file);
-	assert.deepEqual(restarted.reconcile([1, 7]), [{ slot: 2, previousInstanceId: 2, instanceId: 7 }]);
-	assert.deepEqual(restarted.reconcile([1, 7]), [], "a change is reported once");
-	await restarted.flush();
-	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")).released, []);
-});
-
-test("freed colours can be withheld from new servers with one option", () => {
-	const slots = new PortalSlots(recorder().logger, { reuseFreedColours: false });
-	slots.reconcile([1, 2, 3]);
-	slots.reconcile([1, 3]);
-	assert.deepEqual(slots.reconcile([1, 3, 9]), []);
-	assert.deepEqual(slots.assignments(), [{ slot: 1, instanceId: 1 }, { slot: 3, instanceId: 3 }, { slot: 4, instanceId: 9 }],
-		"the freed Green Gateway stays unassigned; the newcomer takes an unused colour");
+	const reloaded = new PortalSlots(recorder().logger);
+	await reloaded.load(file);
+	assert.deepEqual([reloaded.assignments(), reloaded.retired()], [slots.assignments(), slots.retired()], "admin changes are saved");
 	assert.deepEqual([...assignPortalSlots(new Map(), [5, 6], new Set([1]))], [[2, 5], [3, 6]]);
 });
 
-test("a colour taking a new holder warns on the controller with the colour and both servers", async () => {
+test("admin changes are refused while the assignment file is unreadable", async t => {
+	const file = await tempFile(t);
+	await fs.writeFile(file, "not json");
+	const slots = new PortalSlots(recorder().logger);
+	await slots.load(file);
+	await assert.rejects(slots.assign(1, 7), /stays locked/);
+	await assert.rejects(slots.release(1), /stays locked/);
+	assert.equal(await fs.readFile(file, "utf8"), "not json");
+});
+
+test("an admin change that cannot be saved is reported to the command", async t => {
+	const file = await tempFile(t);
+	const slots = new PortalSlots(recorder().logger);
+	await slots.load(file);
+	slots.reconcile([1, 2]);
+	await slots.flush();
+	failWrites = true;
+	try {
+		await assert.rejects(slots.release(2), /could not be saved/);
+	} finally {
+		failWrites = false;
+	}
+});
+
+function adminFixture(entries) {
 	const { lines, logger } = recorder();
-	const instances = new Map([1, 2, 3].map(id => [id, { id, config: { get: () => undefined } }]));
-	const names = { 1: "Delta", 2: "Sigma", 3: "Theta", 4: "Omega" };
-	const gateways = new GatewayConfig({ config: { get: () => undefined }, hosts: new Map(), instances, async sendTo() { return { success: true }; } },
-		logger, { isInstanceOnline: () => true, resolveInstanceName: id => names[id] ?? null });
+	const instances = new Map(entries.map(([id, , loaded]) => [id, { id, config: { get: key => key === "surface_export.load_plugin" ? loaded : undefined } }]));
+	const names = Object.fromEntries(entries.map(([id, name]) => [id, name]));
+	const pushed = [];
+	const gateways = new GatewayConfig({ config: { get: () => undefined }, hosts: new Map(), instances,
+		async sendTo(target, message) { pushed.push([target.instanceId, message.toJSON().activeGatewayNames]); return { success: true }; } },
+	logger, { isInstanceOnline: () => true, resolveInstanceName: id => names[id] ?? null });
+	return { lines, instances, names, gateways, pushed };
+}
+
+test("the portal command assigns by colour or number and by name or id, pushes every server and warns about a new holder", async () => {
+	const { lines, instances, names, gateways, pushed } = adminFixture([[1, "Delta"], [2, "Sigma"], [3, "Theta"]]);
 	gateways.activeGatewayNamesFor(1);
 	instances.get(2).isDeleted = true;
 	gateways.activeGatewayNamesFor(1);
-	assert.equal(lines.warn.length, 0);
+	assert.equal(lines.warn.length, 0, "a deletion alone retires the colour quietly");
 	instances.set(4, { id: 4, config: { get: () => undefined } });
-	assert.deepEqual(gateways.portalOf(4), { slot: 2, colour: "green", label: "Omega" });
-	assert.equal(lines.warn.length, 1);
-	assert.match(lines.warn[0], /The Green Gateway now leads to Omega \(instance 4\) instead of Sigma \(instance 2\)/);
+	names[4] = "Omega";
+	assert.equal(gateways.portalOf(4).slot, 4, "a new server takes a never-held colour");
+	const listing = await gateways.handleSetPortalRequest({ action: "assign", portal: "Green", instance: "Theta" });
+	assert.match(lines.warn.join("\n"), /The Green portal now leads to Theta \(instance 3\) instead of Sigma \(instance 2\)/);
+	assert.deepEqual(listing.portals.map(portal => [portal.slot, portal.instanceId]), [[1, 1], [2, 3], [4, 4]]);
+	assert.deepEqual(listing.retired.map(portal => [portal.slot, portal.formerInstanceId]), [[3, 3]]);
+	assert.deepEqual(pushed.map(([id]) => id), [1, 3, 4], "every server is pushed the new assignment");
+	assert.deepEqual(pushed[0][1], ["surfexp_gateway_hub", "surfexp_gateway_2", "surfexp_gateway_4"]);
+	await gateways.handleSetPortalRequest({ action: "release", portal: "2" });
+	assert.match(lines.warn.join(" | "), /The Green portal no longer leads to Theta \(instance 3\); it stays locked/);
+	await gateways.handleSetPortalRequest({ action: "assign", portal: "3", instance: "3" });
+	assert.equal(gateways.portalOf(3).slot, 3);
+});
+
+test("the portal command refuses unknown portals and servers, held colours and servers without the plugin", async () => {
+	const { gateways } = adminFixture([[1, "Delta"], [2, "Twin"], [3, "Twin"], [4, "Off", false]]);
+	gateways.activeGatewayNamesFor(1);
+	for (const [request, reason] of [
+		[{ action: "assign", portal: "5", instance: "1" }, /Unknown portal '5': use 1-4 or blue, green, orange, purple/],
+		[{ action: "assign", portal: "0", instance: "1" }, /Unknown portal/],
+		[{ action: "assign", portal: "red", instance: "1" }, /Unknown portal/],
+		[{ action: "release", portal: "gateway" }, /Unknown portal/],
+		[{ action: "assign", portal: "4", instance: "Ghost" }, /Unknown instance 'Ghost'/],
+		[{ action: "assign", portal: "4", instance: "99" }, /Unknown instance '99'/],
+		[{ action: "assign", portal: "4", instance: "Twin" }, /shared by several instances/],
+		[{ action: "assign", portal: "4", instance: "Off" }, /does not load the surface_export plugin/],
+		[{ action: "assign", portal: "blue", instance: "2" }, /the blue portal is held by instance 1; release it first/],
+		[{ action: "release", portal: "purple" }, /the purple portal is not held by any server/],
+		[{ action: "assign", portal: "4" }, /assign needs an instance/],
+	]) {
+		await assert.rejects(gateways.handleSetPortalRequest(request), reason, JSON.stringify(request));
+	}
+	assert.deepEqual(gateways.portals().portals.map(portal => [portal.slot, portal.instanceId]), [[1, 1], [2, 2], [3, 3]], "a refusal changes nothing");
+});
+
+test("changing portals needs the transfer administration permission", () => {
+	const messages = require("../dist/node/messages");
+	assert.equal(messages.SetPortalRequest.permission, messages.PERMISSIONS.TRANSFER_EXPORTS);
+	assert.equal(messages.SetPortalRequest.src, "control");
+	assert.equal(messages.SetPortalRequest.dst, "controller");
+	assert.deepEqual(JSON.parse(JSON.stringify(new messages.SetPortalRequest({ action: "release", portal: "blue" }))), { action: "release", portal: "blue" });
+	assert.deepEqual(messages.SetPortalRequest.jsonSchema.properties.action, { enum: ["assign", "release"] });
 });
 
 test("servers without the plugin loaded take no colour and are no destination", async () => {

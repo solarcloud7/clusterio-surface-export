@@ -216,6 +216,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.c.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 		this.c.handle(messages.GetGatewaysRequest, gateways.handleGetGatewaysRequest.bind(gateways));
+		this.c.handle(messages.SetPortalRequest, async (request: messages.SetPortalRequest) => {
+			const listing = await gateways.handleSetPortalRequest(request);
+			this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+			return listing;
+		});
 		this.c.handle(messages.GetGatewayConfigRequest, gateways.handleGetGatewayConfigRequest.bind(gateways));
 		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));

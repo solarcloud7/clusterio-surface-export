@@ -36,6 +36,8 @@ import {
 	targetHandleId,
 } from "./gateway-graph";
 import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
+import { PORTAL_ART } from "./InstanceNode";
+import type { PortalListingResponse } from "../../shared/dto";
 import type { PlatformLike, Portal, TrafficPair, TrafficRouteModel } from "./gateway-graph";
 import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
@@ -164,6 +166,16 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, [setNodes]);
 
 	const tree = state?.tree;
+	const [retiredPortals, setRetiredPortals] = useState<PortalListingResponse["retired"]>([]);
+	useEffect(() => {
+		let cancelled = false;
+		plugin.getPortals?.().then(listing => {
+			if (!cancelled) setRetiredPortals(listing.retired || []);
+		}).catch((err: unknown) => {
+			console.warn("surface_export: could not read the portal colours", err);
+		});
+		return () => { cancelled = true; };
+	}, [plugin, tree?.revision]);
 
 	const effectiveTree = useMemo(
 		() => (scenario ? scenarioToTree(scenario) : withMockInstances(tree, debug)),
@@ -611,6 +623,17 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						</span>
 					</Panel>
 					<Panel position="top-right">
+						{retiredPortals.length ? <div className="surface-export-retired-portals">
+							{retiredPortals.map(portal => (
+								<img
+									key={portal.slot}
+									src={PORTAL_ART[portal.colour]}
+									alt={`${portal.colour} portal, unassigned`}
+									title={`${portal.colour.charAt(0).toUpperCase() + portal.colour.slice(1)}: unassigned (last led to ${portal.formerInstanceName}) — an admin can assign it with surface-export portal assign`}
+									draggable={false}
+								/>
+							))}
+						</div> : null}
 						<Text type="secondary" style={{ fontSize: 12, display: "block", maxWidth: 220, textAlign: "right" }}>
 							{canEdit
 								? "every server reaches every other · drag a platform onto a portal to transfer it"

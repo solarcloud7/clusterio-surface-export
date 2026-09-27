@@ -39,7 +39,19 @@ clusterioctl surface-export list
 clusterioctl surface-export list-transfers
 clusterioctl surface-export start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]
 clusterioctl surface-export restore-snapshot <exportId> <targetInstanceId> <requestId> [platformName]
+clusterioctl surface-export gateways
+clusterioctl surface-export portal assign <instance> <portal>
+clusterioctl surface-export portal release <portal>
 ```
+
+`gateways` prints which server each coloured portal leads to, the retired colours
+and the servers without a colour. `portal assign` makes a colour lead to a server;
+`<instance>` is an instance name or id and `<portal>` is `1`-`4` or `blue`, `green`,
+`orange` or `purple`. A colour held by another server is refused until it is
+released. A server that already holds a colour moves, and the colour it leaves is
+retired. `portal release` frees a colour without deleting its server; the colour
+is retired. Both need `surface_export.exports.transfer`, save the assignment at
+once and push it to every running server. See [portals](configuration.md#portals).
 
 The plugin resolves live identity when starting a transfer; copying an index from
 another instance or an old save is not sufficient. Stored export transfer and
@@ -56,7 +68,7 @@ using a file path; an in-game command cannot read arbitrary files on your comput
 |---|---|
 | `surface_export.ui.view` | Plugin page and platform tree. |
 | `surface_export.exports.list` | Stored export listing/retrieval. |
-| `surface_export.exports.transfer` | Transfer and import actions, including snapshot recovery. |
+| `surface_export.exports.transfer` | Transfer and import actions, including snapshot recovery, and portal colour assignment. |
 | `surface_export.logs.view` | Transaction summaries and details. |
 | `core.controller.get_config` | Read controller settings. |
 | `core.controller.update_config` | Change controller settings. |

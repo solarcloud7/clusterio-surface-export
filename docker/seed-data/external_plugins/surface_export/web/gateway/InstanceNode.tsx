@@ -26,15 +26,16 @@ const NODE_FACE_ART: Record<string, string> = {
 	surfexp_gateway_hub: gatewayHubArt,
 };
 
-const PORTAL_ART: Record<PortalColour, string> = {
+export const PORTAL_ART: Record<PortalColour, string> = {
 	blue: gatewayBlueArt,
 	green: gatewayGreenArt,
 	orange: gatewayOrangeArt,
 	purple: gatewayPurpleArt,
 };
 
-const NO_PORTAL_NOTE = "No portal: limit of 4 servers. The four portal colours are taken by other servers, "
-	+ "so no schedule can stop at a portal leading to that server. Drag a platform onto its card or use the Gateway instead.";
+const NO_PORTAL_NOTE = "No portal colour: at most 4 servers hold one, and a colour freed by a deleted server stays unassigned "
+	+ "until an admin assigns it with surface-export portal assign. No schedule can stop at a portal leading to this server; "
+	+ "drag a platform onto its card or use the Gateway instead.";
 
 function colourName(colour: PortalColour): string {
 	return colour.charAt(0).toUpperCase() + colour.slice(1);
@@ -76,7 +77,7 @@ function OutgoingPortals({ selfId, peers }: { selfId: string; peers: PeerPortal[
 						className={`surface-export-instance-portal${peer.portal ? "" : " surface-export-instance-portal-none"}`}
 						style={position}
 						title={peer.portal
-							? `${colourName(peer.portal.colour)} Gateway → ${peer.instanceName}: platforms scheduled to this stop travel there`
+							? `${colourName(peer.portal.colour)} → ${peer.instanceName}: platforms scheduled to this stop travel there`
 							: `${peer.instanceName}: ${NO_PORTAL_NOTE}`}
 					>
 						{peer.portal
@@ -112,10 +113,10 @@ function ServerFooter({ portal, instanceName, defaultPlanet, disabledPlanets }: 
 				style={portal ? { color: portalColour(portal.colour) } : undefined}
 				type={portal ? undefined : "secondary"}
 				title={portal
-					? `On every other server, the ${colourName(portal.colour)} Gateway leads to ${instanceName}`
+					? `On every other server, the ${colourName(portal.colour)} portal leads to ${instanceName}`
 					: NO_PORTAL_NOTE}
 			>
-				{portal ? `${colourName(portal.colour)} Gateway` : "no portal: limit of 4 servers"}
+				{portal ? colourName(portal.colour) : "no portal colour"}
 			</Text>
 			{planets.length === 0 ? null : <div className="surface-export-instance-planets">
 				{planets.map(name => (

@@ -107,6 +107,7 @@ test("each other server's colour leads to that server's hub, the Gateway to ever
 			{ slot: 3, colour: "orange", gatewayName: "surfexp_gateway_3", instanceId: 3, instanceName: "Theta" },
 		],
 		unassigned: [],
+		retired: [],
 	});
 	assert.deepEqual(plugin.portalOf(3), { slot: 3, colour: "orange", label: "Theta" });
 });
@@ -144,7 +145,7 @@ test("names do not identify portals: shared, renamed or unusual names keep their
 	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_2"], "a deleted server has no portal");
 });
 
-test("at most four servers hold a colour; a fifth is reported and takes the first colour freed", async () => {
+test("at most four servers hold a colour; a fifth is reported and does not take a colour freed by a deletion", async () => {
 	const { plugin, controller } = portalFixture(["a", "b", "c", "d", "e"]);
 	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_2", "surfexp_gateway_3", "surfexp_gateway_4"],
 		"no colour leads to the fifth server");
@@ -158,9 +159,12 @@ test("at most four servers hold a colour; a fifth is reported and takes the firs
 	assert.deepEqual((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).gateways[0].targets.map(entry => entry.instanceId), [2, 3, 4, 5],
 		"the Gateway still reaches a server without a colour");
 	controller.instances.delete(2);
-	assert.deepEqual(plugin.portalOf(5), { slot: 2, colour: "green", label: "e" });
+	assert.equal(plugin.portalOf(5), null, "a colour freed by deleting its holder is retired, not reassigned");
 	assert.deepEqual(plugin.portalOf(3), { slot: 3, colour: "orange", label: "c" }, "other servers keep their colours");
-	assert.deepEqual((await plugin.handleGetGatewaysRequest({})).unassigned, []);
+	const listing = await plugin.handleGetGatewaysRequest({});
+	assert.deepEqual(listing.unassigned, [{ instanceId: 5, instanceName: "e" }], "the waiting server is still reported");
+	assert.deepEqual(listing.retired, [{ slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", formerInstanceId: 2, formerInstanceName: "b" }], "the retired colour names the server it last led to");
+	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_3", "surfexp_gateway_4"], "a retired colour is locked everywhere");
 });
 
 test("the Discord invite rides the gateway push and pull, trimmed, and an unset invite is sent as empty", async () => {

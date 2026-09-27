@@ -935,14 +935,59 @@ export class GetGatewaysRequest {
 						additionalProperties: false,
 					},
 				},
+				retired: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							slot: { type: "integer" },
+							colour: { type: "string" },
+							gatewayName: { type: "string" },
+							formerInstanceId: { type: "integer" },
+							formerInstanceName: { type: "string" },
+						},
+						required: ["slot", "colour", "gatewayName", "formerInstanceId", "formerInstanceName"],
+						additionalProperties: false,
+					},
+				},
 				error: { type: "string" },
 			},
-			required: ["portals", "unassigned"],
+			required: ["portals", "unassigned", "retired"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as PortalListingResponse;
 		},
 	};
+}
+
+export class SetPortalRequest {
+	declare ["constructor"]: typeof SetPortalRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { action: { enum: ["assign", "release"] }, portal: { type: "string" }, instance: { type: "string" } },
+		required: ["action", "portal"],
+		additionalProperties: false,
+	};
+
+	action: "assign" | "release";
+	portal: string;
+	instance?: string;
+
+	constructor(json: { action: "assign" | "release"; portal: string; instance?: string }) {
+		this.action = json.action;
+		this.portal = json.portal;
+		this.instance = json.instance;
+	}
+
+	static fromJSON(json: { action: "assign" | "release"; portal: string; instance?: string }) { return new SetPortalRequest(json); }
+	toJSON() { return { action: this.action, portal: this.portal, instance: this.instance }; }
+
+	static Response = GetGatewaysRequest.Response;
 }
 
 export interface GatewayConfigPayload {
