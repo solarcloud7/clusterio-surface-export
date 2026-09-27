@@ -33,6 +33,7 @@ async function fixture(t, prepare = async () => {}) {
 		plugin.orchestrator?.stop();
 		clearInterval(plugin.recoveryTimer);
 		plugin.subscriptions?.treeBroadcastLimiter.cancel();
+		await plugin.gatewayConfig?.slots?.flush();
 		await fs.rm(dir, {recursive: true, force: true});
 	});
 	await plugin.init();
@@ -61,7 +62,7 @@ test("registered gateway handlers lead every server to every other server with r
 		{slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "Destination"},
 	], unassigned: []});
 	await plugin.gatewayConfig.slots.flush();
-	assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "surface_export_portal_slots.json"), "utf8")), {version: 1, slots: [[1, 1], [2, 2]]},
+	assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "surface_export_portal_slots.json"), "utf8")), {version: 1, slots: [[1, 1], [2, 2]], released: []},
 		"colour assignments are kept in the controller database directory");
 });
 
