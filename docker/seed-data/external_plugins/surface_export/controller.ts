@@ -273,7 +273,18 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const session = this.recoveryReservations.get(request.instanceId);
 		if (request.action !== "finish" || session?.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
 		this.recoveryReservations.delete(request.instanceId);
+		this.refreshGatewaysAfterRecovery(request.instanceId);
 		return session;
+	}
+
+	private refreshGatewaysAfterRecovery(instanceId: number) {
+		const gateways = this.gatewayConfig;
+		if (!gateways) return;
+		void gateways.pushGatewayConfigToAllSources().then(results => {
+			for (const [sourceInstanceId, error] of results) {
+				if (error) this.logger.warn(`Gateway refresh after instance ${instanceId} recovered failed for instance ${sourceInstanceId}: ${error}`);
+			}
+		}, (err: unknown) => this.logger.warn(`Gateway refresh after instance ${instanceId} recovered failed: ${getErrorMessage(err)}`));
 	}
 
 	private requireRecoveryReady(instanceId: number) {
