@@ -3,13 +3,14 @@
 import { fixtureUnlockLua } from "../../lab-gallery/fixture-cleanup.mjs";
 
 import { execFileSync } from "node:child_process";
+import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
-const SRC_INSTANCE = "clusterio-host-1-instance-1";
-const DST_INSTANCE = "clusterio-host-2-instance-1";
+const SRC_INSTANCE = String(developmentCluster.locate(1).id);
+const DST_INSTANCE = String(developmentCluster.locate(2).id);
 const DST_CONTAINER = "surface-export-host-2";
-const DST_SCRIPT_OUTPUT = "/clusterio/data/instances/clusterio-host-2-instance-1/script-output";
+const DST_SCRIPT_OUTPUT = `${developmentCluster.instanceDir(2)}/script-output`;
 const GATEWAY = "surfexp_gateway_hub";
 const PROBE = `gwpark-probe-${Date.now().toString(36)}`;
 
@@ -32,17 +33,9 @@ function rawCommand(instance, command) {
 		+ `"${instance}" "${command.replace(/"/g, '\\"')}"`;
 	return execFileSync("docker", ["exec", CONTROLLER, "sh", "-c", cmd], { encoding: "utf8" }).trim();
 }
-function resolveInstanceId(name) {
-	const out = execFileSync("docker", ["exec", CONTROLLER, "sh", "-c",
-		`npx clusterioctl --config ${CTL_CONFIG} --log-level error instance list`], { encoding: "utf8" });
-	const line = out.split("\n").find(l => l.includes(name));
-	const m = line && line.match(/\|\s*(\d+)\s*\|/);
-	if (!m) throw new Error(`could not resolve instance id for ${name}`);
-	return Number(m[1]);
-}
 function readDestImportResult() {
 	const file = execFileSync("docker", ["exec", DST_CONTAINER, "sh", "-c",
-		`ls -t ${DST_SCRIPT_OUTPUT}/debug_import_result_*.json 2>/dev/null | head -1`], { encoding: "utf8" }).trim();
+		`ls -t '${DST_SCRIPT_OUTPUT}'/debug_import_result_*.json 2>/dev/null | head -1`], { encoding: "utf8" }).trim();
 	if (!file) return null;
 	const body = execFileSync("docker", ["exec", DST_CONTAINER, "sh", "-c", `cat '${file}'`], { encoding: "utf8" });
 	return JSON.parse(body);
@@ -56,7 +49,7 @@ const check = (ok, label, detail = "") => {
 };
 
 console.log(`=== gateway-park-proxies: BOTH proxy shapes must SURVIVE the park (${PROBE}) ===`);
-const dstId = resolveInstanceId(DST_INSTANCE);
+const dstId = Number(DST_INSTANCE);
 
 try {
 	const setup = rconJson(SRC_INSTANCE,
