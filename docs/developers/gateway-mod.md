@@ -24,7 +24,7 @@ hosts; schedule this as a deployment, not a compile-only check. Inspect its
 
 The mod defines one Gateway, `surfexp_gateway_hub`, at the centre of the star map
 and connected to Nauvis only. Four portals, `surfexp_gateway_1` to `surfexp_gateway_4`
-(Blue, Green, Orange and Purple Gateway), orbit the Gateway on the diagonals. Each
+(Blue, Green, Orange and Purple), orbit the Gateway on the diagonals. Each
 has a straight route from the Gateway. The mod has no startup settings; the
 controller decides at runtime which server each portal leads to. See
 [portals](../admins/configuration.md#portals).

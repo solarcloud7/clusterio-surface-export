@@ -23,7 +23,7 @@ env.game.print = function(message)
 end
 env.require = function(name)
     if name:find("core/gateway", 1, true) then return {own_portal = function() return "surfexp_gateway_2" end,
-        location_label = function(portal) return portal == "surfexp_gateway_2" and "Green Gateway" or portal end,
+        location_label = function(portal) return portal == "surfexp_gateway_2" and "Green" or portal end,
         evacuate_passengers = function()
         if evacuation == "throw" then error("injected evacuation failure") end
         if evacuation == "missing" then return nil end
@@ -98,7 +98,7 @@ local _, blocked_hold = holds.stage("route-blocked", platform, force, true)
 blocked_hold.route_hold = true
 assert(holds.go_live("route-blocked"))
 assert(platform.paused == true and env.route_alert and env.route_alert.icon == "surfexp_gateway_hub", "an arrival that cannot continue stays parked and raises an alert")
-assert(env.route_alert.reason[3] == "Green Gateway", "the held alert names this server's own portal")
+assert(env.route_alert.reason[3] == "Green", "the held alert names this server's own portal")
 force.print = noop
 platform.paused = true
 local _, passenger_hold = holds.stage("route-passengers", platform, force, true)

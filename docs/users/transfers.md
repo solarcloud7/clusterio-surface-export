@@ -29,9 +29,9 @@ manually unlocking or deleting anything.
 Each instance has one Gateway at the centre of the star map, connected to Nauvis.
 It is a space location, not another planet. Every server can reach every other
 server through it; there are no links to configure. Four coloured portals orbit
-the Gateway: Blue, Green, Orange and Purple Gateway. Each colour belongs to one
+the Gateway: Blue, Green, Orange and Purple. Each colour belongs to one
 server, and that portal leads there from every other server. The transfer dialog
-and route alerts show where a portal leads, for example "Blue Gateway → Delta".
+and route alerts show where a portal leads, for example "Blue → Delta".
 Your own server's colour is locked. A platform whose schedule stops at a portal is
 sent automatically and continues its schedule on the other server.
 
