@@ -150,7 +150,7 @@ for _, mode in ipairs({"one_gate", "multi"}) do
   dofile(root .. "data-final-fixes.lua")
   local star = data.raw["utility-sprites"].default.starmap_star
   if mode == "one_gate" then
-    assert(star.filename == "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png" and star.size == 512, "the Gateway is drawn in place of the sun")
+    assert(star.filename == "__surfexp_gateways__/graphics/icons/starmap-clear.png" and star.size == 64, "the sun is blacked out")
     local file = assert(io.open(root .. star.filename:gsub("__surfexp_gateways__/", ""), "rb"))
     file:close()
   else
@@ -158,5 +158,7 @@ for _, mode in ipairs({"one_gate", "multi"}) do
   end
 end
 local hub_one_gate = load_layout("one_gate", "").surfexp_gateway_hub
-assert(hub_one_gate.starmap_icon:find("starmap-clear.png", 1, true), "the Gateway location itself draws nothing over the sun art")
-print("eclipse: PASS (the Gateway replaces the sun in the single-gateway layout)")
+assert(hub_one_gate.starmap_icon:find("starmap-gateway-hub.png", 1, true) and hub_one_gate.starmap_icon_size == 512,
+  "the Gateway draws its own portal where the sun was")
+assert(hub_one_gate.magnitude >= 3, "the Gateway is sun-sized so its label clears the portal")
+print("eclipse: PASS (the sun is blacked out and the Gateway takes its place)")

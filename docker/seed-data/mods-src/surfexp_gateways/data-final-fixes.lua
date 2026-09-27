@@ -5,9 +5,8 @@ if not sprites then return end
 
 sprites.starmap_star = {
 	type = "sprite",
-	filename = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
+	filename = "__surfexp_gateways__/graphics/icons/starmap-clear.png",
 	priority = "extra-high-no-scale",
-	size = 512,
+	size = 64,
 	flags = {"gui-icon"},
-	scale = 0.5,
 }
