@@ -1,6 +1,6 @@
 {
 	"modPack": {
-		"name": "Space Age 2.1.20 - Surface Export 0.6.12",
+		"name": "Space Age 2.1.20 - Surface Export 0.7.6",
 		"factorioVersion": "2.1.20",
 		"mods": {
 			"base": "2.1.20",
@@ -8,7 +8,7 @@
 			"quality": "2.1.20",
 			"elevated-rails": "2.1.20",
 			"recycler": "2.1.20",
-			"surfexp_gateways": "0.6.12",
+			"surfexp_gateways": "0.7.6",
 			"PlanetsLib": "2.0.1",
 			"maraxsis": "1.39.4",
 			"FluidMustFlow": "1.5.0",
@@ -16,7 +16,7 @@
 			"SpidertronPatrols": "2.7.0"
 		},
 		"sha1": {
-			"surfexp_gateways": "a96c8f968f260f7c6aff1880e7394bdb1853f75d",
+			"surfexp_gateways": "3f6aba39ab5315ec3e768432f0b8d9cb8133e653",
 			"PlanetsLib": "2bc1b9a592e610a33a6c3ddfc90b104774442916",
 			"maraxsis": "18de3e1fcca2df06c8180d56b81fba09dc739bc1",
 			"FluidMustFlow": "6c576d8d354cf930a64d79819af8f9b002583792",
@@ -34,33 +34,129 @@
 	},
 	"controller": {
 		"surface_export.gateway_mode": "one_gate",
-		"surface_export.platform_source_of_truth": "plugin_history"
+		"surface_export.platform_source_of_truth": "plugin_history",
+		"surface_export.discord_invite": "https://discord.gg/K3rhKD2zb",
+		"discord_bridge.channel_id": "1521306605386338335"
 	},
 	"instances": {
-		"fact1": {
+		"Nauvis": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "nauvis",
-			"surface_export.disabled_planets": "vulcanus,fulgora,gleba,aquilo"
+			"surface_export.disabled_planets": "vulcanus,fulgora,gleba,aquilo",
+			"research_sync.load_plugin": true,
+			"factorio.settings": {
+				"name": "Clusterio: PlatformExport - [planet=nauvis] Nauvis",
+				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
+				"tags": [
+					"clusterio",
+					"cloudstack",
+					"space-age"
+				],
+				"max_players": 100,
+				"visibility": {
+					"public": true,
+					"lan": true
+				},
+				"require_user_verification": true,
+				"allow_commands": "admins-only",
+				"auto_pause": false,
+				"only_admins_can_pause_the_game": true,
+				"autosave_interval": 10,
+				"autosave_slots": 5,
+				"non_blocking_saving": true
+			}
 		},
-		"fact2": {
+		"Vulcanus": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "vulcanus",
-			"surface_export.disabled_planets": "nauvis,fulgora,gleba,aquilo,maraxsis"
+			"surface_export.disabled_planets": "nauvis,fulgora,gleba,aquilo,maraxsis",
+			"research_sync.load_plugin": true,
+			"factorio.settings": {
+				"name": "Clusterio: PlatformExport - [planet=vulcanus] Vulcanus",
+				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
+				"tags": [
+					"clusterio",
+					"cloudstack",
+					"space-age"
+				],
+				"max_players": 100,
+				"visibility": {
+					"public": true,
+					"lan": true
+				},
+				"require_user_verification": true,
+				"allow_commands": "admins-only",
+				"auto_pause": false,
+				"only_admins_can_pause_the_game": true,
+				"autosave_interval": 10,
+				"autosave_slots": 5,
+				"non_blocking_saving": true
+			}
 		},
-		"fact3": {
+		"Fulgora": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "fulgora",
-			"surface_export.disabled_planets": "nauvis,vulcanus,gleba,aquilo,maraxsis"
+			"surface_export.disabled_planets": "nauvis,vulcanus,gleba,aquilo,maraxsis",
+			"research_sync.load_plugin": true,
+			"factorio.settings": {
+				"name": "Clusterio: PlatformExport - [planet=fulgora] Fulgora",
+				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
+				"tags": [
+					"clusterio",
+					"cloudstack",
+					"space-age"
+				],
+				"max_players": 100,
+				"visibility": {
+					"public": true,
+					"lan": true
+				},
+				"require_user_verification": true,
+				"allow_commands": "admins-only",
+				"auto_pause": false,
+				"only_admins_can_pause_the_game": true,
+				"autosave_interval": 10,
+				"autosave_slots": 5,
+				"non_blocking_saving": true
+			}
 		},
-		"fact4": {
+		"Gleba": {
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "gleba",
-			"surface_export.disabled_planets": "nauvis,vulcanus,fulgora,maraxsis"
+			"surface_export.disabled_planets": "nauvis,vulcanus,fulgora,maraxsis",
+			"research_sync.load_plugin": true,
+			"factorio.settings": {
+				"name": "Clusterio: PlatformExport - [planet=gleba] Gleba",
+				"description": "Fly your space platforms between four linked Space Age servers (Clusterio Surface Export). Discord: https://discord.gg/K3rhKD2zb",
+				"tags": [
+					"clusterio",
+					"cloudstack",
+					"space-age"
+				],
+				"max_players": 100,
+				"visibility": {
+					"public": true,
+					"lan": true
+				},
+				"require_user_verification": true,
+				"allow_commands": "admins-only",
+				"auto_pause": false,
+				"only_admins_can_pause_the_game": true,
+				"autosave_interval": 10,
+				"autosave_slots": 5,
+				"non_blocking_saving": true
+			}
 		}
+	},
+	"serverDestinations": {
+		"Nauvis": "[planet=nauvis] Nauvis",
+		"Vulcanus": "[planet=vulcanus] Vulcanus",
+		"Fulgora": "[planet=fulgora] Fulgora",
+		"Gleba": "[planet=gleba] Gleba"
 	},
 	"hosts": {
 		"clusterio-host-1": {
@@ -71,32 +167,32 @@
 		}
 	},
 	"gatewayLinks": {
-		"fact1": {
+		"Nauvis": {
 			"surfexp_gateway_hub": [
-				"fact2",
-				"fact3",
-				"fact4"
+				"Vulcanus",
+				"Fulgora",
+				"Gleba"
 			]
 		},
-		"fact2": {
+		"Vulcanus": {
 			"surfexp_gateway_hub": [
-				"fact1",
-				"fact3",
-				"fact4"
+				"Nauvis",
+				"Fulgora",
+				"Gleba"
 			]
 		},
-		"fact3": {
+		"Fulgora": {
 			"surfexp_gateway_hub": [
-				"fact1",
-				"fact2",
-				"fact4"
+				"Nauvis",
+				"Vulcanus",
+				"Gleba"
 			]
 		},
-		"fact4": {
+		"Gleba": {
 			"surfexp_gateway_hub": [
-				"fact1",
-				"fact2",
-				"fact3"
+				"Nauvis",
+				"Vulcanus",
+				"Fulgora"
 			]
 		}
 	}
