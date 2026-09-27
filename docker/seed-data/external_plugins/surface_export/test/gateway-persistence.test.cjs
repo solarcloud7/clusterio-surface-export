@@ -364,3 +364,12 @@ test("a server destination cannot be given manual links, and links cannot arrive
 	assert.match(arrival.error, /is a server destination/);
 	assert.equal(plugin.gatewayLinks.size, 0);
 });
+
+test("the Discord invite rides the gateway push and pull, trimmed, and an unset invite is sent as empty", async t => {
+	const { plugin, config, sends } = await addressFixture(t);
+	assert.equal((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).discordInvite, "", "an unset invite hides the button");
+	config.set("surface_export.discord_invite", "  https://discord.gg/example ");
+	assert.equal((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).discordInvite, "https://discord.gg/example");
+	await plugin.pushGatewayConfigToInstance(1);
+	assert.equal(sends.at(-1).message.toJSON().discordInvite, "https://discord.gg/example");
+});

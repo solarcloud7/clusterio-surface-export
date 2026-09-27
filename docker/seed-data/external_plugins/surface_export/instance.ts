@@ -243,6 +243,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		gateways: messages.ResolvedGateway[],
 		activeGatewayNames?: string[],
 		passengerCarry?: messages.PassengerCarry,
+		discordInvite?: string,
 	): Promise<{ gateways: number }> {
 		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
 		for (const g of gateways || []) {
@@ -254,6 +255,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		);
 		if (passengerCarry) {
 			await this.lua.configurePassengerCarry(passengerCarry);
+		}
+		if (typeof discordInvite === "string") {
+			await this.lua.configureCommunity(discordInvite);
 		}
 		return applied;
 	}
@@ -292,8 +296,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const resp = (await this.link.sendTo(
 				"controller",
 				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
-			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry };
-			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames, resp?.passengerCarry);
+			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry; discordInvite?: string };
+			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames, resp?.passengerCarry, resp?.discordInvite);
 			this.logger.info(`Gateway config pulled from controller: ${applied.gateways} gateway(s) applied`);
 		};
 		try {
@@ -314,9 +318,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		})();
 	}
 
-	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry }) {
+	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: messages.PassengerCarry; discordInvite?: string }) {
 		try {
-			const applied = await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames, request.passengerCarry);
+			const applied = await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames, request.passengerCarry, request.discordInvite);
 			this.logger.info(`Gateway config applied: ${applied.gateways} gateway(s)`);
 			return { success: true };
 		} catch (err: unknown) {
