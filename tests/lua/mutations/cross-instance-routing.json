@@ -502,5 +502,14 @@
 		"tests": [
 			"tests/lua/gateway-route.lua"
 		]
+	},
+	{
+		"name": "the own colour is remembered as held",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\t\t\tleads[name] = Gateway.OWN_LEAD\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
 	}
 ]

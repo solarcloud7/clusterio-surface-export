@@ -322,4 +322,15 @@ push(nil, {targets = {}, own = true})
 assert(#announced == 1, "a freed colour or a colour that becomes this server's own is not a new lead")
 push(server(55, "Zeta", true))
 assert(#announced == 2 and announced[2][7] == "Zeta", "a freed colour taken by another server is announced")
+local function push_own(slot3)
+	configure({gateways_json = {surfexp_gateway_hub = {targets = {}}, surfexp_gateway_3 = slot3}})
+end
+push_own(nil)
+assert(#announced == 2, "releasing this server's own colour announces nothing")
+push_own({targets = {server(66, "Kappa", true)}})
+assert(#announced == 3 and announced[3][5][1] == "space-location-name.surfexp_gateway_3" and announced[3][7] == "Kappa",
+	"the former holder of a colour hears where it now leads")
+env.storage.surface_export_portal_leads = nil
+push_own({targets = {server(66, "Kappa", true)}})
+assert(#announced == 3, "a server that never saw who held a colour announces nothing")
 print("PASS a portal colour that changes holder is announced on every server")

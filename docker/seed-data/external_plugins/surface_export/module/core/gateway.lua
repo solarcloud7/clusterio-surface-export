@@ -4,6 +4,7 @@ local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 Gateway.PREFIX = "surfexp_gateway_"
 Gateway.HUB = "surfexp_gateway_hub"
 Gateway.PORTAL_COUNT = 4
+Gateway.OWN_LEAD = "own"
 Gateway.PASSENGER_HOLD = "surfexp_passenger_hold"
 
 function Gateway.is_gateway(name)
@@ -264,6 +265,8 @@ function Gateway.portal_lead_changes(gateways)
 				changes[#changes + 1] = {portal = name, instance_name = tostring(target.instanceName or target.instanceId)}
 			end
 			leads[name] = target.instanceId
+		elseif type(cfg) == "table" and cfg.own == true then
+			leads[name] = Gateway.OWN_LEAD
 		end
 	end
 	return changes
