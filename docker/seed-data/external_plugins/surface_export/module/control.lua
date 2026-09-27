@@ -259,7 +259,6 @@ SurfaceExportModule.events = {
 		DebugControls.on_gui_click(event)
 		GatewayPortal.on_gui_click(event)
 		PassengerTransit.on_gui_click(event)
-		CommunityLinks.on_gui_click(event)
 	end,
 
 	[e.on_gui_checked_state_changed] = GatewayTransferGui.on_gui_click,
@@ -270,7 +269,6 @@ SurfaceExportModule.events = {
 		TeleportGui.on_gui_closed(event)
 		InstancePanel.on_gui_closed(event)
 		PassengerTransit.on_gui_closed(event)
-		CommunityLinks.on_gui_closed(event)
 	end,
 
 	[e.on_player_selected_area] = function(event)
