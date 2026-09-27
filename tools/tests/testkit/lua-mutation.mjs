@@ -71,8 +71,10 @@ export function summarize(results) {
 	return { ...counts, ok: counts.killed === results.length };
 }
 
+const DEPLOY_GENERATED = "docker/seed-data/external_plugins/surface_export/module/build-id.lua";
+
 export function uncommittedChanges(repo, paths = EXPORTED_PATHS) {
-	return checked("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths], { cwd: repo })
+	return checked("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths, `:(exclude)${DEPLOY_GENERATED}`], { cwd: repo })
 		.stdout.split("\n").map(line => line.trimEnd()).filter(Boolean);
 }
 
