@@ -9,12 +9,12 @@ function snapshot() {
 		locations[`surfexp_gateway_${i}`] = { hidden: false };
 		routes[`surfexp_gateway_link_${i}`] = { from: "surfexp_gateway_hub", to: `surfexp_gateway_${i}` };
 	}
-	return { instance: "test-instance", mod: "0.7.8", locations, routes,
+	return { instance: "test-instance", mod: "0.7.9", locations, routes,
 		platforms: [{ index: 42, name: "existing", force: "player", location: "nauvis" }] };
 }
 
 test("accepts the Gateway with its four coloured portals", () => {
-	verifyGatewayMap(snapshot(), { version: "0.7.8" });
+	verifyGatewayMap(snapshot(), { version: "0.7.9" });
 });
 
 test("rejects dangling connections even when hidden is true", () => {

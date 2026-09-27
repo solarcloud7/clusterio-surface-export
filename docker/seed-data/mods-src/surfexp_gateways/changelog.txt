@@ -1,9 +1,11 @@
 ---------------------------------------------------------------------------------------------------
-Version: 0.7.8
+Version: 0.7.9
   Changes:
     - Remove the four-gateway layout setting and the "Server destinations" setting.
     - Four coloured portals (Blue, Green, Orange and Purple Gateway) orbit the Gateway on straight routes. The cluster
       sets which server each portal leads to.
+    - Saves that used the old four-gateway layout keep their numbered gateway stops; platforms that stop there are now
+      sent automatically to the server holding that colour.
 ---------------------------------------------------------------------------------------------------
 Version: 0.7.7
   Changes:
