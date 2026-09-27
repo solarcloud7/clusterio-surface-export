@@ -244,7 +244,7 @@ Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
 
 
 $inst1SavePath = "$($hostInstances[1].Dir)/saves"
-Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "find $inst1SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
+Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "find '$inst1SavePath' -maxdepth 1 -name '*.zip' ! -name 'predeploy-*.zip' -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
 } else {
@@ -259,7 +259,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 $inst2SavePath = "$($hostInstances[2].Dir)/saves"
-Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "find $inst2SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
+Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "find '$inst2SavePath' -maxdepth 1 -name '*.zip' ! -name 'predeploy-*.zip' -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
 } else {
