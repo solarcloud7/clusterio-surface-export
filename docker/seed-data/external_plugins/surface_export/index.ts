@@ -132,6 +132,14 @@ export const plugin = {
 			type: "boolean",
 			initialValue: true,
 		},
+		[`${PLUGIN_NAME}.discord_invite`]: {
+			title: "Discord invite link",
+			description: "Community Discord invite shown on every server: a Discord button in the top-left bar with a copyable link, "
+				+ "and a line in chat when a player joins. Leave empty to hide both.",
+			type: "string",
+			optional: true,
+			initialValue: null,
+		},
 		[`${PLUGIN_NAME}.passenger_carry_inventory`]: {
 			title: "Inventory carry over?",
 			description: "Players aboard a platform that transfers through a gateway take their main inventory, weapons, ammunition "

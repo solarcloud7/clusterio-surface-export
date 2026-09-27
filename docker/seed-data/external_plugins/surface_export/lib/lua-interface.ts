@@ -100,6 +100,20 @@ export class LuaInterface {
 		return { gateways: expectedGateways };
 	}
 
+	async configureCommunity(discordInvite: string): Promise<void> {
+		const raw = String(await this.host.sendRcon(`/sc if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure_community"] then `
+			+ `rcon.print(helpers.table_to_json(remote.call("surface_export", "configure_community", "${escapeString(discordInvite)}"))) end`) || "").trim();
+		let response: { success?: unknown; discord_invite?: unknown };
+		try {
+			response = JSON.parse(raw) as { success?: unknown; discord_invite?: unknown };
+		} catch (err: unknown) {
+			throw new Error(`Community configuration returned a non-JSON reply "${raw.slice(0, 200)}" (${getErrorMessage(err)})`);
+		}
+		if (response?.success !== true || response.discord_invite !== discordInvite.trim()) {
+			throw new Error(`Community configuration was not applied: ${raw.slice(0, 200)}`);
+		}
+	}
+
 	async configurePassengerCarry(carry: PassengerCarry): Promise<void> {
 		const armor = carry.armor === true;
 		const inventory = carry.inventory === true;
