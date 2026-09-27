@@ -146,3 +146,49 @@ held_platform.name = "Replacement"
 RouteAlerts.refresh()
 assert(next(alert_env.storage.surface_export_route_alerts) == nil, "a reused platform index does not inherit another platform's alert")
 print("PASS route holds raise map alerts on the hub, refresh while they apply and clear when the platform moves")
+
+local sent = {}
+RouteAlerts.sender = function(payload) sent[#sent + 1] = payload end
+held_platform.name, held_platform.paused, held_platform.state = "Hauler", true, states.paused
+RouteAlerts.raise(held_platform, "held", "surfexp_gateway_i_fact2", "fact2 is offline")
+assert(#sent == 1 and sent[1].active == true and sent[1].key == "player:5" and sent[1].platform_name == "Hauler" and sent[1].icon == "surfexp_gateway_i_fact2",
+	"a raised alert is relayed so every server hears about it")
+RouteAlerts.refresh()
+assert(#sent == 2 and sent[2].active == true, "an alert that still applies is re-announced as a keep-alive")
+held_platform.paused = false
+RouteAlerts.refresh()
+assert(#sent == 3 and sent[3].active == false, "a cleared alert is relayed as cleared")
+RouteAlerts.raise(held_platform, "held", "surfexp_gateway_i_fact2", "offline")
+held_platform.valid = false
+RouteAlerts.refresh()
+assert(sent[#sent].active == false, "a deleted platform's alert is relayed as cleared")
+held_platform.valid = true
+RouteAlerts.sender = nil
+
+local character = {valid = true}
+player.character = character
+local printed_remote = {}
+alert_force.print = function(message) printed_remote[#printed_remote + 1] = message end
+alert_env.prototypes = {space_location = {surfexp_gateway_i_fact2 = {}, surfexp_gateway_hub = {}}}
+alert_env.game.tick = 100
+shown = {}
+RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "surfexp_gateway_i_fact2",
+	active = true, reason = "cannot reach", sourceInstanceId = 22, sourceName = "Forge"})
+assert(#shown == 1 and shown[1].entity == character and shown[1].on_map == false and shown[1].message[4] == "Forge",
+	"another server's alert shows natively, pinned to the player with no map marker")
+assert(#printed_remote == 1 and printed_remote[1][7] == "surfexp_route_" and printed_remote[1][8] == "22", "the first sighting prints one chat line with a GPS link")
+RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "gone-planet",
+	active = true, reason = "cannot reach", sourceInstanceId = 22, sourceName = "Forge"})
+assert(#printed_remote == 1 and shown[#shown].icon.name == "surfexp_gateway_hub", "keep-alives do not repeat the chat line; unknown icons fall back to the hub")
+assert(RouteAlerts.server_from_gps("surfexp_route_22") == 22 and RouteAlerts.server_from_gps("nauvis") == nil)
+alert_env.game.tick = 100 + RouteAlerts.REMOTE_EXPIRY_TICKS + 1
+RouteAlerts.refresh()
+assert(next(alert_env.storage.surface_export_remote_route_alerts) == nil, "an alert whose server stopped announcing it expires")
+alert_env.game.tick = 200
+RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "surfexp_gateway_i_fact2",
+	active = true, reason = "cannot reach", sourceInstanceId = 22, sourceName = "Forge"})
+local before = #removed
+RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "surfexp_gateway_i_fact2",
+	active = false, sourceInstanceId = 22, sourceName = "Forge"})
+assert(next(alert_env.storage.surface_export_remote_route_alerts) == nil and #removed > before, "a relayed clear removes the alert everywhere")
+print("PASS route alerts are relayed to every server, shown natively there with a GPS link to the platform's server, and clear or expire")

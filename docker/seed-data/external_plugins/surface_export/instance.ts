@@ -98,11 +98,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		this.i.server.handle("surface_teleport_roster_request", this.handleTeleportRosterRequest.bind(this));
 
+		this.i.server.handle("surface_route_alert", this.handleRouteAlert.bind(this));
+
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
 		this.i.handle(messages.ReadEntityEvidenceRequest, request => readEntityEvidence(this.instance.path("script-output"), request));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.JobsStatusRequest, request => this.lua.jobStatus(request.jobs));
 		this.i.handle(messages.AnnouncePlayerTravelRequest, request => this.lua.announcePlayerTravel(request));
+		this.i.handle(messages.RelayRouteAlertRequest, request => this.lua.relayRouteAlert(request));
 		this.i.handle(messages.ReadExportRequest, this.handleReadExportRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
@@ -253,6 +256,21 @@ export class InstancePlugin extends BaseInstancePlugin {
 			await this.lua.configurePassengerCarry(passengerCarry);
 		}
 		return applied;
+	}
+
+	async handleRouteAlert(data: { key?: string; platform_name?: string; force_name?: string; icon?: string; active?: boolean; reason?: unknown }): Promise<void> {
+		if (!data || typeof data.key !== "string" || typeof data.platform_name !== "string" || typeof data.icon !== "string") {
+			this.logger.warn(`Ignoring malformed route alert from Lua: ${JSON.stringify(data)}`);
+			return;
+		}
+		try {
+			await this.i.sendTo("controller", new messages.RouteAlertEvent({
+				key: data.key, platformName: data.platform_name, forceName: data.force_name || "player",
+				icon: data.icon, active: data.active === true, reason: data.reason,
+			}));
+		} catch (err: unknown) {
+			this.logger.warn(`Route alert could not reach the controller: ${getErrorMessage(err)}`);
+		}
 	}
 
 	async handleTeleportRosterRequest(): Promise<void> {

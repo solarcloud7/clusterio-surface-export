@@ -1125,6 +1125,60 @@ export class AnnouncePlayerTravelRequest {
 	};
 }
 
+export interface RouteAlert {
+	key: string;
+	platformName: string;
+	forceName: string;
+	icon: string;
+	active: boolean;
+	reason?: unknown;
+}
+
+const ROUTE_ALERT_SCHEMA: JsonSchema = {
+	type: "object",
+	properties: {
+		key: { type: "string" }, platformName: { type: "string" }, forceName: { type: "string" },
+		icon: { type: "string" }, active: { type: "boolean" }, reason: {},
+	},
+	required: ["key", "platformName", "forceName", "icon", "active"],
+	additionalProperties: false,
+};
+
+export class RouteAlertEvent {
+	declare ["constructor"]: typeof RouteAlertEvent;
+	static plugin = PLUGIN_NAME;
+	static type = "event" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = { type: "object", properties: { alert: ROUTE_ALERT_SCHEMA }, required: ["alert"], additionalProperties: false };
+	constructor(public alert: RouteAlert) {}
+	toJSON() { return { alert: this.alert }; }
+	static fromJSON(json: { alert: RouteAlert }) { return new this(json.alert); }
+}
+
+export class RelayRouteAlertRequest {
+	declare ["constructor"]: typeof RelayRouteAlertRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { alert: ROUTE_ALERT_SCHEMA, sourceInstanceId: { type: "integer" }, sourceName: { type: "string" } },
+		required: ["alert", "sourceInstanceId", "sourceName"],
+		additionalProperties: false,
+	};
+	constructor(public alert: RouteAlert, public sourceInstanceId: number, public sourceName: string) {}
+	toJSON() { return { alert: this.alert, sourceInstanceId: this.sourceInstanceId, sourceName: this.sourceName }; }
+	static fromJSON(json: { alert: RouteAlert; sourceInstanceId: number; sourceName: string }) {
+		return new this(json.alert, json.sourceInstanceId, json.sourceName);
+	}
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
 export class PushGatewayConfigRequest {
 	declare ["constructor"]: typeof PushGatewayConfigRequest;
 	static plugin = PLUGIN_NAME;
