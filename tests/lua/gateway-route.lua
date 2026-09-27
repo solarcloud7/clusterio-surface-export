@@ -145,6 +145,12 @@ assert(next(alert_env.storage.surface_export_route_alerts) ~= nil, "an unreachab
 held_platform.name = "Replacement"
 RouteAlerts.refresh()
 assert(next(alert_env.storage.surface_export_route_alerts) == nil, "a reused platform index does not inherit another platform's alert")
+held_platform.name = "Hauler"
+RouteAlerts.raise(held_platform, "no_path", "surfexp_gateway_i_fact2", "cannot reach")
+held_platform.scheduled_for_deletion = 5000
+RouteAlerts.refresh()
+assert(next(alert_env.storage.surface_export_route_alerts) == nil, "a platform scheduled for deletion no longer holds an alert")
+held_platform.scheduled_for_deletion = 0
 print("PASS route holds raise map alerts on the hub, refresh while they apply and clear when the platform moves")
 
 local sent = {}
@@ -169,12 +175,12 @@ local character = {valid = true}
 player.character = character
 local printed_remote = {}
 alert_force.print = function(message) printed_remote[#printed_remote + 1] = message end
-alert_env.prototypes = {space_location = {surfexp_gateway_i_fact2 = {}, surfexp_gateway_hub = {}}}
+alert_env.prototypes = {space_location = {surfexp_gateway_i_fact2 = {}, surfexp_gateway_hub = {}, surfexp_gateway_i_22 = {localised_name = {"", "Forge Label"}}}}
 alert_env.game.tick = 100
 shown = {}
 RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "surfexp_gateway_i_fact2",
 	active = true, reason = "cannot reach", sourceInstanceId = 22, sourceName = "Forge"})
-assert(#shown == 1 and shown[1].entity == character and shown[1].on_map == false and shown[1].message[4] == "Forge",
+assert(#shown == 1 and shown[1].entity == character and shown[1].on_map == false and shown[1].message[4][2] == "Forge Label",
 	"another server's alert shows natively, pinned to the player with no map marker")
 assert(#printed_remote == 1 and printed_remote[1][7] == "surfexp_route_" and printed_remote[1][8] == "22", "the first sighting prints one chat line with a GPS link")
 RouteAlerts.receive({key = "player:9", platformName = "Barge", forceName = "player", icon = "gone-planet",

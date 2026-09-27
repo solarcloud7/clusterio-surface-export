@@ -28,7 +28,9 @@ end
 local function resolve(record)
 	local force = game.forces[record.force_name]
 	local platform = force and force.platforms[record.platform_index]
-	if platform and platform.valid and platform.name == record.platform_name then return platform end
+	if platform and platform.valid and platform.name == record.platform_name and (platform.scheduled_for_deletion or 0) == 0 then
+		return platform
+	end
 	return nil
 end
 
@@ -92,9 +94,11 @@ function RouteAlerts.receive(alert)
 		return
 	end
 	local icon = prototypes.space_location[alert.icon] and alert.icon or "surfexp_gateway_hub"
+	local destination = prototypes.space_location["surfexp_gateway_i_" .. tostring(alert.sourceInstanceId)]
+	local server = destination and destination.localised_name or alert.sourceName
 	local record = {force_name = alert.forceName or "player", icon = icon, source_id = alert.sourceInstanceId,
 		source_name = alert.sourceName, seen_tick = game.tick,
-		message = {"", alert.platformName, " on ", alert.sourceName, ": ", alert.reason or ""}}
+		message = {"", alert.platformName, " on ", server, ": ", alert.reason or ""}}
 	all[id] = record
 	for _, player in pairs(force_players(record.force_name)) do show_remote(record, player) end
 	if not existing and game.forces[record.force_name] then
