@@ -1,8 +1,9 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.7.8
   Changes:
-    - Remove the four-gateway layout setting; the Gateway with one destination per server is the only layout. The
-      numbered gateways remain as hidden locations so older saves load.
+    - Remove the four-gateway layout setting and the "Server destinations" setting.
+    - Four coloured portals (Blue, Green, Orange and Purple Gateway) orbit the Gateway on straight routes. The cluster
+      sets which server each portal leads to.
 ---------------------------------------------------------------------------------------------------
 Version: 0.7.7
   Changes:

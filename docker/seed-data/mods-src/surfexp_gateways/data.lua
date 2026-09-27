@@ -1,30 +1,11 @@
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
+local HUB_NAME = "surfexp_gateway_hub"
+local PORTAL_ROUTE_LENGTH = 1000
+local PORTAL_RING_DISTANCE = 3.5
 
 local locations = {}
 local connections = {}
-
-for i, colour in ipairs(GATEWAY_COLOURS) do
-	local name = "surfexp_gateway_" .. i
-	locations[#locations + 1] = {
-		type = "space-location",
-		name = name,
-		hidden = true,
-		draw_orbit = false,
-		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
-		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
-		starmap_icon_size = 512,
-		subgroup = "planets",
-		order = "z[surfexp-gateway]-" .. i,
-		gravity_pull = -10,
-		distance = 45,
-		orientation = (i - 1) / GATEWAY_COUNT + 0.05,
-		magnitude = 1.0,
-		label_orientation = 0.15,
-	}
-end
-
-local HUB_NAME = "surfexp_gateway_hub"
 
 local hub = {
 	type = "space-location",
@@ -45,68 +26,40 @@ local hub = {
 }
 locations[#locations + 1] = hub
 
-local INSTANCE_PREFIX = "surfexp_gateway_i_"
-local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 3.5
-
-local function parse_instances(value)
-	local entries, seen = {}, {}
-	for raw in string.gmatch(value or "", "[^,]+") do
-		local entry = raw:match("^%s*(.-)%s*$")
-		if entry ~= "" then
-			local name, label = entry:match("^([^=]*)=(.*)$")
-			name = (name or entry):match("^%s*(.-)%s*$")
-			label = label and label:match("^%s*(.-)%s*$") or ""
-			if not name:match("^[1-9]%d*$") then
-				error("surfexp-gateway-instances: '" .. name .. "' must be a Clusterio instance id (digits only); the label after '=' is the name players see")
-			end
-			if seen[name] then
-				error("surfexp-gateway-instances: instance id " .. name .. " is listed twice")
-			end
-			seen[name] = true
-			entries[#entries + 1] = { name = name, label = label ~= "" and label or ("Server " .. name) }
-		end
-	end
-	return entries
-end
-
 local function polar(origin, distance, orientation)
 	local angle = orientation * 2 * math.pi
 	return { x = origin.x + distance * math.sin(angle), y = origin.y - distance * math.cos(angle) }
 end
 
-local instances = parse_instances(settings.startup["surfexp-gateway-instances"].value)
 local hub_position = polar({ x = 0, y = 0 }, hub.distance, hub.orientation)
-for i, instance in ipairs(instances) do
-	local name = INSTANCE_PREFIX .. instance.name
-	local colour = GATEWAY_COLOURS[(i - 1) % GATEWAY_COUNT + 1]
+for i, colour in ipairs(GATEWAY_COLOURS) do
+	local name = "surfexp_gateway_" .. i
+	local orientation = (i - 0.5) / GATEWAY_COUNT
 	locations[#locations + 1] = {
 		type = "space-location",
 		name = name,
-		localised_name = { "", instance.label },
-		localised_description = { "space-location-description.surfexp_gateway_instance", instance.label },
 		hidden = false,
 		draw_orbit = true,
 		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
 		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
 		starmap_icon_size = 512,
 		subgroup = "planets",
-		order = "z[surfexp-gateway]-i-" .. string.format("%03d", i),
+		order = "z[surfexp-gateway]-" .. i,
 		gravity_pull = -10,
 		origin = hub_position,
-		distance = INSTANCE_RING_DISTANCE,
-		orientation = (i - 0.5) / #instances,
+		distance = PORTAL_RING_DISTANCE,
+		orientation = orientation,
 		magnitude = 0.5,
-		label_orientation = (i - 0.5) / #instances,
+		label_orientation = orientation,
 	}
 	connections[#connections + 1] = {
 		type = "space-connection",
-		name = "surfexp_gateway_link_i_" .. instance.name,
+		name = "surfexp_gateway_link_" .. i,
 		subgroup = "planet-connections",
 		from = HUB_NAME,
 		to = name,
-		order = "z[surfexp-gateway]-i-" .. string.format("%03d", i),
-		length = INSTANCE_ROUTE_LENGTH,
+		order = "z[surfexp-gateway]-" .. i,
+		length = PORTAL_ROUTE_LENGTH,
 		shape = "line",
 	}
 end
