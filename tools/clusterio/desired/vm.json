@@ -161,35 +161,5 @@
 		"clusterio-host-2": {
 			"host.public_address": "fact3.cloudstack.software"
 		}
-	},
-	"gatewayLinks": {
-		"Delta": {
-			"surfexp_gateway_hub": [
-				"Sigma",
-				"Theta",
-				"Omega"
-			]
-		},
-		"Sigma": {
-			"surfexp_gateway_hub": [
-				"Delta",
-				"Theta",
-				"Omega"
-			]
-		},
-		"Theta": {
-			"surfexp_gateway_hub": [
-				"Delta",
-				"Sigma",
-				"Omega"
-			]
-		},
-		"Omega": {
-			"surfexp_gateway_hub": [
-				"Delta",
-				"Sigma",
-				"Theta"
-			]
-		}
 	}
 }

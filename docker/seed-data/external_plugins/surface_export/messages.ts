@@ -7,7 +7,6 @@ import type {
 	ImportMetrics,
 	PayloadMetrics,
 	ValidationResult,
-	GatewayLink,
 	ResolvedGateway,
 	PassengerCarry,
 	PassengerManifestEntry,
@@ -26,7 +25,6 @@ export type {
 	PayloadMetrics,
 	PhaseSpan,
 	ValidationResult,
-	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
 	PassengerCarry,
@@ -35,9 +33,7 @@ export type {
 	InstanceDestination,
 } from "./shared/dto";
 export {
-	ALL_GATEWAY_NAMES,
 	GATEWAY_PREFIX,
-	LEGACY_GATEWAY_NAMES,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
 	INSTANCE_GATEWAY_PREFIX,
@@ -857,12 +853,6 @@ export class InstanceListPlatformsRequest {
 	};
 }
 
-const GATEWAY_LINK_SCHEMA: JsonSchema = {
-	type: "object",
-	properties: { targetInstanceId: { type: "integer" }, targetGateway: { type: "string" } },
-	required: ["targetInstanceId", "targetGateway"],
-	additionalProperties: false,
-};
 const RESOLVED_TARGET_SCHEMA: JsonSchema = {
 	type: "object",
 	properties: {
@@ -923,19 +913,6 @@ export class GetGatewaysRequest {
 		jsonSchema: {
 			type: "object",
 			properties: {
-				links: {
-					type: "array",
-					items: {
-						type: "object",
-						properties: {
-							sourceInstanceId: { type: "integer" },
-							gatewayName: { type: "string" },
-							targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
-						},
-						required: ["sourceInstanceId", "gatewayName", "targets"],
-						additionalProperties: false,
-					},
-				},
 				destinations: {
 					type: "array",
 					items: {
@@ -950,61 +927,11 @@ export class GetGatewaysRequest {
 					},
 				},
 			},
-			required: ["links"],
+			required: ["destinations"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as {
-				links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }>;
-				destinations?: InstanceDestination[];
-			};
+			return json as { destinations: InstanceDestination[] };
 		},
-	};
-}
-
-export class SetGatewayLinkRequest {
-	declare ["constructor"]: typeof SetGatewayLinkRequest;
-	static plugin = PLUGIN_NAME;
-	static type = "request" as const;
-	static src = "control" as const;
-	static dst = "controller" as const;
-	static permission = PERMISSIONS.TRANSFER_EXPORTS;
-	static jsonSchema: JsonSchema = {
-		type: "object",
-		properties: {
-			sourceInstanceId: { type: "integer" },
-			gateways: {
-				type: "array",
-				items: {
-					type: "object",
-					properties: {
-						gatewayName: { type: "string" },
-						targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
-					},
-					required: ["gatewayName", "targets"],
-					additionalProperties: false,
-				},
-			},
-		},
-		required: ["sourceInstanceId", "gateways"],
-		additionalProperties: false,
-	};
-
-	sourceInstanceId: number;
-	gateways: Array<{ gatewayName: string; targets: GatewayLink[] }>;
-
-	constructor(json: { sourceInstanceId: number; gateways: Array<{ gatewayName: string; targets: GatewayLink[] }> }) {
-		this.sourceInstanceId = json.sourceInstanceId;
-		this.gateways = json.gateways;
-	}
-
-	static fromJSON(json: { sourceInstanceId: number; gateways: Array<{ gatewayName: string; targets: GatewayLink[] }> }) {
-		return new SetGatewayLinkRequest(json);
-	}
-	toJSON() { return { sourceInstanceId: this.sourceInstanceId, gateways: this.gateways }; }
-
-	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse; },
 	};
 }
 

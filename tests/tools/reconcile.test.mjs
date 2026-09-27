@@ -158,30 +158,25 @@ test("a startup-setting change on an assigned pack restarts only the instances o
 	assert.deepEqual(result.restart, ["fact1"]);
 });
 
-test("host config and gateway links are planned by name and only where they differ", () => {
-	const withHosts = {
-		...desired,
-		hosts: { "clusterio-host-1": { "host.public_address": "fact1.example" } },
-		gatewayLinks: { fact1: { surfexp_gateway_hub: ["fact2", "fact3"] }, fact2: { surfexp_gateway_hub: ["fact1"] } },
-	};
-	const enabled = liveWith({
-		instanceIds: { fact1: 11, fact2: 22, fact3: 33 },
-		hosts: { "clusterio-host-1": { "host.public_address": "localhost" } },
-		gateways: { links: [
-			{ sourceInstanceId: 22, gatewayName: "surfexp_gateway_hub", targets: [{ targetInstanceId: 11, targetGateway: "surfexp_gateway_hub" }] },
-		] },
-	});
+test("host config is planned by name and only where it differs", () => {
+	const withHosts = { ...desired, hosts: { "clusterio-host-1": { "host.public_address": "fact1.example" } } };
+	const enabled = liveWith({ hosts: { "clusterio-host-1": { "host.public_address": "localhost" } } });
 	enabled.packDetails[7].mods.FluidMustFlow.enabled = true;
 	const result = planChanges(withHosts, enabled, { modFile });
 	assert.deepEqual(result.errors, []);
 	assert.deepEqual(result.actions.map(action => action.argv), [
 		["host", "config", "set", "clusterio-host-1", "host.public_address", "fact1.example"],
-		["surface-export", "set-gateway-links", "11", "surfexp_gateway_hub", "22", "33"],
-	], "fact2 already links to fact1, so only host 1 and fact1's links change");
-	const missing = planChanges({ ...withHosts, gatewayLinks: { fact1: { surfexp_gateway_hub: ["fact9"] } } },
-		liveWith({ instanceIds: { fact1: 11 }, hosts: {} }), { modFile });
+	]);
+	const missing = planChanges(withHosts, liveWith({ hosts: {} }), { modFile });
 	assert.match(missing.errors.join("\n"), /host clusterio-host-1 is not connected/);
-	assert.match(missing.errors.join("\n"), /gateway targets not on the cluster: fact9/);
+});
+
+test("a desired state that still sets gateway links is blocked, and no link command is planned", () => {
+	const enabled = liveWith();
+	enabled.packDetails[7].mods.FluidMustFlow.enabled = true;
+	const result = planChanges({ ...desired, gatewayLinks: { fact1: { surfexp_gateway_hub: ["fact2"] } } }, enabled, { modFile });
+	assert.match(result.errors.join("\n"), /gatewayLinks is no longer supported: every server reaches every other server/);
+	assert.equal(result.actions.some(action => action.argv.includes("set-gateway-links")), false);
 });
 
 test("restart-only controller fields restart instances, empty values block, and colour settings stay structured", () => {

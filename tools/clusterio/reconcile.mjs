@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
-// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, controller, host and instance config, and gateway links to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
-// does not: replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
+// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
+// does not: configure gateway links (every server reaches every other server; a desired file that still sets gatewayLinks is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -147,6 +147,7 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	const destinationsValue = want?.settings?.startup?.[DESTINATIONS_SETTING] ?? packDetail?.settings?.startup?.[DESTINATIONS_SETTING];
 	errors.push(...destinationsSettingErrors(destinationsValue, Object.values(live.instanceIds || {})));
 	if (desired.serverDestinations && !want) errors.push("serverDestinations needs a modPack to write the setting into");
+	if (desired.gatewayLinks !== undefined) errors.push("gatewayLinks is no longer supported: every server reaches every other server; remove it from the desired state");
 
 	const modSpecs = [];
 	for (const [name, version] of Object.entries(want?.mods || {})) {
@@ -249,23 +250,6 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		}
 	}
 
-	if (desired.gatewayLinks) {
-		const ids = live.instanceIds || {};
-		const current = new Map((live.gateways?.links || []).map(link =>
-			[`${link.sourceInstanceId}:${link.gatewayName}`, link.targets.map(target => `${target.targetInstanceId}:${target.targetGateway}`).sort().join(",")]));
-		for (const [source, gateways] of Object.entries(desired.gatewayLinks)) {
-			if (!Number.isInteger(ids[source])) { errors.push(`gateway source ${source} is not an instance on the cluster`); continue; }
-			for (const [gatewayName, targets] of Object.entries(gateways)) {
-				const unknown = targets.filter(target => !Number.isInteger(ids[target]));
-				if (unknown.length) { errors.push(`gateway targets not on the cluster: ${unknown.join(", ")}`); continue; }
-				const wanted = targets.map(target => `${ids[target]}:${gatewayName}`).sort().join(",");
-				if ((current.get(`${ids[source]}:${gatewayName}`) || "") !== wanted) {
-					actions.push({ describe: `${source} ${gatewayName} links -> ${targets.join(", ") || "none"}`,
-						argv: ["surface-export", "set-gateway-links", String(ids[source]), gatewayName, ...targets.map(target => String(ids[target]))] });
-				}
-			}
-		}
-	}
 	return { actions, errors, restart: [...restart], exportNeeded: actions.some(action => action.packChanged) };
 }
 
@@ -295,8 +279,7 @@ export function readLive(transport, desired) {
 	for (const host of Object.keys(desired.hosts || {})) {
 		if (connected.has(host)) hosts[host] = parseConfigList(transport.ctl("host", "config", "list", host));
 	}
-	const gateways = desired.gatewayLinks ? JSON.parse(transport.ctl("surface-export", "gateways").trim().split(/\r?\n/).at(-1)) : undefined;
-	return { packs, packDetails, mods, modSha1, controller, instances, instanceIds, hosts, gateways };
+	return { packs, packDetails, mods, modSha1, controller, instances, instanceIds, hosts };
 }
 
 function printPlan(result, out) {

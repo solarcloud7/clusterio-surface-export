@@ -2,15 +2,8 @@ export type JsonObject = Record<string, unknown>;
 
 export const GATEWAY_PREFIX = "surfexp_gateway_";
 
-export const LEGACY_GATEWAY_NAMES: string[] = Array.from(
-	{ length: 4 },
-	(_unused, i) => `${GATEWAY_PREFIX}${i + 1}`,
-);
-
 export const ONE_GATE_NAME = `${GATEWAY_PREFIX}hub`;
 export const ONE_GATE_NAMES: string[] = [ONE_GATE_NAME];
-
-export const ALL_GATEWAY_NAMES: string[] = [...LEGACY_GATEWAY_NAMES, ...ONE_GATE_NAMES];
 
 export const INSTANCE_GATEWAY_PREFIX = `${GATEWAY_PREFIX}i_`;
 export function instanceGatewayName(instanceId: number): string {
@@ -25,11 +18,6 @@ export interface InstanceDestination {
 	gatewayName: string;
 	instanceId: number;
 	instanceName: string;
-}
-
-export interface GatewayLink {
-	targetInstanceId: number;
-	targetGateway: string;
 }
 
 export interface ResolvedGatewayTarget {

@@ -8,8 +8,9 @@ const path = require("node:path");
 const { ControllerPlugin } = require("../dist/node/controller");
 const messages = require("../dist/node/messages");
 
-async function fixture(t) {
+async function fixture(t, prepare = async () => {}) {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gateway-handlers-"));
+	await prepare(dir);
 	const handlers = new Map(), warnings = [], sends = [];
 	const config = new Map([["controller.database_directory", dir]]);
 	const plugin = Object.create(ControllerPlugin.prototype);
@@ -39,57 +40,45 @@ async function fixture(t) {
 	return {plugin, config, warnings, sends, dir, call: (type, value) => handlers.get(type)(value)};
 }
 
-const update = () => ({sourceInstanceId: 1,
-	gateways: [{gatewayName: messages.ONE_GATE_NAME, targets: [{targetInstanceId: 2, targetGateway: messages.ONE_GATE_NAME}]}]});
-
-test("registered gateway handlers persist, reload and resolve recovery-aware availability", async t => {
-	const {plugin, sends, dir, call} = await fixture(t);
-	assert.deepEqual(await call(messages.SetGatewayLinkRequest, update()), {success: true});
-	assert.equal(sends.length, 1);
-	assert.ok(sends[0].message instanceof messages.PushGatewayConfigRequest);
-	assert.deepEqual(sends[0].target, {instanceId: 1});
-	const stored = await fs.readFile(path.join(dir, "surface_export_gateways.json"), "utf8");
-	assert.deepEqual(JSON.parse(stored), [[`1:${messages.ONE_GATE_NAME}`, update().gateways[0].targets]]);
+test("registered gateway handlers lead every server to every other server with recovery-aware availability", async t => {
+	const {plugin, call} = await fixture(t);
+	assert.equal(messages.SetGatewayLinkRequest, undefined, "gateway links are not configurable");
 	plugin.recoveryReservations.set(2, {});
 	const view = await call(messages.GetGatewayConfigRequest, {instanceId: 1});
-	assert.deepEqual(view.gateways[0].targets, [{instanceId: 2, instanceName: "Destination",
-		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]);
+	assert.deepEqual(view.gateways[0], {gatewayName: messages.ONE_GATE_NAME, targets: [{instanceId: 2, instanceName: "Destination",
+		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the hub offers every other server");
 	assert.deepEqual(view.gateways[1], {gatewayName: "surfexp_gateway_i_2", targets: [{instanceId: 2, instanceName: "Destination",
 		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the other server's destination leads to its hub");
 	assert.equal(view.gateways.length, 2, "a server has no destination leading to itself");
 	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME, "surfexp_gateway_i_2"]);
-	assert.deepEqual(sends[0].message.activeGatewayNames, view.activeGatewayNames);
 	assert.deepEqual(view.passengerCarry, {armor: true, inventory: false});
-	assert.deepEqual(sends[0].message.passengerCarry, {armor: true, inventory: false});
-	plugin.recoveryReservations.set(1, {});
-	assert.equal((await call(messages.SetGatewayLinkRequest, update())).success, true);
-	assert.equal(sends.length, 1);
-	await plugin.orchestrator.stop();
-	clearInterval(plugin.recoveryTimer);
-	await plugin.init();
-	assert.equal((await call(messages.GetGatewaysRequest, {})).links.length, 1);
+	plugin.recoveryReservations.delete(2);
+	const back = await call(messages.GetGatewayConfigRequest, {instanceId: 2});
+	assert.deepEqual(back.gateways[0].targets.map(target => [target.instanceId, target.online]), [[1, true]]);
+	assert.deepEqual(await call(messages.GetGatewaysRequest, {}), {destinations: [
+		{gatewayName: "surfexp_gateway_i_1", instanceId: 1, instanceName: "1"},
+		{gatewayName: "surfexp_gateway_i_2", instanceId: 2, instanceName: "Destination"},
+	]});
+});
+
+test("a gateway link file left by an older version is neither read nor changed", async t => {
+	const bytes = JSON.stringify([[`1:${messages.ONE_GATE_NAME}`, []], [`2:${messages.ONE_GATE_NAME}`, [{targetInstanceId: 9, targetGateway: "x"}]]]);
+	const {dir, call} = await fixture(t, dir => fs.writeFile(path.join(dir, "surface_export_gateways.json"), bytes));
+	const view = await call(messages.GetGatewayConfigRequest, {instanceId: 1});
+	assert.deepEqual(view.gateways[0].targets.map(target => target.instanceId), [2], "an emptied stored link does not hide a server");
+	assert.deepEqual((await call(messages.GetGatewayConfigRequest, {instanceId: 2})).gateways[0].targets.map(target => target.instanceId), [1]);
+	assert.equal(await fs.readFile(path.join(dir, "surface_export_gateways.json"), "utf8"), bytes);
 });
 
 for (const reply of [undefined, {success: false, error: "rejected"}, new Error("connection lost")]) {
-	test(`gateway push ${String(reply?.error || reply)} preserves the saved config`, async t => {
-		const {plugin, dir, call} = await fixture(t);
+	test(`gateway push ${String(reply?.error || reply)} is reported per instance`, async t => {
+		const {plugin} = await fixture(t);
 		plugin.controller.sendTo = async () => { if (reply instanceof Error) throw reply; return reply; };
-		const result = await call(messages.SetGatewayLinkRequest, update());
-		assert.equal(result.success, true);
-		assert.match(result.error, /Saved, but instance 1/);
-		assert.equal(JSON.parse(await fs.readFile(path.join(dir, "surface_export_gateways.json"))).length, 1);
+		const results = await plugin.gatewayConfig.pushGatewayConfigToAllSources();
+		assert.deepEqual([...results.keys()], [1, 2]);
+		for (const error of results.values()) assert.ok(error, "a failed push names its reason");
 	});
 }
-
-test("a rejected handler does not poison later updates", async t => {
-	const {plugin, call} = await fixture(t);
-	await call(messages.SetGatewayLinkRequest, update());
-	const get = plugin.controller.instances.get;
-	plugin.controller.instances.get = () => { throw Error("instances unavailable"); };
-	await assert.rejects(call(messages.SetGatewayLinkRequest, update()), /instances unavailable/);
-	plugin.controller.instances.get = get;
-	assert.equal((await call(messages.SetGatewayLinkRequest, update())).success, true);
-});
 
 test("passenger carry setting changes re-push gateway config; other fields do not", async t => {
 	const {plugin, warnings} = await fixture(t);

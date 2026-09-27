@@ -185,7 +185,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			isInstanceOnline: id => this.isInstanceOnline(id),
 			resolveInstanceName: id => this.platformTree.resolveInstanceName(id),
 		});
-		await gateways.loadGatewayConfig();
 		this.gatewayConfig = gateways;
 		const routeAlerts = new RouteAlertRelay(this.c as never, this.logger, id => this.isInstanceOnline(id));
 		this.routeAlerts = routeAlerts;
@@ -214,7 +213,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.c.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 		this.c.handle(messages.GetGatewaysRequest, gateways.handleGetGatewaysRequest.bind(gateways));
-		this.c.handle(messages.SetGatewayLinkRequest, gateways.handleSetGatewayLinkRequest.bind(gateways));
 		this.c.handle(messages.GetGatewayConfigRequest, gateways.handleGetGatewayConfigRequest.bind(gateways));
 		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));

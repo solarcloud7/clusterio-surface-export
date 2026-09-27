@@ -56,7 +56,7 @@ using a file path; an in-game command cannot read arbitrary files on your comput
 |---|---|
 | `surface_export.ui.view` | Plugin page and platform tree. |
 | `surface_export.exports.list` | Stored export listing/retrieval. |
-| `surface_export.exports.transfer` | Transfer and import actions, including snapshot recovery and gateway links. |
+| `surface_export.exports.transfer` | Transfer and import actions, including snapshot recovery. |
 | `surface_export.logs.view` | Transaction summaries and details. |
 | `core.controller.get_config` | Read controller settings. |
 | `core.controller.update_config` | Change controller settings. |

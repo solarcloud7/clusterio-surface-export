@@ -188,6 +188,10 @@ assert(not dialog.offer(player), "a platform away from the gateway should not be
 parked = "surfexp_gateway_hub"
 gateway_targets = {}
 assert(not dialog.offer(player), "a gateway without destinations should not be offered")
+assert(not dialog.open(player, platform, "surfexp_gateway_hub") and not player.gui.screen[FRAME],
+	"a gateway without destinations should not open the dialog")
+assert(player.printed[#player.printed] == "No other servers are available right now.",
+	"a lone server should say no other server is available, without pointing at link settings")
 player.physical_surface_index = 71
 gateway_targets = {{instanceId = 2, instanceName = "Two", online = true}}
 assert(not dialog.offer(player), "a player not aboard a platform should not be offered")
