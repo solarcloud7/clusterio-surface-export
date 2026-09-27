@@ -25,6 +25,12 @@ function scrub(text, secret) {
 
 const USAGE = "usage: node tools/clusterio/set-discord-token.mjs [--cluster dev|<name>]";
 
+function report(stream, message, error, secret, code) {
+	const detail = error?.stderr || error?.code || error?.message || error;
+	stream.write(`${message}: ${scrub(detail, secret || "\u0000").trim()}\n`);
+	return code;
+}
+
 export async function main(argv, { out = process.stdout, err = process.stderr, envText, run = withCluster } = {}) {
 	const index = argv.indexOf("--cluster");
 	const cluster = index >= 0 ? argv[index + 1] : DEVELOPMENT;
@@ -32,7 +38,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, e
 	let text = envText;
 	if (text === undefined) {
 		try { text = readFileSync(ENV_FILE, "utf8"); }
-		catch (error) { err.write(`cannot read ${ENV_FILE}: ${error.code || error.message}\n`); return 2; }
+		catch (error) { return report(err, `cannot read ${ENV_FILE}`, error, null, 2); }
 	}
 	const token = readEnvValue(text, "DISCORD_BOT_TOKEN");
 	if (!token) { err.write("DISCORD_BOT_TOKEN is not set in .env\n"); return 2; }
@@ -44,8 +50,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, e
 			if (channel) transport.ctl("controller", "config", "set", "discord_bridge.channel_id", channel);
 		});
 	} catch (error) {
-		err.write(`setting the Discord bridge on ${cluster} failed: ${scrub(error?.stderr || error?.message || error, token).trim()}\n`);
-		return 1;
+		return report(err, `setting the Discord bridge on ${cluster} failed`, error, token, 1);
 	}
 	out.write(`discord_bridge.bot_token set on ${cluster} (length ${token.length})${channel ? `; channel_id ${channel}` : ""}\n`);
 	return 0;
