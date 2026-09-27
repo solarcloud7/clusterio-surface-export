@@ -10,6 +10,25 @@ function Get-WorkflowLockSource {
     return $source
 }
 
+function Test-WorkflowLockOwnerGone($owner) {
+    $ownerPid = 0
+    if (-not [int]::TryParse("$($owner.pid)", [ref]$ownerPid) -or $ownerPid -le 0) { return $false }
+    $process = $null
+    try { $process = Get-Process -Id $ownerPid -ErrorAction Stop } catch [Microsoft.PowerShell.Commands.ProcessCommandException] { return $true }
+    $started = $owner.startedAt
+    if ($started -isnot [DateTime]) {
+        $parsed = [DateTime]::MinValue
+        if (-not [DateTime]::TryParse("$started", [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) { return $false }
+        $started = $parsed
+    }
+    # A process that started after the lock was written reused the recorded PID. An unreadable
+    # start time (another user's process) counts as a live owner.
+    $processStart = $null
+    try { $processStart = $process.StartTime } catch [System.ComponentModel.Win32Exception] { return $false }
+    return $processStart.ToUniversalTime() -gt $started.ToUniversalTime().AddSeconds(2)
+}
+
 function Invoke-WorkflowLock {
     param([Parameter(Mandatory)][scriptblock]$Action,
         [string]$Path = (Join-Path $PSScriptRoot '../../ci-artifacts/workflow.lock'))
@@ -20,6 +39,27 @@ function Invoke-WorkflowLock {
     if (Test-Path -LiteralPath $lockPath) {
         $owner = Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json
         if ($previous -and $owner.token -eq $previous) { & $Action; return }
+        if ($owner.token -and (Test-WorkflowLockOwnerGone $owner)) {
+            # Removal happens only while holding the exclusively created reclaim file shared with workflow-lock.mjs.
+            $reclaim = $null
+            try { $reclaim = [IO.File]::Open("$lockPath.reclaim", [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None) }
+            catch [System.IO.IOException] { Write-Warning "Another process is reclaiming $lockPath ($lockPath.reclaim exists): $($_.Exception.Message)" }
+            if ($reclaim) {
+                try {
+                    $current = if (Test-Path -LiteralPath $lockPath) { Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json }
+                    if ($current -and $current.token -eq $owner.token -and (Test-WorkflowLockOwnerGone $current)) {
+                        Remove-Item -LiteralPath $lockPath
+                        Write-Warning "Reclaimed a stale workflow lock: PID $($owner.pid) (branch $($owner.branch) at $($owner.commit), started $($owner.startedAt)) is no longer running."
+                    }
+                } finally {
+                    $reclaim.Dispose()
+                    Remove-Item -LiteralPath "$lockPath.reclaim"
+                }
+            }
+        }
+    }
+    if (Test-Path -LiteralPath $lockPath) {
+        $owner = Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json
         throw "Build/deploy/browser workflow already owns $lockPath (PID $($owner.pid), branch $($owner.branch) at $($owner.commit), started $($owner.startedAt)). Wait for it to finish. After a crash, verify that owner has stopped before removing the lock."
     }
     # CreateNew is atomic; a competing writer cannot pass the existence check and also acquire it.

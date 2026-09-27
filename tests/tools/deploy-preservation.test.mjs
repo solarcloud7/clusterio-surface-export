@@ -39,6 +39,7 @@ function compose(tag) {
 
 function run(dir, script, args, setup = "") {
 	const command = `
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 $global:calls=[Collections.Generic.List[string]]::new()
 function docker { $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0 }

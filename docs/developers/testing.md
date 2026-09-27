@@ -64,7 +64,29 @@ current arguments and prerequisites; they do not all share one CLI.
 7. Remove only owned fixtures and verify both world and persistent test-state cleanup.
 
 An API error, missing fixture, missed fault injection or failed cleanup is a harness
-failure, not evidence of a product defect or a pass. Do not weaken an expected
+failure, not evidence of a product defect or a pass.
+
+## Check that a Lua guard has a test
+
+A passing test does not show that it would fail without the guard it was written for.
+Remove the guard and run the test again:
+
+```powershell
+node tools/tests/testkit/cli.mjs mutation --lua --cases tests/lua/mutations/cross-instance-routing.json
+node tools/tests/testkit/cli.mjs mutation --lua --file <module .lua path> --find "<exact text>" --replace "<text>" --test tests/lua/<name>.lua
+```
+
+The command exports the committed `module/`, gateway mod source and `tests/` with
+`git archive`, applies each mutation to that copy and runs the named tests in the
+CI Lua image with the copy mounted read-only. The working tree and the live plugin
+mount are never modified. The named tests must pass unmutated first. Each case is
+reported as `KILLED` (a test failed), `SURVIVED` (the guard has no test), `INVALID`
+(the mutant does not parse) or `NOT APPLIED` (the find text did not occur exactly
+once). The command exits 0 only when every case is killed. Commit the change under
+test first; uncommitted changes in the exported paths are refused, except the
+deploy-generated `build-id.lua`. Evidence is written to
+`ci-artifacts/lua-mutation-<id>/result.json`. A killed case shows only that one of
+the named Lua 5.2 tests notices the change, not that Factorio behaves correctly. Do not weaken an expected
 quantity to match the observed result. Equal overall counts alone do not prove
 per-quality, per-side or entity-state preservation.
 
