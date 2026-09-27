@@ -23,11 +23,11 @@ hosts; schedule this as a deployment, not a compile-only check. Inspect its
 `-ModPack` argument if the installation does not use the development pack.
 
 The mod defines one Gateway, `surfexp_gateway_hub`, at the centre of the star map
-and connected to Nauvis only. Each entry of the `surfexp-gateway-instances`
-startup setting adds a destination `surfexp_gateway_i_<instance id>` orbiting the
-Gateway and connected to it; see [server destinations](../admins/configuration.md#server-destinations).
-The numbered locations `surfexp_gateway_1` to `surfexp_gateway_4` remain defined,
-hidden and without connections, so older saves still load.
+and connected to Nauvis only. Four portals, `surfexp_gateway_1` to `surfexp_gateway_4`
+(Blue, Green, Orange and Purple Gateway), orbit the Gateway on the diagonals. Each
+has a straight route from the Gateway. The mod has no startup settings; the
+controller decides at runtime which server each portal leads to. See
+[portals](../admins/configuration.md#portals).
 
 ## Publish to the Mod Portal
 

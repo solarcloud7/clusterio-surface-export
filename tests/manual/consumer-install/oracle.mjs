@@ -27,7 +27,8 @@ export function analyzeConsumer(report) {
   assert.deepEqual(report.gatewayMaps.map(s => s.instanceId).sort(), report.freshSaves.map(s => s.instanceId).sort());
   for (const state of report.gatewayMaps) {
     const version = install.runtime?.gatewayVersion ?? "0.6.5";
-    verifyGatewayMap(state, { version, hubPlanets: /^0\.[0-6]\./.test(version) ? HUB_PLANETS_BEFORE_0_7 : undefined });
+    const beforePortals = /^0\.[0-6]\./.test(version);
+    verifyGatewayMap(state, { version, hubPlanets: beforePortals ? HUB_PLANETS_BEFORE_0_7 : undefined, hiddenPortals: beforePortals });
   }
   const b = report.browser;
   assert.equal(b?.success, true, "browser acceptance incomplete");

@@ -147,11 +147,10 @@ The container's virtual display accepts pointer requests from the scenario:
 to `pointer.log`. `capture` records the whole virtual display with `xwd`, so it
 shows engine screens that `game.take_screenshot` cannot render, such as the space map.
 
-`starmap` stages the companion mod with four server destinations, the production
-count (`11=Delta,22=Sigma,33=Theta,44=Omega`, set through the probe mod's
-`settings-updates.lua`), and unlocks all of them. It opens Remote View, captures
+`starmap` stages the companion mod and unlocks the four coloured portals,
+`surfexp_gateway_1` to `surfexp_gateway_4`. It opens Remote View, captures
 it (`starmap-remote.png`), clicks **Space map** in the Surfaces list, and captures
-the space map (`starmap.png`). Use it to judge the Gateway, the destination orbit
+the space map (`starmap.png`). Use it to judge the Gateway, the portal orbit
 and labels after a gateway mod change. The click position is fixed for the default
 1600x1000 viewport at scale 1; other sizes need `starmap-remote.png` checked
 first to confirm the click reached **Space map**.

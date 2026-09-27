@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // requires: an idle local cluster; the production configure and reapply remotes
-// produces: physical lock checks for missing/empty/hub/numbered active lists and repeat calls
+// produces: physical lock checks for missing/empty/hub/portal active lists and repeat calls; before any list only the Gateway is open
 // does not: retain configuration or unlock changes; each force's exact original state is restored
 import assert from "node:assert/strict";
 import { lua, preflightState, assertLeaseClean } from "../../lab-gallery/batch-lifecycle.mjs";
@@ -9,10 +9,9 @@ const HOST = 1;
 assertLeaseClean(HOST, preflightState(HOST), "gateway-lock-state");
 const result = lua(HOST, `
 local original_config = storage.surface_export_config
-local gates, before, hub_and_destinations = {}, {}, {'surfexp_gateway_hub'}
+local gates, before = {}, {}
 for name in pairs(prototypes.space_location) do
   if string.sub(name, 1, 16) == 'surfexp_gateway_' then gates[#gates + 1] = name end
-  if string.sub(name, 1, 18) == 'surfexp_gateway_i_' then hub_and_destinations[#hub_and_destinations + 1] = name end
 end
 table.sort(gates)
 for _, name in ipairs({'surfexp_gateway_hub','surfexp_gateway_1','surfexp_gateway_2','surfexp_gateway_3','surfexp_gateway_4'}) do
@@ -28,13 +27,13 @@ local ok, err = pcall(function()
   storage.surface_export_config = {}
   for key, value in pairs(original_config or {}) do storage.surface_export_config[key] = value end
   local cases = {
-    {name='missing', all=true},
+    {name='missing', unset=true, names={'surfexp_gateway_hub'}},
     {name='empty', names={}},
-    {name='hub', names=hub_and_destinations},
-    {name='numbered', names={'surfexp_gateway_1','surfexp_gateway_2','surfexp_gateway_3','surfexp_gateway_4'}},
+    {name='hub', names={'surfexp_gateway_hub'}},
+    {name='portals', names={'surfexp_gateway_hub','surfexp_gateway_1','surfexp_gateway_3'}},
   }
   for _, case in ipairs(cases) do
-    if case.all then storage.surface_export_config.active_gateways = nil
+    if case.unset then storage.surface_export_config.active_gateways = nil
     else
       local json = case.name == 'empty' and '[]' or helpers.table_to_json(case.names)
       remote.call('surface_export', 'configure', {active_gateways_json=json})
@@ -43,10 +42,10 @@ local ok, err = pcall(function()
     local wanted = {}
     for _, name in ipairs(case.names or {}) do wanted[name] = true end
     for repetition=0,2 do
-      if case.all or repetition > 0 then remote.call('surface_export','reapply_gateway_locks') end
+      if case.unset or repetition > 0 then remote.call('surface_export','reapply_gateway_locks') end
       for _, force in pairs(game.forces) do
         for _, gate in ipairs(gates) do
-          local expected = case.all == true or wanted[gate] == true
+          local expected = wanted[gate] == true
           assert(force.is_space_location_unlocked(gate) == expected,
             case.name .. ': wrong physical lock for ' .. gate .. ' on ' .. force.name)
         end
