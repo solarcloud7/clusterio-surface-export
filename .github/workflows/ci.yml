@@ -252,7 +252,7 @@ jobs:
           if ! timeout 120 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
-                       | grep -cE "clusterio-host-[12]-instance-1")" -ge 2 ]; do
+                       | grep -cE "Dev (One|Two)")" -ge 2 ]; do
               echo "  instances not all present yet; current list:"
               docker exec surface-export-controller npx clusterioctl \
                 --config=/clusterio/tokens/config-control.json instance list 2>&1 | sed "s/^/    /" || true
@@ -274,7 +274,7 @@ jobs:
           if ! timeout 180 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
-                       | grep -E "clusterio-host-[12]-instance-1" | grep -c "running")" -ge 2 ]; do
+                       | grep -E "Dev (One|Two)" | grep -c "running")" -ge 2 ]; do
               echo "  start-all (starts any stopped instances):"
               docker exec surface-export-controller npx clusterioctl \
                 --config=/clusterio/tokens/config-control.json instance start-all 2>&1 | sed "s/^/    /" || true
