@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.8
+  Changes:
+    - Remove the four-gateway layout setting; the Gateway with one destination per server is the only layout. The
+      numbered gateways remain as hidden locations so older saves load.
+---------------------------------------------------------------------------------------------------
 Version: 0.7.7
   Changes:
     - Server destinations orbit closer to the Gateway, evenly spaced so its name above it stays clear, and their routes
