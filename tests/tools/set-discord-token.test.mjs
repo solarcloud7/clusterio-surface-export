@@ -48,3 +48,13 @@ test("a missing token or a malformed channel id is refused before anything is se
 	}
 	assert.equal(sent, 0);
 });
+
+test("DISCORD_CHANNEL is accepted when DISCORD_CHANNEL_ID is absent, and the guild id is not needed", async () => {
+	const calls = [];
+	const io = capture();
+	const code = await main([], { ...io, envText: `DISCORD_BOT_TOKEN=${SECRET}\nDISCORD_CHANNEL=1521306605386338335\nDISCORD_GUILD=802319546387398678\n`,
+		run: async (cluster, fn) => fn({ ctl: (...args) => calls.push(args) }) });
+	assert.equal(code, 0);
+	assert.deepEqual(calls.map(args => args[3]), ["discord_bridge.bot_token", "discord_bridge.channel_id"]);
+	assert.equal(calls[1][4], "1521306605386338335");
+});

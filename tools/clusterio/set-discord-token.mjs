@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// requires: DISCORD_BOT_TOKEN (and optionally DISCORD_CHANNEL_ID) in the repository .env; a reachable cluster (dev, or a remote named in tools/clusterio/remote-clusters.local.json) running the discord_bridge plugin
-// produces: discord_bridge.bot_token (and discord_bridge.channel_id when DISCORD_CHANNEL_ID is set) on that cluster's controller; prints only the token length and the outcome
+// requires: DISCORD_BOT_TOKEN (and optionally DISCORD_CHANNEL_ID or DISCORD_CHANNEL) in the repository .env; a reachable cluster (dev, or a remote named in tools/clusterio/remote-clusters.local.json) running the discord_bridge plugin
+// produces: discord_bridge.bot_token (and discord_bridge.channel_id when a channel is set) on that cluster's controller; prints only the token length and the outcome
 // does not: print, log or copy the token anywhere else, create the Discord bot, or check that Discord accepts the token
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -36,8 +36,8 @@ export async function main(argv, { out = process.stdout, err = process.stderr, e
 	}
 	const token = readEnvValue(text, "DISCORD_BOT_TOKEN");
 	if (!token) { err.write("DISCORD_BOT_TOKEN is not set in .env\n"); return 2; }
-	const channel = readEnvValue(text, "DISCORD_CHANNEL_ID");
-	if (channel !== null && !/^\d+$/.test(channel)) { err.write("DISCORD_CHANNEL_ID must be the channel's numeric id\n"); return 2; }
+	const channel = readEnvValue(text, "DISCORD_CHANNEL_ID") ?? readEnvValue(text, "DISCORD_CHANNEL");
+	if (channel !== null && !/^\d+$/.test(channel)) { err.write("DISCORD_CHANNEL_ID (or DISCORD_CHANNEL) must be the channel's numeric id\n"); return 2; }
 	try {
 		await run(cluster, transport => {
 			transport.ctl("controller", "config", "set", "discord_bridge.bot_token", token);
