@@ -51,6 +51,11 @@ export class GatewayConfig {
 		};
 	}
 
+	discordInvite(): string {
+		const value = (this.controller.config as { get(key: string): unknown }).get("surface_export.discord_invite");
+		return typeof value === "string" ? value.trim() : "";
+	}
+
 	private targetAddress(instanceId: number): string {
 		const inst = this.controller.instances.get(instanceId);
 		if (!inst || inst.isDeleted) return "";
@@ -226,6 +231,7 @@ export class GatewayConfig {
 					gateways,
 					activeGatewayNames: this.activeGatewayNamesFor(sourceInstanceId),
 					passengerCarry: this.passengerCarry(),
+					discordInvite: this.discordInvite(),
 				}),
 			)) as { success?: boolean; error?: string } | undefined;
 			if (!response?.success) {
@@ -365,6 +371,7 @@ export class GatewayConfig {
 			gateways: this.resolveGateways(Number(request.instanceId)),
 			activeGatewayNames: this.activeGatewayNamesFor(Number(request.instanceId)),
 			passengerCarry: this.passengerCarry(),
+			discordInvite: this.discordInvite(),
 		};
 	}
 }

@@ -291,7 +291,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	override async onControllerConfigFieldChanged(field: string) {
-		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory") return;
+		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory"
+			&& field !== "surface_export.discord_invite") return;
 		const gateways = this.gatewayConfig;
 		if (!gateways) return;
 		const results = await gateways.pushGatewayConfigToAllSources();
