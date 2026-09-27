@@ -215,10 +215,10 @@ test("server destinations are keyed by instance id; the desired state names serv
 	for (const [value, reason] of [["fact1=Forge", /must be an instance id/], ["=Forge", /must be an instance id/], ["11,11=Again", /listed twice/], ["99=Ghost", /not an instance/]]) {
 		assert.match(raw(value).errors.join("; "), reason, value);
 	}
-	const named = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge", fact2: "Cinder Hall" } }, live(), { modFile });
+	const named = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge", fact2: "[planet=vulcanus] Cinder Hall" } }, live(), { modFile });
 	assert.deepEqual(named.errors, []);
 	const edit = named.actions.find(action => action.argv.includes("surfexp-gateway-instances"));
-	assert.equal(edit.argv[edit.argv.indexOf("surfexp-gateway-instances") + 1], "11=Forge,22=Cinder Hall", "names become ids; labels stay what players see");
+	assert.equal(edit.argv[edit.argv.indexOf("surfexp-gateway-instances") + 1], "11=Forge,22=[planet=vulcanus] Cinder Hall", "names become ids; labels, including rich-text icons, stay what players see");
 	const bad = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge, Inc", fact9: "Ghost" } }, live(), { modFile });
 	assert.match(bad.errors.join("; "), /label for fact1/);
 	assert.match(bad.errors.join("; "), /fact9 is not an instance/);

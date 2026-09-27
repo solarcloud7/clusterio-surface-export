@@ -115,8 +115,8 @@ export function serverDestinationsSetting(serverDestinations, instanceIds) {
 	for (const [name, label] of Object.entries(serverDestinations)) {
 		const id = instanceIds[name];
 		if (!Number.isInteger(id)) { errors.push(`serverDestinations: ${name} is not an instance on the cluster`); continue; }
-		if (typeof label !== "string" || !label.trim() || /[,=]/.test(label)) {
-			errors.push(`serverDestinations: the label for ${name} must be non-empty text without "," or "="`);
+		if (typeof label !== "string" || !label.trim() || label.includes(",")) {
+			errors.push(`serverDestinations: the label for ${name} must be non-empty text without "," (rich text such as [planet=nauvis] is fine)`);
 			continue;
 		}
 		entries.push(`${id}=${label.trim()}`);
