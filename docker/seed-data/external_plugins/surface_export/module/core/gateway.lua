@@ -22,7 +22,7 @@ end
 function Gateway.is_active_gateway(name)
 	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
 	if type(active) ~= "table" then
-		return true
+		return not Gateway.is_instance_gateway(name)
 	end
 	for _, active_name in ipairs(active) do
 		if active_name == name then
@@ -198,6 +198,53 @@ function Gateway.evacuate_passengers(platform)
 			result.players, result.characters, tostring(platform.name), dest.name, result.failures))
 	end
 	return result
+end
+
+Gateway.INSTANCE_PREFIX = "surfexp_gateway_i_"
+
+function Gateway.is_instance_gateway(name)
+	return Gateway.is_gateway(name) and name:sub(1, #Gateway.INSTANCE_PREFIX) == Gateway.INSTANCE_PREFIX
+end
+
+function Gateway.reached_instance_gateway(platform)
+	if not (platform and platform.valid) or platform.state ~= defines.space_platform_state.waiting_at_station then
+		return nil
+	end
+	local location = platform.space_location
+	if not (location and Gateway.is_instance_gateway(location.name)) then
+		return nil
+	end
+	local schedule = platform.get_schedule()
+	local records = schedule and schedule.get_records() or {}
+	local record = schedule and records[schedule.current]
+	if not (record and record.station == location.name) then
+		return nil
+	end
+	return location.name
+end
+
+local function own_destination(station, force)
+	return Gateway.is_instance_gateway(station) and not force.is_space_location_unlocked(station)
+end
+
+function Gateway.advance_past_arrival(schedule_payload, force)
+	local records = schedule_payload.records or {}
+	local current = schedule_payload.current
+	local reached = type(current) == "number" and records[current]
+	if not (type(reached) == "table" and own_destination(reached.station, force)) or #records < 2 then
+		return nil
+	end
+	return {
+		current = current % #records + 1,
+		records = records,
+		interrupts = schedule_payload.interrupts or {},
+		group = schedule_payload.group,
+	}
+end
+
+function Gateway.can_resume(schedule_payload, force)
+	local record = schedule_payload and (schedule_payload.records or {})[schedule_payload.current]
+	return type(record) == "table" and type(record.station) == "string" and not own_destination(record.station, force)
 end
 
 function Gateway.strip_gateway_records(schedule_payload)

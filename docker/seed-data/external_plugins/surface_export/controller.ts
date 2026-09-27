@@ -8,6 +8,9 @@ import { BaseControllerPlugin } from "@clusterio/controller";
 import type { Controller, InstanceRecord } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
 import { GatewayConfig } from "./lib/gateway-config";
+import { RouteAlertRelay } from "./lib/route-alert-relay";
+
+type InstanceStatusChange = { id: number; status?: string };
 import { PlatformTree, instanceAddress } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
@@ -56,6 +59,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	storagePath!: string;
 	storageLoadError!: string | null;
 	gatewayConfig?: GatewayConfig;
+	routeAlerts?: RouteAlertRelay;
 	consecutiveStorageWriteFailures!: number;
 	transactionLogPath!: string;
 	auditLedgerPath!: string;
@@ -178,6 +182,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		});
 		await gateways.loadGatewayConfig();
 		this.gatewayConfig = gateways;
+		const routeAlerts = new RouteAlertRelay(this.c as never, this.logger, id => this.isInstanceOnline(id));
+		this.routeAlerts = routeAlerts;
+		this.c.handle(messages.RouteAlertEvent, async (event: messages.RouteAlertEvent, src: { id: number }) => routeAlerts.accept(src.id, event.alert));
 		await this.loadPendingTransfers();
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
 			[...this.platformStorage.keys(), ...this.auditIndex.keys(), ...this.pendingTransfers.keys(),
@@ -272,8 +279,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 	}
 
-	override async onInstanceStatusChanged() {
+	override async onInstanceStatusChanged(instance?: InstanceStatusChange) {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+		if (instance && instance.status === "running" && this.routeAlerts) await this.routeAlerts.replayTo(instance.id);
 		const gateways = this.gatewayConfig;
 		if (!gateways) return;
 		const results = await gateways.pushGatewayConfigToAllSources();

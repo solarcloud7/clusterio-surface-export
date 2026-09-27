@@ -249,7 +249,7 @@ test("a repaired gateway file can be reloaded after an I/O error", async t => {
 	assert.equal((await plugin.handleSetGatewayLinkRequest(request(1, [target(3)]))).success, true);
 });
 
-test("an instance status change re-pushes gateway config to every linked source", async t => {
+test("an instance status change re-pushes gateway config to every live instance", async t => {
 	const { plugin, pushes } = await fixture(t);
 	await plugin.handleSetGatewayLinkRequest(request(1, [target(3)]));
 	await plugin.handleSetGatewayLinkRequest(request(2, [target(3)]));
@@ -259,10 +259,10 @@ test("an instance status change re-pushes gateway config to every linked source"
 		return id === 2 ? "instance 2 unreachable" : null;
 	};
 	const results = await plugin.pushGatewayConfigToAllSources();
-	assert.deepEqual(pushes.map(push => push.id).sort(), [1, 2]);
+	assert.deepEqual(pushes.map(push => push.id).sort(), [1, 2, 3], "a server without manual links still needs its destinations");
 	assert.equal(results.get(1), null);
 	assert.equal(results.get(2), "instance 2 unreachable");
-	assert.equal(results.has(3), false);
+	assert.equal(results.get(3), null);
 });
 
 async function addressFixture(t, settings = {}) {
@@ -315,5 +315,52 @@ test("gateway pushes and pulls carry passenger carry settings with defaults", as
 	assert.deepEqual((await plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).passengerCarry, { armor: false, inventory: true });
 	await plugin.pushGatewayConfigToAllSources();
 	assert.deepEqual(sends.at(-1).message.passengerCarry, { armor: false, inventory: true });
-	assert.deepEqual(sends.map(send => send.target), [{ instanceId: 1 }, { instanceId: 1 }]);
+	assert.deepEqual(sends.map(send => send.target), [{ instanceId: 1 }, { instanceId: 1 }, { instanceId: 2 }, { instanceId: 3 }]);
+	assert.ok(sends.slice(1).every(send => send.message.passengerCarry.inventory === true), "every server receives the changed setting");
+});
+
+function destinationFixture(t, names, mode = "one_gate") {
+	const logger = Object.fromEntries(["info", "warn", "error", "verbose"].map(level => [level, () => {}]));
+	const instance = (id, name) => ({ id, gamePort: 34100 + id, config: { get: key => key === "instance.name" ? name : undefined } });
+	const controller = {
+		config: { get: key => key === "controller.database_directory" ? os.tmpdir() : mode },
+		instances: new Map(names.map((name, index) => [index + 1, instance(index + 1, name)])),
+		hosts: new Map(),
+		async sendTo() { return { success: true }; },
+	};
+	return { controller, plugin: new GatewayConfig(controller, logger, { isInstanceOnline: () => true, resolveInstanceName: id => names[id - 1] }) };
+}
+
+test("each server gets a destination for every other server by instance id, arriving at its hub", async t => {
+	const { plugin } = destinationFixture(t, ["fact1", "fact2", "fact3"]);
+	const view = await plugin.handleGetGatewayConfigRequest({ instanceId: 2 });
+	assert.deepEqual(view.activeGatewayNames, [ONE_GATE_NAME, "surfexp_gateway_i_1", "surfexp_gateway_i_3"]);
+	assert.deepEqual(view.gateways.map(gateway => [gateway.gatewayName, gateway.targets.map(entry => [entry.instanceId, entry.targetGateway])]), [
+		["surfexp_gateway_i_1", [[1, ONE_GATE_NAME]]],
+		["surfexp_gateway_i_3", [[3, ONE_GATE_NAME]]],
+	]);
+	const listing = await plugin.handleGetGatewaysRequest({});
+	assert.deepEqual(listing.destinations.map(entry => [entry.gatewayName, entry.instanceName]),
+		[["surfexp_gateway_i_1", "fact1"], ["surfexp_gateway_i_2", "fact2"], ["surfexp_gateway_i_3", "fact3"]]);
+});
+
+test("names do not identify destinations: shared, renamed or unusual names keep their id", async t => {
+	const { plugin, controller } = destinationFixture(t, ["fact1", "fact1", "my server!"]);
+	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_i_2", "surfexp_gateway_i_3"]);
+	controller.instances.get(3).isDeleted = true;
+	assert.deepEqual(plugin.activeGatewayNamesFor(1), [ONE_GATE_NAME, "surfexp_gateway_i_2"], "a deleted server has no destination");
+	const multi = destinationFixture(t, ["fact1", "fact2"], "multi");
+	assert.deepEqual(multi.plugin.activeGatewayNamesFor(1), MULTI_GATEWAY_NAMES);
+	assert.deepEqual((await multi.plugin.handleGetGatewayConfigRequest({ instanceId: 1 })).gateways, []);
+});
+
+test("a server destination cannot be given manual links, and links cannot arrive at one", async t => {
+	const { plugin } = await fixture(t);
+	const source = await plugin.handleSetGatewayLinkRequest(request(1, [target(2)], "surfexp_gateway_i_2"));
+	assert.equal(source.success, false);
+	assert.match(source.error, /always leads to its own server/);
+	const arrival = await plugin.handleSetGatewayLinkRequest(request(1, [target(2, "surfexp_gateway_i_2")]));
+	assert.equal(arrival.success, false);
+	assert.match(arrival.error, /is a server destination/);
+	assert.equal(plugin.gatewayLinks.size, 0);
 });

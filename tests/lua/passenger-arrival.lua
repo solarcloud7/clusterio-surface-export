@@ -135,6 +135,7 @@ env.require = function(name)
 	if name:find("transfer-receipts", 1, true) then return assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))() end
 	if name:find("game-utils", 1, true) then return {ACTIVATABLE_ENTITY_TYPES = {}} end
 	if name:find("core/gateway", 1, true) then return {} end
+	if name:find("route-alerts", 1, true) then return {raise = function() end} end
 	if name:find("surface-lock", 1, true) then return {complete_cargo_pods = function() return 0, 0, 0 end} end
 	error(name)
 end

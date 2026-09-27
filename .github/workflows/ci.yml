@@ -73,6 +73,7 @@ jobs:
           lua5.2 tests/lua/platform-boarding.lua
           lua5.2 tests/lua/gateway-dialog.lua
           lua5.2 tests/lua/gateway-portal.lua
+          lua5.2 tests/lua/gateway-route.lua
           lua5.2 tests/lua/teleport-window.lua
           lua5.2 tests/lua/passenger-transit.lua
           lua5.2 tests/lua/passenger-arrival.lua

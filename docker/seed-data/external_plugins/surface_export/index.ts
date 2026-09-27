@@ -206,6 +206,8 @@ export const plugin = {
 		messages.RecoveryPolicyRequest,
 		messages.GetInstanceRosterRequest,
 		messages.AnnouncePlayerTravelRequest,
+		messages.RouteAlertEvent,
+		messages.RelayRouteAlertRequest,
 		messages.PushGatewayConfigRequest,
 	],
 	ctlEntrypoint: "dist/node/control",
