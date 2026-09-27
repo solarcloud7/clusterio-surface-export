@@ -98,6 +98,7 @@ env.require = function(name)
 	return {
 		get_gateway_config = function() return {targets = gateway_targets} end,
 		parked_at_gateway = function() return parked end,
+		location_label = function(name) return name == "surfexp_gateway_1" and "Blue Gateway → Two" or name end,
 		collect_passengers = function() return {player}, 0 end,
 	}
 end
@@ -112,6 +113,13 @@ assert(named(frame, "surfexp_gw_aboard_count").caption == "× 1" and named(frame
 	"players aboard should be shown as a character icon and count")
 assert(not captioned(frame, "returned to a planet"), "the dialog should not carry the old passenger warning")
 print("PASS the dialog preselects the only online destination and shows the players aboard")
+
+parked = "surfexp_gateway_1"
+assert(dialog.open(player, platform, "surfexp_gateway_1"))
+assert(captioned(player.gui.screen[FRAME], "Parked at Blue Gateway → Two"), "a portal's dialog names the server it leads to")
+parked = "surfexp_gateway_hub"
+assert(dialog.open(player, platform, "surfexp_gateway_hub"))
+print("PASS a coloured portal's dialog says where it leads")
 
 gateway_targets = {
 	{instanceId = 2, instanceName = "Two", targetGateway = "surfexp_gateway_hub", online = false},
