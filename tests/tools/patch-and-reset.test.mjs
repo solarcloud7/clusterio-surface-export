@@ -40,7 +40,7 @@ function Update-ModuleVersionStamp {}
 	return dir;
 }
 
-function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0 } = {}) {
+function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0, autoStarted = false, staleReads = 0 } = {}) {
 	const command = `
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
@@ -48,13 +48,19 @@ $global:calls=[Collections.Generic.List[object]]::new()
 $global:uploaded = ConvertFrom-Json $env:SE_UPLOADED -AsHashtable
 $global:loaded = ConvertFrom-Json $env:SE_LOADED -AsHashtable
 function Start-Sleep {}
+$global:reads = @{}
+$global:clock = [datetime]'2026-09-27T00:00:00'
+function Get-Date { param([string]$Format) if ($Format) { return $global:clock.ToString($Format) } $global:clock = $global:clock.AddSeconds(5); return $global:clock }
 function docker {
  $argv = @(foreach ($a in $args) { foreach ($b in @($a)) { "$b" } })
  $global:calls.Add($argv); $global:LASTEXITCODE=0
  $j = $argv -join ' '
- if ($args[0] -eq 'ps') { return 'Up 5 minutes (healthy)' }
+ if ($argv[0] -eq 'ps') { return 'Up 5 minutes (healthy)' }
+ if ($env:SE_AUTO_STARTED -eq '1' -and $j -match 'instance start') { $global:LASTEXITCODE = 1; return 'Error sending request: Instance is already running.' }
  if ($j -match 'instance save list (\\d+)') {
   $id = $Matches[1]
+  $global:reads[$id] = 1 + [int]$global:reads[$id]
+  if ($global:reads[$id] -le [int]$env:SE_STALE_READS) { return @('instanceId | type | name | size | loaded | loadByDefault', '---', "$id | file | lab-gallery-source.zip | 1 | false | false") }
   return @('instanceId | type | name | size | loaded | loadByDefault', '---', "$id | file | lab-gallery-source.zip | 1 | false | false", "$id | file | $($global:loaded[$id]) | 1 | true | false")
  }
  if ($j -match 'instance list') { return @('name | id | assignedHost | gamePort | status', '---', 'Dev One | ${IDS[1]} | 1 | 34100 | running', 'Dev Two | ${IDS[2]} | 2 | 34200 | running') }
@@ -74,12 +80,15 @@ try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement *> $null } catch { $failure=$_.E
 		env: { ...process.env, PAR_SCRIPT: join(dir, "tools/clusterio/patch-and-reset.ps1"),
 			PAR_BUILD_FILE: join(dir, "docker/seed-data/external_plugins/surface_export/module/build-id.lua"),
 			SE_UPLOADED: JSON.stringify({ [IDS[1]]: uploaded[1], [IDS[2]]: uploaded[2] }),
-			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit) } });
+			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit), SE_AUTO_STARTED: autoStarted ? "1" : "0", SE_STALE_READS: String(staleReads) } });
 	assert.equal(result.status, 0, result.stderr);
 	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
 }
 
-const deletes = calls => calls.filter(argv => argv.some(arg => /(^|\s)(find|rm|-delete)(\s|$)/.test(arg)));
+const ALLOWED = ["instance list", "instance save list", "instance save upload", "instance start", "instance stop",
+	"instance config set", "instance send-rcon"];
+const deletes = calls => calls.filter(argv => argv.some(arg => /(^|\s)(find|rm|-delete)(\s|$)/.test(arg))
+	|| (argv.includes("clusterioctl") && !ALLOWED.some(command => `${argv.join(" ")} `.includes(` ${command} `))));
 
 test("a reset uploads each seed save, starts on the stored name, and deletes nothing", { skip }, t => {
 	const result = run(fixture(t));
@@ -98,6 +107,21 @@ test("a reset uploads each seed save, starts on the stored name, and deletes not
 	assert.ok(restart > result.calls.indexOf(uploads[1]), "uploads finish before the containers restart");
 });
 
+test("an instance auto-started on the uploaded save passes; one auto-started on another save fails", { skip }, t => {
+	const passed = run(fixture(t), { autoStarted: true });
+	assert.equal(passed.error, null);
+	assert.equal(passed.calls.filter(argv => argv.includes("start")).length, 2);
+	assert.deepEqual(deletes(passed.calls), []);
+	const failed = run(fixture(t), { autoStarted: true, loaded: { 1: "2026-09-27 1140 _autosave2.zip", 2: "lab-gallery-destination-4.zip" } });
+	assert.match(failed.error || "", /Dev One is running '2026-09-27 1140 _autosave2\.zip', not the uploaded seed save 'lab-gallery-source-4\.zip', after 90s/);
+});
+
+test("a save list that briefly shows nothing loaded is polled until the uploaded save appears", { skip }, t => {
+	const result = run(fixture(t), { autoStarted: true, staleReads: 2 });
+	assert.equal(result.error, null);
+	assert.equal(result.calls.filter(argv => argv.includes("list") && argv.includes("save")).length, 6);
+});
+
 test("an upload that reports no stored name stops the reset before any restart", { skip }, t => {
 	const result = run(fixture(t), { uploaded: { 1: "", 2: "" } });
 	assert.match(result.error || "", /reported 0 stored save names; expected one/);
@@ -113,6 +137,6 @@ test("a failed upload stops the reset with its output", { skip }, t => {
 
 test("an instance running a save other than the uploaded one fails the reset", { skip }, t => {
 	const result = run(fixture(t), { loaded: { 1: "lab-gallery-source-4.zip", 2: "2026-09-27 1140 _autosave_po3.zip" } });
-	assert.match(result.error || "", /Dev Two is running '2026-09-27 1140 _autosave_po3\.zip', not the uploaded seed save 'lab-gallery-destination-4\.zip'\. Nothing was deleted/);
+	assert.match(result.error || "", /Dev Two is running '2026-09-27 1140 _autosave_po3\.zip', not the uploaded seed save 'lab-gallery-destination-4\.zip', after 90s\. Nothing was deleted/);
 	assert.deepEqual(deletes(result.calls), []);
 });

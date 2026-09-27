@@ -26,8 +26,9 @@ This script:
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
    (skipped by -LuaOnly, guarded by the staleness tripwire above)
 3. Stops Factorio instances (keeps controller running)
-4. Uploads the seed saves and starts each instance on the uploaded copy (deliberate fixture
-   reset). Existing saves, autosaves and backups are kept; nothing is deleted.
+4. Uploads the seed saves (deliberate fixture reset). Existing saves, autosaves and backups
+   are kept; nothing is deleted. Each upload is stored under a new name, which the boot check
+   below requires each instance to have loaded
 5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
    saves with the latest Lua; the controller re-reads dist/web/manifest.json
 6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
@@ -309,19 +310,26 @@ foreach ($h in 1, 2) {
     $bootDeadline = (Get-Date).AddSeconds(90)
     $bootOk = $false
     $lastPing = ""
+    $loaded = @()
+    $loadedError = ""
     while ((Get-Date) -lt $bootDeadline) {
         # Deliberately quiet: RCON POLL inside a bounded loop — a transient failure just means
         $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
             instance send-rcon $hostInstances[$h].Id $versionProbe 2>&1
+        $pingOk = $LASTEXITCODE -eq 0
         $lastPing = ($ping | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and (Test-ModuleDeploymentResponse -Output $lastPing -Version $NewVersion -BuildId $ModuleBuildId)) { $bootOk = $true; break }
-        if ($LASTEXITCODE -eq 0 -and (Get-ModuleDeploymentResponse $lastPing)) { break }
+        $bootOk = $pingOk -and (Test-ModuleDeploymentResponse -Output $lastPing -Version $NewVersion -BuildId $ModuleBuildId)
+        if ($bootOk) {
+            try { $loaded = @(Get-LoadedSave -InstanceId $hostInstances[$h].Id); $loadedError = "" }
+            catch { $loaded = @(); $loadedError = $_.Exception.Message }
+            if ($loaded.Count -eq 1 -and $loaded[0] -eq $uploadedSaves[$h]) { break }
+        } elseif ($pingOk -and (Get-ModuleDeploymentResponse $lastPing)) { break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {
-        $loaded = @(Get-LoadedSave -InstanceId $hostInstances[$h].Id)
         if ($loaded.Count -ne 1 -or $loaded[0] -ne $uploadedSaves[$h]) {
-            throw "$inst is running '$($loaded -join ', ')', not the uploaded seed save '$($uploadedSaves[$h])'. Nothing was deleted; load it with clusterioctl instance stop $($hostInstances[$h].Id), then instance start $($hostInstances[$h].Id) --save '$($uploadedSaves[$h])'."
+            $running = if ($loadedError) { "an unreadable save list ($loadedError)" } else { "'$($loaded -join ', ')'" }
+            throw "$inst is running $running, not the uploaded seed save '$($uploadedSaves[$h])', after 90s. Nothing was deleted; load it with clusterioctl instance stop $($hostInstances[$h].Id), then instance start $($hostInstances[$h].Id) --save '$($uploadedSaves[$h])'."
         }
         Write-Host "  ✓ ${inst}: $($uploadedSaves[$h]) loaded, module version $NewVersion, build $ModuleBuildId answering" -ForegroundColor Green
     } else {
