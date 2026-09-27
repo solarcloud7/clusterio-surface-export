@@ -49,8 +49,9 @@ for _, mode in ipairs(setting.allowed_values) do
     end
   end
   if mode == "one_gate" then
-    for _, planet in ipairs({"nauvis", "vulcanus", "gleba", "fulgora", "aquilo"}) do
-      assert(hub_planets[planet], "missing hub route from " .. planet)
+    assert(hub_planets.nauvis, "the Gateway is reached from Nauvis")
+    for _, planet in ipairs({"vulcanus", "gleba", "fulgora", "aquilo"}) do
+      assert(not hub_planets[planet], planet .. " reaches the Gateway through Nauvis, not its own route")
     end
     assert(connections.surfexp_gateway_link_hub.from == "nauvis")
     for i=1,4 do assert(not connections["surfexp_gateway_link_" .. i]) end
@@ -61,11 +62,10 @@ for _, mode in ipairs(setting.allowed_values) do
   local hub = locations.surfexp_gateway_hub
   assert(hub.starmap_icon_orientation == 0)
   assert(hub.magnitude > locations.surfexp_gateway_1.magnitude)
-  assert(hub.distance > 25 and hub.distance < 35)
-  assert(hub.orientation > 0.225 and hub.orientation < 0.275)
-  assert(count == 5 and links == (mode == "one_gate" and 5 or 4))
+  assert(hub.distance == 0, "the Gateway sits at the sun")
+  assert(count == 5 and links == (mode == "one_gate" and 1 or 4))
   assert(visible == (mode == "one_gate" and 1 or 4))
-  assert(visible_links == (mode == "one_gate" and 5 or 4))
+  assert(visible_links == (mode == "one_gate" and 1 or 4))
   print(mode .. ": PASS (visible=" .. visible .. ", retained locations=" .. count .. ", connections=" .. links .. ")")
 end
 
@@ -96,6 +96,7 @@ for name, label in pairs(labels) do
   assert(math.abs(location.origin.x - hub_x) < 1e-9 and math.abs(location.origin.y - hub_y) < 1e-9, name .. " should sit beside the hub")
   assert(location.distance > 0 and location.distance < 10)
   assert(not orientations[location.orientation], "destinations must not overlap")
+  assert(location.label_orientation == location.orientation, name .. " labels point away from the Gateway")
   orientations[location.orientation] = true
   local file = assert(io.open(root .. location.starmap_icon:gsub("__surfexp_gateways__/", ""), "rb"))
   file:close()

@@ -50,7 +50,7 @@ local hub = {
 	subgroup = "planets",
 	order = "z[surfexp-gateway]-0",
 	gravity_pull = -10,
-	distance = 25.5,
+	distance = 0,
 	orientation = 0.245,
 	magnitude = 1.4,
 	label_orientation = 0.15,
@@ -59,7 +59,7 @@ locations[#locations + 1] = hub
 
 local INSTANCE_PREFIX = "surfexp_gateway_i_"
 local INSTANCE_ROUTE_LENGTH = 1000
-local INSTANCE_RING_DISTANCE = 3.5
+local INSTANCE_RING_DISTANCE = 5
 
 local function parse_instances(value)
 	local entries, seen = {}, {}
@@ -109,7 +109,7 @@ for i, instance in ipairs(instances) do
 		distance = INSTANCE_RING_DISTANCE,
 		orientation = (hub.orientation + (i - 1) / #instances) % 1,
 		magnitude = 0.5,
-		label_orientation = 0.25,
+		label_orientation = (hub.orientation + (i - 1) / #instances) % 1,
 	}
 	connections[#connections + 1] = {
 		type = "space-connection",
@@ -123,7 +123,7 @@ for i, instance in ipairs(instances) do
 end
 
 if not multi then
-	for _, planet in ipairs({ "nauvis", "vulcanus", "gleba", "fulgora", "aquilo" }) do
+	for _, planet in ipairs({ "nauvis" }) do
 		connections[#connections + 1] = {
 			type = "space-connection",
 			name = "surfexp_gateway_link_hub" .. (planet == "nauvis" and "" or "_" .. planet),
