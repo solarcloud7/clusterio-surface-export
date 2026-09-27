@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { testkit } from "./index.mjs";
 import { probeProperty } from "./live-probe.mjs";
 import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
@@ -181,6 +182,25 @@ async function cmdApi() {
 }
 
 async function cmdMutation() {
+	if (flag("--lua")) {
+		const { luaMutationRun } = await import("./lua-mutation.mjs");
+		const casesFile = valueOf("--cases");
+		const tests = rest.flatMap((arg, i) => arg === "--test" && rest[i + 1] ? [rest[i + 1]] : []);
+		let input;
+		if (casesFile) input = JSON.parse(readFileSync(casesFile, "utf8"));
+		else if (valueOf("--file") && valueOf("--find") !== null && valueOf("--replace") !== null && tests.length > 0) {
+			input = { name: valueOf("--name") || `${valueOf("--file")}: ${valueOf("--find")}`, file: valueOf("--file"),
+				find: valueOf("--find"), replace: valueOf("--replace"), tests };
+		} else {
+			fail("usage: mutation --lua --cases <file.json>\n"
+				+ "       mutation --lua --file <module .lua path> --find <exact string> --replace <string> --test <tests/...lua> [--test ...] [--name <label>]");
+		}
+		let report;
+		try { report = luaMutationRun(input); } catch (error) { fail(error.message, 1); }
+		const { killed, survived, invalid, notApplied } = report.summary;
+		console.log(`${killed} killed, ${survived} survived, ${invalid} invalid, ${notApplied} not applied`);
+		process.exit(report.summary.ok ? 0 : 1);
+	}
 	const file = valueOf("--file");
 	const find = valueOf("--find");
 	const replace = valueOf("--replace");

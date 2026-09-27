@@ -1,0 +1,218 @@
+[
+	{
+		"name": "arrival requires the current stop",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if not (record and record.station == location.name) then",
+		"replace": "if not record then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "arrival requires an instance gateway",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "if not (location and Gateway.is_instance_gateway(location.name)) then",
+		"replace": "if not location then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "pause before start",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway-route.lua",
+		"find": "\tplatform.paused = true\n\tlocal cfg",
+		"replace": "\tlocal cfg",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "offline target holds",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway-route.lua",
+		"find": "if not target.online then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "hold-owned platforms are skipped",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway-route.lua",
+		"find": "if SurfaceLock.destination_hold_owns_surface(platform.surface, platform) then return false end",
+		"replace": "",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "route arrival only at own destination",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "own_destination(reached.station, force)) or #records < 2",
+		"replace": "Gateway.is_instance_gateway(reached.station)) or #records < 2",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "records kept on advance",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "\t\trecords = records,\n",
+		"replace": "\t\trecords = {records[current % #records + 1]},\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "resume refused before own destination",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "and not own_destination(record.station, force)",
+		"replace": "",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "destinations locked before config",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway.lua",
+		"find": "return not Gateway.is_instance_gateway(name)",
+		"replace": "return true",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "resume only when flagged",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "if hold.resume_route then",
+		"replace": "if true then",
+		"tests": [
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "resume never skipped",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "if hold.resume_route then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "held route raises an alert",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway-route.lua",
+		"find": "\tRouteAlerts.raise(platform, \"held\", gateway_name,",
+		"replace": "\tlocal _ = (platform), \"held\", gateway_name, (",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "alert clears when the platform moves",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "\treturn platform.paused == true\n",
+		"replace": "\treturn true\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "reused index drops the alert",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "and platform.name == record.platform_name and (platform.scheduled_for_deletion",
+		"replace": "and (platform.scheduled_for_deletion",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "own-destination no_path alert",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/gateway-route.lua",
+		"find": "\tif not Gateway.is_instance_gateway(station) then return end\n",
+		"replace": "\tif true then return end\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "blocked arrival raises an alert",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "\telseif hold.route_hold then",
+		"replace": "\telseif false then",
+		"tests": [
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "raise is relayed",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "\tsend(record, true)\nend\n\nfunction RouteAlerts.clear",
+		"replace": "\tlocal _ = record\nend\n\nfunction RouteAlerts.clear",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "clear is relayed",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "\tsend(record, false)\n\tlocal hub",
+		"replace": "\tlocal hub",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "remote alert has no map marker",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "record.message, false)",
+		"replace": "record.message, true)",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "remote chat line only once",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "if not existing and game.forces",
+		"replace": "if game.forces",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "remote alerts expire",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "> RouteAlerts.REMOTE_EXPIRY_TICKS then",
+		"replace": "> math.huge then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "deleted platforms drop their alert",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": " and (platform.scheduled_for_deletion or 0) == 0 then",
+		"replace": " then",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "remote label uses the destination name",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "local server = destination and destination.localised_name or alert.sourceName",
+		"replace": "local server = alert.sourceName",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	},
+	{
+		"name": "alert links require Teleport permission",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/route-alerts.lua",
+		"find": "\tif not is_allowed(player) then\n",
+		"replace": "\tif false then\n",
+		"tests": [
+			"tests/lua/gateway-route.lua"
+		]
+	}
+]
