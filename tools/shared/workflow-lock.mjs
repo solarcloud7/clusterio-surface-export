@@ -1,5 +1,5 @@
 // Shared by PowerShell builds/deploys and browser checks in the canonical checkout.
-import { openSync, readFileSync, writeFileSync, closeSync, unlinkSync, mkdirSync } from "node:fs";
+import { openSync, readFileSync, writeFileSync, closeSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -30,23 +30,44 @@ function readOwner(path) {
 	}
 }
 
-export function acquireWorkflowLock(path = workflowLockPath, { exists = processExists, log = message => console.warn(message) } = {}) {
+// A lock file is only ever created when absent (exclusive create) or removed by its owner. Removing a
+// dead owner's lock is the one other change, and it happens only while holding the exclusively created
+// reclaim file, so no second reclaimer can delete a lock that a first one has already replaced.
+function reclaimStale(path, owner, { exists, log, beforeRemove }) {
+	const reclaimPath = `${path}.reclaim`;
+	let fd;
+	try { fd = openSync(reclaimPath, "wx"); } catch (error) {
+		if (error.code === "EEXIST") return false;
+		throw error;
+	}
+	try {
+		const current = readOwner(path);
+		if (!current || current.token !== owner.token || exists(current.pid)) return false;
+		beforeRemove?.();
+		unlinkSync(path);
+		log(`Reclaimed a stale workflow lock: PID ${owner.pid} (branch ${owner.branch} at ${owner.commit}, started ${owner.startedAt}) is no longer running.`);
+		return true;
+	} finally {
+		closeSync(fd);
+		unlinkSync(reclaimPath);
+	}
+}
+
+export function acquireWorkflowLock(path = workflowLockPath, { exists = processExists, log = message => console.warn(message), beforeRemove } = {}) {
 	mkdirSync(dirname(path), { recursive: true });
 	const previous = process.env.SE_WORKFLOW_TOKEN;
 	const source = workflowLockSource();
 	let owner = readOwner(path);
 	if (previous && owner?.token === previous) return () => {};
-	if (owner?.token && !exists(owner.pid) && readOwner(path)?.token === owner.token) {
-		unlinkSync(path);
-		log(`Reclaimed a stale workflow lock: PID ${owner.pid} (branch ${owner.branch} at ${owner.commit}, started ${owner.startedAt}) is no longer running.`);
-		owner = undefined;
-	}
+	if (owner?.token && !exists(owner.pid) && reclaimStale(path, owner, { exists, log, beforeRemove })) owner = undefined;
 	let fd;
 	try { fd = openSync(path, "wx"); } catch (error) {
 		if (error.code !== "EEXIST") throw error;
+		owner = readOwner(path) ?? owner;
 		const described = owner ? `PID ${owner.pid}, branch ${owner.branch} at ${owner.commit}, started ${owner.startedAt}` : "PID starting";
+		const reclaiming = existsSync(`${path}.reclaim`) ? ` Another process is reclaiming it (${path}.reclaim); if none is, remove that file.` : "";
 		throw new Error(`Build/deploy/browser workflow already owns ${path} (${described}). `
-			+ "Wait for it to finish. After a crash, verify that owner has stopped before removing the lock.");
+			+ "Wait for it to finish. After a crash, verify that owner has stopped before removing the lock." + reclaiming);
 	}
 	process.env.SE_WORKFLOW_TOKEN = randomUUID();
 	writeFileSync(fd, JSON.stringify({ pid: process.pid, token: process.env.SE_WORKFLOW_TOKEN, ...source }));

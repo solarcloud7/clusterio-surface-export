@@ -40,10 +40,21 @@ function Invoke-WorkflowLock {
         $owner = Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json
         if ($previous -and $owner.token -eq $previous) { & $Action; return }
         if ($owner.token -and (Test-WorkflowLockOwnerGone $owner)) {
-            $current = Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json
-            if ($current.token -eq $owner.token) {
-                Remove-Item -LiteralPath $lockPath
-                Write-Warning "Reclaimed a stale workflow lock: PID $($owner.pid) (branch $($owner.branch) at $($owner.commit), started $($owner.startedAt)) is no longer running."
+            # Removal happens only while holding the exclusively created reclaim file shared with workflow-lock.mjs.
+            $reclaim = $null
+            try { $reclaim = [IO.File]::Open("$lockPath.reclaim", [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None) }
+            catch [System.IO.IOException] { Write-Warning "Another process is reclaiming $lockPath ($lockPath.reclaim exists): $($_.Exception.Message)" }
+            if ($reclaim) {
+                try {
+                    $current = if (Test-Path -LiteralPath $lockPath) { Get-Content -LiteralPath $lockPath -Raw -Encoding utf8 | ConvertFrom-Json }
+                    if ($current -and $current.token -eq $owner.token -and (Test-WorkflowLockOwnerGone $current)) {
+                        Remove-Item -LiteralPath $lockPath
+                        Write-Warning "Reclaimed a stale workflow lock: PID $($owner.pid) (branch $($owner.branch) at $($owner.commit), started $($owner.startedAt)) is no longer running."
+                    }
+                } finally {
+                    $reclaim.Dispose()
+                    Remove-Item -LiteralPath "$lockPath.reclaim"
+                }
             }
         }
     }

@@ -22,11 +22,26 @@ function run(command, args, options = {}) {
 	return spawnSync(command, args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 600_000, ...options });
 }
 
-function checked(command, args, options) {
-	const result = run(command, args, options);
+function checked(command, args, options, exec = run) {
+	const result = exec(command, args, options);
 	if (result.error) throw new Error(`${command} ${args[0]} failed: ${result.error.message}`);
 	if (result.status !== 0) throw new Error(`${command} ${args[0]} exited ${result.status}: ${String(result.stderr).trim().slice(-2000)}`);
 	return result;
+}
+
+export function isPlainRelative(value) {
+	if (typeof value !== "string" || value === "" || value.includes("\\") || value.includes("\0")) return false;
+	if (value.startsWith("/") || /^[A-Za-z]:/.test(value)) return false;
+	return value.split("/").every(segment => segment !== "" && segment !== "." && segment !== "..");
+}
+
+export function insideTree(root, relative) {
+	const resolved = path.resolve(root, relative);
+	const fromRoot = path.relative(path.resolve(root), resolved);
+	if (!fromRoot || fromRoot.startsWith("..") || path.isAbsolute(fromRoot)) {
+		throw new Error(`${relative} resolves outside the isolated export`);
+	}
+	return resolved;
 }
 
 export function normalizeCases(input) {
@@ -41,11 +56,12 @@ export function normalizeCases(input) {
 		if (typeof entry.replace !== "string") throw new Error(`${label}: "replace" must be a string (use "" to delete)`);
 		if (entry.find === entry.replace) throw new Error(`${label}: find and replace are identical — that is not a mutation`);
 		const tests = typeof entry.tests === "string" ? [entry.tests] : entry.tests;
-		if (!Array.isArray(tests) || tests.length === 0 || tests.some(test => typeof test !== "string" || !test.startsWith("tests/"))) {
-			throw new Error(`${label}: "tests" must list one or more repo-relative paths under tests/`);
+		if (!Array.isArray(tests) || tests.length === 0
+			|| tests.some(test => !isPlainRelative(test) || !test.startsWith("tests/") || !test.endsWith(".lua"))) {
+			throw new Error(`${label}: "tests" must list one or more plain repo-relative .lua paths under tests/ (no "..", absolute or backslash paths)`);
 		}
-		const file = entry.file.replace(/\\/g, "/");
-		if (!EXPORTED_PATHS.some(root => file.startsWith(root + "/")) || !file.endsWith(".lua")) {
+		const file = entry.file;
+		if (!isPlainRelative(file) || !EXPORTED_PATHS.slice(0, 2).some(root => file.startsWith(root + "/")) || !file.endsWith(".lua")) {
 			throw new Error(`${label}: ${file} is not a Lua file under ${EXPORTED_PATHS.slice(0, 2).join(" or ")}`);
 		}
 		if (names.has(entry.name)) throw new Error(`${label}: duplicate case name`);
@@ -73,22 +89,33 @@ export function summarize(results) {
 
 const DEPLOY_GENERATED = "docker/seed-data/external_plugins/surface_export/module/build-id.lua";
 
-export function uncommittedChanges(repo, paths = EXPORTED_PATHS) {
-	return checked("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths, `:(exclude)${DEPLOY_GENERATED}`], { cwd: repo })
+export function uncommittedChanges(repo, paths = EXPORTED_PATHS, exec = run) {
+	return checked("git", ["status", "--porcelain", "--untracked-files=all", "--", ...paths, `:(exclude)${DEPLOY_GENERATED}`], { cwd: repo }, exec)
 		.stdout.split("\n").map(line => line.trimEnd()).filter(Boolean);
 }
 
-function exportTree(repo, destination) {
+function exportTree(repo, destination, exec) {
 	mkdirSync(destination, { recursive: true });
-	const archive = checked("git", ["archive", "--format=tar", "HEAD", ...EXPORTED_PATHS], { cwd: repo, encoding: "buffer" });
-	checked("tar", ["-xf", "-"], { cwd: destination, input: archive.stdout });
+	const archive = checked("git", ["archive", "--format=tar", "HEAD", ...EXPORTED_PATHS], { cwd: repo, encoding: "buffer" }, exec);
+	checked("tar", ["-xf", "-"], { cwd: destination, input: archive.stdout }, exec);
 }
 
-function luaImage(repo) {
+function luaImage(repo, exec) {
 	const recipe = readFileSync(path.join(repo, DOCKERFILE));
 	const image = `surface-export-lua-tests:${createHash("sha256").update(recipe).digest("hex").slice(0, 12)}`;
-	checked("docker", ["build", "--quiet", "--tag", image, "-"], { input: recipe });
+	checked("docker", ["build", "--quiet", "--tag", image, "-"], { input: recipe }, exec);
 	return image;
+}
+
+// lua5.2 exits 1 for an uncaught error, which is how every Lua test fails. Anything else (Docker's
+// 125/126/127, a kill, a timeout or a signal) means the test did not run to a verdict.
+export function classifyExit(result, label) {
+	if (result.error) throw new Error(`${label}: could not run docker: ${result.error.message}`);
+	if (result.status === 0) return "pass";
+	if (result.status === 1 && !result.signal) return "fail";
+	const how = result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
+	const output = (String(result.stdout ?? "") + String(result.stderr ?? "")).trim().slice(-2000);
+	throw new Error(`${label}: docker ended with ${how}, so the Lua run did not complete; no verdict is credited.\n${output}`);
 }
 
 function containerArgs(root, image) {
@@ -97,45 +124,46 @@ function containerArgs(root, image) {
 		"--mount", `type=bind,src=${root},dst=/repo,readonly`, image];
 }
 
-function runTest(root, image, test) {
-	const result = run("docker", [...containerArgs(root, image), test]);
-	if (result.error) throw new Error(`docker run failed: ${result.error.message}`);
-	return { test, exitCode: result.status, output: (String(result.stdout) + String(result.stderr)).slice(-4000) };
+function runTest(root, image, test, exec) {
+	insideTree(root, test);
+	const result = exec("docker", [...containerArgs(root, image), test], {});
+	const outcome = classifyExit(result, test);
+	return { test, exitCode: result.status, outcome, output: (String(result.stdout) + String(result.stderr)).slice(-4000) };
 }
 
-function parses(root, image, file) {
-	const result = run("docker", [...containerArgs(root, image).slice(0, -1), "--entrypoint", "luac5.2", image, "-p", file]);
-	if (result.error) throw new Error(`docker run failed: ${result.error.message}`);
-	return { ok: result.status === 0, output: String(result.stderr).trim() };
+function parses(root, image, file, exec) {
+	insideTree(root, file);
+	const result = exec("docker", [...containerArgs(root, image).slice(0, -1), "--entrypoint", "luac5.2", image, "-p", file], {});
+	return { ok: classifyExit(result, `luac5.2 -p ${file}`) === "pass", output: String(result.stderr).trim() };
 }
 
-export function luaMutationRun(input, { repo = process.cwd(), log = console.log } = {}) {
+export function luaMutationRun(input, { repo = process.cwd(), log = console.log, exec = run } = {}) {
 	const cases = normalizeCases(input);
-	const dirty = uncommittedChanges(repo);
+	const dirty = uncommittedChanges(repo, EXPORTED_PATHS, exec);
 	if (dirty.length > 0) {
 		throw new Error("refusing: the exported paths have uncommitted changes, and this tool tests committed source (HEAD):\n"
 			+ dirty.slice(0, 12).map(line => `  ${line}`).join("\n") + "\nCommit the change under test first.");
 	}
-	const head = checked("git", ["rev-parse", "HEAD"], { cwd: repo }).stdout.trim();
+	const head = checked("git", ["rev-parse", "HEAD"], { cwd: repo }, exec).stdout.trim();
 	const directory = path.join(repo, "ci-artifacts", `lua-mutation-${randomUUID().slice(0, 12)}`);
 	const root = path.join(directory, "tree");
 	const report = { head, startedAt: new Date().toISOString(), baseline: [], results: [] };
 	try {
-		exportTree(repo, root);
-		const image = luaImage(repo);
+		exportTree(repo, root, exec);
+		const image = luaImage(repo, exec);
 		report.image = image;
 		const tests = [...new Set(cases.flatMap(entry => entry.tests))];
 		for (const test of tests) {
-			if (!existsSync(path.join(root, test))) throw new Error(`${test} is not in the committed tree`);
-			const outcome = runTest(root, image, test);
+			if (!existsSync(insideTree(root, test))) throw new Error(`${test} is not in the committed tree`);
+			const outcome = runTest(root, image, test, exec);
 			report.baseline.push(outcome);
-			if (outcome.exitCode !== 0) {
+			if (outcome.outcome !== "pass") {
 				throw new Error(`baseline ${test} is already red (exit ${outcome.exitCode}) — a mutation verdict would be meaningless:\n${outcome.output}`);
 			}
 		}
 		log(`baseline green: ${tests.join(", ")} at ${head.slice(0, 12)}`);
 		for (const entry of cases) {
-			const target = path.join(root, entry.file);
+			const target = insideTree(root, entry.file);
 			const original = existsSync(target) ? readFileSync(target, "utf8") : null;
 			const mutation = original === null ? { applied: false, occurrences: 0 } : applyOnce(original, entry.find, entry.replace);
 			const result = { name: entry.name, file: entry.file, tests: entry.tests };
@@ -145,13 +173,13 @@ export function luaMutationRun(input, { repo = process.cwd(), log = console.log 
 			} else {
 				writeFileSync(target, mutation.source);
 				try {
-					const syntax = parses(root, image, entry.file);
+					const syntax = parses(root, image, entry.file, exec);
 					if (!syntax.ok) {
 						result.verdict = "INVALID";
 						result.detail = `mutant does not parse: ${syntax.output}`;
 					} else {
-						result.outcomes = entry.tests.map(test => runTest(root, image, test));
-						result.verdict = result.outcomes.some(outcome => outcome.exitCode !== 0) ? "KILLED" : "SURVIVED";
+						result.outcomes = entry.tests.map(test => runTest(root, image, test, exec));
+						result.verdict = result.outcomes.some(outcome => outcome.outcome === "fail") ? "KILLED" : "SURVIVED";
 					}
 				} finally { writeFileSync(target, original); }
 			}

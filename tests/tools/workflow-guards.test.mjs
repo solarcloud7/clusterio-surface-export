@@ -186,3 +186,43 @@ test("PowerShell reclaims a lock left by a process that no longer exists", {
 	assert.notEqual(blocked.status, 0);
 	assert.match(blocked.stderr, /already owns/);
 });
+
+test("a competing reclaimer cannot delete a lock another reclaimer is replacing", async t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-race-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	writeFileSync(path, JSON.stringify({ pid: 999999, token: "stale-token", branch: "old", commit: "abc", startedAt: "2026-01-01T00:00:00.000Z" }));
+	const dead = pid => pid !== 999999;
+	let competitor;
+	const release = acquireWorkflowLock(path, { exists: dead, log: () => {}, beforeRemove: () => {
+		competitor = (() => { try { acquireWorkflowLock(path, { exists: dead, log: () => {} }); return "acquired"; } catch (error) { return error.message; } })();
+	} });
+	assert.match(competitor, /already owns .*reclaiming/s, "the second reclaimer must refuse while the first holds the reclaim file");
+	const owner = JSON.parse(readFileSync(path, "utf8"));
+	assert.notEqual(owner.token, "stale-token");
+	assert.equal(existsSync(`${path}.reclaim`), false);
+	release();
+	writeFileSync(path, JSON.stringify({ pid: 999999, token: "stale-token", branch: "old", commit: "abc", startedAt: "2026-01-01T00:00:00.000Z" }));
+	writeFileSync(`${path}.reclaim`, "held");
+	assert.throws(() => acquireWorkflowLock(path, { exists: dead, log: () => {} }), /reclaiming/);
+	assert.equal(JSON.parse(readFileSync(path, "utf8")).token, "stale-token", "a held reclaim file leaves the stale lock untouched");
+	assert.equal(readFileSync(`${path}.reclaim`, "utf8"), "held", "another reclaimer's file is not removed");
+});
+
+test("PowerShell does not reclaim while another process holds the reclaim file", {
+	skip: spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "ignore" }).status !== 0,
+}, async t => {
+	const dir = mkdtempSync(join(tmpdir(), "workflow-race-ps-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const path = join(dir, "lock");
+	const gone = Number(spawnSync(process.execPath, ["-e", "console.log(process.pid)"], { encoding: "utf8" }).stdout.trim());
+	writeFileSync(path, JSON.stringify({ pid: gone, token: "stale-token", branch: "old", commit: "abc", startedAt: new Date().toISOString() }));
+	writeFileSync(`${path}.reclaim`, "held");
+	const env = { ...process.env, SE_WORKFLOW_TOKEN: "", LOCK_FIXTURE: path,
+		LOCK_HELPER: fileURLToPath(new URL("../../tools/shared/workflow-lock.ps1", import.meta.url)) };
+	const result = spawnSync("pwsh", ["-NoProfile", "-Command", '. $env:LOCK_HELPER; Invoke-WorkflowLock -Path $env:LOCK_FIXTURE -Action { "ran" }'], { encoding: "utf8", env });
+	assert.notEqual(result.status, 0);
+	assert.doesNotMatch(result.stdout, /ran/);
+	assert.equal(JSON.parse(readFileSync(path, "utf8")).token, "stale-token");
+	assert.equal(readFileSync(`${path}.reclaim`, "utf8"), "held");
+});
