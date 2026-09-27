@@ -377,6 +377,7 @@ body.surface-export-page .site-layout-content-container {
 	background: #1f1f1f;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
 	text-align: left;
+	z-index: 5;
 }
 
 .surface-export-platform-list-empty {
