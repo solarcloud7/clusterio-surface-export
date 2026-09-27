@@ -137,7 +137,7 @@ function stage(dir, id, options, version) {
 	copy(join(recipe, "scenario.lua"), join(probe, "control.lua"));
 	if (options.scenario === "starmap") {
 		writeFileSync(join(probe, "settings-updates.lua"), "local setting = data.raw[\"string-setting\"][\"surfexp-gateway-instances\"]\n"
-			+ "if setting then setting.default_value = \"11=[planet=nauvis] Test One,22=[planet=vulcanus] Test Two\" end\n");
+			+ "if setting then setting.default_value = \"11=Delta,22=Sigma,33=Theta,44=Omega\" end\n");
 	}
 	copy(join(recipe, "pointer.sh"), join(work, "pointer.sh"));
 	writeFileSync(join(probe, "run.lua"), `return {id="${id}",scenario="${options.scenario}",width=${options.width},height=${options.height}}\n`);

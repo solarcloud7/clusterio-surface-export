@@ -108,7 +108,18 @@ local extra = 0
 for name in pairs(locations) do if name:find("^surfexp_gateway_i_") then extra = extra + 1 end end
 assert(extra == 3)
 locations = load_layout("one_gate", "44=Solo")
-assert(locations.surfexp_gateway_i_44.orientation == locations.surfexp_gateway_hub.orientation, "a single destination sits straight out from the hub")
+assert(locations.surfexp_gateway_i_44.orientation == 0.5, "a single destination sits below the Gateway")
+assert(locations.surfexp_gateway_hub.label_orientation == 0, "the Gateway's name is drawn above it")
+for count = 1, 6 do
+  local list = {}
+  for i = 1, count do list[i] = tostring(10 + i) .. "=S" .. i end
+  for name, location in pairs(load_layout("one_gate", table.concat(list, ","))) do
+    if name:find("^surfexp_gateway_i_") then
+      local gap = math.min(location.orientation, 1 - location.orientation)
+      assert(gap >= 0.5 / count - 1e-9, count .. " destinations: " .. name .. " would cover the Gateway's name")
+    end
+  end
+end
 locations, connections = load_layout("multi", "11=Forge")
 assert(not locations.surfexp_gateway_i_11 and not connections.surfexp_gateway_link_i_11, "the four-gateway layout has no hub to route from")
 for _, bad in ipairs({"fact1=Forge", "=Forge", "11,11=Again", "0=Zero", "1.5", "-3"}) do

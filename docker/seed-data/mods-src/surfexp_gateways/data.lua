@@ -53,7 +53,7 @@ local hub = {
 	distance = 0,
 	orientation = 0.245,
 	magnitude = 4,
-	label_orientation = 0.15,
+	label_orientation = 0,
 }
 locations[#locations + 1] = hub
 
@@ -107,9 +107,9 @@ for i, instance in ipairs(instances) do
 		gravity_pull = -10,
 		origin = hub_position,
 		distance = INSTANCE_RING_DISTANCE,
-		orientation = (hub.orientation + (i - 1) / #instances) % 1,
+		orientation = (i - 0.5) / #instances,
 		magnitude = 0.5,
-		label_orientation = (hub.orientation + (i - 1) / #instances) % 1,
+		label_orientation = (i - 0.5) / #instances,
 	}
 	connections[#connections + 1] = {
 		type = "space-connection",
