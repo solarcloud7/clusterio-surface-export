@@ -82,6 +82,30 @@ test("lineage seams (b): stale_copy on a journal-matched tombstone deletes it th
 	} finally { await c.close(); }
 });
 
+test("lineage seams (b2): stale_copy on a journal-matched copy that startup quarantined deletes it through the journal's retirement", { skip }, async () => {
+	const { c, index } = await rolledBackSource({ keepDestinationCopy: false });
+	try {
+		await c.world(1).eval(`(function()
+			local lock = storage.locked_platforms[${index}]
+			lock.kind = "quarantine"
+			lock.phase = nil
+			lock.transfer_job_id = nil
+			lock.committed_transfer_id = nil
+			lock.committed_tick = nil
+			lock.quarantine = {reason = "reconcile_error", epoch = storage.source_recovery_epoch}
+			storage.source_recovery_notices[${index}].status = "quarantined"
+			storage.source_recovery_notices[${index}].reason = "reconcile_error"
+			return true end)()`);
+		const entry = await conflictFor(c, 1, index);
+		assert.equal(entry.state, "quarantine");
+		assert.equal(entry.hints.journalUidMatch, true);
+		assert.ok(entry.retiredExportId, "the listing lost the journal's retirement for a quarantined copy");
+		const result = await resolve(c, entry, "stale_copy");
+		assert.equal(result.status, "completed", `stale_copy on a journal-matched quarantine did not complete: ${JSON.stringify(result)}`);
+		assert.equal((await c.platform(1, index)).present, false);
+	} finally { await c.close(); }
+});
+
 test("lineage seams (c): keep_other on a journal-matched tombstone deletes it and leaves the other copy alone", { skip }, async () => {
 	const { c, index, lineage, destination } = await rolledBackSource();
 	try {
