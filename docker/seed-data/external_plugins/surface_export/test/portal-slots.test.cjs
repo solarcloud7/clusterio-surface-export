@@ -301,6 +301,58 @@ test("changing portals needs the transfer administration permission", () => {
 	assert.deepEqual(messages.SetPortalRequest.jsonSchema.properties.action, { enum: ["assign", "release"] });
 });
 
+test("a server keeps its colour while its plugin is off, is not advertised meanwhile, and only deletion retires it", async t => {
+	const file = await tempFile(t);
+	const slots = new PortalSlots(recorder().logger);
+	await slots.load(file);
+	const loaded = new Map([[1, true], [2, true], [3, true]]);
+	const instance = id => ({ id, config: { get: key => key === "surface_export.load_plugin" ? loaded.get(id) : undefined } });
+	const instances = new Map([1, 2, 3].map(id => [id, instance(id)]));
+	const sent = [];
+	const gateways = new GatewayConfig({ config: { get: () => undefined }, hosts: new Map(), instances,
+		async sendTo(target) { sent.push(target.instanceId); return { success: true }; } },
+	recorder().logger, { isInstanceOnline: () => true, resolveInstanceName: id => `s${id}` }, slots);
+	await gateways.settle();
+	assert.deepEqual(slots.assignments(), [{ slot: 1, instanceId: 1 }, { slot: 2, instanceId: 2 }, { slot: 3, instanceId: 3 }]);
+
+	loaded.set(2, false);
+	const view = await gateways.handleGetGatewayConfigRequest({ instanceId: 1 });
+	assert.equal(slots.slotOf(2), 2, "the server with its plugin off still holds its colour");
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[1, 1], [2, 2], [3, 3]], released: [] },
+		"the saved assignment still lists the server with its plugin off");
+	assert.deepEqual(slots.retired(), [], "turning the plugin off retires nothing");
+	assert.deepEqual(view.activeGatewayNames, [ONE_GATE_NAME, "surfexp_gateway_3"], "its colour is not advertised while the plugin is off");
+	assert.deepEqual(view.gateways.map(gateway => [gateway.gatewayName, gateway.targets.map(target => target.instanceId)]),
+		[[ONE_GATE_NAME, [3]], ["surfexp_gateway_3", [3]]], "it is no destination while the plugin is off");
+	assert.equal(gateways.portalOf(2), null);
+	const listing = await gateways.handleGetGatewaysRequest({});
+	assert.deepEqual([listing.portals.map(portal => portal.instanceId), listing.unassigned, listing.retired], [[1, 3], [], []]);
+	await gateways.pushGatewayConfigToAllSources();
+	assert.deepEqual(sent, [1, 3], "a server with its plugin off is not pushed gateway config");
+
+	instances.set(4, instance(4));
+	loaded.set(4, true);
+	await gateways.settle();
+	assert.equal(slots.slotOf(4), 4, "a new server does not take the colour of a server whose plugin is off");
+
+	loaded.set(2, true);
+	await gateways.settle();
+	assert.deepEqual(gateways.portalOf(2), { slot: 2, colour: PORTAL_COLOURS[1], label: "s2" }, "turning the plugin back on restores the same colour");
+	assert.ok(gateways.activeGatewayNamesFor(1).includes("surfexp_gateway_2"));
+
+	loaded.set(2, false);
+	await gateways.settle();
+	instances.get(2).isDeleted = true;
+	await gateways.settle();
+	assert.equal(slots.slotOf(2), null);
+	assert.deepEqual(slots.retired(), [{ slot: 2, previousInstanceId: 2 }], "deleting the server retires its colour");
+	instances.delete(3);
+	await gateways.settle();
+	assert.deepEqual(slots.retired(), [{ slot: 2, previousInstanceId: 2 }, { slot: 3, previousInstanceId: 3 }],
+		"a server removed from the instance list retires its colour");
+	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[1, 1], [4, 4]], released: [[2, 2], [3, 3]] });
+});
+
 test("servers without the plugin loaded take no colour and are no destination", async () => {
 	const instance = (id, loaded) => ({ id, config: { get: key => key === "surface_export.load_plugin" ? loaded : undefined } });
 	const instances = new Map([[1, instance(1, true)], [2, instance(2, false)], [3, instance(3, undefined)]]);

@@ -38,9 +38,12 @@ export class GatewayConfig {
 		return instanceAddress(host?.publicAddress, inst.gamePort ?? null);
 	}
 
+	private existingInstances() {
+		return [...this.controller.instances.values()].filter(inst => !inst.isDeleted);
+	}
+
 	private liveInstances() {
-		return [...this.controller.instances.values()]
-			.filter(inst => !inst.isDeleted && inst.config.get("surface_export.load_plugin") !== false);
+		return this.existingInstances().filter(inst => inst.config.get("surface_export.load_plugin") !== false);
 	}
 
 	private instanceName(instanceId: number): string {
@@ -49,13 +52,13 @@ export class GatewayConfig {
 
 	private assignedPortals(): Array<{ slot: number; instanceId: number }> {
 		const live = this.liveInstances().map(inst => inst.id);
-		this.slots.reconcile(live);
+		this.slots.reconcile(live, this.existingInstances().map(inst => inst.id));
 		const liveSet = new Set(live);
 		return this.slots.assignments().filter(entry => liveSet.has(entry.instanceId));
 	}
 
 	async settle(): Promise<void> {
-		await this.slots.settle(this.liveInstances().map(inst => inst.id));
+		await this.slots.settle(this.liveInstances().map(inst => inst.id), this.existingInstances().map(inst => inst.id));
 	}
 
 	portalOf(instanceId: number): PortalAssignment | null {

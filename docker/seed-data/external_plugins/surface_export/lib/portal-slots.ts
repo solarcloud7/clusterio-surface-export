@@ -77,7 +77,7 @@ export class PortalSlots {
 	private lastWaiting = "";
 	private lastWriteError = "";
 	private queue: Promise<void> = Promise.resolve();
-	private reconcileLive: readonly number[] | null = null;
+	private reconcileLive: { live: readonly number[]; existing: readonly number[] } | null = null;
 	loadError: string | null = null;
 	onCommitted?: () => void;
 
@@ -98,20 +98,20 @@ export class PortalSlots {
 		}
 	}
 
-	private reconciled(liveInstanceIds: readonly number[]): PortalState {
+	private reconciled(liveInstanceIds: readonly number[], existingInstanceIds: readonly number[]): PortalState {
 		const next = copyState(this.state);
-		const kept = assignPortalSlots(next.slots, [...next.slots.values()].filter(id => liveInstanceIds.includes(id)),
+		const kept = assignPortalSlots(next.slots, [...next.slots.values()].filter(id => existingInstanceIds.includes(id)),
 			new Set(Array.from({ length: PORTAL_SLOT_COUNT }, (_, index) => index + 1)));
 		for (const [slot, instanceId] of next.slots) {
 			if (kept.get(slot) !== instanceId) next.released.set(slot, instanceId);
 		}
-		next.slots = assignPortalSlots(kept, liveInstanceIds, new Set(next.released.keys()));
+		next.slots = assignPortalSlots(kept, [...kept.values(), ...liveInstanceIds], new Set(next.released.keys()));
 		return next;
 	}
 
-	reconcile(liveInstanceIds: readonly number[]): boolean {
+	reconcile(liveInstanceIds: readonly number[], existingInstanceIds: readonly number[] = liveInstanceIds): boolean {
 		if (this.loadError) return false;
-		const next = this.reconciled(liveInstanceIds);
+		const next = this.reconciled(liveInstanceIds, existingInstanceIds);
 		const changed = !sameState(next, this.state);
 		const waiting = [...new Set(liveInstanceIds)].filter(id => ![...next.slots.values()].includes(id)).sort((a, b) => a - b).join(",");
 		if (waiting && waiting !== this.lastWaiting) {
@@ -124,15 +124,15 @@ export class PortalSlots {
 			return true;
 		}
 		const queued = this.reconcileLive !== null;
-		this.reconcileLive = [...liveInstanceIds];
+		this.reconcileLive = { live: [...liveInstanceIds], existing: [...existingInstanceIds] };
 		if (!queued) void this.enqueue(() => this.commitReconcile());
 		return false;
 	}
 
 	private async commitReconcile(): Promise<void> {
-		const live = this.reconcileLive ?? [];
+		const { live, existing } = this.reconcileLive ?? { live: [], existing: [] };
 		this.reconcileLive = null;
-		const next = this.reconciled(live);
+		const next = this.reconciled(live, existing);
 		if (sameState(next, this.state)) return;
 		try {
 			await this.write(next);
@@ -144,8 +144,8 @@ export class PortalSlots {
 		this.onCommitted?.();
 	}
 
-	async settle(liveInstanceIds: readonly number[]): Promise<void> {
-		this.reconcile(liveInstanceIds);
+	async settle(liveInstanceIds: readonly number[], existingInstanceIds: readonly number[] = liveInstanceIds): Promise<void> {
+		this.reconcile(liveInstanceIds, existingInstanceIds);
 		await this.flush();
 	}
 
