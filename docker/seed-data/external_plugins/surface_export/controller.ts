@@ -9,6 +9,9 @@ import type { Controller, InstanceRecord } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
 import { GatewayConfig } from "./lib/gateway-config";
 import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots";
+import { LineageRegistry, LINEAGE_REGISTRY_FILENAME } from "./lib/lineage-registry";
+import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier";
+import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle";
 import { RouteAlertRelay } from "./lib/route-alert-relay";
 
 type InstanceStatusChange = { id: number; status?: string };
@@ -81,6 +84,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	private recoveryTimer?: ReturnType<typeof setInterval>;
 	pendingTransfersLoadError: string | null = null;
 	recoveryReservations = new Map<number, { epoch: string; mode: PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes: number[] }>();
+	lineageRegistry!: LineageRegistry;
 	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
 	private importCompletions = new Map<string, Promise<void>>();
 	private playerLocations = new Map<string, number>();
@@ -202,6 +206,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.routeAlerts = routeAlerts;
 		this.c.handle(messages.RouteAlertEvent, async (event: messages.RouteAlertEvent, src: { id: number }) => routeAlerts.accept(src.id, event.alert));
 		await this.loadPendingTransfers();
+		this.lineageRegistry = new LineageRegistry();
+		await this.lineageRegistry.load(path.resolve(String(this.c.config.get("controller.database_directory")), LINEAGE_REGISTRY_FILENAME));
+		if (this.lineageRegistry.loadError) this.logger.error(this.lineageRegistry.loadError);
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
 			[...this.platformStorage.keys(), ...this.auditIndex.keys(), ...this.pendingTransfers.keys(),
 				...this.persistedTransactionLogs.map(log => log.transferId)]);
@@ -232,6 +239,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		});
 		this.c.handle(messages.GetGatewayConfigRequest, gateways.handleGetGatewayConfigRequest.bind(gateways));
 		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
+		this.c.handle(messages.LineageClassifyRequest, this.handleLineageClassifyRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -258,7 +266,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!Number.isInteger(request.instanceId) || !this.c.instances.get(request.instanceId) || !request.epoch) {
 			throw new Error("Invalid recovery instance or epoch");
 		}
-		if (this.pendingTransfersLoadError || this.transactionLogLoadError || this.orchestrator.requestQueue.admissionError) {
+		if (this.pendingTransfersLoadError || this.transactionLogLoadError || this.orchestrator.requestQueue.admissionError
+			|| this.lineageRegistry.loadError) {
 			throw new Error("Controller recovery state is unavailable");
 		}
 		if (request.action === "begin") {
@@ -275,6 +284,103 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.recoveryReservations.delete(request.instanceId);
 		this.refreshGatewaysAfterRecovery(request.instanceId);
 		return session;
+	}
+
+	async handleLineageClassifyRequest(request: messages.LineageClassifyRequest, source?: { id: number }) {
+		if (!source || source.id !== request.instanceId) throw new Error("Recovery instance identity mismatch");
+		const session = this.recoveryReservations.get(request.instanceId);
+		if (!session || session.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
+		if (this.lineageRegistry.loadError) throw new Error(this.lineageRegistry.loadError);
+		const context: ClassifyContext = { instanceId: request.instanceId, epoch: request.epoch, mode: session.mode, allowAdoption: session.allowAdoption };
+		const counts = new Map<string, number>();
+		for (const platform of request.platforms) {
+			if (platform.lineage) counts.set(platform.lineage, (counts.get(platform.lineage) ?? 0) + 1);
+		}
+		const hints = (platform: PlatformFacts): ControllerHints => ({
+			inTransit: this.lineageInTransit(platform.lineage),
+			historyMatch: this.completedTransferFrom(request.instanceId, platform.platformUid),
+			duplicateLocal: platform.lineage !== null && (counts.get(platform.lineage) ?? 0) > 1,
+		});
+		const wanted = new Map<number, Set<string>>();
+		for (const platform of request.platforms) {
+			const key = lineageKey(platform, request.epoch);
+			const verdict = classifyPlatform(platform, hints(platform), key ? this.lineageRegistry.get(key) : undefined, undefined, context);
+			if (verdict.presenceNeeded !== undefined && verdict.lineage) {
+				const lineages = wanted.get(verdict.presenceNeeded) ?? new Set<string>();
+				lineages.add(verdict.lineage);
+				wanted.set(verdict.presenceNeeded, lineages);
+			}
+		}
+		const presence = await this.lineagePresence(wanted);
+		const current = this.recoveryReservations.get(request.instanceId);
+		if (current?.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
+		return this.lineageRegistry.update(draft => {
+			const verdicts: LineageVerdict[] = request.platforms.map(platform => {
+				const key = lineageKey(platform, request.epoch);
+				const entry = key ? draft.get(key) : undefined;
+				const verdict = classifyPlatform(platform, hints(platform), entry, entry && key ? presence.get(`${entry.instanceId}\u0000${key}`) : undefined, context);
+				const record = { platformName: platform.platformName ?? "", forceName: platform.forceName ?? "player", updatedAt: Date.now() };
+				if (verdict.claim && verdict.lineage) {
+					draft.set(verdict.lineage, { ...record, instanceId: request.instanceId, generation: 0, lastExportId: null, source: "claim" });
+				}
+				if (verdict.adopt && verdict.lineage && verdict.adoptGeneration !== undefined) {
+					draft.set(verdict.lineage, { ...record, instanceId: request.instanceId, generation: verdict.adoptGeneration, lastExportId: null, source: "resolution" });
+				}
+				return verdict;
+			});
+			const quarantined = verdicts.filter(verdict => !["normal", "unchanged"].includes(verdict.verdict) && !verdict.adopt).length;
+			if (quarantined) this.logger.warn(`Instance ${request.instanceId} startup recovery: ${quarantined} platform(s) are not released by lineage classification`);
+			return { verdicts };
+		});
+	}
+
+	lineageInTransit(lineage: string | null): boolean {
+		if (!lineage) return false;
+		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
+			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer));
+	}
+
+	completedTransferFrom(instanceId: number, platformUid: string | null): boolean {
+		if (!platformUid) return false;
+		const completed = (record: { operationType?: string | null; sourceInstanceId?: number | null; platformUid?: string | null; status?: string | null } | undefined) =>
+			Boolean(record) && (record!.operationType ?? "transfer") === "transfer" && record!.sourceInstanceId === instanceId
+				&& record!.platformUid === platformUid && record!.status === "completed";
+		return [...this.activeTransfers.values()].some(completed)
+			|| this.persistedTransactionLogs.some(log => completed(log.transferInfo))
+			|| [...this.auditIndex.values()].some(completed);
+	}
+
+	async lineagePresence(wanted: Map<number, Set<string>>): Promise<Map<string, Presence>> {
+		const results = new Map<string, Presence>();
+		await Promise.all([...wanted].map(async ([holder, requested]) => {
+			const lineages = [...requested];
+			const mark = (presence: Presence) => { for (const lineage of lineages) results.set(`${holder}\u0000${lineage}`, presence); };
+			if (!this.isInstanceOnline(holder)) {
+				mark({ state: "unknown", reason: `Holder instance ${holder} is offline or reconciling` });
+				return;
+			}
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				const reply = await Promise.race([
+					this.c.sendTo({ instanceId: holder }, new messages.LineagePresenceRequest({ lineages })),
+					new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Presence request timed out")), 10_000); }),
+				]) as { success?: boolean; lineages?: Array<{ lineage?: unknown; present?: unknown; generation?: unknown }> };
+				for (const lineage of lineages) {
+					const answer = reply?.success === true && Array.isArray(reply.lineages) ? reply.lineages.find(item => item?.lineage === lineage) : undefined;
+					results.set(`${holder}\u0000${lineage}`, typeof answer?.present !== "boolean"
+						? { state: "unknown", reason: `Holder instance ${holder} gave no answer for this lineage` }
+						: answer.present ? { state: "present", ...(Number.isSafeInteger(answer.generation) ? { generation: answer.generation as number } : {}) }
+							: { state: "absent" });
+				}
+			} catch (error: unknown) {
+				const reason = `Presence check on instance ${holder} failed: ${getErrorMessage(error)}`;
+				this.logger.warn(`${reason}; the restored copies stay quarantined`);
+				mark({ state: "unknown", reason });
+			} finally {
+				if (timer) clearTimeout(timer);
+			}
+		}));
+		return results;
 	}
 
 	private refreshGatewaysAfterRecovery(instanceId: number) {
@@ -527,6 +633,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const validateSnapshot = Boolean(snapshot || extracted.fromBlackBox || importData._transferId);
 		delete importData._sourceInstanceId;
 		delete importData._transferId;
+		delete importData._lineage;
+		delete importData._lineageGeneration;
 		importData._standaloneImport = true;
 		importData._restoreSnapshot = validateSnapshot;
 		if (platformName && String(platformName).trim()) {

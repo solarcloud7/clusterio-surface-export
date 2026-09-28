@@ -318,7 +318,7 @@ export class LuaInterface {
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
 	}
 
-	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity", ...args: Array<string | number | boolean | null>): Promise<string> {
+	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity" | "presence", ...args: Array<string | number | boolean | null>): Promise<string> {
 		const values = args.map(value => value === null ? "nil"
 			: typeof value === "string" ? `"${escapeString(value)}"` : String(value));
 		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "source_recovery_${action}"`
