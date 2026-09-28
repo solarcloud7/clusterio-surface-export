@@ -62,6 +62,108 @@ function Get-LoadedSave {
     })
 }
 
+$script:FactorioPidsScript = 'for p in /proc/[0-9]*; do tr ''\0'' ''\n'' < "$p/cmdline" 2>/dev/null | grep -Fqx -- "$1/config.ini" && echo "${p#/proc/}"; done; true'
+$script:RconStartLineScript = 'grep -F "Starting RCON interface" "$1/factorio-current.log" 2>/dev/null | tail -n 1; true'
+$script:StartClientSweepScript = 'for p in /proc/[0-9]*; do n=${p#/proc/}; [ "$n" = "$$" ] && continue; c=$(tr ''\0'' '' '' < "$p/cmdline" 2>/dev/null); case "$c" in *clusterioctl*" instance start $1 "*) kill -9 "$n" 2>/dev/null && echo "$n";; esac; done; true'
+
+function Get-InstanceStartDiagnosis {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][string]$HostNumber,
+        [string]$DataDir
+    )
+    $container = "surface-export-host-$HostNumber"
+    try {
+        $row = @(Get-InstanceList | Where-Object { $_.Id -eq $InstanceId })
+        $status = if ($row.Count) { $row[0].Status } else { "not listed" }
+    } catch { $status = "unreadable ($($_.Exception.Message))" }
+    if (-not $DataDir) {
+        try { $DataDir = Get-InstanceDataDir -InstanceId $InstanceId -HostNumber $HostNumber }
+        catch { return [pscustomobject]@{ Status = $status; PidsReadable = $false; FactorioPids = @(); RconLine = ""; RconTimestampInvalid = $false
+            Text = "status '$status'; data directory unknown ($($_.Exception.Message))" } }
+    }
+    $pidOut = docker exec $container sh -c $script:FactorioPidsScript sh $DataDir 2>&1
+    $pidsReadable = $LASTEXITCODE -eq 0
+    $pids = @($pidOut | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
+    $rconOut = docker exec $container sh -c $script:RconStartLineScript sh $DataDir 2>&1
+    $rconLine = if ($LASTEXITCODE -eq 0) { (@($rconOut | ForEach-Object { "$_" }) -join "`n").TrimEnd() } else { "" }
+    $invalid = [bool]$rconLine -and $rconLine -notmatch '^ {0,3}\d+\.\d+ '
+    $processText = if (-not $pidsReadable) { "Factorio processes unreadable on $container ($(($pidOut | Out-String).Trim()))" }
+        elseif ($pids.Count) { "Factorio running on $container as PID $($pids -join ', ')" }
+        else { "no Factorio process for $DataDir on $container" }
+    $rconText = if ($invalid) { "factorio-current.log started RCON with a non-seconds timestamp, so Clusterio never saw RCON ready: '$rconLine'" }
+        elseif ($rconLine) { "factorio-current.log started RCON: '$rconLine'" }
+        else { "factorio-current.log has no 'Starting RCON interface' line" }
+    return [pscustomobject]@{
+        Status               = $status
+        PidsReadable         = $pidsReadable
+        FactorioPids         = $pids
+        RconLine             = $rconLine
+        RconTimestampInvalid = $invalid
+        Text                 = "status '$status'; $processText; $rconText"
+    }
+}
+
+function Stop-InstanceStartClient {
+    param([Parameter(Mandatory)][string]$InstanceId)
+    $out = docker exec surface-export-controller sh -c $script:StartClientSweepScript sh $InstanceId 2>&1
+    return @($out | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' })
+}
+
+function Stop-InstanceWithDeadline {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][string]$HostNumber,
+        [Parameter(Mandatory)][string]$DataDir,
+        [ValidateRange(1, 3600)][int]$TimeoutSec = 420
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $out = docker exec surface-export-controller timeout -k 10 $TimeoutSec npx clusterioctl --config $script:ControlConfig --log-level error instance stop $InstanceId 2>&1
+    $stopText = "exit $LASTEXITCODE$(if ("$out".Trim()) { ": $(($out | Out-String).Trim())" })"
+    while ($true) {
+        $diagnosis = Get-InstanceStartDiagnosis -InstanceId $InstanceId -HostNumber $HostNumber -DataDir $DataDir
+        if ($diagnosis.Status -eq 'stopped' -and $diagnosis.PidsReadable -and -not @($diagnosis.FactorioPids).Count) { return $diagnosis }
+        if ((Get-Date) -ge $deadline) {
+            throw "Instance $InstanceId did not stop within ${TimeoutSec}s (clusterioctl instance stop $stopText): $($diagnosis.Text). Nothing was deleted."
+        }
+        Start-Sleep -Seconds 3
+    }
+}
+
+function Start-InstanceWithDeadline {
+    param(
+        [Parameter(Mandatory)][string]$InstanceId,
+        [Parameter(Mandatory)][string]$HostNumber,
+        [string]$Save,
+        [string]$DataDir,
+        [ValidateRange(1, 3600)][int]$StartTimeoutSec = 180,
+        [ValidateRange(1, 3600)][int]$StopTimeoutSec = 420
+    )
+    $saveArgs = @()
+    if ($Save) { $saveArgs = @('--save', $Save) }
+    $diagnoses = @()
+    foreach ($attempt in 1, 2) {
+        $out = docker exec surface-export-controller timeout -k 10 $StartTimeoutSec npx clusterioctl --config $script:ControlConfig --log-level error instance start $InstanceId @saveArgs 2>&1
+        $code = $LASTEXITCODE
+        if ($code -notin 124, 137) {
+            $global:LASTEXITCODE = $code
+            return $out
+        }
+        if (-not $DataDir) { try { $DataDir = Get-InstanceDataDir -InstanceId $InstanceId -HostNumber $HostNumber } catch { $DataDir = "" } }
+        $diagnosis = Get-InstanceStartDiagnosis -InstanceId $InstanceId -HostNumber $HostNumber -DataDir $DataDir
+        $diagnoses += "attempt ${attempt}: $($diagnosis.Text)"
+        Write-Host "  ! instance start $InstanceId did not return within ${StartTimeoutSec}s (attempt $attempt): $($diagnosis.Text)" -ForegroundColor Yellow
+        $killed = @(Stop-InstanceStartClient -InstanceId $InstanceId)
+        if ($killed.Count) { Write-Host "    killed the waiting clusterioctl client (PID $($killed -join ', '))" -ForegroundColor DarkYellow }
+        if ($attempt -eq 2) { break }
+        if (-not $DataDir) { throw "instance start $InstanceId did not return within ${StartTimeoutSec}s and its data directory is unknown, so it was not stopped or retried. $($diagnoses -join ' ') Nothing was deleted." }
+        Write-Host "    stopping instance $InstanceId (waits up to ${StopTimeoutSec}s for Clusterio's shutdown timeout)..." -ForegroundColor DarkYellow
+        Stop-InstanceWithDeadline -InstanceId $InstanceId -HostNumber $HostNumber -DataDir $DataDir -TimeoutSec $StopTimeoutSec | Out-Null
+        Write-Host "    retrying instance start $InstanceId once$(if ($Save) { " with --save $Save" })" -ForegroundColor DarkYellow
+    }
+    throw "instance start $InstanceId$(if ($Save) { " --save $Save" }) did not return within ${StartTimeoutSec}s twice; the instance was left as it is. $($diagnoses -join ' ') Nothing was deleted."
+}
+
 function Get-TransactionLogStore {
     param(
         [string]$Container,

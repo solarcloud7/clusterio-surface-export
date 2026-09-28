@@ -148,21 +148,20 @@ test("preserving cluster volumes also preserves the selected version", { skip },
 });
 
 const psQuote = s => `'${s.replace(/'/g, "''")}'`;
-const scenarioDetector = /function Test-ScenarioMigrationFailure \{[\s\S]*?\r?\n\}/.exec(
-	readFileSync(new URL("../../tools/shared/cluster-utils.ps1", import.meta.url), "utf8"))[0];
+const NEGATIVE_RCON = "-140462620.552 Info RemoteCommandProcessor.cpp:119: Starting RCON interface at IP ADDR:({0.0.0.0:64865})";
 
-function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [], stoppedLog = null, recovers = true } = {}) {
+function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [], stoppedLog = null, recovers = true, startHangs = 0 } = {}) {
 	const { dir, put } = fixture(t, "deploy-cluster");
 	copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
 	copyFileSync(new URL("../../tools/shared/instance-identity.ps1", import.meta.url), join(dir, "tools/shared/instance-identity.ps1"));
+	copyFileSync(new URL("../../tools/shared/cluster-utils.ps1", import.meta.url), join(dir, "tools/shared/cluster-utils.real.ps1"));
 	put("tools/shared/cluster-utils.ps1", `
-. "$PSScriptRoot/instance-identity.ps1"
+. "$PSScriptRoot/cluster-utils.real.ps1"
 function Assert-DevelopmentClusterCheckout {}
 function Update-PackageLockVersion {}
 function Update-ModuleVersionStamp {}
 function Update-ModuleBuildStamp { '${"a".repeat(32)}' }
 function Get-SeededInstances { @(@{Host='clusterio-host-1';HostNumber=1;Instance='clusterio-host-1-instance-1';Container='fixture-host'}) }
-${scenarioDetector}
 `);
 	put("docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json", '{"factorio.version":"2.1.17"}');
 	put("tools/clusterio/sync-client-mods.ps1", "$global:calls.Add('sync-client')");
@@ -174,11 +173,16 @@ function Receive-Job { 'Seeding complete' }
 function Stop-Job {}
 function Remove-Job {}
 $global:started = ${stoppedLog === null ? "$true" : "$false"}
+$global:hangs = ${startHangs}
 function docker {
  $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0
  if ($args[0] -eq 'inspect') { return 'healthy' }
  if ($args[0] -eq 'logs') { return ${psQuote(stoppedLog ?? "")} }
- if (($args -join ' ') -match 'instance start') { $global:started = ${recovers ? "$true" : "$false"}; return }
+ if ($args[2] -eq 'sh' -and ($args -join ' ') -match 'instance\\.json') { return ('/clusterio/data/instances/clusterio-host-1-instance-1/instance.json' + [char]9 + '{"instance.id": 836570928}') }
+ if ($args[2] -eq 'sh' -and ($args -join ' ') -match 'Starting RCON interface') { return ${psQuote(NEGATIVE_RCON)} }
+ if ($args[2] -eq 'sh' -and ($args -join ' ') -match '/proc/') { return }
+ if (($args -join ' ') -match 'instance stop') { $global:started = $false; return }
+ if (($args -join ' ') -match 'instance start') { if ($global:hangs -gt 0) { $global:hangs--; $global:LASTEXITCODE = 124; return } $global:started = ${recovers ? "$true" : "$false"}; return }
  if (($args -join ' ') -match 'instance config list') { return 'factorio.version "${configured}"' }
  if (($args -join ' ') -match 'instance list') { return @('name | id | assignedHost | gamePort | status', '---', ('Dev One | 836570928 | 1 | 34100 | ' + $(if ($global:started) { 'running' } else { 'stopped' }))) }
  if (($args -join ' ') -match 'send-rcon') { return '{"version":"1.0.0","buildId":"${(stale ? "b" : "a").repeat(32)}"}' }
@@ -231,6 +235,24 @@ test("an instance migrated by an earlier interrupted run is started once more on
 	const result = retainedCluster(t, { stoppedLog: scenarioFailure });
 	assert.equal(result.error, null, JSON.stringify(result));
 	assert.equal(result.calls.filter(startCall).length, 1, JSON.stringify(result.calls));
+});
+
+test("a documented-error restart that does not return is stopped and started once more", { skip }, t => {
+	const result = retainedCluster(t, { stoppedLog: scenarioFailure, startHangs: 1 });
+	assert.equal(result.error, null, JSON.stringify(result));
+	const starts = result.calls.map((c, i) => startCall(c) ? i : -1).filter(i => i >= 0);
+	assert.equal(starts.length, 2, JSON.stringify(result.calls));
+	assert.ok(result.calls[starts[0]].startsWith("docker exec surface-export-controller timeout -k 10 180 npx clusterioctl "), result.calls[starts[0]]);
+	const between = result.calls.slice(starts[0] + 1, starts[1]);
+	assert.ok(between.some(c => /^docker exec surface-export-controller timeout -k 10 420 .* instance stop 836570928$/.test(c)), JSON.stringify(between));
+	assert.ok(between.some(c => c.startsWith("docker exec surface-export-controller sh -c ") && c.endsWith(" sh 836570928")), JSON.stringify(between));
+});
+
+test("a documented-error restart that does not return twice fails with the diagnosis", { skip }, t => {
+	const result = retainedCluster(t, { stoppedLog: scenarioFailure, startHangs: 2 });
+	assert.ok(result.error?.includes("instance start 836570928 did not return within 180s twice"), result.error);
+	assert.ok(result.error.includes(`never saw RCON ready: '${NEGATIVE_RCON}'`), result.error);
+	assert.equal(result.calls.filter(startCall).length, 2, JSON.stringify(result.calls));
 });
 
 test("the documented-error restart is attempted only once", { skip }, t => {
