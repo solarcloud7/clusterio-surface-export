@@ -84,11 +84,57 @@ test("Lua cleanup guards protect bulk fixture sweeps", { skip: noPowerShell }, t
 	}
 });
 
+const prefixListPath = path.join(repoRoot, "tools", "shared", "test-surface-prefixes.json");
+
 function defaultPrefixes() {
-	const m = sweeper.match(/\$Prefixes\s*=\s*@\(([^)]*)\)/);
-	assert.ok(m, "could not parse the default -Prefixes array out of cleanup-test-surfaces.ps1");
-	return [...m[1].matchAll(/'((?:[^']|'')*)'/g)].map((q) => q[1].replace(/''/g, "'"));
+	assert.match(sweeper, /\$Prefixes = @\(Get-Content -LiteralPath \(Join-Path \$PSScriptRoot '\.\.\/shared\/test-surface-prefixes\.json'\)/,
+		"cleanup-test-surfaces.ps1 must take its default -Prefixes from tools/shared/test-surface-prefixes.json");
+	const prefixes = JSON.parse(fs.readFileSync(prefixListPath, "utf8"));
+	assert.ok(Array.isArray(prefixes) && prefixes.length && prefixes.every(p => typeof p === "string" && /^[a-z][a-z0-9_-]*$/.test(p)),
+		"test-surface-prefixes.json must be a non-empty array of lowercase name prefixes");
+	return prefixes;
 }
+
+function integrationSources(dir = path.join(repoRoot, "tests", "integration")) {
+	return fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+		const full = path.join(dir, entry.name);
+		if (entry.isDirectory()) return integrationSources(full);
+		return /\.(mjs|js|lua)$/.test(entry.name) ? [full] : [];
+	});
+}
+
+function platformNamePrefixes() {
+	const found = new Map();
+	const note = (prefix, file) => { if (!found.has(prefix)) found.set(prefix, path.relative(repoRoot, file)); };
+	for (const file of integrationSources()) {
+		const text = fs.readFileSync(file, "utf8");
+		const createsPlatforms = /create_space_platform|clone_platform/.test(text);
+		for (const [, name] of text.matchAll(/\brunFixture\(\s*["']([a-z][a-z0-9_-]*)["']/g)) note(`${name}-`, file);
+		if (!createsPlatforms) continue;
+		for (const [, prefix] of text.matchAll(/\b[A-Za-z_]\w*\s*=\s*`([a-z][a-z0-9_-]*[-_])\$\{/g)) note(prefix, file);
+		for (const [, prefix] of text.matchAll(/\b[A-Za-z_]\w*\s*=\s*["']([a-z][a-z0-9_-]*[-_])["']/g)) note(prefix, file);
+	}
+	return found;
+}
+
+test("every platform-name prefix an integration suite creates is in the shared throwaway list", () => {
+	const prefixes = defaultPrefixes();
+	const found = platformNamePrefixes();
+	for (const known of ["latch-adversarial-", "mptransfer-", "transfer-cleanup-", "gwpark-probe-", "cfgattr-", "itemstate-"]) {
+		assert.ok(found.has(known), `the prefix scan no longer finds ${known}; it has stopped reading the suites`);
+	}
+	const uncovered = [...found].filter(([prefix]) => !prefixes.some(p => prefix.startsWith(p)))
+		.map(([prefix, file]) => `${prefix} (${file})`);
+	assert.deepEqual(uncovered, [], "add these prefixes to tools/shared/test-surface-prefixes.json so a leaked platform is sweepable");
+});
+
+test("no gallery fixture platform carries a throwaway prefix", () => {
+	const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, "tests", "lab-gallery", "manifest.json"), "utf8"));
+	const names = [...new Set((manifest.fixtures || []).map(f => f?.platformName).filter(Boolean))];
+	assert.ok(names.length > 0);
+	const prefixes = defaultPrefixes();
+	assert.deepEqual(names.filter(name => prefixes.some(p => name.startsWith(p))), []);
+});
 
 function scratchSurfacePrefix() {
 	const m = selftest.match(/^local LAB_PREFIX = "([^"]+)"$/m);

@@ -127,7 +127,7 @@ test("a stale or absent controller bundle fails before browser element waits", a
 
 function probes(version = "fixture") {
 	return Object.fromEntries(INSTANCE_ROLES.map(({ instance }) => [instance, {
-		iface: true, version, tick: 5, surfaces: ["nauvis"], surfaceCount: 1,
+		iface: true, ready: true, version, tick: 5, surfaces: ["nauvis"], surfaceCount: 1,
 		platforms: ["owned"], platformCount: 1, players: ["engineer"], playerCount: 1,
 		playerStates: ["engineer:nauvis:1:2:1"],
 	}]));

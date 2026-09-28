@@ -25,7 +25,10 @@ This script:
 2. Builds plugin artifacts (dist/node + dist/web) via tools/clusterio/build-plugin.ps1 — an isolated
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
    (skipped by -LuaOnly, guarded by the staleness tripwire above)
-3. Stops Factorio instances (keeps controller running)
+3. Stops Factorio instances (keeps controller running), then archives each instance's
+   surface_export_source_retirements.json by renaming it to
+   surface_export_source_retirements.<yyyyMMdd-HHmmss>.bak.json in the same directory. The seed
+   saves start a new world, so the old recovery history no longer applies; nothing is deleted
 4. Uploads the seed saves (deliberate fixture reset). Existing saves, autosaves and backups
    are kept; nothing is deleted. Each upload is stored under a new name, which the boot check
    below requires each instance to have loaded
@@ -33,7 +36,9 @@ This script:
    saves with the latest Lua; the controller re-reads dist/web/manifest.json
 6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
    remote interface present — a Lua error at save-load kills the headless server (exit 255),
-   and before this check the only signal was the server dying later.
+   and before this check the only signal was the server dying later. It then runs
+   tools/tests/cluster-readiness.mjs --runtime, which waits for startup source recovery and fails
+   at once when the host log records a refused recovery.
 
 Note: For code updates that preserve game state use deploy.ps1 -Scope plugin -KeepSaves.
       The pinned Clusterio host can patch existing saves before starting Factorio.
@@ -241,6 +246,26 @@ Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
 Write-Host ""
+Write-Host "Archiving source-recovery history (the seed saves start a new world; nothing is deleted)..." -ForegroundColor Yellow
+$archiveStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$archiveScript = 'if [ ! -e "$1" ]; then echo absent; elif [ -e "$2" ]; then echo "destination exists: $2"; exit 3; else mv "$1" "$2" && [ -e "$2" ] && [ ! -e "$1" ] && echo archived; fi'
+foreach ($h in 1, 2) {
+    $journal = "$($hostInstances[$h].Dir)/surface_export_source_retirements.json"
+    $archive = "$($hostInstances[$h].Dir)/surface_export_source_retirements.$archiveStamp.bak.json"
+    $out = docker exec "surface-export-host-$h" sh -c $archiveScript sh $journal $archive 2>&1
+    $code = $LASTEXITCODE
+    $text = ($out | Out-String).Trim()
+    if ($code -ne 0 -or $text -notin 'archived', 'absent') {
+        throw "Archiving $journal on surface-export-host-$h failed (exit $code): $text. Instances are stopped; no seed save was uploaded."
+    }
+    if ($text -eq 'archived') {
+        Write-Host "  ✓ $($hostInstances[$h].Name): $journal -> $archive" -ForegroundColor Green
+    } else {
+        Write-Host "  $($hostInstances[$h].Name): no $journal (nothing to archive)" -ForegroundColor Gray
+    }
+}
+
+Write-Host ""
 Write-Host "Uploading seed saves (existing saves are kept)..." -ForegroundColor Yellow
 $seedSaveFiles = @{ 1 = 'lab-gallery-source.zip'; 2 = 'lab-gallery-destination.zip' }
 $uploadedSaves = @{}
@@ -345,6 +370,12 @@ foreach ($h in 1, 2) {
         throw "$inst did not come up with module version $NewVersion loaded. Do not trust this deploy."
     }
 }
+Write-Host "Boot check: waiting for startup source recovery on every instance..." -ForegroundColor Yellow
+node "$PSScriptRoot/../tests/cluster-readiness.mjs" --runtime
+if ($LASTEXITCODE -ne 0) {
+    throw "Startup source recovery is not ready after the reset; exports would fail with 'Startup recovery is not ready'. Do not trust this deploy."
+}
+Write-Host "  ✓ Source recovery ready on every instance" -ForegroundColor Green
 Write-Host ""
 Write-Host "=== Patch and Reset Complete ===" -ForegroundColor Cyan
 Write-Host ""

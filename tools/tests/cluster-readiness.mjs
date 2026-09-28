@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-// requires: docker with the surface-export-controller container running; tests/lab-gallery/manifest.json
-// produces: one PASS/FAIL line per instance per check, and a gate decision (exit 0 only when every check passes)
+// requires: docker with the surface-export-controller and seeded host containers running; tests/lab-gallery/manifest.json;
+//           tools/shared/test-surface-prefixes.json; host logs under /clusterio/logs/host for the source-recovery refusal
+// produces: one PASS/FAIL line per instance per check (including module version, source-recovery readiness and leftover
+//           throwaway platforms), and a gate decision (exit 0 only when every check passes) after waiting a bounded
+//           time for startup recovery that is still reconciling
 // does not: verify a golden save's SHA-256, inspect fixture interiors, sample tick advance
-//           (tools/clusterio/tick-liveness.mjs measures that), or mutate any cluster state
+//           (tools/clusterio/tick-liveness.mjs measures that), delete leftover platforms, or mutate any cluster state
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -31,6 +34,15 @@ export const CHECK_INTERFACE = "plugin-interface";
 export const CHECK_SURFACES = "required-surfaces";
 export const CHECK_PLATFORMS = "fixture-platforms";
 export const CHECK_ROSTER = "player-roster";
+export const CHECK_VERSION = "module-version";
+export const CHECK_RECOVERY = "source-recovery";
+export const CHECK_LEFTOVERS = "leftover-platforms";
+
+export const RECOVERY_REFUSED = "Source recovery startup refused";
+export const RECOVERY_STARTING = "Surface Export plugin initializing...";
+export const CLEANUP_AUDIT = "pwsh -File tools/tests/cleanup-test-surfaces.ps1 -DryRun";
+const HOST_LOG_SCAN = "for f in $(ls /clusterio/logs/host/host-*.log 2>/dev/null | tail -n 2); do "
+	+ `grep -aF -e '${RECOVERY_STARTING}' -e '${RECOVERY_REFUSED}' "$f"; done | tail -n 400`;
 
 const UBIQUITOUS_SURFACES = new Set(["nauvis"]);
 
@@ -41,6 +53,7 @@ const PROBE_LUA = "/sc local s={} for _,x in pairs(game.surfaces) do s[#s+1]=x.n
 	+ "ps[#ps+1]=p.name..':'..p.surface.name..':'..p.position.x..':'..p.position.y..':'..p.controller_type end "
 	+ "rcon.print(helpers.table_to_json({surfaces=s,surfaceCount=#s,platforms=pl,platformCount=#pl,"
 	+ "players=pr,playerStates=ps,playerCount=#pr,tick=game.tick,iface=(remote.interfaces['surface_export']~=nil),"
+	+ "ready=(storage.source_recovery_ready==true),"
 	+ "version=remote.interfaces.surface_export and remote.interfaces.surface_export.get_module_version "
 	+ "and remote.call('surface_export','get_module_version')}))";
 
@@ -51,13 +64,75 @@ export function expectedModuleVersion() {
 	return match[1];
 }
 
+export function throwawayPrefixes(root = repoRoot) {
+	const prefixes = JSON.parse(readFileSync(join(root, "tools", "shared", "test-surface-prefixes.json"), "utf8"));
+	if (!Array.isArray(prefixes) || !prefixes.length || !prefixes.every(p => typeof p === "string" && p)) {
+		throw new Error("tools/shared/test-surface-prefixes.json must be a non-empty array of name prefixes");
+	}
+	return prefixes;
+}
+
+export function recoveryCheck(probe) {
+	if (probe?.recoveryRefusal) {
+		return { ok: false, blocked: true, detail: `startup recovery refused, exports fail until repaired: ${probe.recoveryRefusal}` };
+	}
+	if (probe?.ready === true) return { ok: true, detail: "storage.source_recovery_ready is true" };
+	return { ok: false, pending: true, detail: "storage.source_recovery_ready is not true: startup recovery is still reconciling, "
+		+ `or is blocked without a refusal in the host log${probe?.recoveryLogError ? ` (host log unreadable: ${probe.recoveryLogError})` : ""}` };
+}
+
+export function latestRecoveryRefusal(lines, instanceId) {
+	let latest = null;
+	for (const line of lines) {
+		let record;
+		try { record = JSON.parse(line); }
+		catch (error) {
+			if (error instanceof SyntaxError) continue;
+			throw error;
+		}
+		if (String(record?.instance_id) !== String(instanceId) || typeof record.message !== "string") continue;
+		if (record.message === RECOVERY_STARTING) latest = null;
+		else if (record.message.startsWith(RECOVERY_REFUSED)) latest = `${record.timestamp ?? "(no timestamp)"} ${record.message}`;
+	}
+	return latest;
+}
+
+export function readRecoveryRefusals(instances = INSTANCE_ROLES.map(r => r.instance), { cluster = developmentCluster } = {}) {
+	const refusals = {};
+	for (const instance of instances) {
+		const role = INSTANCE_ROLES.find(r => r.instance === instance);
+		if (!role) continue;
+		try {
+			const raw = cluster.docker(["exec", `surface-export-host-${role.host}`, "sh", "-c", HOST_LOG_SCAN], { timeout: RCON_TIMEOUT_MS });
+			refusals[instance] = { refusal: latestRecoveryRefusal(String(raw).split(/\r?\n/), cluster.instance(role.host)) };
+		} catch (error) {
+			refusals[instance] = { error: String(error.stderr || error.message || error).split("\n").find(Boolean)?.slice(0, 200) ?? String(error) };
+		}
+	}
+	return refusals;
+}
+
+export function probeReadiness(instances = INSTANCE_ROLES.map(r => r.instance), { rcon = probeCluster, logs = readRecoveryRefusals } = {}) {
+	const probes = rcon(instances);
+	const pending = instances.filter(instance => probes[instance] && !probes[instance].error && probes[instance].ready !== true);
+	if (!pending.length) return probes;
+	const refusals = logs(pending);
+	for (const instance of pending) {
+		const found = refusals[instance];
+		if (found?.refusal) probes[instance].recoveryRefusal = found.refusal;
+		else if (found?.error) probes[instance].recoveryLogError = found.error;
+	}
+	return probes;
+}
+
 export function evaluateRuntime(probes, expectedVersion) {
 	return INSTANCE_ROLES.flatMap(({ instance }) => {
 		const probe = probes[instance];
 		const valid = probe && !probe.error && normalizeProbe(probe).ok;
-		return [{ instance, checkId: "runtime", ok: Boolean(valid && probe.iface && probe.version === expectedVersion),
+		const runtime = { instance, checkId: "runtime", ok: Boolean(valid && probe.iface && probe.version === expectedVersion),
 			detail: !valid ? `RCON unavailable: ${probe?.error ?? "invalid probe"}`
-				: `Lua version ${probe.version ?? "unavailable"}; expected ${expectedVersion}` }];
+				: `Lua version ${probe.version ?? "unavailable"}; expected ${expectedVersion}` };
+		return valid ? [runtime, { instance, checkId: CHECK_RECOVERY, ...recoveryCheck(probe) }] : [runtime];
 	});
 }
 
@@ -74,13 +149,13 @@ export function compareWorlds(before, after) {
 }
 
 export async function waitForRuntime({ timeoutMs = 90000, expectedVersion = expectedModuleVersion(),
-	probe = probeCluster, now = () => performance.now(), sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+	probe = probeReadiness, now = () => performance.now(), sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
 	const deadline = now() + timeoutMs;
 	let results, probes;
 	do {
 		probes = probe(); results = evaluateRuntime(probes, expectedVersion);
 		if (results.every(r => r.ok)) return { probes, results };
-		if (now() >= deadline) break;
+		if (results.some(r => r.blocked) || now() >= deadline) break;
 		await sleep(Math.min(1000, Math.max(0, deadline - now())));
 	} while (true);
 	throw new Error(`Runtime readiness failed: ${results.filter(r => !r.ok).map(r => `${r.instance}: ${r.detail}`).join("; ")}`);
@@ -135,7 +210,7 @@ export function normalizeProbe(raw) {
 	if (typeof raw.iface !== "boolean") {
 		return { ok: false, detail: `probe reply has no boolean iface (got ${JSON.stringify(raw.iface)})` };
 	}
-	return { ok: true, ...normalized, iface: raw.iface, tick: raw.tick };
+	return { ok: true, ...normalized, iface: raw.iface, tick: raw.tick, version: raw.version };
 }
 
 function missing(required, actual) {
@@ -143,9 +218,9 @@ function missing(required, actual) {
 	return required.filter(name => !present.has(name));
 }
 
-export function evaluateReadiness(expectations, probes) {
+export function evaluateReadiness(expectations, probes, { expectedVersion = expectedModuleVersion(), prefixes = throwawayPrefixes() } = {}) {
 	const results = [];
-	const add = (instance, checkId, ok, category, detail) => results.push({ instance, checkId, ok, category, detail });
+	const add = (instance, checkId, ok, category, detail, flags = {}) => results.push({ instance, checkId, ok, category, detail, ...flags });
 
 	for (const { instance, role, requiredSurfaces, requiredPlatforms } of expectations) {
 		const raw = probes?.[instance];
@@ -186,6 +261,20 @@ export function evaluateReadiness(expectations, probes) {
 			probe.players.length > 0
 				? `${probe.players.length} player(s) in game.players [${probe.players.join(", ")}]`
 				: "game.players is empty — a seeded golden save carries its banked roster, a freshly generated world does not");
+
+		add(instance, CHECK_VERSION, probe.version === expectedVersion, "identity",
+			`Lua module version ${probe.version ?? "unavailable"}; module/version.lua on disk is ${expectedVersion}`);
+
+		const recovery = recoveryCheck(raw);
+		add(instance, CHECK_RECOVERY, recovery.ok, "recovery", recovery.detail,
+			{ ...(recovery.blocked ? { blocked: true } : {}), ...(recovery.pending ? { pending: true } : {}) });
+
+		const leftovers = probe.platforms.filter(name => prefixes.some(prefix => String(name).startsWith(prefix)));
+		add(instance, CHECK_LEFTOVERS, leftovers.length === 0, "hygiene",
+			leftovers.length === 0
+				? "no platform carries a throwaway test prefix"
+				: `${leftovers.length} throwaway test platform(s) left by an earlier run [${leftovers.join(", ")}]; `
+					+ `inspect with ${CLEANUP_AUDIT} before removing anything`);
 	}
 
 	return { ok: results.length > 0 && results.every(r => r.ok), results };
@@ -213,12 +302,20 @@ export function probeCluster(instances = INSTANCE_ROLES.map(r => r.instance), { 
 	return probes;
 }
 
-export function runReadinessGate({ probe = probeCluster, log = console.log, manifest = null } = {}) {
+export async function runReadinessGate({ probe = probeReadiness, log = console.log, manifest = null,
+	expectedVersion = expectedModuleVersion(), prefixes = throwawayPrefixes(), timeoutMs = 90000,
+	now = () => performance.now(), sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
 	const expectations = expectationsFor(manifest || loadReadinessManifest());
-	const startedAt = Date.now();
-	const probes = probe(expectations.map(e => e.instance));
-	const decision = evaluateReadiness(expectations, probes);
-	const durationS = ((Date.now() - startedAt) / 1000).toFixed(1);
+	const startedAt = now();
+	const deadline = startedAt + timeoutMs;
+	let decision;
+	do {
+		decision = evaluateReadiness(expectations, probe(expectations.map(e => e.instance)), { expectedVersion, prefixes });
+		const failed = decision.results.filter(r => !r.ok);
+		if (!failed.length || !failed.every(r => r.pending) || now() >= deadline) break;
+		await sleep(Math.min(2000, Math.max(0, deadline - now())));
+	} while (true);
+	const durationS = ((now() - startedAt) / 1000).toFixed(1);
 
 	log(`Cluster readiness preflight — ${decision.results.length} check(s) across ${expectations.length} instance(s) (${durationS}s)`);
 	for (const r of decision.results) {
@@ -247,5 +344,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 			if (value("--snapshot")) writeFileSync(value("--snapshot"), JSON.stringify(probes, null, 2) + "\n", "utf8");
 			for (const result of results) console.log(`PASS ${result.instance}: ${result.detail}`);
 		} catch (error) { console.error(error.message); process.exitCode = 1; }
-	} else process.exitCode = runReadinessGate().ok ? 0 : 1;
+	} else process.exitCode = (await runReadinessGate()).ok ? 0 : 1;
 }

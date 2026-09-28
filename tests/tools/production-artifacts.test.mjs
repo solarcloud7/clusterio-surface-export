@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import gateway from "../../tests/manual/production-profile/runtime/verify-gateway.cjs";
@@ -52,4 +53,14 @@ test("Compose and the shared lab cannot silently diverge from the production ver
   assert.equal(compose.match(/DEFAULT_MOD_PACK: Space Age ([^\r\n]+)/)[1], pins.factorio);
   const env = readFileSync(new URL("../../.env.example", import.meta.url), "utf8");
   assert.equal(env.match(/^CLUSTERIO_IMAGE_TAG=(.+)\.r\d+\s*$/m)[1], pins.clusterio);
+});
+
+test("the VM desired state pins the gateway mod built from the current source", () => {
+  const read = path => readFileSync(new URL(`../../${path}`, import.meta.url));
+  const desired = JSON.parse(read("tools/clusterio/desired/vm.json"));
+  const info = JSON.parse(read("docker/seed-data/mods-src/surfexp_gateways/info.json"));
+  assert.equal(desired.modPack.mods.surfexp_gateways, info.version, "vm.json pins a gateway version other than mods-src/info.json");
+  const zip = `docker/seed-data/mods/surfexp_gateways_${info.version}.zip`;
+  assert.ok(existsSync(new URL(`../../${zip}`, import.meta.url)), `${zip} is missing`);
+  assert.equal(desired.modPack.sha1.surfexp_gateways, createHash("sha1").update(read(zip)).digest("hex"), `vm.json sha1 does not match ${zip}`);
 });

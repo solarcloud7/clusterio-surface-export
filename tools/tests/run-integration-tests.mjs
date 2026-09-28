@@ -71,7 +71,7 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 	process.exit(2);
 }
 
-const readiness = runReadinessGate();
+const readiness = await runReadinessGate();
 if (!readiness.ok) {
 	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
 		+ "blank-booted or unreachable cluster. Resolve the failed checks above before re-running. "
@@ -82,6 +82,7 @@ if (!readiness.ok) {
 
 console.log(`Running ${tests.length} integration test(s) sequentially (shared cluster — not parallelizable)...`);
 const results = [];
+let abortReason = "";
 for (const t of tests) {
 	if (isCI) console.log(`::group::${t.name}`);
 	else console.log(`\n${"=".repeat(60)}\n  ${t.name}\n${"=".repeat(60)}`);
@@ -103,7 +104,10 @@ for (const t of tests) {
 
 	let status = r.status === 0 ? "pass" : "fail";
 	let reason = "";
-	if (r.status === SKIP_EXIT_CODE) {
+	if (r.signal) {
+		status = "interrupted";
+		reason = `terminated by ${r.signal}; its cluster state and cleanup are unverified`;
+	} else if (r.status === SKIP_EXIT_CODE) {
 		reason = existsSync(reasonFile) ? readFileSync(reasonFile, "utf8").trim() : "";
 		if (reason) {
 			status = "skip";
@@ -116,21 +120,36 @@ for (const t of tests) {
 
 	if (isCI) console.log("::endgroup::");
 	results.push({ name: t.name, status, reason, durationS });
+	if (status === "interrupted") { abortReason = `${t.name} was ${reason}`; break; }
 	if (status === "fail" && failFast) { console.log("  (--fail-fast: stopping)"); break; }
+	if (status === "fail") {
+		console.log(`\n  ${t.name} failed; re-checking cluster readiness before the next suite...`);
+		const after = await runReadinessGate();
+		if (!after.ok) {
+			abortReason = `cluster readiness failed after ${t.name}: `
+				+ after.results.filter(c => !c.ok).map(c => `${c.instance}/${c.checkId}`).join(", ");
+			break;
+		}
+	}
 }
+const notRun = tests.slice(results.length).map(t => t.name);
 
 const failed = results.filter((r) => r.status === "fail");
+const interrupted = results.filter((r) => r.status === "interrupted");
 const skippedRuns = results.filter((r) => r.status === "skip");
 const passed = results.filter((r) => r.status === "pass");
-const LABEL = { pass: "PASS", fail: "FAIL", skip: "SKIP" };
+const LABEL = { pass: "PASS", fail: "FAIL", skip: "SKIP", interrupted: "INTR" };
 console.log(`\n${"=".repeat(60)}\n  Integration suite summary\n${"=".repeat(60)}`);
 for (const r of results) console.log(`  ${LABEL[r.status]}  ${r.name}  (${r.durationS}s)${r.reason ? `  —  ${r.reason}` : ""}`);
 console.log("=".repeat(60));
 console.log(`  ${passed.length}/${results.length} passed`
 	+ (skippedRuns.length ? `  —  SKIPPED (did not run, did not pass): ${skippedRuns.map((s) => s.name).join(", ")}` : "")
-	+ (failed.length ? `  —  FAILED: ${failed.map((f) => f.name).join(", ")}` : ""));
+	+ (failed.length ? `  —  FAILED: ${failed.map((f) => f.name).join(", ")}` : "")
+	+ (interrupted.length ? `  —  INTERRUPTED: ${interrupted.map((f) => f.name).join(", ")}` : ""));
+if (abortReason) console.log(`  ABORTED: ${abortReason}`);
+if (notRun.length) console.log(`  NOT RUN (${notRun.length}): ${notRun.join(", ")}`);
 console.log("=".repeat(60));
 if (isCI) {
 	for (const s of skippedRuns) console.log(`::warning::integration suite SKIPPED — ${s.name}: ${s.reason}`);
 }
-process.exit(failed.length ? 1 : 0);
+process.exit(failed.length || interrupted.length || notRun.length ? 1 : 0);
