@@ -5,6 +5,7 @@ export type { LineageVerdict, LineageVerdictName, PlatformFacts } from "../share
 
 export interface ControllerHints {
 	inTransit: boolean;
+	ownerJobId?: string | null;
 	historyMatch: boolean;
 	duplicateLocal: boolean;
 }
@@ -37,6 +38,7 @@ export function classifyPlatform(facts: PlatformFacts, controller: ControllerHin
 	const result = (verdict: LineageVerdictName, extra: Partial<LineageVerdict> = {}): LineageVerdict =>
 		({ platformIndex: facts.platformIndex, verdict, ...extra, hints: { ...hints, ...extra.hints } });
 	if (!needsVerdict(facts)) return result("unchanged");
+	const owner = controller.ownerJobId ? { ownerJobId: controller.ownerJobId } : {};
 	if (!facts.platformUid || facts.hubUnitNumber === null) {
 		return facts.jobOwns && facts.lineage === null ? result("normal") : result("no_identity");
 	}
@@ -44,7 +46,7 @@ export function classifyPlatform(facts: PlatformFacts, controller: ControllerHin
 	let generation = facts.generation;
 	let mint = false;
 	if (lineage === null) {
-		if (facts.protected) return result("unresolved_handoff");
+		if (facts.protected) return result("unresolved_handoff", owner);
 		if (facts.journalUidMatch) return result("legacy_unclassified");
 		if (!facts.hadIdentity && facts.journalHubMatch) return result("legacy_unclassified");
 		if (controller.historyMatch) return result("legacy_unclassified");
@@ -56,8 +58,8 @@ export function classifyPlatform(facts: PlatformFacts, controller: ControllerHin
 	if (!isLineage(lineage) || !isGeneration(generation)) return result("unverified", { hints: { ...hints, presence: "Local lineage is invalid" } });
 	const own = { lineage, generation, ...(mint ? { mint: true as const } : {}) };
 	if (controller.duplicateLocal) return result("duplicate_local", own);
-	if (controller.inTransit) return result("in_transit", own);
-	if (facts.protected) return result("unresolved_handoff", own);
+	if (controller.inTransit) return result("in_transit", { ...own, ...owner });
+	if (facts.protected) return result("unresolved_handoff", { ...own, ...owner });
 	if (!entry) {
 		if (generation !== 0) return result("unregistered", own);
 		return result("normal", facts.journalUidMatch ? own : { ...own, claim: true });

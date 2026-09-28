@@ -91,6 +91,8 @@ local function quarantine(platform_index, platform, uid, reason, verdict)
 		generation = verdict and verdict.generation or nil,
 		holder_instance_id = verdict and verdict.holderInstanceId or nil,
 		holder_generation = verdict and verdict.holderGeneration or nil,
+		owner_job_id = (reason == "in_transit" or reason == "unresolved_handoff") and verdict
+			and type(verdict.ownerJobId) == "string" and verdict.ownerJobId ~= "" and verdict.ownerJobId or nil,
 		epoch = storage.source_recovery_epoch}
 	return {success = true, quarantined = true, notice = record_notice(platform_index, platform, uid, "quarantined", reason, verdict)}
 end
@@ -187,7 +189,13 @@ end
 function Recovery.reconcile(platform_index, uid, retired_export_id, unresolved_source, verdict_json)
 	local verdict = decode_verdict(verdict_json)
 	local platform = find_platform(platform_index)
-	if not verdict or not platform or identity(platform) ~= uid then
+	if not platform then
+		local orphan = SurfaceLock.get_lock_data(platform_index)
+		if orphan and orphan.kind == "startup" then storage.locked_platforms[platform_index] = nil end
+		storage.source_recovery_notices[platform_index] = nil
+		return {success = true}
+	end
+	if not verdict or identity(platform) ~= uid then
 		return quarantine(platform_index, platform, nil, "reconcile_error", verdict)
 	end
 	local lock = SurfaceLock.get_lock_data(platform_index)
@@ -211,13 +219,18 @@ function Recovery.reconcile(platform_index, uid, retired_export_id, unresolved_s
 				return quarantine(platform_index, platform, uid, "reconcile_error", verdict)
 			end
 			local new_uid = storage.source_recovery_epoch .. ":" .. tostring(platform.hub.unit_number)
+			local recorded, record_err = PlatformLineage.record(platform, current, verdict.adoptGeneration)
+			if not recorded then
+				local refused = quarantine(platform_index, platform, uid, "reconcile_error", verdict)
+				refused.error = record_err
+				return refused
+			end
 			local ok, err = SurfaceLock.accept_restored_source(platform_index, retired_export_id)
 			if not ok then
 				local refused = quarantine(platform_index, platform, uid, "reconcile_error", verdict)
 				refused.error = err
 				return refused
 			end
-			PlatformLineage.record(platform, current, verdict.adoptGeneration)
 			storage.source_recovery_identities = storage.source_recovery_identities or {}
 			storage.source_recovery_identities[platform_index] = {uid = new_uid, surface_index = platform.surface.index,
 				hub_unit_number = platform.hub.unit_number}

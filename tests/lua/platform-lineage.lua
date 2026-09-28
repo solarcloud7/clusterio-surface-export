@@ -133,6 +133,11 @@ do
     assert(lineage.transfer_carry({_transferId = "1:legacy"}) == nil)
     local _, _, carry_err = lineage.transfer_carry({_transferId = "1:job", _lineage = "1:5", _lineageGeneration = 2})
     assert(carry_err, "an invalid transfer lineage was accepted")
+    local held = lineage.hold_carry({lineage = "lineage:e:5", lineage_generation = 2, transfer_id = "1:job", platform_data = {}})
+    assert(held and held.lineage == "lineage:e:5" and held.generation == 3, "the destination hold did not advance the generation")
+    assert(lineage.hold_carry({lineage = "lineage:e:5", lineage_generation = 2, transfer_id = "restore:x",
+        platform_data = {_standaloneImport = true}}) == nil, "a standalone import hold adopted a lineage")
+    assert(lineage.hold_carry({lineage = "lineage:e:5", lineage_generation = 2, platform_data = {}}) == nil)
     print("PASS only controller transfers carry the payload lineage")
 
     assert(lineage.presence(minted).present == true)
@@ -254,4 +259,132 @@ do
     env.storage.source_recovery_ready = false
     assert(not recovery.lineage_presence(json.encode({"lineage:old:60"})).success, "a reconciling instance answered presence")
     print("PASS presence answers only when recovery is ready")
+end
+
+do
+    local force = {name = "player", valid = true, platforms = {}, set_surface_hidden = noop, get_surface_hidden = function() return false end}
+    local env = setmetatable({storage = {source_recovery_ready = true, locked_platforms = {}, source_recovery_identities = {}},
+        game = {tick = 50, forces = {player = force}, print = noop}, log = noop}, {__index = _G})
+    local function add(index, hub)
+        local platform = {valid = true, index = index, name = "ship-" .. index, force = force, hidden = false,
+            surface = {valid = true, index = index + 10}, hub = {valid = true, unit_number = hub}}
+        force.platforms[index] = platform
+        env.storage.source_recovery_identities[index] = {uid = "a:" .. hub, surface_index = index + 10, hub_unit_number = hub}
+        return platform
+    end
+    local deleted = {}
+    local modules = {}
+    env.require = function(name)
+        local short = name:match("^modules/surface_export/(.*)$") or name
+        if modules[short] then return modules[short] end
+        local loaded
+        if short == "utils/platform-identity" or short == "utils/surface-lock" or short == "utils/platform-lineage"
+            or short == "utils/transfer-receipts" then
+            loaded = assert(loadfile(root .. short .. ".lua", "t", env))()
+        elseif short == "utils/game-utils" then
+            loaded = {ACTIVATABLE_ENTITY_TYPES = {}, delete_platform = function(p)
+                deleted[#deleted + 1] = p.index; force.platforms[p.index] = nil; p.valid = false; return true end}
+        elseif short == "utils/platform-schedule" then
+            loaded = {apply = function() return true end, capture = function() return {} end}
+        elseif short == "core/gateway" then
+            loaded = {evacuate_passengers = function() return {success = true, failures = 0} end}
+        elseif short == "core/source-recovery" then
+            loaded = {matches = function(p, uid) return modules["utils/platform-identity"](p) == uid end}
+        elseif short == "core/passenger-transit" then
+            loaded = {depart = function() return {} end, settle = noop, notify_departed = noop, transfer_released = noop}
+        elseif short == "utils/operation-timing" then
+            loaded = setmetatable({scope = function(_, _, fn, ...) return fn(...) end}, {__index = function() return noop end})
+        else
+            loaded = setmetatable({}, {__index = function() return noop end})
+        end
+        modules[short] = loaded
+        return loaded
+    end
+    env.require("utils/platform-identity")
+    local locks = env.require("utils/surface-lock")
+    local lineage = env.require("utils/platform-lineage")
+    local delete = assert(loadfile(root .. "interfaces/remote/delete-platform-for-transfer.lua", "t", env))()
+    local L = "lineage:boot-a:30"
+
+    local outbound = add(3, 30)
+    assert(lineage.record(outbound, L, 0))
+    env.storage.locked_platforms[3] = {kind = "transfer", phase = "pre_commit", transfer_job_id = "job-out", platform_name = "ship-3",
+        force_name = "player", platform_index = 3, surface_index = 13, platform_uid = "a:30", frozen_states = {}}
+    assert(delete(3, "ship-3", "player", "job-out", "a:30") == "SUCCESS")
+    assert(env.storage.surface_export_lineages[3] == nil, "a deleted source kept its lineage record")
+    local returned = add(5, 31)
+    assert(lineage.record(returned, L, 2), "the platform could not return to the instance it left")
+    env.storage.surface_export_lineages[3] = {lineage = L, generation = 0, surface_index = 13, hub_unit_number = 30}
+    assert(lineage.record(returned, L, 2), "a stale record from a departed platform blocked the return trip")
+    local reused = add(3, 32)
+    assert(lineage.record(reused, "lineage:boot-a:32", 0), "a reused index was blocked by the departed platform's record")
+    print("PASS a platform can return to an instance it left, and an index can be reused")
+
+    local held = add(4, 40)
+    held.hidden = true
+    local function quarantine(owner)
+        env.storage.locked_platforms[4] = {kind = "quarantine", platform_name = "ship-4", force_name = "player", platform_index = 4,
+            surface_index = 14, platform_uid = "a:40", frozen_states = {}, original_platform_hidden = false,
+            quarantine = {reason = "in_transit", lineage = "lineage:boot-a:40", epoch = "boot", owner_job_id = owner}}
+        held.hidden = true
+        return env.storage.locked_platforms[4]
+    end
+    local q = quarantine("job-in-flight")
+    assert(not locks.unlock_platform(4, nil, nil, nil, "job-other"), "another transfer released an in-transit quarantine")
+    assert(not locks.unlock_current_lock(4, q), "a generic unlock released an in-transit quarantine")
+    assert(locks.get_source_transfer_lock_state("job-other", 4, "ship-4", "player").state == "identity_mismatch")
+    assert(locks.get_source_transfer_lock_state("job-in-flight", 4, "ship-4", "player").state == "pre_commit",
+        "the owning transfer could not prove its source was never deleted")
+    assert(locks.unlock_platform(4, nil, nil, nil, "job-in-flight"), "the owning transfer's rollback could not release its source")
+    assert(env.storage.locked_platforms[4] == nil and held.hidden == false, "the rolled-back source is not usable")
+    quarantine(nil)
+    assert(not locks.unlock_platform(4, nil, nil, nil, "job-in-flight"), "a quarantine without an owner was released by a job")
+    assert(delete(4, "ship-4", "player", "job-in-flight", "a:40"):find("^ERROR:"), "an unowned quarantine was deleted")
+    quarantine("job-in-flight")
+    assert(delete(4, "ship-4", "player", "job-other", "a:40"):find("^ERROR:"), "another transfer deleted an in-transit quarantine")
+    assert(held.valid and env.storage.locked_platforms[4].kind == "quarantine")
+    assert(delete(4, "ship-4", "player", "job-in-flight", "a:40") == "SUCCESS", "the owning transfer could not delete its source")
+    assert(not held.valid and env.storage.locked_platforms[4] == nil)
+    print("PASS an in-transit quarantine is resolved only by its own transfer: rollback releases it, success deletes it")
+end
+
+do
+    local env, _, add, locks, recovery = recovery_world()
+    add(8, 80)
+    recovery.startup()
+    local uid = recovery.begin("boot", "journal", false, "plugin_history", false).platforms[1].platformUid
+    local in_transit = recovery.reconcile(8, uid, nil, false,
+        verdict({verdict = "in_transit", mint = true, lineage = "lineage:boot:80", generation = 0, ownerJobId = "job-8"}))
+    assert(in_transit.quarantined and locks[8].quarantine.owner_job_id == "job-8", "an in-transit quarantine lost its owning transfer")
+    locks[8] = {kind = "startup", surface_index = 18}
+    assert(recovery.reconcile(8, uid, nil, true, verdict({verdict = "normal", ownerJobId = "job-8"})).quarantined)
+    assert(locks[8].quarantine.reason == "unresolved_handoff" and locks[8].quarantine.owner_job_id == "job-8")
+    locks[8] = {kind = "startup", surface_index = 18}
+    assert(recovery.reconcile(8, uid, nil, false, verdict({verdict = "duplicate", ownerJobId = "job-8"})).quarantined)
+    assert(locks[8].quarantine.owner_job_id == nil, "a duplicate became releasable by a transfer")
+    locks[20] = {kind = "startup", surface_index = 30}
+    local absent = recovery.reconcile(20, "gone:1", nil, false, verdict({verdict = "normal"}))
+    assert(absent.success and not absent.quarantined and locks[20] == nil, "an absent platform left an orphan lock")
+    print("PASS only in-transit and unresolved-handoff quarantines record their owning transfer; absent platforms leave no lock")
+end
+
+do
+    local env, _, add, locks, recovery = recovery_world()
+    local p = add(9, 90)
+    add(10, 91)
+    env.storage.surface_export_lineages = {[9] = {lineage = "lineage:old:90", generation = 1, surface_index = 19, hub_unit_number = 90}}
+    recovery.startup()
+    local begin = recovery.begin("save", "journal", true, "save_game", true)
+    local uid
+    for _, entry in ipairs(begin.platforms) do if entry.platformIndex == 9 then uid = entry.platformUid end end
+    local accepted_called = false
+    local lock_api = env.require("modules/surface_export/utils/surface-lock")
+    lock_api.accept_restored_source = function() accepted_called = true; return true end
+    env.storage.surface_export_lineages[10] = {lineage = "lineage:old:90", generation = 0, surface_index = 20, hub_unit_number = 91}
+    local refused = recovery.reconcile(9, uid, "job-old", false,
+        verdict({verdict = "rollback_other", adopt = true, lineage = "lineage:old:90", generation = 1, adoptGeneration = 2}))
+    assert(refused.quarantined and not accepted_called and locks[9].kind == "quarantine" and p.hidden,
+        "an adoption whose lineage could not be recorded released the platform")
+    assert(env.storage.surface_export_lineages[9].generation == 1)
+    print("PASS an adoption whose generation cannot be recorded stays quarantined")
 end

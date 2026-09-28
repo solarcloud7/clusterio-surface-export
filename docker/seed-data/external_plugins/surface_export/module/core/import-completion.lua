@@ -17,6 +17,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
 local JobResults = require("modules/surface_export/core/job-results")
 local PlatformIdentity = require("modules/surface_export/utils/platform-identity")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local ImportReporting = require("modules/surface_export/core/import-reporting")
 
@@ -35,9 +36,7 @@ local function quarantine(job, err)
 			game.forces[job.force_name or "player"].set_surface_hidden(job.target_surface, true)
 		end
 		local id = job.transfer_id or ("interrupted:" .. job.job_id)
-		local carried = job.lineage and job.transfer_id and (job.platform_data or {})._standaloneImport ~= true
-			and {lineage = job.lineage, generation = job.lineage_generation + 1} or nil
-		local held, hold_error = DestinationHold.stage(id, platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id, carried)
+		local held, hold_error = DestinationHold.stage(id, platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id, PlatformLineage.hold_carry(job))
 		local hold = DestinationHold.get(id)
 		if hold and hold.job_id == job.job_id and hold.platform_index == platform.index and hold.surface_index == job.target_surface.index then
 			-- This is not a validated hold: recovery must not delete the source for it.
@@ -597,9 +596,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 							job.platform_name, tostring(captured_paused), tostring(err_captured)))
 					end
 				end
-				local carried = job.lineage and job.platform_data._standaloneImport ~= true
-					and {lineage = job.lineage, generation = job.lineage_generation + 1} or nil
-				local held, hold_or_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id, carried)
+				local held, hold_or_error = DestinationHold.stage(job.transfer_id, job.target_platform, game.forces[job.force_name or "player"], true, job.preparation_visibility, job.job_id, PlatformLineage.hold_carry(job))
 				assert(held, hold_or_error)
 				if job.park_target and job.platform_data._standaloneImport ~= true then
 					if job.resume_route then hold_or_error.resume_route = true end

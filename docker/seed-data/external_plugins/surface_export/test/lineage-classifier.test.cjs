@@ -208,6 +208,30 @@ test("pending intents and completed history are hints the controller owns", asyn
 	assert.equal((await classify(plugin, [facts()])).verdicts[0].verdict, "in_transit", "an active transfer without an intent released its copy");
 });
 
+test("an in-transit or unresolved handoff quarantine records the owning source job, and only that one", async () => {
+	assert.equal(classifyPlatform(facts(), hints({ inTransit: true, ownerJobId: "job-1" }), entry(), undefined, context()).ownerJobId, "job-1");
+	assert.equal(classifyPlatform(facts({ protected: true }), hints({ ownerJobId: "job-1" }), entry(), undefined, context()).ownerJobId, "job-1");
+	assert.equal(classifyPlatform(facts({ lineage: null, generation: null, protected: true }), hints({ ownerJobId: "job-1" }), undefined, undefined, context()).ownerJobId, "job-1");
+	assert.equal(classifyPlatform(facts(), hints({ ownerJobId: "job-1" }), entry({ instanceId: J, generation: 1 }), { state: "present" }, context()).ownerJobId,
+		undefined, "a duplicate became releasable by a transfer");
+	const { plugin } = controllerHarness();
+	const intent = (id, overrides) => ({ transferId: `1:${id}`, sourceExportId: id, sourceInstanceId: I, targetInstanceId: J, sourcePlatformIndex: 3,
+		sourcePlatformName: "ship", forceName: "player", startedAt: 1, exportId: `1:${id}`, lineage: L, lineageGeneration: 0, ...overrides });
+	plugin.pendingTransfers.set("1:job-a", intent("job-a"));
+	assert.equal(plugin.owningSourceJob(I, facts()), "job-a");
+	assert.equal(plugin.owningSourceJob(J, facts()), null, "another instance's transfer owns this copy");
+	assert.equal(plugin.owningSourceJob(I, facts({ lineage: "lineage:other:1" })), null);
+	assert.equal(plugin.owningSourceJob(I, facts({ lineage: null, generation: null })), "job-a", "an unlineaged source lost its handoff owner");
+	plugin.pendingTransfers.set("1:job-b", intent("job-b"));
+	assert.equal(plugin.owningSourceJob(I, facts()), null, "an ambiguous owner was recorded");
+	plugin.pendingTransfers.clear();
+	plugin.activeTransfers.set("1:live", { transferId: "1:live", operationType: "transfer", status: "awaiting_validation", sourceInstanceId: I,
+		targetInstanceId: J, platformIndex: 3, lineage: L, sourceExportId: "job-live" });
+	assert.equal(plugin.owningSourceJob(I, facts()), "job-live");
+	const { verdicts } = await classify(plugin, [facts()]);
+	assert.deepEqual([verdicts[0].verdict, verdicts[0].ownerJobId], ["in_transit", "job-live"]);
+});
+
 test("gallery batch lifecycle: the live pair restored after golden transfers classifies normal", async () => {
 	const { plugin } = controllerHarness();
 	const live = [facts({ platformIndex: 2, lineage: "lineage:live-boot:40", generation: 0, hubUnitNumber: 40, platformUid: "live-boot:40" }),

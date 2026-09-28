@@ -40,7 +40,7 @@ import type {
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 const TREE_INSTANCE_CONFIG_FIELDS = new Set([
@@ -298,6 +298,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 		const hints = (platform: PlatformFacts): ControllerHints => ({
 			inTransit: this.lineageInTransit(platform.lineage),
+			ownerJobId: this.owningSourceJob(request.instanceId, platform),
 			historyMatch: this.completedTransferFrom(request.instanceId, platform.platformUid),
 			duplicateLocal: platform.lineage !== null && (counts.get(platform.lineage) ?? 0) > 1,
 		});
@@ -338,6 +339,25 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!lineage) return false;
 		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
 			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer));
+	}
+
+	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null {
+		const owners = new Set<string>();
+		const consider = (sourceInstanceId: number, platformIndex: number | undefined, lineage: string | null | undefined, job: string | null | undefined) => {
+			if (sourceInstanceId !== instanceId) return;
+			const matches = platform.lineage && lineage ? lineage === platform.lineage : platformIndex === platform.platformIndex;
+			if (matches) owners.add(job || "");
+		};
+		for (const intent of this.pendingTransfers.values()) {
+			consider(intent.sourceInstanceId, intent.sourcePlatformIndex, intent.lineage,
+				intent.sourceExportId || parseCanonicalTransferId(intent.transferId)?.sourceJobId);
+		}
+		for (const transfer of this.activeTransfers.values()) {
+			if (transfer.operationType !== "transfer" || !hasUnresolvedPlatformOwnership(transfer) || this.pendingTransfers.has(transfer.transferId)) continue;
+			consider(transfer.sourceInstanceId, transfer.platformIndex, transfer.lineage, transfer.sourceExportId);
+		}
+		const [owner] = owners;
+		return owners.size === 1 && owner ? owner : null;
 	}
 
 	completedTransferFrom(instanceId: number, platformUid: string | null): boolean {

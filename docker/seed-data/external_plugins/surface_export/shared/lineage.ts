@@ -65,6 +65,7 @@ export interface LineageVerdict {
 	adoptGeneration?: number;
 	holderInstanceId?: number;
 	holderGeneration?: number;
+	ownerJobId?: string;
 	presenceNeeded?: number;
 	hints: { journalUidMatch: boolean; journalHubMatch: boolean; historyMatch: boolean; presence?: string };
 }

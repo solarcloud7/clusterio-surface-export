@@ -328,6 +328,13 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     end
 
     local lock = storage.locked_platforms and storage.locked_platforms[platform_index] or nil
+    if type(lock) == "table" and SurfaceLock.transfer_owns_quarantine(lock, transfer_id) then
+        local force = has_location(lock) and game.forces[lock.force_name] or nil
+        if (force_name and lock.force_name ~= force_name) or not SurfaceLock.matches_platform(lock, force and force.platforms[platform_index]) then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "platform identity mismatch" }
+        end
+        return { state = "pre_commit", transferId = transfer_id, error = nil }
+    end
     if type(lock) == "table" then
         if force_name and lock.force_name and lock.force_name ~= force_name then
             return { state = "identity_mismatch", transferId = transfer_id, error = "force mismatch" }
@@ -498,6 +505,9 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     if lock_data.kind == "quarantine" and quarantine_release ~= true then
+        if SurfaceLock.transfer_owns_quarantine(lock_data, expected_job_id) then
+            return SurfaceLock.release_quarantine(platform_index, lock_data.quarantine)
+        end
         return false, "Unlock refused: platform is quarantined by startup recovery; only a recovery resolution may release it"
     end
     local platform_name = lock_data.platform_name
@@ -594,6 +604,22 @@ function SurfaceLock.unlock_current_lock(platform_index, observed_lock)
     return unlock_platform(platform_index, nil, nil, nil, nil, observed_lock)
 end
 
+function SurfaceLock.transfer_owns_quarantine(lock, job_id)
+    return type(lock) == "table" and lock.kind == "quarantine" and type(lock.quarantine) == "table"
+        and type(job_id) == "string" and job_id ~= "" and lock.quarantine.owner_job_id == job_id
+end
+
+function SurfaceLock.claim_quarantine_for_transfer(platform_index, job_id)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not SurfaceLock.transfer_owns_quarantine(lock, job_id) then return false, "quarantine belongs to another transfer" end
+    lock.kind = "transfer"
+    lock.transfer_job_id = job_id
+    lock.phase = SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    lock.released_quarantine = lock.quarantine
+    lock.quarantine = nil
+    return true, nil
+end
+
 function SurfaceLock.release_quarantine(platform_index, expected)
     local lock = SurfaceLock.get_lock_data(platform_index)
     if type(lock) ~= "table" or lock.kind ~= "quarantine" or type(lock.quarantine) ~= "table" then
@@ -621,10 +647,11 @@ function SurfaceLock.get_lock_data(platform_index)
 end
 
 function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected_job_id)
-    if not lock or lock.kind ~= "transfer" then
+    local owned_quarantine = SurfaceLock.transfer_owns_quarantine(lock, expected_job_id)
+    if not lock or (lock.kind ~= "transfer" and not owned_quarantine) then
         return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
     end
-    if type(expected_job_id) ~= "string" or expected_job_id == "" or lock.transfer_job_id ~= expected_job_id then
+    if type(expected_job_id) ~= "string" or expected_job_id == "" or (lock.transfer_job_id ~= expected_job_id and not owned_quarantine) then
         return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
             tostring(lock.transfer_job_id), tostring(expected_job_id))
     end
