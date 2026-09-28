@@ -1429,18 +1429,18 @@ export class DestinationTransferGateRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live"] }, passengers: PASSENGER_MANIFEST_SCHEMA },
+		properties: { transferId: { type: "string" }, action: { enum: ["verify", "go_live", "discard"] }, passengers: PASSENGER_MANIFEST_SCHEMA },
 		required: ["transferId", "action"], additionalProperties: false,
 	};
 	transferId: string;
-	action: "verify" | "go_live";
+	action: "verify" | "go_live" | "discard";
 	passengers?: PassengerManifestEntry[];
-	constructor(json: { transferId: string; action: "verify" | "go_live"; passengers?: PassengerManifestEntry[] }) {
+	constructor(json: { transferId: string; action: "verify" | "go_live" | "discard"; passengers?: PassengerManifestEntry[] }) {
 		this.transferId = json.transferId;
 		this.action = json.action;
 		this.passengers = json.passengers;
 	}
-	static fromJSON(json: { transferId: string; action: "verify" | "go_live"; passengers?: PassengerManifestEntry[] }) { return new DestinationTransferGateRequest(json); }
+	static fromJSON(json: { transferId: string; action: "verify" | "go_live" | "discard"; passengers?: PassengerManifestEntry[] }) { return new DestinationTransferGateRequest(json); }
 	toJSON() { return { transferId: this.transferId, action: this.action, passengers: this.passengers }; }
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" },

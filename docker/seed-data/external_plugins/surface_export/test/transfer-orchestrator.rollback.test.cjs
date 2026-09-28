@@ -1397,7 +1397,7 @@ function lineageHarness(onStep = () => undefined) {
 		if (msg.constructor.name === "TransferStatusUpdate") return { success: true };
 		const step = msg.action || msg.constructor.name;
 		order.push(step);
-		return onStep(step, msg) ?? { success: true };
+		return onStep(step, msg) ?? (step === "GetSourceTransferLockStateRequest" ? { state: "pre_commit", transferId: msg.transferId } : { success: true });
 	});
 	const commit = h.plugin.lineageRegistry.commitTransfer.bind(h.plugin.lineageRegistry);
 	h.plugin.lineageRegistry.commitTransfer = async value => { order.push("registry"); return commit(value); };
@@ -1443,31 +1443,70 @@ for (const [name, hold, expected] of [
 	["a hold with another lineage", { lineage: "lineage:other:3", generation: 1 }, /does not match/],
 	["a hold at the wrong generation", { lineage: HARNESS_LINEAGE, generation: 2 }, /does not match/],
 ]) {
-	test(`${name} is refused before the source is deleted`, async () => {
+	test(`${name} rolls back before the source is deleted`, async () => {
 		const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null, ...hold } : undefined);
 		const result = await h.orch.transferPlatform("1:mismatch", 2);
 		clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
 		await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
 		const transfer = onlyTransfer(h.activeTransfers);
-		assert.equal(transfer.status, "cleanup_failed");
+		assert.equal(transfer.status, "failed", "a definitely undeleted source was left locked with its destination held");
 		assert.match(transfer.error, expected);
-		assert.deepEqual(h.order, ["verify"], "the source was deleted for a mismatched destination");
-		assert.equal(h.calls.pendingRemoved, undefined);
+		assert.deepEqual(h.order, ["verify", "GetSourceTransferLockStateRequest", "discard"], "the source was deleted for a mismatched destination");
+		assert.equal(h.calls.unlockRouteTaken, 1, "the source was not unlocked after the destination was discarded");
+		assert.equal(h.calls.pendingRemoved, result.transferId);
 		assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE), undefined);
 	});
 }
 
-test("a registry that already records another holder refuses before deletion", async () => {
+test("mixed plugin versions: an old destination without lineage support rolls back cleanly", async () => {
+	const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null } : undefined);
+	const result = await h.orch.transferPlatform("1:old-destination", 2);
+	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.equal(onlyTransfer(h.activeTransfers).status, "failed");
+	assert.deepEqual(h.order, ["verify", "GetSourceTransferLockStateRequest", "discard"]);
+	assert.equal(h.calls.unlockRouteTaken, 1);
+});
+
+test("a registry that already records another holder rolls back before deletion", async () => {
 	const h = lineageHarness();
 	await h.plugin.lineageRegistry.update(draft => draft.set(HARNESS_LINEAGE, { instanceId: 9, generation: 0, platformName: "p",
 		forceName: "player", lastExportId: null, updatedAt: 1, source: "claim" }));
 	const result = await h.orch.transferPlatform("1:held-elsewhere", 2);
 	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
 	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
-	assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
-	assert.match(onlyTransfer(h.activeTransfers).error, /both copies remain protected/);
-	assert.deepEqual(h.order, ["verify"]);
+	assert.equal(onlyTransfer(h.activeTransfers).status, "failed");
+	assert.match(onlyTransfer(h.activeTransfers).error, /registry refused/);
+	assert.deepEqual(h.order, ["verify", "GetSourceTransferLockStateRequest", "discard"]);
+	assert.equal(h.calls.unlockRouteTaken, 1);
 	assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE).instanceId, 9);
+});
+
+for (const [name, reply] of [["a committed source", { state: "committed" }], ["a deleted source", { state: "source_gone_matching_transfer" }],
+	["an unknown source", { state: "unknown/offline", error: "offline" }]]) {
+	test(`a pre-delete refusal against ${name} keeps both copies protected instead of rolling back`, async () => {
+		const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null }
+			: step === "GetSourceTransferLockStateRequest" ? reply : undefined);
+		const result = await h.orch.transferPlatform("1:not-provable", 2);
+		clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+		await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+		const transfer = onlyTransfer(h.activeTransfers);
+		assert.equal(transfer.status, "cleanup_failed");
+		assert.match(transfer.error, /not provably undeleted/);
+		assert.deepEqual(h.order, ["verify", "GetSourceTransferLockStateRequest"], "a destination was discarded while its source may be gone");
+		assert.equal(h.calls.unlockRouteTaken, 0);
+		assert.equal(h.calls.pendingRemoved, undefined);
+	});
+}
+
+test("a refused discard during pre-delete rollback keeps both copies protected", async () => {
+	const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null } : step === "discard" ? { success: false, error: "evacuation failed" } : undefined);
+	const result = await h.orch.transferPlatform("1:discard-refused", 2);
+	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
+	assert.match(onlyTransfer(h.activeTransfers).error, /discard not confirmed/);
+	assert.equal(h.calls.unlockRouteTaken, 0, "the source was unlocked while the destination copy survived");
 });
 
 test("a registry write that fails after deletion keeps the hold and the intent, and recovery finishes the commit", async () => {

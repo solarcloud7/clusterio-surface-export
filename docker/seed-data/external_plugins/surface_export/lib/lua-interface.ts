@@ -310,7 +310,7 @@ export class LuaInterface {
 		}
 	}
 
-	async destinationTransferGate(transferId: string, action: "verify" | "go_live", passengers?: PassengerManifestEntry[]): Promise<string> {
+	async destinationTransferGate(transferId: string, action: "verify" | "go_live" | "discard", passengers?: PassengerManifestEntry[]): Promise<string> {
 		if (action === "go_live" && passengers && passengers.length > 0) {
 			await this.stagePassengerManifest(transferId, passengers);
 		}

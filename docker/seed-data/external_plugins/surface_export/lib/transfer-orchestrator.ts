@@ -880,7 +880,7 @@ export class TransferOrchestrator {
 
 	async handleValidationSuccess(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.startPhase(transferId, "cleanup");
-		const gate = (action: "verify" | "go_live", passengers?: PassengerManifestEntry[]) => timed("Destination transfer gate round trip", "round-trip", () =>
+		const gate = (action: "verify" | "go_live" | "discard", passengers?: PassengerManifestEntry[]) => timed("Destination transfer gate round trip", "round-trip", () =>
 			this.plugin.controller.sendTo({ instanceId: transfer.targetInstanceId },
 				new this.messages.DestinationTransferGateRequest({ transferId, action, passengers })));
 		const failed = async (error: string) => {
@@ -894,6 +894,23 @@ export class TransferOrchestrator {
 			await this.txLogger.persistTransactionLog(transferId);
 			return { sourceResolved: false };
 		};
+		const rollbackBeforeDelete = async (reason: string) => {
+			const sourceJobId = transfer.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId;
+			if (!sourceJobId) return failed(`${reason}; the source job identity is unavailable, so both copies remain protected`);
+			const source = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
+				{ instanceId: transfer.sourceInstanceId },
+				new this.messages.GetSourceTransferLockStateRequest({ transferId: sourceJobId, platformIndex: transfer.platformIndex,
+					platformName: transfer.platformName, forceName: transfer.forceName || "player" }),
+			)) as { state?: string } | undefined;
+			if (source?.state !== "pre_commit") {
+				return failed(`${reason}; the source is not provably undeleted (${source?.state ?? "no state"}), so both copies remain protected`);
+			}
+			const discarded = await gate("discard");
+			if (!discarded.success) return failed(`${reason}; destination hold discard not confirmed: ${discarded.error}`);
+			this.txLogger.endPhase(transferId, "cleanup");
+			this.txLogger.logTransactionEvent(transferId, "lineage_rollback", `${reason}. The destination hold was discarded before any source deletion.`, {});
+			return this.handleValidationFailure(transferId, transfer, { itemCountMatch: true, fluidCountMatch: true, mismatchDetails: reason });
+		};
 		try {
 			await this.plugin.persistPendingTransfers(transferId);
 			const held = await gate("verify");
@@ -905,7 +922,7 @@ export class TransferOrchestrator {
 			transfer.awaitingLateVerdict = false;
 			const intent = this.plugin.pendingTransfers?.get(transferId) ?? transfer;
 			const plan = lineageCommitPlan(intent, held as { lineage?: unknown; generation?: unknown });
-			if (plan.kind === "refused") return failed(plan.error);
+			if (plan.kind === "refused") return rollbackBeforeDelete(plan.error);
 			const commit = plan.kind === "lineage" ? {
 				lineage: plan.lineage, transferId, sourceInstanceId: transfer.sourceInstanceId, targetInstanceId: transfer.targetInstanceId,
 				fromGeneration: plan.fromGeneration, toGeneration: plan.toGeneration,
@@ -913,7 +930,7 @@ export class TransferOrchestrator {
 			} : null;
 			if (commit) {
 				const refusal = this.plugin.lineageRegistry.precheckTransfer(commit);
-				if (refusal) return failed(`Lineage registry refused this transfer; both copies remain protected: ${refusal}`);
+				if (refusal) return rollbackBeforeDelete(`Lineage registry refused this transfer: ${refusal}`);
 			}
 
 			const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(

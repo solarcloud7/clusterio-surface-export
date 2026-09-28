@@ -937,7 +937,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live"; passengers?: messages.PassengerManifestEntry[] }): Promise<ReturnType<typeof messages.DestinationTransferGateRequest.Response.fromJSON>> {
+	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live" | "discard"; passengers?: messages.PassengerManifestEntry[] }): Promise<ReturnType<typeof messages.DestinationTransferGateRequest.Response.fromJSON>> {
 		return this.withTiming(request.transferId, undefined, "Destination transfer gate", async () => {
 			try {
 				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action, request.passengers));
