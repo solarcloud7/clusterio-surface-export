@@ -33,6 +33,5 @@ Util.to_json = JsonCompat.to_json
 Util.encode_json_compat = JsonCompat.encode_json_compat
 Util.json_to_table_compat = JsonCompat.json_to_table_compat
 Util.write_file_compat = JsonCompat.write_file_compat
-Util.read_file_compat = JsonCompat.read_file_compat
 
 return Util

@@ -68,8 +68,8 @@ export default function DebugPanel({ state, onChange, mockCount }: {
 					onChange={mockInstances => set({ mockInstances })}
 					tooltip={
 						"Fake instances, added to the tree upstream of the graph so they go through the real "
-						+ "layout and rendering. They can link to each other but never to a real instance, and "
-						+ "their links are never saved."
+						+ "layout and rendering. They exist only in this browser, and their platforms cannot be "
+						+ "exported or transferred."
 					}
 				/>
 

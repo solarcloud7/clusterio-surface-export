@@ -106,6 +106,7 @@ test("each other server's colour leads to that server's hub, the Gateway to ever
 			{ slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "Sigma" },
 			{ slot: 3, colour: "orange", gatewayName: "surfexp_gateway_3", instanceId: 3, instanceName: "Theta" },
 		],
+		pluginOff: [],
 		unassigned: [],
 		retired: [],
 	});

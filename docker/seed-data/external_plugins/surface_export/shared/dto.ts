@@ -15,6 +15,7 @@ export interface PortalListing {
 
 export interface PortalListingResponse {
 	portals: PortalListing[];
+	pluginOff: PortalListing[];
 	unassigned: Array<{ instanceId: number; instanceName: string }>;
 	retired: Array<{ slot: number; colour: import("./portals").PortalColour; gatewayName: string; formerInstanceId: number; formerInstanceName: string }>;
 	error?: string;

@@ -126,17 +126,4 @@ function JsonCompat.write_file_compat(filename, contents, append, for_player)
   return false, "No available write_file implementation (helpers.write_file missing)"
 end
 
-function JsonCompat.read_file_compat(filename)
-  if helpers and helpers.read_file then
-    local ok, result = pcall(helpers.read_file, filename)
-    if ok then
-      return result
-    else
-      return nil, "Failed to read file via helpers: " .. tostring(result)
-    end
-  end
-  
-  return nil, "File reading not available - helpers.read_file not found"
-end
-
 return JsonCompat

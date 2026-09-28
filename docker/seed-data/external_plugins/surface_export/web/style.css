@@ -613,3 +613,18 @@ body.surface-export-page .site-layout-content-container {
 	opacity: 0.5;
 	cursor: help;
 }
+
+.surface-export-plugin-off-portal {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 4px;
+	cursor: help;
+}
+
+.surface-export-plugin-off-portal img {
+	width: 24px;
+	height: 24px;
+	opacity: 0.6;
+}

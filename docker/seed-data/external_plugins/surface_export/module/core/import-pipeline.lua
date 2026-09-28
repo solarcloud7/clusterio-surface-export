@@ -92,17 +92,6 @@ function ImportPipeline.process_setup_cleanup(job)
 	return false
 end
 
-function ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
-	local filepath = "platform_exports/" .. filename
-	local json_data, err = Util.read_file_compat(filepath)
-
-	if not json_data then
-		return nil, "Failed to read file '" .. filename .. "': " .. (err or "unknown error")
-	end
-
-	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
-end
-
 function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing, pending_job)
 	if storage.source_recovery_ready == false then return nil, "Startup recovery is not ready" end
 	local job_id = pending_job and pending_job.job_id or (receive_timing and receive_timing.import_job_id)

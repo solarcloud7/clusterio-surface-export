@@ -94,11 +94,17 @@ leads to that server. A platform whose schedule stops there is sent to that serv
 and arrives at its Gateway. A server's own colour is locked on that server, and a
 colour no server holds is locked everywhere.
 
-At most four servers take part; servers whose `surface_export.load_plugin` is off
-are not counted. A new server gets the lowest colour that no server has held.
-Deleting a server retires its colour: the colour stays locked everywhere and is
-never assigned automatically, because schedules on other servers may still stop
-there. A server that finds no unused colour gets none. The controller log and
+At most four servers hold a colour. A server whose `surface_export.load_plugin` is off
+and holds no colour is not counted; one that holds a colour keeps it, and so uses one
+of the four, until an administrator releases it. A new server gets the lowest colour that no server has held.
+Turning a server's `surface_export.load_plugin` off does not retire its colour.
+While the plugin is off, that colour is locked on every other server, and
+`clusterioctl surface-export gateways` and the Gateways page list it as held by
+that server with its plugin off. When the plugin is turned back on, the server
+leads through the same colour again. Deleting a server retires its colour: the
+colour stays locked everywhere and is never assigned automatically, because
+schedules on other servers may still stop there. A server that finds no unused
+colour gets none. The controller log and
 `clusterioctl surface-export gateways` report it, and the Gateways page shows it
 and every retired colour greyed out. A server without a colour can still send
 platforms through the Gateway, and other servers can reach it the same way.
