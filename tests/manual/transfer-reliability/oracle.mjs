@@ -175,10 +175,24 @@ export function analyzeSavePolicy(report) {
     }
     return {verdict:"PASS",reason:"Manual snapshot import restored physical cargo; original rollback remains a separately observed failure"};
   }
-  assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
-  assert.deepEqual(report.unrelatedRestored?.cargo,expectedCargo);assert.equal(report.unrelatedRestored?.usable,true);
-  assert.equal(report.restored.destination.usable,true);
   const accepted=report.case==="save-policy-game";
+  assert.deepEqual(report.unrelatedRestored?.cargo,expectedCargo);assert.equal(report.unrelatedRestored?.usable,true);
+  if(report.lineageReviewVersion>=1) {
+    const duplicate=accepted?report.duplicateRestored:report.restored;
+    assert.deepEqual(duplicate?.source.cargo,expectedCargo);assert.deepEqual(duplicate?.destination.cargo,expectedCargo);
+    assert.equal(duplicate.source.usable,false,"a restored copy that another server still holds became usable");
+    assert.equal(duplicate.destination.usable,true);
+    const duplicateNotice=accepted?report.duplicateNotice:report.notices?.notices[report.identityAfter?.index];
+    assert.equal(duplicateNotice?.status,"protected");assert.equal(duplicateNotice?.reason,"duplicate");
+    if(accepted) {
+      assert.deepEqual(report.restored?.source.cargo,expectedCargo);
+      assert.equal(report.restored.destination.present,false,"adoption ran while the other server still held its copy");
+      assert.equal(report.notices?.notices[report.identityAfter?.index]?.reason,"rollback_other");
+    }
+  } else {
+    assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
+    assert.equal(report.restored.destination.usable,true);
+  }
   assert.equal(report.browser.warnings,true,"restored-source warning unverified");
   assert.equal(report.restored.source.usable,accepted);
   assert.equal(report.notices?.mode,accepted?"save_game":"plugin_history");
