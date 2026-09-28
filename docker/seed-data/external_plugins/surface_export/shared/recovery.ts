@@ -25,9 +25,14 @@ export function sourceRollbackFromEvents(events: readonly { eventType?: unknown 
 export interface RecoveryNotice {
 	platformIndex: number;
 	platformName: string;
-	platformUid: string;
-	exportId: string;
-	status: "accepted" | "protected";
+	platformUid?: string | null;
+	exportId?: string | null;
+	status: "accepted" | "protected" | "quarantined";
+	reason?: string | null;
+	lineage?: string | null;
+	generation?: number | null;
+	holderInstanceId?: number | null;
+	holderGeneration?: number | null;
 }
 
 export interface InstanceRecoveryStatus {
@@ -35,6 +40,7 @@ export interface InstanceRecoveryStatus {
 	epoch: string;
 	state: "reconciling" | "ready" | "blocked";
 	notices: RecoveryNotice[];
+	quarantined?: number;
 	error?: string;
 }
 

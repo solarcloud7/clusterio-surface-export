@@ -47,3 +47,25 @@ test("corrupt existing journal is unavailable, never replaced with empty authori
 	assert.throws(() => journal.snapshot(), /unavailable/);
 	assert.equal(await fs.readFile(file, "utf8"), "not json");
 });
+
+test("retirement records keep an optional lineage and hub, and hub matching uses the recorded surface", async t => {
+	const { journalHubMatch, retirementHubUnitNumber } = require("../dist/node/lib/source-retirement-journal.js");
+	const file = await fixture(t), journal = new SourceRetirementJournal(file);
+	await journal.load();
+	const lineaged = { ...record, platformUid: "boot-b:9", exportId: "013_platform", lineage: "lineage:boot-a:9", generation: 2, hubUnitNumber: 9 };
+	await journal.retire(lineaged);
+	for (const invalid of [{ lineage: "boot-a:9", generation: 2 }, { lineage: "lineage:boot-a:9" }, { generation: 2 },
+		{ lineage: "lineage:boot-a:9", generation: -1 }, { hubUnitNumber: 0 }]) {
+		await assert.rejects(journal.retire({ ...record, platformUid: "boot-c:1", ...invalid }), /Invalid source retirement/, JSON.stringify(invalid));
+	}
+	const restarted = new SourceRetirementJournal(file);
+	await restarted.load();
+	assert.deepEqual(restarted.snapshot().retirements, [lineaged]);
+	assert.equal(retirementHubUnitNumber(record), 3, "the hub part of a legacy uid after its last colon");
+	assert.equal(retirementHubUnitNumber({ ...record, platformUid: "a:b:c" }), null);
+	assert.equal(retirementHubUnitNumber(lineaged), 9);
+	assert.equal(journalHubMatch([record], 8, 3), true);
+	assert.equal(journalHubMatch([record], 9, 3), false, "a hub number on another surface matched");
+	assert.equal(journalHubMatch([record], 8, 4), false);
+	assert.equal(journalHubMatch([record], null, 3), false);
+});

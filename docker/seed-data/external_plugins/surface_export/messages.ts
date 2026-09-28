@@ -164,6 +164,68 @@ export class RecoveryPolicyRequest {
 	};
 }
 
+const LINEAGE_SCHEMA = { type: "string", maxLength: 200, pattern: "^lineage:[^:\\s]+:[1-9][0-9]*$" };
+const PLATFORM_FACTS_SCHEMA = {
+	type: "object",
+	properties: {
+		platformIndex: { type: "integer" }, platformUid: { type: ["string", "null"] }, hadIdentity: { type: "boolean" },
+		lineage: { anyOf: [LINEAGE_SCHEMA, { type: "null" }] }, generation: { type: ["integer", "null"], minimum: 0 },
+		hubUnitNumber: { type: ["integer", "null"] }, surfaceIndex: { type: ["integer", "null"] },
+		platformName: { type: ["string", "null"] }, forceName: { type: ["string", "null"] }, lockKind: { type: ["string", "null"] },
+		jobOwns: { type: "boolean" }, journalUidMatch: { type: "boolean" }, journalHubMatch: { type: "boolean" }, protected: { type: "boolean" },
+	},
+	required: ["platformIndex", "platformUid", "hadIdentity", "lineage", "generation", "hubUnitNumber", "surfaceIndex",
+		"platformName", "forceName", "lockKind", "jobOwns", "journalUidMatch", "journalHubMatch", "protected"],
+	additionalProperties: false,
+};
+
+export class LineageClassifyRequest {
+	declare ["constructor"]: typeof LineageClassifyRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { instanceId: { type: "integer" }, epoch: { type: "string" }, platforms: { type: "array", maxItems: 500, items: PLATFORM_FACTS_SCHEMA } },
+		required: ["instanceId", "epoch", "platforms"], additionalProperties: false,
+	} as JsonSchema;
+	instanceId: number;
+	epoch: string;
+	platforms: import("./shared/lineage").PlatformFacts[];
+	constructor(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage").PlatformFacts[] }) {
+		this.instanceId = json.instanceId; this.epoch = json.epoch; this.platforms = json.platforms;
+	}
+	static fromJSON(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage").PlatformFacts[] }) { return new LineageClassifyRequest(json); }
+	toJSON() { return { instanceId: this.instanceId, epoch: this.epoch, platforms: this.platforms }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { verdicts: { type: "array", maxItems: 500, items: { type: "object" } } }, required: ["verdicts"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { verdicts: import("./shared/lineage").LineageVerdict[] }; },
+	};
+}
+
+export class LineagePresenceRequest {
+	declare ["constructor"]: typeof LineagePresenceRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: { lineages: { type: "array", maxItems: 500, items: LINEAGE_SCHEMA } },
+		required: ["lineages"], additionalProperties: false,
+	} as JsonSchema;
+	lineages: string[];
+	constructor(json: { lineages: string[] }) { this.lineages = json.lineages; }
+	static fromJSON(json: { lineages: string[] }) { return new LineagePresenceRequest(json); }
+	toJSON() { return { lineages: this.lineages }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, epoch: { type: "string" }, error: { type: "string" },
+			lineages: { type: "array", items: { type: "object", properties: { lineage: LINEAGE_SCHEMA, present: { type: "boolean" },
+				generation: { type: "integer" }, held: { type: "boolean" } }, required: ["lineage", "present"] } } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { success: boolean; epoch?: string; error?: string; lineages?: Array<{ lineage: string; present: boolean; generation?: number; held?: boolean }> }; },
+	};
+}
+
 export class GetStoredExportRequest {
 	declare ["constructor"]: typeof GetStoredExportRequest;
 	static plugin = PLUGIN_NAME;
@@ -1381,8 +1443,9 @@ export class DestinationTransferGateRequest {
 	static fromJSON(json: { transferId: string; action: "verify" | "go_live"; passengers?: PassengerManifestEntry[] }) { return new DestinationTransferGateRequest(json); }
 	toJSON() { return { transferId: this.transferId, action: this.action, passengers: this.passengers }; }
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse; },
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" },
+			lineage: LINEAGE_SCHEMA, generation: { type: "integer", minimum: 1 } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { lineage?: string; generation?: number }; },
 	};
 }
 
@@ -1667,6 +1730,8 @@ export interface PhaseRecord {
 
 export interface ActiveTransfer {
 	platformUid?: string;
+	lineage?: string | null;
+	lineageGeneration?: number | null;
 	sourceRollback?: import("./shared/recovery").SourceRollback;
 	lateDestinationCleanup?: boolean;
  destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
@@ -1753,12 +1818,19 @@ export interface PendingTransferIntent {
 	targetInstanceId: number;
 	startedAt: number;
 	exportId: string | null;
+	lineage?: string | null;
+	lineageGeneration?: number | null;
 }
 
 export interface IControllerPlugin {
 	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
 	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
 	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
+	lineageRegistry: {
+		loadError: string | null;
+		precheckTransfer(commit: import("./shared/lineage").TransferCommit): string | null;
+		commitTransfer(commit: import("./shared/lineage").TransferCommit): Promise<"write" | "noop">;
+	};
 	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
 	persistPendingTransfers(requiredTransferId?: string): Promise<void>;
@@ -1843,6 +1915,10 @@ export type ExportStats = {
 
 export type ExportData = {
 	platform_uid?: string;
+	lineage?: string;
+	generation?: number;
+	_lineage?: string;
+	_lineageGeneration?: number;
 	force_name?: string;
 	compressed?: boolean;
 	compression?: string;

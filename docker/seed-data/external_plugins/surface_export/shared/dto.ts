@@ -92,6 +92,9 @@ export interface TransactionLogEntryModel {
 }
 export interface PlatformModel {
 	platformUid?: string | null;
+	lineage?: string | null;
+	lineageGeneration?: number | null;
+	lockKind?: string | null;
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
