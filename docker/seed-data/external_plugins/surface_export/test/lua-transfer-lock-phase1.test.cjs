@@ -38,7 +38,7 @@ test("transfer exports stamp transfer lock metadata and refuse manual locks", ()
 	assert.match(surfaceLock, /already locked by a different transfer lock/, "mismatched stale transfer locks must be refused");
 	assert.match(surfaceLock, /existing_lock\.expires_tick = lock_opts\.expires_tick or existing_lock\.expires_tick\s*\n\s*return true, nil/, "same-transfer backfill must let the universal export path continue");
 
-	assert.match(exportPipeline, /local\s+lock_opts\s*=\s*\{[\s\S]*kind\s*=\s*destination_instance_id\s+and\s+["\']transfer["\']\s+or\s+["\']export["\'][\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "all async exports must get an expiring transfer/export lock");
+	assert.match(exportPipeline, /local\s+lock_opts\s*=\s*\{[\s\S]*kind\s*=\s*\(destination_instance_id\s+or\s+resolution\)\s+and\s+["\']transfer["\']\s+or\s+["\']export["\'][\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "all async exports must get an expiring transfer/export lock");
 	assert.match(exportPipeline, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*lock_opts\s*\)/, "universal lock path must pass lock_opts");
 	assert.match(surfaceLock, /return false, "Platform already locked by a non-transfer lock"/,
 		"a transfer lock over a manual lock must be refused with its own distinct error");
@@ -65,7 +65,7 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(surfaceLock, /committed_source_transfer_tombstones/, "committed source tombstones must be keyed outside the mutable platform index registry");
 	assert.match(surfaceLock, /COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS/, "committed source tombstones must have bounded retention");
 	assert.match(surfaceLock, /function\s+SurfaceLock\.prune_committed_source_tombstones\s*\(/, "committed source tombstones must be age-pruned");
-	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+and not accepting_restoration then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
+	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+and not accepting_restoration\s+and not \(authority == "resolution" and not lock_data\.resolution_restore\) then\s+return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
 	assert.match(surfaceLock, /source_lock_is_committed\s*\(\s*lock_data\s*\)[\s\S]*committed\s*=\s*committed\s*\+\s*1/, "TTL expiry scan must retain committed locks instead of unlocking them");
 	assert.doesNotMatch(surfaceLock, /platform name mismatch|live platform name mismatch/, "source state query must not use mutable platform.name as a state discriminator");
 	assert.match(deleteForTransfer, /SurfaceLock\.clear_committed_source_lock_after_delete\s*\(/, "delete is the sole path allowed to clear a committed source lock");

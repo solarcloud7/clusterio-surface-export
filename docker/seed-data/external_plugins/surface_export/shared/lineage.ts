@@ -54,6 +54,17 @@ export interface PlatformFacts {
 	protected: boolean;
 }
 
+export interface ResolutionCandidate extends PlatformFacts {
+	state: "quarantine" | "tombstone" | "resolving";
+	reason: string | null;
+	ownerJobId: string | null;
+	holderInstanceId: number | null;
+	holderGeneration: number | null;
+	retiredExportId: string | null;
+	resolutionRequestId: string | null;
+	passengers: number | null;
+}
+
 export interface LineageVerdict {
 	platformIndex: number;
 	verdict: LineageVerdictName;

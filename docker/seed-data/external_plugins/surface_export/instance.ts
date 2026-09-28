@@ -118,6 +118,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
 		this.i.handle(messages.LineagePresenceRequest, this.handleLineagePresenceRequest.bind(this));
+		this.i.handle(messages.LineageCandidatesRequest, this.handleLineageCandidatesRequest.bind(this));
+		this.i.handle(messages.ApplyLineageResolutionRequest, this.handleApplyLineageResolutionRequest.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -239,6 +241,48 @@ export class InstancePlugin extends BaseInstancePlugin {
 			journalHubMatch: journalHubMatch(retirements, surfaceIndex, hubUnitNumber),
 			protected: protectedIndexes.includes(platformIndex),
 		};
+	}
+
+	private parseLuaJson(raw: string, action: string): Record<string, unknown> {
+		try { return JSON.parse(raw); }
+		catch (error) { throw new Error(`${action} returned invalid JSON: ${raw.slice(0, 500)}`, { cause: error }); }
+	}
+
+	async handleLineageCandidatesRequest(request: messages.LineageCandidatesRequest): Promise<ReturnType<typeof messages.LineageCandidatesRequest.Response.fromJSON>> {
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
+		const epoch = this.timingEpoch;
+		const response = this.parseLuaJson(await this.lua.resolutionCandidates(), "Resolution candidates");
+		this.assertRecoveryRuntime(epoch);
+		if (response.success !== true) throw new Error(String(response.error || "Resolution candidates refused"));
+		const retirements = this.retirementJournal.snapshot().retirements;
+		const listed = Array.isArray(response.platforms) ? response.platforms : Object.values(response.platforms || {});
+		const text = (value: unknown) => typeof value === "string" && value !== "" ? value : null;
+		const integer = (value: unknown) => Number.isSafeInteger(value) ? value as number : null;
+		const platforms = (listed as Array<Record<string, unknown>>).map(entry => ({
+			...this.platformFacts(entry, retirements, request.protectedSourceIndexes),
+			state: (entry.state === "tombstone" || entry.state === "resolving" ? entry.state : "quarantine") as "quarantine" | "tombstone" | "resolving",
+			reason: text(entry.reason), ownerJobId: text(entry.ownerJobId),
+			holderInstanceId: integer(entry.holderInstanceId), holderGeneration: integer(entry.holderGeneration),
+			retiredExportId: text(entry.retiredExportId), resolutionRequestId: text(entry.resolutionRequestId),
+			passengers: integer(entry.passengers),
+		}));
+		return { success: true, epoch, platforms };
+	}
+
+	async handleApplyLineageResolutionRequest(request: messages.ApplyLineageResolutionRequest): Promise<ReturnType<typeof messages.ApplyLineageResolutionRequest.Response.fromJSON>> {
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
+		const epoch = this.timingEpoch;
+		const response = this.parseLuaJson(await this.lua.resolutionApply({ requestId: request.requestId, step: request.step,
+			platformIndex: request.platformIndex, platformUid: request.platformUid, lineage: request.lineage, generation: request.generation }), "Resolution step");
+		this.assertRecoveryRuntime(epoch);
+		const reply: ReturnType<typeof messages.ApplyLineageResolutionRequest.Response.fromJSON> = { success: response.success === true };
+		if (typeof response.error === "string") reply.error = response.error;
+		if (typeof response.jobId === "string") reply.jobId = response.jobId;
+		if (isLineage(response.lineage)) reply.lineage = response.lineage;
+		if (isGeneration(response.generation)) reply.generation = response.generation;
+		if (typeof response.platformUid === "string") reply.platformUid = response.platformUid;
+		if (reply.success) void this.handlePlatformStateChanged({ force_name: "player" });
+		return reply;
 	}
 
 	async handleLineagePresenceRequest(request: messages.LineagePresenceRequest): Promise<ReturnType<typeof messages.LineagePresenceRequest.Response.fromJSON>> {

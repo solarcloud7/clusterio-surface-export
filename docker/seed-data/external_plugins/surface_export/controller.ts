@@ -10,6 +10,7 @@ import * as lib from "@clusterio/lib";
 import { GatewayConfig } from "./lib/gateway-config";
 import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots";
 import { LineageRegistry, LINEAGE_REGISTRY_FILENAME } from "./lib/lineage-registry";
+import { LineageResolver } from "./lib/lineage-resolution";
 import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier";
 import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle";
 import { RouteAlertRelay } from "./lib/route-alert-relay";
@@ -85,6 +86,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	pendingTransfersLoadError: string | null = null;
 	recoveryReservations = new Map<number, { epoch: string; mode: PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes: number[] }>();
 	lineageRegistry!: LineageRegistry;
+	resolver!: LineageResolver;
 	private snapshotRequests = new Map<string, {signature: string; result: Promise<messages.SimpleResponse>}>();
 	private importCompletions = new Map<string, Promise<void>>();
 	private playerLocations = new Map<string, number>();
@@ -240,6 +242,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetGatewayConfigRequest, gateways.handleGetGatewayConfigRequest.bind(gateways));
 		this.c.handle(messages.RecoveryPolicyRequest, this.handleRecoveryPolicyRequest.bind(this));
 		this.c.handle(messages.LineageClassifyRequest, this.handleLineageClassifyRequest.bind(this));
+		this.resolver = this.createResolver();
+		this.c.handle(messages.ListLineageConflictsRequest, this.handleListLineageConflictsRequest.bind(this));
+		this.c.handle(messages.ResolvePlatformLineageRequest, this.handleResolvePlatformLineageRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -333,6 +338,37 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			if (quarantined) this.logger.warn(`Instance ${request.instanceId} startup recovery: ${quarantined} platform(s) are not released by lineage classification`);
 			return { verdicts };
 		});
+	}
+
+	createResolver(options?: { snapshotWaitMs: number; pollMs: number }) {
+		const self = () => this;
+		return new LineageResolver({
+			get lineageRegistry() { return self().lineageRegistry; },
+			get pendingTransfers() { return self().pendingTransfers; },
+			get activeTransfers() { return self().activeTransfers; },
+			get platformStorage() { return self().platformStorage; },
+			get recoveryReservations() { return self().recoveryReservations; },
+			get logger() { return self().logger; },
+			isInstanceOnline: id => self().isInstanceOnline(id),
+			instanceIds: () => [...self().c.instances.values()]
+				.filter(instance => !instance.isDeleted && instance.config.get("surface_export.load_plugin") !== false).map(instance => instance.id),
+			lineageInTransit: lineage => self().lineageInTransit(lineage),
+			completedTransferFrom: (id, uid) => self().completedTransferFrom(id, uid),
+			owningSourceJob: (id, facts) => self().owningSourceJob(id, facts),
+			lineagePresence: wanted => self().lineagePresence(wanted),
+			send: async (instanceId, message) => self().c.sendTo({ instanceId }, message as never) as Promise<unknown>,
+		}, messages, options);
+	}
+
+	async handleListLineageConflictsRequest(request: messages.ListLineageConflictsRequest) {
+		if (this.lineageRegistry.loadError) throw new Error(this.lineageRegistry.loadError);
+		return this.resolver.list(request.instanceId ?? null);
+	}
+
+	async handleResolvePlatformLineageRequest(request: messages.ResolvePlatformLineageRequest) {
+		const result = await this.resolver.resolve(request);
+		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
+		return result;
 	}
 
 	lineageInTransit(lineage: string | null): boolean {

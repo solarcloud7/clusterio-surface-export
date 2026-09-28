@@ -318,6 +318,14 @@ export class LuaInterface {
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
 	}
 
+	async resolutionCandidates(): Promise<string> {
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "resolution_candidates_json"))`);
+	}
+
+	async resolutionApply(request: Record<string, unknown>): Promise<string> {
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "resolution_apply_json", "${escapeString(JSON.stringify(request))}"))`);
+	}
+
 	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity" | "presence", ...args: Array<string | number | boolean | null>): Promise<string> {
 		const values = args.map(value => value === null ? "nil"
 			: typeof value === "string" ? `"${escapeString(value)}"` : String(value));

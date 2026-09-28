@@ -3,6 +3,7 @@ import * as lib from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { getErrorMessage } from "../helpers";
 import { isGeneration, isLineage, type LineageEntry, type TransferCommit } from "../shared/lineage";
+import { RESOLUTION_ACTIONS, type ResolutionRecord } from "../shared/lineage-resolution";
 
 export { isGeneration, isLineage, type LineageEntry, type LineageSource, type TransferCommit } from "../shared/lineage";
 
@@ -22,7 +23,17 @@ function validEntry(value: unknown): value is LineageEntry {
 		&& (entry!.source === "claim" || entry!.source === "transfer" || entry!.source === "resolution");
 }
 
-function sameEntry(a: LineageEntry | undefined, b: LineageEntry | undefined): boolean {
+function validResolution(id: unknown, value: unknown): value is ResolutionRecord {
+	const record = value as Partial<ResolutionRecord> | null;
+	return typeof id === "string" && id !== "" && Boolean(record) && record!.requestId === id
+		&& typeof record!.signature === "string" && (RESOLUTION_ACTIONS as readonly string[]).includes(String(record!.action))
+		&& Number.isSafeInteger(record!.instanceId) && Number.isSafeInteger(record!.platformIndex)
+		&& typeof record!.platformUid === "string" && typeof record!.step === "string"
+		&& (record!.status === "in_progress" || record!.status === "completed" || record!.status === "failed")
+		&& (record!.lineage === null || isLineage(record!.lineage));
+}
+
+function sameEntry(a: unknown, b: unknown): boolean {
 	return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
@@ -54,6 +65,7 @@ export function transferCommitDecision(entry: LineageEntry | undefined, commit: 
 
 export class LineageRegistry {
 	private entries = new Map<string, LineageEntry>();
+	private resolutions = new Map<string, ResolutionRecord>();
 	private file: string | null = null;
 	private queue: Promise<void> = Promise.resolve();
 	loadError: string | null = null;
@@ -63,9 +75,10 @@ export class LineageRegistry {
 	async load(file: string): Promise<void> {
 		this.file = file;
 		this.entries = new Map();
+		this.resolutions = new Map();
 		this.loadError = null;
 		try {
-			const saved = JSON.parse(await fs.readFile(file, "utf8")) as { version?: unknown; entries?: unknown };
+			const saved = JSON.parse(await fs.readFile(file, "utf8")) as { version?: unknown; entries?: unknown; resolutions?: unknown };
 			if (saved?.version !== 1 || !Array.isArray(saved.entries)) throw new Error("not a version 1 lineage registry");
 			const entries = new Map<string, LineageEntry>();
 			for (const pair of saved.entries as unknown[]) {
@@ -74,7 +87,16 @@ export class LineageRegistry {
 				}
 				entries.set(pair[0], { ...pair[1] });
 			}
+			const resolutions = new Map<string, ResolutionRecord>();
+			if (saved.resolutions !== undefined && !Array.isArray(saved.resolutions)) throw new Error("invalid resolution records");
+			for (const pair of (saved.resolutions ?? []) as unknown[]) {
+				if (!Array.isArray(pair) || pair.length !== 2 || !validResolution(pair[0], pair[1]) || resolutions.has(pair[0])) {
+					throw new Error("invalid or duplicate resolution record");
+				}
+				resolutions.set(pair[0], { ...pair[1] });
+			}
 			this.entries = entries;
+			this.resolutions = resolutions;
 		} catch (error: unknown) {
 			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
 			this.loadError = `Platform lineage registry ${file} is unreadable (${getErrorMessage(error)}); `
@@ -85,6 +107,15 @@ export class LineageRegistry {
 	get(lineage: string): LineageEntry | undefined {
 		const entry = this.entries.get(lineage);
 		return entry ? { ...entry } : undefined;
+	}
+
+	resolution(requestId: string): ResolutionRecord | undefined {
+		const record = this.resolutions.get(requestId);
+		return record ? { ...record } : undefined;
+	}
+
+	listResolutions(): ResolutionRecord[] {
+		return [...this.resolutions.values()].map(record => ({ ...record }));
 	}
 
 	precheckTransfer(commit: TransferCommit): string | null {
@@ -106,11 +137,12 @@ export class LineageRegistry {
 		});
 	}
 
-	update<T>(mutate: (draft: Map<string, LineageEntry>) => T): Promise<T> {
+	update<T>(mutate: (draft: Map<string, LineageEntry>, resolutions: Map<string, ResolutionRecord>) => T): Promise<T> {
 		if (this.loadError) return Promise.reject(new Error(this.loadError));
 		const run = this.queue.then(async () => {
 			const draft = new Map([...this.entries].map(([lineage, entry]) => [lineage, { ...entry }]));
-			const result = mutate(draft);
+			const resolutionDraft = new Map([...this.resolutions].map(([id, record]) => [id, { ...record }]));
+			const result = mutate(draft, resolutionDraft);
 			let changed = false;
 			for (const [lineage, entry] of draft) {
 				const prior = this.entries.get(lineage);
@@ -124,9 +156,18 @@ export class LineageRegistry {
 			for (const lineage of this.entries.keys()) {
 				if (!draft.has(lineage)) throw new Error(`Lineage ${lineage} cannot be removed from the registry`);
 			}
+			for (const [id, record] of resolutionDraft) {
+				if (sameEntry(this.resolutions.get(id), record)) continue;
+				if (!validResolution(id, record)) throw new Error(`Invalid resolution record ${id}`);
+				changed = true;
+			}
+			for (const id of this.resolutions.keys()) {
+				if (!resolutionDraft.has(id)) throw new Error(`Resolution ${id} cannot be removed from the registry`);
+			}
 			if (changed) {
-				await this.write(draft);
+				await this.write(draft, resolutionDraft);
 				this.entries = draft;
+				this.resolutions = resolutionDraft;
 			}
 			return result;
 		});
@@ -134,10 +175,10 @@ export class LineageRegistry {
 		return run;
 	}
 
-	private async write(next: Map<string, LineageEntry>): Promise<void> {
+	private async write(next: Map<string, LineageEntry>, resolutions: Map<string, ResolutionRecord>): Promise<void> {
 		const file = this.file;
 		if (!file) return;
-		const payload = JSON.stringify({ version: 1, entries: [...next] });
+		const payload = JSON.stringify(resolutions.size ? { version: 1, entries: [...next], resolutions: [...resolutions] } : { version: 1, entries: [...next] });
 		await enqueueWrite(file, () => lib.safeOutputFile(file, payload));
 	}
 }

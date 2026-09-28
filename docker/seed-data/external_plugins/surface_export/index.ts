@@ -24,6 +24,12 @@ lib.definePermission({
 });
 
 lib.definePermission({
+	name: PERMISSIONS.RECOVERY_RESOLVE,
+	title: "Resolve Surface Export platform conflicts",
+	description: "Allows keeping, adopting, releasing or deleting copies of a platform that startup recovery quarantined.",
+});
+
+lib.definePermission({
 	name: PERMISSIONS.VIEW_LOGS,
 	title: "View Surface Export Transaction Logs",
 	description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
@@ -196,6 +202,10 @@ export const plugin = {
 		messages.RecoveryPolicyRequest,
 		messages.LineageClassifyRequest,
 		messages.LineagePresenceRequest,
+		messages.ListLineageConflictsRequest,
+		messages.ResolvePlatformLineageRequest,
+		messages.LineageCandidatesRequest,
+		messages.ApplyLineageResolutionRequest,
 		messages.GetInstanceRosterRequest,
 		messages.AnnouncePlayerTravelRequest,
 		messages.RouteAlertEvent,
