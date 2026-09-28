@@ -148,11 +148,14 @@ assert(not holds.stage("lineage", platform, force, true, nil, "import-l", {linea
 local verified, verified_hold = holds.verify("lineage", "import-l")
 assert(verified and verified_hold.lineage == carried.lineage and verified_hold.generation == 2)
 assert(not (env.storage.surface_export_lineages or {})[3], "a held copy recorded its lineage before release")
+local live_copy = {valid = true, index = 7, name = "older copy", surface = {valid = true, index = 70}, hub = {valid = true, unit_number = 70}}
+force.platforms[7] = live_copy
 env.storage.surface_export_lineages = {[7] = {lineage = carried.lineage, generation = 1, surface_index = 70, hub_unit_number = 70}}
-assert(not holds.go_live("lineage", "import-l"), "release created a second local copy of one lineage")
+assert(not holds.go_live("lineage", "import-l"), "release created a second live local copy of one lineage")
 assert(holds.get("lineage") and platform.hidden, "refused release lost the hold")
-env.storage.surface_export_lineages = {}
-assert(holds.go_live("lineage", "import-l"))
+force.platforms[7] = nil
+live_copy.valid = false
+assert(holds.go_live("lineage", "import-l"), "a record left by a platform that already departed blocked its return")
 assert(env.storage.surface_export_lineages[3].lineage == carried.lineage and env.storage.surface_export_lineages[3].generation == 2)
 local lineage_receipt = env.storage.surface_export_transfer_receipts.destination_live.records.lineage
 assert(lineage_receipt.lineage == carried.lineage and lineage_receipt.generation == 2)

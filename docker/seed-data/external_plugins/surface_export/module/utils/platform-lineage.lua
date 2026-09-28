@@ -46,9 +46,18 @@ end
 
 local function held_by_other(lineage, platform_index)
 	for index, record in pairs(storage.surface_export_lineages or {}) do
-		if index ~= platform_index and record.lineage == lineage then return true end
+		if index ~= platform_index and record.lineage == lineage then
+			for _, force in pairs(game.forces) do
+				local other = force.platforms[index]
+				if other and other.valid and PlatformLineage.get(other) == lineage then return true end
+			end
+		end
 	end
 	return false
+end
+
+function PlatformLineage.forget(platform_index)
+	if storage.surface_export_lineages then storage.surface_export_lineages[platform_index] = nil end
 end
 
 function PlatformLineage.record(platform, lineage, generation)
@@ -100,6 +109,11 @@ function PlatformLineage.transfer_carry(data)
 		return nil, nil, "Transfer lineage is invalid"
 	end
 	return data._lineage, data._lineageGeneration
+end
+
+function PlatformLineage.hold_carry(job)
+	if not (job and job.lineage and job.transfer_id and (job.platform_data or {})._standaloneImport ~= true) then return nil end
+	return {lineage = job.lineage, generation = job.lineage_generation + 1}
 end
 
 function PlatformLineage.presence(lineage)
