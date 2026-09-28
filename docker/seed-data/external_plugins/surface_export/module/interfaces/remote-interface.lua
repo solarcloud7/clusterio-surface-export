@@ -2,6 +2,7 @@ local RemoteInterface = {}
 
 local Base = require("modules/surface_export/interfaces/remote/base")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local Resolution = require("modules/surface_export/interfaces/remote/resolution")
 local Upload = require("modules/surface_export/interfaces/remote/upload-session")
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 local InstancePanel = require("modules/surface_export/interfaces/gui/instance-panel")
@@ -140,6 +141,8 @@ function RemoteInterface.register()
     source_recovery_finish = Base.json_wrap(SourceRecovery.finish),
     source_recovery_identity = Base.json_wrap(SourceRecovery.source_identity),
     source_recovery_presence = Base.json_wrap(SourceRecovery.lineage_presence),
+    resolution_candidates_json = Base.json_wrap(Resolution.candidates),
+    resolution_apply_json = Base.json_wrap(Resolution.apply),
     export_platform = export_platform,
     export_platform_to_file = export_platform_to_file,
     get_export = get_export,

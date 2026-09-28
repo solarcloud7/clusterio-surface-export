@@ -124,6 +124,41 @@ local function adoption_authorized(verdict, platform_index)
 		and not job_owns(platform_index)
 end
 
+function Recovery.platform_facts(platform, force, uid, had)
+	local lineage, generation = PlatformLineage.get(platform)
+	local lock = SurfaceLock.get_lock_data(platform.index)
+	if had == nil then had = had_identity(platform) end
+	return {platformIndex = platform.index, platformUid = uid or identity(platform), hadIdentity = had,
+		lineage = lineage, generation = generation, hubUnitNumber = PlatformLineage.hub_unit_number(platform),
+		surfaceIndex = platform.surface.index, platformName = platform.name, forceName = force.name,
+		lockKind = lock and lock.kind or nil, jobOwns = job_owns(platform.index)}
+end
+
+function Recovery.notice(platform_index)
+	return (storage.source_recovery_notices or {})[platform_index]
+end
+
+function Recovery.clear_notice(platform_index)
+	if storage.source_recovery_notices then storage.source_recovery_notices[platform_index] = nil end
+end
+
+function Recovery.fresh_identity(platform, retired_export_id)
+	local new_uid = storage.source_recovery_epoch .. ":" .. tostring(platform.hub.unit_number)
+	storage.source_recovery_identities = storage.source_recovery_identities or {}
+	storage.source_recovery_identities[platform.index] = {uid = new_uid, surface_index = platform.surface.index,
+		hub_unit_number = platform.hub.unit_number}
+	if retired_export_id then
+		for _, passenger in pairs(storage.surface_export_passengers or {}) do
+			if passenger.job_id == retired_export_id and passenger.platform_index == platform.index then passenger.platform_uid = new_uid end
+		end
+		for _, by_player in pairs(storage.surface_export_arrivals or {}) do
+			local returned = by_player["returned:" .. retired_export_id]
+			if returned and returned.platform_index == platform.index then returned.platform_uid = new_uid end
+		end
+	end
+	return new_uid
+end
+
 -- Called by Clusterio's patch-number startup event, NOT on_load (which also runs on client join).
 function Recovery.startup()
 	storage.source_recovery_ready = false
@@ -162,12 +197,7 @@ function Recovery.begin(epoch, journal_id, _has_retirements, mode, allow_adoptio
 			if platform.valid and platform.surface and platform.surface.valid then
 				local had = had_identity(platform)
 				local uid = identity(platform) or assign(platform)
-				local lineage, generation = PlatformLineage.get(platform)
-				local lock = SurfaceLock.get_lock_data(platform.index)
-				roster[#roster + 1] = {platformIndex = platform.index, platformUid = uid, hadIdentity = had,
-					lineage = lineage, generation = generation, hubUnitNumber = PlatformLineage.hub_unit_number(platform),
-					surfaceIndex = platform.surface.index, platformName = platform.name, forceName = force.name,
-					lockKind = lock and lock.kind or nil, jobOwns = job_owns(platform.index)}
+				roster[#roster + 1] = Recovery.platform_facts(platform, force, uid, had)
 				present[platform.index] = true
 			end
 		end

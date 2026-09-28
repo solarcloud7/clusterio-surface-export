@@ -492,7 +492,7 @@ local function release_passengers(job_id)
     end
 end
 
-local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock, quarantine_release)
+local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock, authority)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
 	end
@@ -504,7 +504,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     if not lock_data then
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
-    if lock_data.kind == "quarantine" and quarantine_release ~= true then
+    if lock_data.kind == "quarantine" and authority ~= "quarantine" and authority ~= "resolution" then
         if SurfaceLock.transfer_owns_quarantine(lock_data, expected_job_id) then
             return SurfaceLock.release_quarantine(platform_index, lock_data.quarantine)
         end
@@ -522,9 +522,14 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local accepting_restoration = recovery_bootstrap and storage.source_recovery_ready == false
         and storage.source_recovery_mode == "save_game" and storage.source_recovery_allow_adoption == true
         and type(restored_job_id) == "string" and restored_job_id == lock_data.transfer_job_id
-    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration then
+    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration
+        and not (authority == "resolution" and not lock_data.resolution_restore) then
         return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
             tostring(platform_name), tostring(platform_index))
+    end
+    if lock_data.resolution_restore then
+        SurfaceLock.restore_resolution_protection(lock_data)
+        return false, "Resolution stopped before deletion; the previous protection was restored"
     end
     if not has_location(lock_data) then
         return false, "Unlock refused: platform location unavailable; protection retained"
@@ -629,7 +634,53 @@ function SurfaceLock.release_quarantine(platform_index, expected)
         or expected.epoch ~= lock.quarantine.epoch then
         return false, "Quarantine identity changed"
     end
-    return unlock_platform(platform_index, nil, nil, nil, nil, lock, true)
+    return unlock_platform(platform_index, nil, nil, nil, nil, lock, "quarantine")
+end
+
+local RESTORED_FIELDS = { "kind", "phase", "transfer_job_id", "committed_transfer_id", "committed_tick", "quarantine", "expires_tick" }
+
+function SurfaceLock.is_resolution_candidate(lock)
+    return type(lock) == "table" and not lock.resolution_restore
+        and (lock.kind == "quarantine" or (lock.kind == "transfer" and SurfaceLock.source_lock_is_committed(lock)))
+end
+
+function SurfaceLock.convert_for_resolution(platform_index, request_id)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not SurfaceLock.is_resolution_candidate(lock) then return false, "Platform is not quarantined or tombstoned" end
+    if type(request_id) ~= "string" or request_id == "" then return false, "Resolution request identity is required" end
+    local restore = {}
+    for _, field in ipairs(RESTORED_FIELDS) do restore[field] = lock[field] end
+    lock.resolution_restore = restore
+    lock.resolution_request_id = request_id
+    lock.kind = "transfer"
+    lock.phase = SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    lock.transfer_job_id = nil
+    lock.committed_transfer_id = nil
+    lock.committed_tick = nil
+    lock.quarantine = nil
+    lock.expires_tick = nil
+    return true, nil
+end
+
+function SurfaceLock.restore_resolution_protection(lock)
+    local restore = type(lock) == "table" and lock.resolution_restore
+    if type(restore) ~= "table" then return false end
+    for _, field in ipairs(RESTORED_FIELDS) do lock[field] = restore[field] end
+    lock.resolution_restore = nil
+    lock.resolution_request_id = nil
+    return true
+end
+
+function SurfaceLock.release_for_resolution(platform_index, token)
+    if storage.source_recovery_ready ~= true then return false, "Startup recovery is not ready" end
+    local record = type(token) == "string" and token ~= "" and (storage.surface_export_resolutions or {})[token] or nil
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not (record and record.release == true and record.platform_index == platform_index
+        and lock and lock.platform_uid == record.platform_uid) then
+        return false, "Resolution token does not authorize releasing this platform"
+    end
+    if not SurfaceLock.is_resolution_candidate(lock) then return false, "Platform is not quarantined or tombstoned" end
+    return unlock_platform(platform_index, nil, nil, nil, nil, lock, "resolution")
 end
 
 function SurfaceLock.is_locked(platform_index)
