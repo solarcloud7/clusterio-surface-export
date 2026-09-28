@@ -57,3 +57,16 @@ test("resolve-platform sends one resolution with the caller's request ID and fai
 	assert.equal(JSON.parse(printed[0]).status, "completed");
 	await assert.rejects(invoke(command, args, { success: false, error: "Action adopt is not available" }), /not available/);
 });
+
+test("abandon-resolution sends the request ID and fails loudly unless the resolution ended", async () => {
+	const command = find("abandon-resolution");
+	assert.match(command.definition[0], /^abandon-resolution <requestId>$/);
+	assert.equal(messages.AbandonPlatformResolutionRequest.permission, messages.PERMISSIONS.RECOVERY_RESOLVE);
+	const requestId = "11111111-2222-4333-8444-555555555555";
+	const { sent, printed } = await invoke(command, { requestId }, { success: false, requestId, status: "failed", error: "Abandoned by an administrator" });
+	assert.ok(sent[0].message instanceof messages.AbandonPlatformResolutionRequest);
+	assert.deepEqual(sent[0].message.toJSON(), { requestId });
+	assert.equal(JSON.parse(printed[0]).status, "failed");
+	await assert.rejects(invoke(command, { requestId }, { success: false, requestId, status: "in_progress", step: "deleted",
+		error: "This resolution has already deleted or committed a copy" }), /already deleted or committed/);
+});

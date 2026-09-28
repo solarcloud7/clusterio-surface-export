@@ -72,12 +72,12 @@ export default function LineageConflicts({ plugin, state }: { plugin: SurfaceExp
 	const revision = state.tree ? JSON.stringify(state.tree.hosts.map(host => host.instances.map(instance => [instance.instanceId, instance.recovery?.state]))) : "";
 	useEffect(() => { void refresh(); }, [refresh, revision]);
 
-	const submit = async (conflict: ConflictEntry, action: ResolutionAction, requestId: string) => {
-		if (!plugin.resolvePlatformLineage || !conflict.platformUid) return;
+	const submit = async (target: { instanceId: number; platformIndex: number; platformUid: string | null }, action: ResolutionAction, requestId: string) => {
+		if (!plugin.resolvePlatformLineage || !target.platformUid) return;
 		setBusy(true);
 		try {
-			const result = await plugin.resolvePlatformLineage({ instanceId: conflict.instanceId, platformIndex: conflict.platformIndex,
-				platformUid: conflict.platformUid, action, requestId });
+			const result = await plugin.resolvePlatformLineage({ instanceId: target.instanceId, platformIndex: target.platformIndex,
+				platformUid: target.platformUid, action, requestId });
 			setOutcome(result.success
 				? `${ACTION_LABEL[action]}: ${result.status === "completed" ? "completed" : `in progress (${result.error || result.step}); retry to continue`}. Request ${requestId}.`
 				: `${ACTION_LABEL[action]} refused: ${result.error}`);
@@ -90,10 +90,26 @@ export default function LineageConflicts({ plugin, state }: { plugin: SurfaceExp
 		}
 	};
 
+	const abandon = async (requestId: string) => {
+		if (!plugin.abandonPlatformResolution) return;
+		setBusy(true);
+		try {
+			const result = await plugin.abandonPlatformResolution(requestId);
+			setOutcome(result.status === "failed" ? `Resolution ${requestId} abandoned: ${result.error}`
+				: `Resolution ${requestId} not abandoned: ${result.error || result.step}`);
+		} catch (failure) {
+			console.warn("Platform resolution abandon reply was lost", failure);
+			setOutcome(`Abandoning resolution ${requestId}: the reply was lost (${getErrorMessage(failure, "no reply")}). Retry the abandon.`);
+		} finally {
+			setBusy(false);
+			await refresh();
+		}
+	};
+
 	const confirm = (conflict: ConflictEntry, action: ResolutionAction) => {
 		const requestId = newRestoreRequestId();
 		const deletes = action === "keep_this" || action === "keep_other" || action === "stale_copy";
-		const aboard = action === "keep_this" ? null : conflict.passengers;
+		const aboard = action === "keep_this" ? conflict.holderPassengers : conflict.passengers;
 		modal.confirm({
 			title: `${ACTION_LABEL[action]} · ${conflict.platformName || `Platform ${conflict.platformIndex}`} on ${nameOf(conflict.instanceId)}`,
 			okText: ACTION_LABEL[action],
@@ -133,7 +149,9 @@ export default function LineageConflicts({ plugin, state }: { plugin: SurfaceExp
 				{conflict.resolution && <p>Resolution {conflict.resolution.requestId}: {conflict.resolution.action}, {conflict.resolution.step}
 					{conflict.resolution.error ? ` (${conflict.resolution.error})` : ""}
 					{canResolve && <Button size="small" type="link" disabled={busy}
-						onClick={() => void submit(conflict, conflict.resolution!.action, conflict.resolution!.requestId)}>Retry</Button>}</p>}
+						onClick={() => void submit(conflict.resolution!, conflict.resolution!.action, conflict.resolution!.requestId)}>Retry</Button>}
+					{canResolve && conflict.resolution.status === "in_progress" && <Button size="small" type="link" danger disabled={busy}
+						onClick={() => void abandon(conflict.resolution!.requestId)}>Abandon</Button>}</p>}
 				{canResolve && <Space wrap>{conflict.actions.map(action => <Button key={action} size="small" disabled={busy || !conflict.platformUid}
 					danger={action === "keep_other" || action === "stale_copy" || action === "keep_this"}
 					onClick={() => confirm(conflict, action)}>{ACTION_LABEL[action]}</Button>)}</Space>}

@@ -41,6 +41,7 @@ clusterioctl surface-export start-transfer <sourceInstanceId> <sourcePlatformInd
 clusterioctl surface-export restore-snapshot <exportId> <targetInstanceId> <requestId> [platformName]
 clusterioctl surface-export conflicts [instanceId]
 clusterioctl surface-export resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>
+clusterioctl surface-export abandon-resolution <requestId>
 clusterioctl surface-export gateways
 clusterioctl surface-export portal assign <instance> <portal>
 clusterioctl surface-export portal release <portal>
@@ -58,7 +59,8 @@ once and push it to every running server. See [portals](configuration.md#portals
 
 `conflicts` lists quarantined and protected platform copies with their live result
 and offered actions. `resolve-platform` applies one offered action; retry a lost reply
-with the same request ID. Both are described in [recovery](recovery.md#resolve-a-quarantined-copy).
+with the same request ID. `abandon-resolution` ends a resolution that has not deleted
+a copy or changed the registry. All three are described in [recovery](recovery.md#resolve-a-quarantined-copy).
 
 The plugin resolves live identity when starting a transfer; copying an index from
 another instance or an old save is not sufficient. Stored export transfer and

@@ -19,6 +19,8 @@ Both modes retain active-transfer protections. Neither reconstructs a missing
 platform automatically or rewrites a completed operation's history. Controller
 unavailability, a lost reply or an unreadable journal or registry does not
 authorize release. Switching modes does not undo an already accepted restoration.
+If the registry file is missing while transfers or stored exports carry platform
+histories, the controller treats it as unreadable: restore the file from a backup.
 
 ## Platform history and quarantine
 
@@ -34,7 +36,7 @@ and players aboard stay where they are. The rest of the server starts normally.
 | `duplicate` | Another server holds the current copy of this platform. |
 | `rollback_other` | The server recorded as holding the current copy answered that it no longer has it. |
 | `unverified` | The server recorded as holding the current copy did not answer (offline, restarting or lost reply). |
-| `in_transit` | A transfer of this platform is still unresolved. |
+| `in_transit` | A transfer or resolution of this platform is still unresolved. |
 | `unresolved_handoff` | An unresolved transfer owns this source platform. |
 | `stale_self` | This server later received a newer copy of this platform. |
 | `ahead_of_registry` | This copy is newer than the controller's record. |
@@ -62,34 +64,48 @@ Resolving needs the `surface_export.recovery.resolve` permission.
 |---|---|
 | `duplicate` | **Keep this copy**: the other server's copy is saved as a snapshot and deleted, then this copy becomes current and is released. **Keep the other copy**: this copy is saved as a snapshot and deleted. |
 | `rollback_other`, `unregistered`, `stale_self`, `ahead_of_registry` | **Adopt this copy**: the controller record moves to this copy and it is released. **Delete this copy**: snapshot, then delete. |
-| `legacy_unclassified` | **Treat as a new platform**: the copy gets a new platform history and is released. **Delete this copy**. |
+| `legacy_unclassified` | **Treat as a new platform**: the copy gets a new platform history and is released. **Delete this copy**. Only **Delete this copy** is offered when the copy is a retired transfer source or transfer history names it. |
 | `duplicate_local` | **Delete this copy**. |
-| `no_identity` | **Release after inspection**: the copy is released without a platform history. It cannot be exported or transferred until it has a hub. |
+| `no_identity` | None while the platform has no hub. Once it has a hub, **Check again** lists the actions for its live result. |
 | Startup could not verify it (`reconcile_error`) but the live result matches the record | **Release after inspection** or **Delete this copy**. |
 | `unverified`, `in_transit`, `unresolved_handoff` | None. The entry states what must happen first. |
 
 Every action re-checks the registry, the other server's answer and in-flight
 transfers when it is submitted, and is refused if anything changed or is uncertain.
+**Adopt this copy** is also refused unless every server that could hold a live copy
+answers that it has none.
 The confirmation shows how many players are aboard the copy that will be deleted.
 They are moved to the default planet by the normal source-deletion path; the count
 does not block the action.
 
 Deletion first stores a snapshot of the copy with the other exports. **Snapshots are
 not pinned**: the normal export limit can remove one later, like any stored export.
-Download or restore it promptly if you may need it. If the snapshot fails, the copy
-returns to its previous protection. The deletion itself uses the transfer
-source-deletion path, which records the source retirement and a deletion receipt.
+Download or restore it promptly if you may need it. A snapshot cannot be sent as a
+transfer. If the snapshot fails, the copy returns to its previous protection. The
+deletion itself uses the transfer source-deletion path, which records the source
+retirement and a deletion receipt. A copy that was already retired by a transfer is
+deleted under that transfer's retirement.
 
 Each resolution has a request ID. Progress is saved in the registry file after each
 confirmed step. If a reply is lost or a server is offline, submit the same request
 ID again: the resolution continues from its last confirmed step and never starts a
 second action. A different action needs a new request ID.
 
+**Abandon** ends a resolution that has not yet deleted a copy or changed the
+registry, for example a deletion that keeps being refused. The copy returns to its
+previous protection, and the other copy of a **Keep this copy** resolution is
+unlocked. A resolution that has already deleted a copy or changed the registry
+cannot be abandoned; retry it with the same request ID to finish it.
+
+A transfer to a server that already holds any copy of the platform, including a
+quarantined one, is refused before it starts. Resolve that copy first.
+
 For an authenticated Clusterio CLI installation:
 
 ```text
 clusterioctl surface-export conflicts [instanceId]
 clusterioctl surface-export resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>
+clusterioctl surface-export abandon-resolution <requestId>
 ```
 
 `conflicts` prints the entries as JSON, including the offered `actions`. `action` is

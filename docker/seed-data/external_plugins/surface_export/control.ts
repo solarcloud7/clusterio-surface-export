@@ -67,6 +67,20 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
+	definition: ["abandon-resolution <requestId>",
+		"Abandon an in-progress resolution that has not deleted or committed a copy; the copy's protection is restored",
+		(yargs: YargsLike) => {
+			yargs.positional("requestId", { type: "string", describe: "Request ID of the in-progress resolution" });
+		}],
+	handler: async (args: { requestId: string }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.AbandonPlatformResolutionRequest({ requestId: args.requestId })) as
+			ReturnType<typeof messages.AbandonPlatformResolutionRequest.Response.fromJSON>;
+		if (response.status !== "failed") throw new Error(response.error || "The resolution was not abandoned");
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];

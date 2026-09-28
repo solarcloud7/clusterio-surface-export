@@ -33,6 +33,7 @@ const {
 	StartPlatformTransferRequest,
 	ListLineageConflictsRequest,
 	ResolvePlatformLineageRequest,
+	AbandonPlatformResolutionRequest,
 	SetSurfaceExportSubscriptionRequest,
 	SurfaceExportTreeUpdateEvent,
 	SurfaceExportTransferUpdateEvent,
@@ -379,6 +380,10 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async resolvePlatformLineage(payload: ConstructorParameters<typeof messageDefs.ResolvePlatformLineageRequest>[0]) {
 		return this.link.send(new ResolvePlatformLineageRequest(payload)) as Promise<ReturnType<typeof messageDefs.ResolvePlatformLineageRequest.Response.fromJSON>>;
+	}
+
+	async abandonPlatformResolution(requestId: string) {
+		return this.link.send(new AbandonPlatformResolutionRequest({ requestId })) as Promise<ReturnType<typeof messageDefs.AbandonPlatformResolutionRequest.Response.fromJSON>>;
 	}
 
 	async loadTransactionLog(transferId: string) {
