@@ -212,3 +212,23 @@ test("portal colours are assigned by the controller; server destinations in a de
 	assert.deepEqual(planChanges(structuredClone(desired), stale, { modFile }).errors, [],
 		"a value left on the live pack by an older mod is ignored, not a reason to block the plan");
 });
+
+test("the removed gateway layout setting and controller gateway mode are refused, and neither is set", () => {
+	const live = () => {
+		const state = liveWith();
+		state.packDetails[7].mods.FluidMustFlow.enabled = true;
+		return state;
+	};
+	const layout = structuredClone(desired);
+	layout.modPack.settings.startup["surfexp-gateway-layout"] = "one_gate";
+	const layoutPlan = planChanges(layout, live(), { modFile });
+	assert.match(layoutPlan.errors.join("; "), /the gateway mod no longer has the surfexp-gateway-layout setting: there is one gateway layout/);
+	const mode = planChanges({ ...structuredClone(desired), controller: { "surface_export.gateway_mode": "one_gate" } }, live(), { modFile });
+	assert.match(mode.errors.join("; "), /surface_export\.gateway_mode is no longer a controller setting/);
+	assert.equal(mode.actions.some(action => action.argv.includes("surface_export.gateway_mode")), false);
+	const stale = live();
+	stale.packDetails[7].settings.startup["surfexp-gateway-layout"] = "multi";
+	stale.controller["surface_export.gateway_mode"] = "multi";
+	assert.deepEqual(planChanges(structuredClone(desired), stale, { modFile }).errors, [],
+		"values left on the live cluster by an older version are ignored, not a reason to block the plan");
+});

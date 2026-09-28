@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
 // produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
-// does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations or the removed surfexp-gateway-instances setting is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
+// does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations, the removed surfexp-gateway-instances or surfexp-gateway-layout setting, or the removed surface_export.gateway_mode controller field is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -92,6 +92,8 @@ function emptyValueError(where, field, value) {
 }
 
 export const REMOVED_DESTINATIONS_SETTING = "surfexp-gateway-instances";
+export const REMOVED_LAYOUT_SETTING = "surfexp-gateway-layout";
+export const REMOVED_GATEWAY_MODE_FIELD = "surface_export.gateway_mode";
 
 function configValue(value) {
 	return typeof value === "string" ? value : JSON.stringify(value);
@@ -106,7 +108,9 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	const packDetail = existing ? live.packDetails[existing.id] : null;
 	if (desired.serverDestinations !== undefined) errors.push("serverDestinations is no longer supported: the controller gives each server one of the four portal colours; remove it from the desired state");
 	if (want?.settings?.startup?.[REMOVED_DESTINATIONS_SETTING] !== undefined) errors.push(`the gateway mod no longer has the ${REMOVED_DESTINATIONS_SETTING} setting; remove it from modPack.settings.startup`);
+	if (want?.settings?.startup?.[REMOVED_LAYOUT_SETTING] !== undefined) errors.push(`the gateway mod no longer has the ${REMOVED_LAYOUT_SETTING} setting: there is one gateway layout; remove it from modPack.settings.startup`);
 	if (desired.gatewayLinks !== undefined) errors.push("gatewayLinks is no longer supported: every server reaches every other server; remove it from the desired state");
+	if (desired.controller?.[REMOVED_GATEWAY_MODE_FIELD] !== undefined) errors.push(`${REMOVED_GATEWAY_MODE_FIELD} is no longer a controller setting: there is one gateway layout; remove it from controller`);
 
 	const modSpecs = [];
 	for (const [name, version] of Object.entries(want?.mods || {})) {
@@ -160,6 +164,7 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	}
 
 	for (const [field, value] of Object.entries(desired.controller || {})) {
+		if (field === REMOVED_GATEWAY_MODE_FIELD) continue;
 		if (JSON.stringify(live.controller[field]) !== JSON.stringify(value)) {
 			const empty = emptyValueError("controller", field, value);
 			if (empty) { errors.push(empty); continue; }
