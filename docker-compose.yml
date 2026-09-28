@@ -17,9 +17,14 @@
 # ============================================================================
 # Adding more hosts:
 #   1. Copy the surface-export-host-2 block and rename to surface-export-host-N
-#   2. Update ports to a new range (e.g., 34300-34309)
+#   2. Update ports to a new range (e.g., 34500-34509; 34300 belongs to the
+#      unrelated atlas cluster)
 #   3. Create seed-data/hosts/clusterio-host-N/<instance-name>/ folders
 #   4. Update HOST_COUNT in controller environment
+#
+# The repository tooling currently expects exactly two seeded hosts:
+# tools/tests/cluster-readiness.mjs refuses any other count, and
+# patch-and-reset.ps1 resets only hosts 1 and 2.
 #
 # IMPORTANT: The hostname MUST stay "clusterio-host-N" pattern for
 # automatic token loading (the host extracts its ID from the hostname).
