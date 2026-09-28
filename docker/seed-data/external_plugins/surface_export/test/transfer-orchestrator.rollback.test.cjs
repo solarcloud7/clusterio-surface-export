@@ -9,7 +9,7 @@ const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-or
 const { isSessionLostError } = require(path.join(distNode, "helpers.js"));
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
-const { LineageRegistry, withLineage, mirrorHold } = require("./lineage-harness.cjs");
+const { LineageRegistry, withLineage, mirrorHold, presenceOf } = require("./lineage-harness.cjs");
 
 function sessionLost(message = "Session Closed") {
 	return Object.assign(new Error(message), { code: "SessionLost" });
@@ -29,6 +29,10 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		autoPauseRefusal: async (id, role) => (calls.autoPaused?.has(id) ? `${role} instance-${id} has auto-pause on` : null),
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
 		lineageRegistry: new LineageRegistry(),
+		lineagePresence: presenceOf((instanceId, lineage) => {
+			calls.presenceChecks = [...(calls.presenceChecks || []), [instanceId, lineage]];
+			return calls.presence?.(instanceId, lineage) ?? { state: "absent" };
+		}),
 		platformStorage: {
 			get: () => ({
 				exportData: withLineage({ platform: { force: "player" } }),
@@ -1457,6 +1461,43 @@ for (const [name, hold, expected] of [
 		assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE), undefined);
 	});
 }
+
+test("a destination that already holds any copy of the lineage is refused before anything is exported or imported", async () => {
+	for (const [answer, expected] of [[{ state: "present" }, /resolve the quarantined copy first/], [{ state: "unknown", reason: "Presence request timed out" }, /could not confirm.*timed out/]]) {
+		const h = makeHarness(() => assert.fail("a transfer reached a destination that holds another copy"));
+		h.calls.presence = () => answer;
+		const result = await h.orch.transferPlatform("1:return-trip", 2);
+		assert.equal(result.success, false);
+		assert.equal(result.safeToUnlockSource, true, "the untouched source must be released");
+		assert.match(result.error, expected);
+		assert.deepEqual(h.calls.presenceChecks, [[2, HARNESS_LINEAGE]], "presence was not asked of the destination");
+		assert.equal(h.activeTransfers.size, 0);
+	}
+});
+
+test("a resolution snapshot is never transferred and its source stays locked", async () => {
+	const h = makeHarness(() => assert.fail("a resolution snapshot reached the destination"));
+	h.plugin.platformStorage.get = () => ({ exportData: withLineage({ platform: { force: "player" }, purpose: "resolution" }),
+		platformName: "p", platformIndex: 3, instanceId: 1, size: 1 });
+	const result = await h.orch.transferPlatform("1:resolution-snapshot", 2);
+	assert.equal(result.success, false);
+	assert.equal(result.safeToUnlockSource, false, "a transfer refusal unlocked a copy under resolution");
+	assert.match(result.error, /resolution snapshot/);
+	assert.equal(h.activeTransfers.size, 0);
+});
+
+test("a destination that reports another local copy at verify rolls back before the source is deleted", async () => {
+	const h = lineageHarness(step => step === "verify" ? { success: true, lineage: HARNESS_LINEAGE, generation: 1, localCopy: true } : undefined);
+	const result = await h.orch.transferPlatform("1:local-copy", 2);
+	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	const transfer = onlyTransfer(h.activeTransfers);
+	assert.equal(transfer.status, "failed");
+	assert.match(transfer.error, /another copy of this platform/);
+	assert.deepEqual(h.order, ["verify", "GetSourceTransferLockStateRequest", "discard"], "the source was deleted although the destination holds another copy");
+	assert.equal(h.calls.unlockRouteTaken, 1);
+	assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE), undefined);
+});
 
 test("mixed plugin versions: an old destination without lineage support rolls back cleanly", async () => {
 	const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null } : undefined);

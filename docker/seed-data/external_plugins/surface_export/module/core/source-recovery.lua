@@ -1,6 +1,7 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
+local Gateway = require("modules/surface_export/core/gateway")
 
 local Recovery = {}
 
@@ -336,7 +337,13 @@ function Recovery.lineage_presence(lineages_json)
 		local result, err = PlatformLineage.presence(lineage)
 		if not result then return {success = false, error = err} end
 		local copy = result.platform
-		answers[index] = {lineage = lineage, present = result.present, generation = result.generation, held = result.held,
+		local aboard
+		if copy then
+			local counted, players, characters = pcall(Gateway.collect_passengers, copy)
+			if counted then aboard = Gateway.passenger_count(players, characters)
+			else log("[SourceRecovery] passenger count unavailable: " .. tostring(players)) end
+		end
+		answers[index] = {lineage = lineage, present = result.present, generation = result.generation, held = result.held, passengers = aboard,
 			platformIndex = copy and copy.index or nil, platformUid = copy and identity(copy) or nil,
 			platformName = copy and copy.name or nil, forceName = result.force and result.force.name or nil}
 	end

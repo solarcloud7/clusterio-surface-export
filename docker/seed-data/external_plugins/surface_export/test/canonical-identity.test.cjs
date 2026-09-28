@@ -162,7 +162,7 @@ test("controller loadStorage migrates legacy raw source export ids without dropp
 });
 
 function makeTransferHarness() {
-	const { LineageRegistry, withLineage } = require("./lineage-harness.cjs");
+	const { LineageRegistry, withLineage, presenceOf } = require("./lineage-harness.cjs");
 	const calls = { imports: [], sourceDeletes: [], storageDeletes: [] };
 	const activeTransfers = new Map();
 	const stored = {
@@ -183,6 +183,7 @@ function makeTransferHarness() {
 		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
 		lineageRegistry: new LineageRegistry(),
+		lineagePresence: presenceOf(),
 		platformStorage: {
 			get: (id) => id === "1:001_test" ? stored : null,
 			delete: (id) => { calls.storageDeletes.push(id); },

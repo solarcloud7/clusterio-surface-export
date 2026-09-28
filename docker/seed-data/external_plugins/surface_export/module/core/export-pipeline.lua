@@ -262,6 +262,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			platform_uid = uid,
 			lineage = lineage,
 			generation = lineage_generation,
+			purpose = purpose,
 			tick = game.tick,
 			timestamp = Util.format_timestamp(game.tick),
 			platform = {
@@ -456,7 +457,7 @@ local function publish_completion(job)
 			section_codec = SectionCodec.VERSION, section_count = #job.compressed_sections, sections = job.compressed_sections,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name, tick = job.export_data.tick,
-			lineage = job.export_data.lineage, generation = job.export_data.generation,
+			lineage = job.export_data.lineage, generation = job.export_data.generation, purpose = job.export_data.purpose,
 			timestamp = job.export_data.timestamp, stats = job.export_data.stats,
 			verification = job.export_data.verification,
 		})
@@ -467,7 +468,7 @@ local function publish_completion(job)
 			payload = compressed,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name,
-			lineage = job.export_data.lineage, generation = job.export_data.generation,
+			lineage = job.export_data.lineage, generation = job.export_data.generation, purpose = job.export_data.purpose,
 			tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp,
 			stats = job.export_data.stats,

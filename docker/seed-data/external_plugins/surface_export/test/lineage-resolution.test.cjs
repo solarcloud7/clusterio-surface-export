@@ -31,11 +31,12 @@ function entry(overrides = {}) {
 	return { instanceId: H, generation: 2, platformName: "ship", forceName: "player", lastExportId: "2:x", updatedAt: 1, source: "transfer", ...overrides };
 }
 
-function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candidate()] }, holder = { present: true, platformIndex: 9, platformUid: "h:9" } } = {}) {
+function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candidate()] },
+	holder = { present: true, platformIndex: 9, platformUid: "h:9", forceName: "enemy", passengers: 4 }, presence = {} } = {}) {
 	const sent = [];
 	const storage = new Map();
 	const behaviour = { lose: new Set(), jobIds: {}, jobState: {}, applyError: {}, deleteError: null, presenceError: null, reserved: new Set(), offline: new Set() };
-	const counters = { prepare: 0, delete: 0, release: 0, mint: 0, restore: 0 };
+	const counters = { prepare: 0, delete: 0, release: 0, mint: 0, restore: 0, authorize: 0, retarget: 0 };
 	const host = {
 		lineageRegistry: registry, pendingTransfers: new Map(), activeTransfers: new Map(), platformStorage: storage,
 		get recoveryReservations() { return new Map([...behaviour.reserved].map(id => [id, {}])); },
@@ -52,9 +53,9 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 			const results = new Map();
 			for (const [holderId, set] of wanted) {
 				for (const lineage of set) {
-					results.set(`${holderId}\u0000${lineage}`, behaviour.presenceError || behaviour.offline.has(holderId)
+					results.set(`${holderId}\u0000${lineage}`, presence[holderId] ?? (behaviour.presenceError || behaviour.offline.has(holderId)
 						? { state: "unknown", reason: behaviour.presenceError || "offline" }
-						: holder.present ? { state: "present" } : { state: "absent" });
+						: holder.present ? { state: "present", passengers: holder.passengers } : { state: "absent" }));
 				}
 			}
 			return results;
@@ -80,7 +81,12 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 					if (behaviour.storeSnapshot !== false) storage.set(`${instanceId}:${jobId}`, { exportId: `${instanceId}:${jobId}` });
 					return { success: true, jobId };
 				}
-				if (message.step === "restore") { counters.restore++; return { success: true, restored: true }; }
+				if (message.step === "restore") {
+					counters.restore++;
+					return behaviour.restoreCommitted ? { success: false, committed: true, error: "The deletion is already committed" } : { success: true, restored: true };
+				}
+				if (message.step === "authorize") { counters.authorize++; return { success: true }; }
+				if (message.step === "retarget") { counters.retarget++; return { success: true }; }
 				if (message.step === "mint") { counters.mint++; return { success: true, lineage: `lineage:epoch-${instanceId}:15`, generation: 0 }; }
 				counters.release++;
 				return { success: true, platformUid: message.platformUid };
@@ -105,7 +111,7 @@ test("each live verdict offers only its own actions", () => {
 	const table = {
 		duplicate: ["keep_this", "keep_other"], rollback_other: ["adopt", "stale_copy"], unregistered: ["adopt", "stale_copy"],
 		stale_self: ["adopt", "stale_copy"], ahead_of_registry: ["adopt", "stale_copy"], legacy_unclassified: ["new_platform", "stale_copy"],
-		duplicate_local: ["stale_copy"], normal: ["release", "stale_copy"], no_identity: ["release"],
+		duplicate_local: ["stale_copy"], normal: ["release", "stale_copy"], no_identity: [],
 		unverified: [], in_transit: [], unresolved_handoff: [],
 	};
 	for (const [verdict, actions] of Object.entries(table)) {
@@ -114,6 +120,11 @@ test("each live verdict offers only its own actions", () => {
 		assert.equal(Boolean(gate.blocked), actions.length === 0, `${verdict} must explain a missing action`);
 	}
 	assert.deepEqual(resolutionActions("duplicate", "resolving").actions, [], "a copy in the middle of a resolution offered another action");
+	for (const [state, flags] of [["tombstone", {}], ["quarantine", { journalUidMatch: true }], ["quarantine", { historyMatch: true }]]) {
+		assert.deepEqual(resolutionActions("legacy_unclassified", state, flags).actions, ["stale_copy"],
+			`new_platform was offered for a retired copy (${state} ${JSON.stringify(flags)})`);
+	}
+	assert.match(resolutionActions("no_identity", "quarantine").blocked, /no hub/);
 });
 
 test("resolution needs its own permission and listing only needs the page view", () => {
@@ -166,9 +177,13 @@ test("keep-this deletes the other server's copy, then advances the registry and 
 	assert.equal(result.status, "completed");
 	const order = c.sent.filter(item => !["LineageCandidatesRequest", "LineagePresenceRequest"].includes(item.name))
 		.map(item => `${item.instanceId}:${item.name}:${item.message.step ?? ""}`);
-	assert.deepEqual(order, ["2:ApplyLineageResolutionRequest:prepare_delete", "2:DeleteSourcePlatformRequest:", "1:ApplyLineageResolutionRequest:release"]);
+	assert.deepEqual(order, ["1:ApplyLineageResolutionRequest:authorize", "2:ApplyLineageResolutionRequest:prepare_delete",
+		"2:DeleteSourcePlatformRequest:", "1:ApplyLineageResolutionRequest:release"]);
 	const deletion = c.sent.find(item => item.name === "DeleteSourcePlatformRequest").message;
-	assert.equal(deletion.platformIndex, 9);
+	assert.deepEqual([deletion.platformIndex, deletion.forceName], [9, "enemy"], "the other copy was deleted with this copy's force");
+	assert.equal(result.passengers, 4, "the passenger count is not the deleted copy's");
+	const listed = await cluster().resolver.list(I);
+	assert.equal(listed.conflicts[0].holderPassengers, null, "an unverified holder reported passengers");
 	const release = c.sent.find(item => item.message.step === "release").message;
 	assert.deepEqual([release.lineage, release.generation], [L, 3]);
 	assert.deepEqual([c.registry.get(L).instanceId, c.registry.get(L).generation, c.registry.get(L).source], [I, 3, "resolution"]);
@@ -181,15 +196,116 @@ test("adopt, new-platform and release commit the registry before the Lua release
 	assert.equal(result.status, "completed");
 	assert.deepEqual([c.registry.get(L).instanceId, c.registry.get(L).generation], [I, 3]);
 	assert.deepEqual([c.sent.at(-1).message.step, c.sent.at(-1).message.generation], ["release", 3]);
+	assert.deepEqual(c.sent.filter(item => item.message.step).map(item => item.message.step), ["authorize", "release"]);
 	c = cluster({ candidates: { [I]: [candidate({ lineage: null, generation: null, hadIdentity: false, journalHubMatch: true, reason: "legacy_unclassified" })] } });
 	result = await c.resolver.resolve(request({ action: "new_platform" }));
 	assert.equal(result.status, "completed");
 	assert.deepEqual([c.registry.get("lineage:epoch-1:15").instanceId, c.registry.get("lineage:epoch-1:15").generation], [I, 0]);
-	assert.deepEqual(c.sent.filter(item => item.message.step).map(item => item.message.step), ["mint", "release"]);
-	c = cluster({ candidates: { [I]: [candidate({ platformUid: "boot-old:15", hubUnitNumber: null, lineage: null, generation: null, reason: "no_identity" })] } });
+	assert.deepEqual(c.sent.filter(item => item.message.step).map(item => item.message.step), ["authorize", "mint", "release"]);
+	c = cluster({ candidates: { [I]: [candidate({ generation: 0, reason: "reconcile_error" })] } });
 	result = await c.resolver.resolve(request({ action: "release" }));
 	assert.equal(result.status, "completed");
-	assert.equal(c.sent.at(-1).message.lineage, null);
+	assert.deepEqual([c.registry.get(L)?.instanceId, c.registry.get(L)?.generation], [I, 0], "releasing a claim did not claim the lineage");
+	assert.deepEqual(c.sent.filter(item => item.message.step).map(item => [item.message.step, item.message.lineage]), [["authorize", null], ["release", L]]);
+	c = cluster({ candidates: { [I]: [candidate({ lineage: null, generation: null, reason: "reconcile_error" })] } });
+	result = await c.resolver.resolve(request({ action: "release" }));
+	assert.equal(result.status, "completed", result.error);
+	assert.equal(c.registry.get("lineage:epoch-1:15")?.instanceId, I, "releasing an unminted claim did not claim its lineage");
+	assert.deepEqual([c.sent.at(-1).message.lineage, c.sent.at(-1).message.generation], ["lineage:epoch-1:15", 0]);
+	c = cluster({ candidates: { [I]: [candidate({ generation: 0, reason: "reconcile_error" })] } });
+	const send = c.host.send.bind(c.host);
+	c.host.send = async (id, message) => {
+		if (message.step === "authorize") await c.registry.update(draft => draft.set(L, entry({ generation: 0, instanceId: H })));
+		return send(id, message);
+	};
+	result = await c.resolver.resolve(request({ action: "release" }));
+	assert.deepEqual([result.success, result.status], [false, "failed"], "a claim release ignored a competing claim");
+	assert.match(result.error, /registry changed/);
+	assert.equal(c.counters.release, 0);
+	assert.equal(c.registry.get(L).instanceId, H);
+});
+
+test("every Lua step carries one controller-issued token that listings never show", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	await c.resolver.resolve(request({ action: "keep_this" }));
+	const tokens = new Set(c.sent.filter(item => item.name === "ApplyLineageResolutionRequest").map(item => item.message.token));
+	assert.equal(tokens.size, 1);
+	const [token] = tokens;
+	assert.match(token, /^[0-9a-f]{64}$/);
+	assert.equal(c.registry.resolution("req-00000001").token, token);
+	const listing = await c.resolver.list(null);
+	assert.equal(JSON.stringify(listing).includes(token), false, "the listing exposed the resolution token");
+	const other = cluster();
+	await other.registry.update(draft => draft.set(L, entry()));
+	await other.resolver.resolve(request({ action: "keep_this" }));
+	assert.notEqual(other.registry.resolution("req-00000001").token, token, "two resolutions shared a token");
+});
+
+test("adopt refuses unless every server that could hold a live copy answers absent", async () => {
+	const cases = [
+		["unregistered, another server present", { [H]: { state: "present" } }, null, /still has a copy/],
+		["unregistered, another server unknown", { [H]: { state: "unknown", reason: "offline" } }, null, /could not rule out/],
+		["ahead_of_registry, holder present", { [H]: { state: "present" } }, entry({ generation: 0 }), /still has a copy/],
+		["ahead_of_registry, holder unknown", { [H]: { state: "unknown", reason: "timeout" } }, entry({ generation: 0 }), /could not rule out/],
+	];
+	for (const [label, presence, registered, expected] of cases) {
+		const c = cluster({ candidates: { [I]: [candidate({ generation: 1, reason: "unregistered" })] }, presence });
+		if (registered) await c.registry.update(draft => draft.set(L, registered));
+		const result = await c.resolver.resolve(request({ action: "adopt" }));
+		assert.equal(result.success, false, label);
+		assert.match(result.error, expected, label);
+		assert.equal(c.counters.authorize + c.counters.release, 0, `${label} still acted`);
+		assert.equal(c.registry.resolution("req-00000001"), undefined, label);
+	}
+	const c = cluster({ candidates: { [I]: [candidate({ generation: 1, reason: "unregistered" })] }, presence: { [H]: { state: "absent" } } });
+	const result = await c.resolver.resolve(request({ action: "adopt" }));
+	assert.equal(result.status, "completed");
+});
+
+test("a journal-matched copy is deleted under its original retirement, and a stuck delete can be abandoned", async () => {
+	const tombstone = candidate({ state: "tombstone", reason: null, retiredExportId: "old-job", journalUidMatch: true, generation: 1 });
+	let c = cluster({ candidates: { [I]: [tombstone] }, holder: { present: false } });
+	await c.registry.update(draft => draft.set(L, entry()));
+	let result = await c.resolver.resolve(request({ action: "stale_copy" }));
+	assert.equal(result.status, "completed");
+	const retarget = c.sent.find(item => item.message.step === "retarget");
+	assert.equal(retarget?.message.exportId, "old-job");
+	assert.equal(c.sent.find(item => item.name === "DeleteSourcePlatformRequest").message.exportId, "old-job");
+	c = cluster({ candidates: { [I]: [candidate({ state: "tombstone", reason: null, retiredExportId: null, journalUidMatch: true })] }, holder: { present: false } });
+	await c.registry.update(draft => draft.set(L, entry()));
+	result = await c.resolver.resolve(request({ action: "stale_copy" }));
+	assert.equal(result.success, false);
+	assert.match(result.error, /original transfer is unknown/);
+	c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	c.behaviour.deleteError = "Source retirement already belongs to another transfer";
+	result = await c.resolver.resolve(request({ action: "keep_this" }));
+	assert.deepEqual([result.status, result.step], ["in_progress", "delete"]);
+	const abandoned = await c.resolver.abandon("req-00000001");
+	assert.deepEqual([abandoned.success, abandoned.status], [false, "failed"]);
+	assert.match(abandoned.error, /Abandoned by an administrator/);
+	assert.equal(c.counters.restore, 1);
+	assert.equal(c.sent.filter(item => item.message.step === "restore")[0].instanceId, H, "abandon restored the wrong copy");
+	assert.equal(c.counters.release, 0);
+	assert.equal(c.registry.get(L).instanceId, H);
+	c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	c.behaviour.deleteError = "refused";
+	await c.resolver.resolve(request());
+	c.behaviour.restoreCommitted = true;
+	c.behaviour.deleteError = null;
+	result = await c.resolver.abandon("req-00000001");
+	assert.equal(result.status, "completed", "a committed deletion was reported abandoned instead of finished");
+	c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	c.behaviour.lose.add("1:ApplyLineageResolutionRequest:release");
+	await c.resolver.resolve(request({ action: "keep_this" }));
+	result = await c.resolver.abandon("req-00000001");
+	assert.equal(result.success, false);
+	assert.match(result.error, /already deleted or committed/);
+	assert.equal(c.registry.resolution("req-00000001").status, "in_progress");
+	assert.equal((await cluster().resolver.abandon("req-missing1")).success, false);
 });
 
 test("every action re-checks at action time and refuses on any uncertainty", async () => {
@@ -280,7 +396,7 @@ test("a controller restart resumes the persisted resolution instead of starting 
 	assert.equal(restarted.counters.delete, 1);
 });
 
-test("a failed snapshot or a forgotten Lua job ends the resolution without deleting", async () => {
+test("a failed snapshot ends the resolution without deleting", async () => {
 	let c = cluster();
 	await c.registry.update(draft => draft.set(L, entry()));
 	c.behaviour.storeSnapshot = false;
@@ -290,17 +406,6 @@ test("a failed snapshot or a forgotten Lua job ends the resolution without delet
 	assert.match(result.error, /snapshot failed/);
 	assert.equal(c.counters.delete, 0);
 	assert.equal(c.counters.restore, 1, "a failed snapshot left the copy under the resolution lock");
-	c = cluster();
-	await c.registry.update(draft => draft.set(L, entry()));
-	c.behaviour.storeSnapshot = false;
-	await c.resolver.resolve(request());
-	const record = c.registry.resolution("req-00000001");
-	await c.registry.update((_draft, resolutions) => { resolutions.set(record.requestId, { ...record, step: "admitted" }); });
-	c.behaviour.jobIds[I] = "job-other";
-	result = await c.resolver.resolve(request());
-	assert.equal(result.status, "failed");
-	assert.match(result.error, /no longer knows/);
-	assert.equal(c.counters.delete, 0);
 	c = cluster();
 	await c.registry.update(draft => draft.set(L, entry()));
 	c.behaviour.deleteError = "source evacuation not confirmed";

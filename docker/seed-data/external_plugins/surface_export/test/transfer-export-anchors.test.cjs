@@ -7,7 +7,7 @@ const path = require("node:path");
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
 const messages = require(path.join(distNode, "messages.js"));
-const { LineageRegistry, withLineage } = require("./lineage-harness.cjs");
+const { LineageRegistry, withLineage, presenceOf } = require("./lineage-harness.cjs");
 
 function makeHarness() {
 	const noop = () => {};
@@ -20,6 +20,7 @@ function makeHarness() {
 		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
 		lineageRegistry: new LineageRegistry(),
+		lineagePresence: presenceOf(),
 		platformStorage: {
 			get: () => ({
 				exportData: withLineage({ platform: { force: "player" } }),

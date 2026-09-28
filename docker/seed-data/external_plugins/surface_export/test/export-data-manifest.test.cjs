@@ -36,6 +36,7 @@ const MANIFEST = [
 	{ name: "platform_uid", declared: true, origin: LUA_ENVELOPE },
 	{ name: "lineage", declared: true, origin: LUA_ENVELOPE },
 	{ name: "generation", declared: true, origin: LUA_ENVELOPE },
+	{ name: "purpose", declared: true, origin: LUA_ENVELOPE },
 	{ name: "force_name", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compressed", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compression", declared: true, origin: LUA_ENVELOPE },
@@ -155,7 +156,7 @@ function envelopeKeys(source, discriminator = "compressed") {
 
 test("internal section envelope is explicit and distinct from the downloadable envelope", () => {
 	assert.deepEqual(envelopeKeys(exportPipelineSource, "section_codec"), [
-		"force_name", "generation", "lineage", "platform_name", "platform_uid", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
+		"force_name", "generation", "lineage", "platform_name", "platform_uid", "purpose", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
 	]);
 });
 

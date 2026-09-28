@@ -69,6 +69,7 @@ export class LineageRegistry {
 	private file: string | null = null;
 	private queue: Promise<void> = Promise.resolve();
 	loadError: string | null = null;
+	fileMissing = false;
 
 	constructor(private readonly now: () => number = Date.now) {}
 
@@ -77,6 +78,7 @@ export class LineageRegistry {
 		this.entries = new Map();
 		this.resolutions = new Map();
 		this.loadError = null;
+		this.fileMissing = false;
 		try {
 			const saved = JSON.parse(await fs.readFile(file, "utf8")) as { version?: unknown; entries?: unknown; resolutions?: unknown };
 			if (saved?.version !== 1 || !Array.isArray(saved.entries)) throw new Error("not a version 1 lineage registry");
@@ -98,10 +100,18 @@ export class LineageRegistry {
 			this.entries = entries;
 			this.resolutions = resolutions;
 		} catch (error: unknown) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				this.fileMissing = true;
+				return;
+			}
 			this.loadError = `Platform lineage registry ${file} is unreadable (${getErrorMessage(error)}); `
 				+ "startup recovery and lineage transfers are refused until it is repaired";
 		}
+	}
+
+	markUnreadable(reason: string): void {
+		this.loadError = `Platform lineage registry ${this.file} is unreadable (${reason}); `
+			+ "startup recovery and lineage transfers are refused until it is repaired";
 	}
 
 	get(lineage: string): LineageEntry | undefined {

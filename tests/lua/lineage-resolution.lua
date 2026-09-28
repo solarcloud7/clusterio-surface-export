@@ -1,6 +1,7 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local json = assert(loadfile(root .. "core/json.lua"))()
 local function noop() end
+TOKEN = "controller-issued-token-0123456789abcdef"
 
 local function world()
     local force = {name = "player", valid = true, platforms = {}, set_surface_hidden = noop, get_surface_hidden = function() return false end}
@@ -82,9 +83,16 @@ local function world()
         env.storage.source_recovery_notices[index] = {platformIndex = index, status = "protected", exportId = job, reason = "duplicate"}
         return lock
     end
-    local function apply(request) return resolution.apply(json.encode(request)) end
+    local function apply(request)
+        if request.token == nil then request.token = TOKEN end
+        if request.token == false then request.token = nil end
+        return resolution.apply(json.encode(request))
+    end
+    local function authorize(requestId, index, uid)
+        return apply({requestId = requestId, step = "authorize", platformIndex = index, platformUid = uid})
+    end
     return {env = env, add = add, locks = locks, lineage = lineage, resolution = resolution, quarantine = quarantine,
-        tombstone = tombstone, apply = apply, queued = queued, set_queue = function(value) queue_result = value end}
+        tombstone = tombstone, apply = apply, authorize = authorize, queued = queued, set_queue = function(value) queue_result = value end}
 end
 
 do
@@ -189,6 +197,11 @@ do
     local rival = w.add(9, 81)
     rival.hidden = false
     w.env.storage.surface_export_lineages[9] = {lineage = "lineage:a:80", generation = 3, surface_index = 19, hub_unit_number = 81}
+    assert(not w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4}).success,
+        "a release without an authorized resolution succeeded")
+    assert(w.authorize("adopt-1", 8, "old:80").success)
+    assert(not w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4,
+        token = "another-token-0123456789abcdef0123"}).success, "a release with another token succeeded")
     local blocked = w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4})
     assert(not blocked.success and p.hidden, "an adoption released a copy while another local copy carries its lineage")
     w.env.storage.surface_export_lineages[9] = nil
@@ -204,10 +217,13 @@ do
     local q = w.add(10, 100)
     w.tombstone(10, "retired-10")
     w.env.storage.surface_export_lineages[10] = {lineage = "lineage:a:100", generation = 1, surface_index = 20, hub_unit_number = 100}
+    assert(w.authorize("adopt-2", 10, "old:100").success)
     local revived = w.apply({requestId = "adopt-2", step = "release", platformIndex = 10, platformUid = "old:100", lineage = "lineage:a:100", generation = 2})
     assert(revived.success and not q.hidden and revived.platformUid == "boot-now:100", "an adopted tombstone kept its retired identity")
     local m = w.add(11, 110)
     w.quarantine(11, "legacy_unclassified")
+    assert(not w.apply({requestId = "new-1", step = "mint", platformIndex = 11, platformUid = "old:110"}).success, "an unauthorized mint succeeded")
+    assert(w.authorize("new-1", 11, "old:110").success)
     local minted = w.apply({requestId = "new-1", step = "mint", platformIndex = 11, platformUid = "old:110"})
     assert(minted.success and minted.lineage == "lineage:boot-now:110" and minted.generation == 0 and m.hidden,
         "minting a new platform released it before the registry claim")
@@ -215,7 +231,7 @@ do
     assert(w.apply({requestId = "new-1", step = "release", platformIndex = 11, platformUid = "old:110", lineage = minted.lineage, generation = 0}).success)
     assert(not m.hidden and w.env.storage.locked_platforms[11] == nil)
     w.add(13, 130)
-    assert(not w.apply({requestId = "new-2", step = "mint", platformIndex = 13, platformUid = "old:130"}).success,
+    assert(not w.authorize("new-2", 13, "old:130").success and not w.apply({requestId = "new-2", step = "mint", platformIndex = 13, platformUid = "old:130"}).success,
         "a usable platform was given a new lineage by a resolution")
     w.env.storage.source_recovery_ready = false
     assert(not w.apply({requestId = "late", step = "release", platformIndex = 8, platformUid = "old:80"}).success)
@@ -308,4 +324,50 @@ do
     assert(not w.apply({requestId = "abandon-3", step = "restore", platformIndex = 17, platformUid = "old:170"}).success,
         "a committed deletion was abandoned")
     print("PASS an abandoned resolution restores the quarantine or releases the live copy it locked, never a committed deletion")
+end
+
+do
+    local w = world()
+    w.add(18, 180)
+    w.tombstone(18, "retired-18")
+    w.set_queue("snap-18")
+    local retarget = {requestId = "retarget-1", step = "retarget", platformIndex = 18, platformUid = "old:180", exportId = "retired-18"}
+    assert(not w.apply(retarget).success, "a copy was retargeted before its resolution held it")
+    assert(w.apply({requestId = "retarget-1", step = "prepare_delete", platformIndex = 18, platformUid = "old:180"}).success)
+    local lock = w.env.storage.locked_platforms[18]
+    assert(lock.transfer_job_id == "snap-18")
+    w.env.storage.async_jobs = {["snap-18"] = {}}
+    assert(not w.apply(retarget).success, "a copy was retargeted while its snapshot was still running")
+    w.env.storage.async_jobs = {}
+    assert(not w.apply({requestId = "retarget-1", step = "retarget", platformIndex = 18, platformUid = "old:180", exportId = "another-job"}).success,
+        "a retired copy was retargeted to another transfer's retirement")
+    assert(not w.apply({requestId = "retarget-1", step = "retarget", platformIndex = 18, platformUid = "old:180", exportId = "retired-18",
+        token = "wrong-token-0123456789abcdef0123456789"}).success, "retarget accepted another token")
+    assert(w.apply(retarget).success)
+    assert(lock.transfer_job_id == "retired-18" and lock.resolution_request_id == "retarget-1", "the deletion does not use the original retirement")
+    assert(w.apply(retarget).success, "a retried retarget was refused")
+    local restored = w.apply({requestId = "retarget-1", step = "restore", platformIndex = 18, platformUid = "old:180"})
+    assert(restored.success and lock.kind == "transfer" and lock.phase == "committed" and lock.transfer_job_id == "retired-18"
+        and lock.resolution_request_id == nil, "abandoning a retargeted tombstone did not restore the tombstone")
+    w.add(19, 190)
+    w.quarantine(19, "duplicate")
+    assert(w.apply({requestId = "gone-1", step = "prepare_delete", platformIndex = 19, platformUid = "old:190"}).success)
+    w.env.game.forces.player.platforms[19] = nil
+    local gone = w.apply({requestId = "gone-1", step = "restore", platformIndex = 19, platformUid = "old:190"})
+    assert(not gone.success and gone.committed == true, "abandoning a copy that no longer exists was reported as restored")
+    print("PASS a journal-matched copy is deleted under its original retirement; abandon restores it and reports a finished deletion")
+end
+
+do
+    local w = world()
+    local p = w.add(20, 200)
+    w.quarantine(20, "reconcile_error")
+    local minted = w.lineage.mint_value("boot-now", p)
+    assert(w.authorize("claim-1", 20, "old:200").success)
+    assert(not w.apply({requestId = "claim-1", step = "release", platformIndex = 20, platformUid = "old:200", lineage = "lineage:boot-now:999", generation = 0}).success,
+        "a release recorded a lineage the platform cannot mint")
+    local released = w.apply({requestId = "claim-1", step = "release", platformIndex = 20, platformUid = "old:200", lineage = minted, generation = 0})
+    assert(released.success, tostring(released.error))
+    assert(w.lineage.get(p) == minted and w.env.storage.locked_platforms[20] == nil, "releasing an unminted claim did not record its lineage")
+    print("PASS releasing an unminted claim records exactly the lineage the controller claimed")
 end

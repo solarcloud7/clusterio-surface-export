@@ -56,6 +56,15 @@ local function held_by_other(lineage, platform_index)
 	return false
 end
 
+function PlatformLineage.local_copy(lineage, except_index, except_transfer_id)
+	if not PlatformLineage.valid(lineage) then return false end
+	if held_by_other(lineage, except_index) then return true end
+	for transfer_id, hold in pairs(storage.destination_holds or {}) do
+		if type(hold) == "table" and hold.lineage == lineage and transfer_id ~= except_transfer_id then return true end
+	end
+	return false
+end
+
 function PlatformLineage.forget(platform_index)
 	if storage.surface_export_lineages then storage.surface_export_lineages[platform_index] = nil end
 end

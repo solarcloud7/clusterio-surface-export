@@ -401,6 +401,17 @@ export class TransferOrchestrator {
 		if (this.plugin.lineageRegistry.loadError) {
 			return { success: false, safeToUnlockSource: true, error: this.plugin.lineageRegistry.loadError };
 		}
+		if (innerData.purpose === "resolution") {
+			return { success: false, safeToUnlockSource: false,
+				error: "This export is a resolution snapshot and cannot be transferred. Download it or restore it deliberately instead." };
+		}
+		const presence = (await this.plugin.lineagePresence(new Map([[targetInstanceId, new Set([innerData.lineage as string])]])))
+			.get(`${targetInstanceId}\u0000${innerData.lineage as string}`);
+		if (presence?.state !== "absent") {
+			return { success: false, safeToUnlockSource: true, error: presence?.state === "present"
+				? "The destination already has a copy of this platform, possibly quarantined; resolve the quarantined copy first. The source platform is unchanged."
+				: `The destination could not confirm it has no copy of this platform (${presence?.state === "unknown" ? presence.reason : "no answer"}). The source platform is unchanged.` };
+		}
 		timingContext.enterWith(this.txLogger.beginObservation(transferId));
 		const { payloadMetrics, itemCounts, fluidCounts } = timedSync("Payload preparation", () => buildPayloadMetrics(innerData));
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
@@ -923,6 +934,9 @@ export class TransferOrchestrator {
 			const intent = this.plugin.pendingTransfers?.get(transferId) ?? transfer;
 			const plan = lineageCommitPlan(intent, held as { lineage?: unknown; generation?: unknown });
 			if (plan.kind === "refused") return rollbackBeforeDelete(plan.error);
+			if ((held as { localCopy?: boolean }).localCopy === true) {
+				return rollbackBeforeDelete("The destination already has another copy of this platform; resolve the quarantined copy first");
+			}
 			const commit = plan.kind === "lineage" ? {
 				lineage: plan.lineage, transferId, sourceInstanceId: transfer.sourceInstanceId, targetInstanceId: transfer.targetInstanceId,
 				fromGeneration: plan.fromGeneration, toGeneration: plan.toGeneration,

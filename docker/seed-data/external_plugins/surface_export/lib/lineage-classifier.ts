@@ -10,7 +10,7 @@ export interface ControllerHints {
 	duplicateLocal: boolean;
 }
 
-export type Presence = { state: "present"; generation?: number } | { state: "absent" } | { state: "unknown"; reason: string };
+export type Presence = { state: "present"; generation?: number; passengers?: number } | { state: "absent" } | { state: "unknown"; reason: string };
 
 export interface ClassifyContext {
 	instanceId: number;

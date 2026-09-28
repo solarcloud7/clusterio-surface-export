@@ -222,6 +222,15 @@ test("an in-transit or unresolved handoff quarantine records the owning source j
 	assert.equal(plugin.owningSourceJob(J, facts()), null, "another instance's transfer owns this copy");
 	assert.equal(plugin.owningSourceJob(I, facts({ lineage: "lineage:other:1" })), null);
 	assert.equal(plugin.owningSourceJob(I, facts({ lineage: null, generation: null })), "job-a", "an unlineaged source lost its handoff owner");
+	plugin.platformStorage = new Map([["1:job-a", { exportData: { platform_uid: "boot-old:99" } }]]);
+	assert.equal(plugin.owningSourceJob(I, facts({ lineage: null, generation: null })), null, "a reused index gave another platform's handoff owner");
+	plugin.platformStorage.set("1:job-a", { exportData: { platform_uid: facts().platformUid } });
+	assert.equal(plugin.owningSourceJob(I, facts({ lineage: null, generation: null })), "job-a");
+	plugin.platformStorage.clear();
+	plugin.activeTransfers.set("1:other", { transferId: "1:other", operationType: "transfer", status: "awaiting_validation", sourceInstanceId: I,
+		targetInstanceId: J, platformIndex: 7, platformUid: "boot-old:98", sourceExportId: "job-other" });
+	assert.equal(plugin.owningSourceJob(I, facts({ platformIndex: 7, lineage: null, generation: null })), null, "an active transfer of another platform owned a reused index");
+	plugin.activeTransfers.clear();
 	plugin.pendingTransfers.set("1:job-b", intent("job-b"));
 	assert.equal(plugin.owningSourceJob(I, facts()), null, "an ambiguous owner was recorded");
 	plugin.pendingTransfers.clear();

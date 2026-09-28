@@ -222,8 +222,10 @@ export class LineagePresenceRequest {
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, epoch: { type: "string" }, error: { type: "string" },
 			lineages: { type: "array", items: { type: "object", properties: { lineage: LINEAGE_SCHEMA, present: { type: "boolean" },
-				generation: { type: "integer" }, held: { type: "boolean" } }, required: ["lineage", "present"] } } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { success: boolean; epoch?: string; error?: string; lineages?: Array<{ lineage: string; present: boolean; generation?: number; held?: boolean }> }; },
+				generation: { type: "integer" }, held: { type: "boolean" }, platformIndex: { type: "integer" }, platformUid: { type: "string" },
+				platformName: { type: "string" }, forceName: { type: "string" }, passengers: { type: "integer", minimum: 0 } },
+				required: ["lineage", "present"] } } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as { success: boolean; epoch?: string; error?: string; lineages?: Array<{ lineage: string; present: boolean; generation?: number; held?: boolean; platformIndex?: number; platformUid?: string; platformName?: string; forceName?: string; passengers?: number }> }; },
 	};
 }
 
@@ -250,7 +252,7 @@ export class ListLineageConflictsRequest {
 		fromJSON(json: unknown) {
 			return json as { conflicts: import("./shared/lineage-resolution").ConflictEntry[];
 				unavailable: Array<{ instanceId: number; reason: string }>;
-				resolutions: import("./shared/lineage-resolution").ResolutionRecord[] };
+				resolutions: import("./shared/lineage-resolution").PublicResolutionRecord[] };
 		},
 	};
 }
@@ -317,6 +319,27 @@ export class LineageCandidatesRequest {
 	};
 }
 
+type ApplyStep = "prepare_delete" | "retarget" | "authorize" | "mint" | "release" | "restore";
+type ApplyJson = { requestId: string; step: ApplyStep; platformIndex: number; platformUid: string; token: string;
+	lineage?: string | null; generation?: number | null; exportId?: string | null; refreshIdentity?: boolean };
+
+export class AbandonPlatformResolutionRequest {
+	declare ["constructor"]: typeof AbandonPlatformResolutionRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.RECOVERY_RESOLVE;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: { requestId: { type: "string", pattern: REQUEST_ID_PATTERN } }, required: ["requestId"], additionalProperties: false,
+	};
+	requestId: string;
+	constructor(json: { requestId: string }) { this.requestId = json.requestId; }
+	static fromJSON(json: { requestId: string }) { return new AbandonPlatformResolutionRequest(json); }
+	toJSON() { return { requestId: this.requestId }; }
+	static Response = ResolvePlatformLineageRequest.Response;
+}
+
 export class ApplyLineageResolutionRequest {
 	declare ["constructor"]: typeof ApplyLineageResolutionRequest;
 	static plugin = PLUGIN_NAME;
@@ -326,33 +349,42 @@ export class ApplyLineageResolutionRequest {
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
-			requestId: { type: "string", pattern: REQUEST_ID_PATTERN }, step: { enum: ["prepare_delete", "mint", "release", "restore"] },
+			requestId: { type: "string", pattern: REQUEST_ID_PATTERN },
+			step: { enum: ["prepare_delete", "retarget", "authorize", "mint", "release", "restore"] },
 			platformIndex: { type: "integer", minimum: 1 }, platformUid: { type: "string", minLength: 1 },
+			token: { type: "string", minLength: 32, maxLength: 128 },
 			lineage: { anyOf: [LINEAGE_SCHEMA, { type: "null" }] }, generation: { type: ["integer", "null"], minimum: 0 },
+			exportId: { type: ["string", "null"] }, refreshIdentity: { type: "boolean" },
 		},
-		required: ["requestId", "step", "platformIndex", "platformUid", "lineage", "generation"], additionalProperties: false,
+		required: ["requestId", "step", "platformIndex", "platformUid", "token", "lineage", "generation", "exportId", "refreshIdentity"],
+		additionalProperties: false,
 	} as JsonSchema;
 	requestId: string;
-	step: "prepare_delete" | "mint" | "release" | "restore";
+	step: ApplyStep;
 	platformIndex: number;
 	platformUid: string;
+	token: string;
 	lineage: string | null;
 	generation: number | null;
-	constructor(json: { requestId: string; step: "prepare_delete" | "mint" | "release" | "restore"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
+	exportId: string | null;
+	refreshIdentity: boolean;
+	constructor(json: ApplyJson) {
 		this.requestId = json.requestId; this.step = json.step; this.platformIndex = json.platformIndex; this.platformUid = json.platformUid;
-		this.lineage = json.lineage ?? null; this.generation = json.generation ?? null;
+		this.token = json.token; this.lineage = json.lineage ?? null; this.generation = json.generation ?? null;
+		this.exportId = json.exportId ?? null; this.refreshIdentity = json.refreshIdentity === true;
 	}
-	static fromJSON(json: { requestId: string; step: "prepare_delete" | "mint" | "release" | "restore"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
+	static fromJSON(json: ApplyJson) {
 		return new ApplyLineageResolutionRequest(json);
 	}
 	toJSON() {
-		return { requestId: this.requestId, step: this.step, platformIndex: this.platformIndex, platformUid: this.platformUid,
-			lineage: this.lineage, generation: this.generation };
+		return { requestId: this.requestId, step: this.step, platformIndex: this.platformIndex, platformUid: this.platformUid, token: this.token,
+			lineage: this.lineage, generation: this.generation, exportId: this.exportId, refreshIdentity: this.refreshIdentity };
 	}
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, jobId: { type: "string" },
-			lineage: { type: "string" }, generation: { type: "integer" }, platformUid: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { jobId?: string; lineage?: string; generation?: number; platformUid?: string }; },
+			lineage: { type: "string" }, generation: { type: "integer" }, platformUid: { type: "string" }, committed: { type: "boolean" } },
+			required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { jobId?: string; lineage?: string; generation?: number; platformUid?: string; committed?: boolean }; },
 	};
 }
 
@@ -1574,8 +1606,8 @@ export class DestinationTransferGateRequest {
 	toJSON() { return { transferId: this.transferId, action: this.action, passengers: this.passengers }; }
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" },
-			lineage: LINEAGE_SCHEMA, generation: { type: "integer", minimum: 1 } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { lineage?: string; generation?: number }; },
+			lineage: LINEAGE_SCHEMA, generation: { type: "integer", minimum: 1 }, localCopy: { type: "boolean" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { lineage?: string; generation?: number; localCopy?: boolean }; },
 	};
 }
 
@@ -1956,6 +1988,7 @@ export interface IControllerPlugin {
 	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
 	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
 	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
+	lineagePresence(wanted: Map<number, Set<string>>): Promise<Map<string, { state: "present" } | { state: "absent" } | { state: "unknown"; reason: string }>>;
 	lineageRegistry: {
 		loadError: string | null;
 		precheckTransfer(commit: import("./shared/lineage").TransferCommit): string | null;
@@ -2045,6 +2078,7 @@ export type ExportStats = {
 
 export type ExportData = {
 	platform_uid?: string;
+	purpose?: string;
 	lineage?: string;
 	generation?: number;
 	_lineage?: string;

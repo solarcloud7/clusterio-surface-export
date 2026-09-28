@@ -260,10 +260,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		const integer = (value: unknown) => Number.isSafeInteger(value) ? value as number : null;
 		const platforms = (listed as Array<Record<string, unknown>>).map(entry => ({
 			...this.platformFacts(entry, retirements, request.protectedSourceIndexes),
+			retiredExportId: retirements.find(record => record.platformUid === text(entry.platformUid))?.exportId ?? text(entry.retiredExportId),
 			state: (entry.state === "tombstone" || entry.state === "resolving" ? entry.state : "quarantine") as "quarantine" | "tombstone" | "resolving",
 			reason: text(entry.reason), ownerJobId: text(entry.ownerJobId),
 			holderInstanceId: integer(entry.holderInstanceId), holderGeneration: integer(entry.holderGeneration),
-			retiredExportId: text(entry.retiredExportId), resolutionRequestId: text(entry.resolutionRequestId),
+			resolutionRequestId: text(entry.resolutionRequestId),
 			passengers: integer(entry.passengers),
 		}));
 		return { success: true, epoch, platforms };
@@ -273,7 +274,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
 		const epoch = this.timingEpoch;
 		const response = this.parseLuaJson(await this.lua.resolutionApply({ requestId: request.requestId, step: request.step,
-			platformIndex: request.platformIndex, platformUid: request.platformUid, lineage: request.lineage, generation: request.generation }), "Resolution step");
+			platformIndex: request.platformIndex, platformUid: request.platformUid, token: request.token, lineage: request.lineage,
+			generation: request.generation, exportId: request.exportId, refreshIdentity: request.refreshIdentity }), "Resolution step");
 		this.assertRecoveryRuntime(epoch);
 		const reply: ReturnType<typeof messages.ApplyLineageResolutionRequest.Response.fromJSON> = { success: response.success === true };
 		if (typeof response.error === "string") reply.error = response.error;
@@ -281,6 +283,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (isLineage(response.lineage)) reply.lineage = response.lineage;
 		if (isGeneration(response.generation)) reply.generation = response.generation;
 		if (typeof response.platformUid === "string") reply.platformUid = response.platformUid;
+		if (response.committed === true) reply.committed = true;
 		if (reply.success) void this.handlePlatformStateChanged({ force_name: "player" });
 		return reply;
 	}
@@ -291,7 +294,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		const response = await this.sourceRecoveryCall("presence", JSON.stringify(request.lineages));
 		this.assertRecoveryRuntime(epoch);
 		const lineages = Array.isArray(response.lineages) ? response.lineages : Object.values(response.lineages || {});
-		return { success: true, epoch, lineages: lineages as Array<{ lineage: string; present: boolean; generation?: number; held?: boolean }> };
+		return { success: true, epoch, lineages: lineages as Array<{ lineage: string; present: boolean; generation?: number; held?: boolean; platformIndex?: number; platformUid?: string; platformName?: string; forceName?: string; passengers?: number }> };
 	}
 
 	private appliedDebugMode = false;
@@ -986,8 +989,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 			try {
 				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action, request.passengers));
 				if (response.success !== true) return { success: false, error: String(response.error || "Destination gate refused") };
-				return request.action === "verify" && isLineage(response.lineage) && isGeneration(response.generation)
-					? { success: true, lineage: response.lineage, generation: response.generation } : { success: true };
+				if (request.action !== "verify") return { success: true };
+				const reply: ReturnType<typeof messages.DestinationTransferGateRequest.Response.fromJSON> = { success: true };
+				if (isLineage(response.lineage) && isGeneration(response.generation)) { reply.lineage = response.lineage; reply.generation = response.generation; }
+				if (response.localCopy === true) reply.localCopy = true;
+				return reply;
 			} catch (error) {
 				return { success: false, error: getErrorMessage(error) };
 			}

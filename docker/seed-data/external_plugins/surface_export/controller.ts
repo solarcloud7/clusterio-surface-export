@@ -210,6 +210,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadPendingTransfers();
 		this.lineageRegistry = new LineageRegistry();
 		await this.lineageRegistry.load(path.resolve(String(this.c.config.get("controller.database_directory")), LINEAGE_REGISTRY_FILENAME));
+		if (this.lineageRegistry.fileMissing && this.hasLineageHistory()) {
+			this.lineageRegistry.markUnreadable("the file is missing although transfers or stored exports carry platform lineages");
+		}
 		if (this.lineageRegistry.loadError) this.logger.error(this.lineageRegistry.loadError);
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
 			[...this.platformStorage.keys(), ...this.auditIndex.keys(), ...this.pendingTransfers.keys(),
@@ -245,6 +248,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.resolver = this.createResolver();
 		this.c.handle(messages.ListLineageConflictsRequest, this.handleListLineageConflictsRequest.bind(this));
 		this.c.handle(messages.ResolvePlatformLineageRequest, this.handleResolvePlatformLineageRequest.bind(this));
+		this.c.handle(messages.AbandonPlatformResolutionRequest, this.handleAbandonPlatformResolutionRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -371,26 +375,43 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return result;
 	}
 
+	async handleAbandonPlatformResolutionRequest(request: messages.AbandonPlatformResolutionRequest) {
+		const result = await this.resolver.abandon(request.requestId);
+		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
+		return result;
+	}
+
+	hasLineageHistory(): boolean {
+		const carries = (value: unknown) => typeof value === "string" && value !== "";
+		return [...this.pendingTransfers.values()].some(intent => carries(intent.lineage))
+			|| [...this.activeTransfers.values()].some(transfer => carries(transfer.lineage))
+			|| [...this.platformStorage.values()].some(stored => carries(stored.exportData?.lineage));
+	}
+
 	lineageInTransit(lineage: string | null): boolean {
 		if (!lineage) return false;
 		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
-			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer));
+			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer))
+			|| (this.lineageRegistry?.listResolutions() ?? []).some(record => record.status === "in_progress" && record.lineage === lineage);
 	}
 
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null {
 		const owners = new Set<string>();
-		const consider = (sourceInstanceId: number, platformIndex: number | undefined, lineage: string | null | undefined, job: string | null | undefined) => {
+		const consider = (sourceInstanceId: number, platformIndex: number | undefined, lineage: string | null | undefined, job: string | null | undefined,
+			platformUid: unknown) => {
 			if (sourceInstanceId !== instanceId) return;
-			const matches = platform.lineage && lineage ? lineage === platform.lineage : platformIndex === platform.platformIndex;
+			const uidDiffers = typeof platformUid === "string" && platform.platformUid !== null && platformUid !== platform.platformUid;
+			const matches = platform.lineage && lineage ? lineage === platform.lineage : platformIndex === platform.platformIndex && !uidDiffers;
 			if (matches) owners.add(job || "");
 		};
 		for (const intent of this.pendingTransfers.values()) {
+			const stored = intent.exportId ? this.platformStorage?.get(intent.exportId) : undefined;
 			consider(intent.sourceInstanceId, intent.sourcePlatformIndex, intent.lineage,
-				intent.sourceExportId || parseCanonicalTransferId(intent.transferId)?.sourceJobId);
+				intent.sourceExportId || parseCanonicalTransferId(intent.transferId)?.sourceJobId, stored?.exportData?.platform_uid);
 		}
 		for (const transfer of this.activeTransfers.values()) {
 			if (transfer.operationType !== "transfer" || !hasUnresolvedPlatformOwnership(transfer) || this.pendingTransfers.has(transfer.transferId)) continue;
-			consider(transfer.sourceInstanceId, transfer.platformIndex, transfer.lineage, transfer.sourceExportId);
+			consider(transfer.sourceInstanceId, transfer.platformIndex, transfer.lineage, transfer.sourceExportId, transfer.platformUid);
 		}
 		const [owner] = owners;
 		return owners.size === 1 && owner ? owner : null;
@@ -420,12 +441,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				const reply = await Promise.race([
 					this.c.sendTo({ instanceId: holder }, new messages.LineagePresenceRequest({ lineages })),
 					new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Presence request timed out")), 10_000); }),
-				]) as { success?: boolean; lineages?: Array<{ lineage?: unknown; present?: unknown; generation?: unknown }> };
+				]) as { success?: boolean; lineages?: Array<{ lineage?: unknown; present?: unknown; generation?: unknown; passengers?: unknown }> };
 				for (const lineage of lineages) {
 					const answer = reply?.success === true && Array.isArray(reply.lineages) ? reply.lineages.find(item => item?.lineage === lineage) : undefined;
 					results.set(`${holder}\u0000${lineage}`, typeof answer?.present !== "boolean"
 						? { state: "unknown", reason: `Holder instance ${holder} gave no answer for this lineage` }
-						: answer.present ? { state: "present", ...(Number.isSafeInteger(answer.generation) ? { generation: answer.generation as number } : {}) }
+						: answer.present ? { state: "present", ...(Number.isSafeInteger(answer.generation) ? { generation: answer.generation as number } : {}),
+							...(Number.isSafeInteger(answer.passengers) ? { passengers: answer.passengers as number } : {}) }
 							: { state: "absent" });
 				}
 			} catch (error: unknown) {

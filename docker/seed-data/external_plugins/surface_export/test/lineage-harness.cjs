@@ -18,4 +18,9 @@ async function mirrorHold(activeTransfers, msg, reply) {
 	return { ...result, lineage: transfer.lineage, generation: transfer.lineageGeneration + 1 };
 }
 
-module.exports = { HARNESS_LINEAGE, LineageRegistry, withLineage, mirrorHold };
+function presenceOf(answer = () => ({ state: "absent" })) {
+	return async wanted => new Map([...wanted].flatMap(([instanceId, lineages]) =>
+		[...lineages].map(lineage => [`${instanceId}\u0000${lineage}`, answer(instanceId, lineage)])));
+}
+
+module.exports = { HARNESS_LINEAGE, LineageRegistry, withLineage, mirrorHold, presenceOf };
