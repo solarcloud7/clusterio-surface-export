@@ -19,6 +19,7 @@ Docker cluster is a development environment.
 
 - [Use gateways and transfer platforms](docs/users/transfers.md)
 - [Read outcomes and audit evidence](docs/users/transaction-logs.md)
+- [Understand what happens when a server loads an older save](docs/users/restored-saves.md)
 - [Install and update the Clusterio plugin](docs/admins/deployment.md)
 - [Configure the plugin](docs/admins/configuration.md)
 - [Back up and recover worlds](docs/admins/recovery.md)

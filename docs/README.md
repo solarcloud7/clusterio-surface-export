@@ -5,7 +5,7 @@ implementation; release and experiment records identify the exact artifacts test
 
 | Reader | Start here | Continue with |
 |---|---|---|
-| Player or user | [Transfer platforms](users/transfers.md) | [Read transaction logs](users/transaction-logs.md) |
+| Player or user | [Transfer platforms](users/transfers.md) | [Read transaction logs](users/transaction-logs.md), [when a server loads an older save](users/restored-saves.md) |
 | Administrator | [Install the Clusterio plugin](admins/deployment.md) | [Configuration](admins/configuration.md), [commands and permissions](admins/commands.md), [passenger transfer](admins/passenger-transfer.md), [backups and recovery](admins/recovery.md) |
 | New developer | [Set up the environment](developers/setup.md) | [Build and deploy](developers/workflow.md), [testing](developers/testing.md), [fixtures and seeds](developers/fixtures.md) |
 | Clusterio engineer | [Plugin integration boundaries](developers/clusterio-integration.md) | [Upload protocol](developers/upload-protocol.md), [timing instrumentation](developers/timing-instrumentation.md) |

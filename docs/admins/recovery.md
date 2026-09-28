@@ -3,6 +3,8 @@
 Save games contain the playable world. Controller and instance journals contain
 transfer decisions that may be newer than a restored save. Recovering only one
 of these can create a conflict; a matching platform name is not enough to resolve it.
+For a plain-language overview, see
+[when a server loads an older save](../users/restored-saves.md).
 
 ## Choose how restored saves are treated
 

@@ -89,13 +89,12 @@ not necessarily an importable snapshot.
 
 Host, instance and platform selectors help locate platforms. Reset reframes the
 map and clears saved positions. Positions and line style are local to your browser.
-Editing connections requires transfer permission; changes take effect when saved.
-A failure while saving several connections can leave only some changes applied.
 
-Save-recovery warnings explain whether an older source was accepted as a new copy
-or kept protected. Offline or uncertain identity is **unverified**, not proof that
-the platform is missing. Acknowledging an accepted-copy warning only hides that
-notice in your browser; it does not change transfer history or ownership.
+Save-recovery warnings list platforms that a server set aside after loading an older
+save, with the reason. An offline or unanswered server makes a copy **unverified**,
+which is not proof that the platform is missing. See
+[when a server loads an older save](restored-saves.md) for what this means and what
+administrators can do.
 
 Continue with [reading transaction logs](transaction-logs.md). Administrators can
 use [configuration](../admins/configuration.md) and [recovery](../admins/recovery.md).
