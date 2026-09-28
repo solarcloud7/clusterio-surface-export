@@ -46,13 +46,13 @@ and players aboard stay where they are. The rest of the server starts normally.
 | `duplicate` | Another server holds the current copy of this platform. |
 | `rollback_other` | The server recorded as holding the current copy answered that it no longer has it. |
 | `unverified` | The server recorded as holding the current copy did not answer (offline, restarting or lost reply). |
-| `in_transit` | A transfer or resolution of this platform is still unresolved. |
+| `in_transit` | A transfer, or a resolution that can release a copy, is still unresolved (or this copy is itself being resolved). |
 | `unresolved_handoff` | An unresolved transfer owns this source platform. |
 | `stale_self` | This server later received a newer copy of this platform. |
 | `ahead_of_registry` | This copy is newer than the controller's record. |
 | `unregistered` | This copy has been transferred before, but the controller has no record of it. |
 | `legacy_unclassified` | The platform predates platform history and matches a platform this server transferred away. |
-| `duplicate_local` | Two platforms on this server carry the same platform history. |
+| `duplicate_local` | Two platforms on this server, or a platform and a destination hold on this server, carry the same platform history. |
 | `no_identity` | The platform has no hub, so it has no stable identity. |
 | `reconcile_error` | Startup could not verify the platform. |
 

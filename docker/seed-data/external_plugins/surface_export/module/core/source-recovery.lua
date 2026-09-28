@@ -120,7 +120,8 @@ local function apply_lineage(platform, verdict, adopting)
 end
 
 local function adoption_authorized(verdict, platform_index)
-	return verdict.verdict == "rollback_other" and verdict.adopt == true
+	local lock = SurfaceLock.get_lock_data(platform_index)
+	return verdict.verdict == "rollback_other" and verdict.adopt == true and not (lock and lock.resolution_request_id)
 		and storage.source_recovery_mode == "save_game" and storage.source_recovery_allow_adoption == true
 		and not job_owns(platform_index)
 end

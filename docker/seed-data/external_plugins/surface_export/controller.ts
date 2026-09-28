@@ -306,8 +306,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		for (const platform of request.platforms) {
 			if (platform.lineage) counts.set(platform.lineage, (counts.get(platform.lineage) ?? 0) + 1);
 		}
+		const resolving = new Set(this.lineageRegistry.listResolutions().filter(record => record.status === "in_progress")
+			.flatMap(record => [[record.instanceId, record.platformIndex], [record.deleteInstanceId, record.deletePlatformIndex]])
+			.filter(([instanceId]) => instanceId === request.instanceId).map(([, platformIndex]) => platformIndex));
 		const hints = (platform: PlatformFacts): ControllerHints => ({
-			inTransit: this.lineageInTransit(platform.lineage),
+			inTransit: this.lineageInTransit(platform.lineage) || resolving.has(platform.platformIndex),
 			ownerJobId: this.owningSourceJob(request.instanceId, platform),
 			historyMatch: this.completedTransferFrom(request.instanceId, platform.platformUid),
 			duplicateLocal: platform.lineage !== null && (counts.get(platform.lineage) ?? 0) > 1,

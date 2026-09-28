@@ -579,5 +579,14 @@
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
 		]
+	},
+	{
+		"name": "save_game startup adoption skips a copy under resolution",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "verdict.adopt == true and not (lock and lock.resolution_request_id)",
+		"replace": "verdict.adopt == true",
+		"tests": [
+			"tests/lua/source-recovery.lua"
+		]
 	}
 ]

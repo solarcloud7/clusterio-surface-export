@@ -159,6 +159,25 @@ test("a definite answer from the holder decides duplicate or rollback, and save_
 	}
 });
 
+test("a copy that an in-progress resolution targets is never adopted at startup", async () => {
+	for (const [field, extra] of [["resolved", {}], ["deleted", { instanceId: J, platformIndex: 9, deleteInstanceId: I, deletePlatformIndex: 3 }]]) {
+		const { plugin, presence } = controllerHarness();
+		plugin.recoveryReservations.set(I, { epoch: EPOCH, mode: "save_game", allowAdoption: true, protectedSourceIndexes: [] });
+		await plugin.lineageRegistry.update((draft, resolutions) => {
+			draft.set(L, { instanceId: J, generation: 1, platformName: "ship", forceName: "player", lastExportId: "1:x", updatedAt: 1, source: "transfer" });
+			resolutions.set("req-00000001", { requestId: "req-00000001", signature: "[]", action: "stale_copy", instanceId: I, platformIndex: 3,
+				platformUid: "boot-old:15", step: "delete", status: "in_progress", lineage: "lineage:other:1", ...extra });
+		});
+		presence.set(J, message => ({ success: true, lineages: message.lineages.map(lineage => ({ lineage, present: false })) }));
+		const [verdict] = (await classify(plugin, [facts()])).verdicts;
+		assert.equal(verdict.verdict, "in_transit", `${field}: startup classified a copy under resolution as ${verdict.verdict}`);
+		assert.equal(verdict.adopt, undefined);
+		assert.deepEqual([plugin.lineageRegistry.get(L).instanceId, plugin.lineageRegistry.get(L).generation], [J, 1]);
+		const [other] = (await classify(plugin, [facts({ platformIndex: 4 })])).verdicts;
+		assert.equal(other.verdict, "rollback_other", `${field}: a copy no resolution targets was held in transit`);
+	}
+});
+
 test("a malformed or partial presence reply is uncertainty", async () => {
 	for (const reply of [undefined, { success: false }, { success: true }, { success: true, lineages: [{ lineage: L }] },
 		{ success: true, lineages: [{ lineage: "lineage:other:1", present: false }] }]) {
