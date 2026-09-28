@@ -203,7 +203,7 @@ async function main() {
 		if (displaced) {
 			ctl("instance", "stop", HOST1_INSTANCE);
 			startPatchedSave(ctl, HOST1_INSTANCE, RESTORE_SAVE);
-			docker(["exec", HOST1_CONTAINER, "sh", "-c", `rm -f -- ${HOST1_SAVES}/${DELIVER_SAVE}`]);
+			docker(["exec", HOST1_CONTAINER, "rm", "-f", "--", `${HOST1_SAVES}/${DELIVER_SAVE}`]);
 			docker(["exec", HOST1_CONTAINER, "test", "!", "-e", `${HOST1_SAVES}/${DELIVER_SAVE}`]);
 			summary.host1Restored = RESTORE_SAVE;
 			try { await waitHost1Ready(); } catch (error) { summary.host1RestoreWaitError = error.message; }

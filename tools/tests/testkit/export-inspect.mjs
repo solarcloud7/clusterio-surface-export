@@ -111,7 +111,7 @@ async function waitForStableFile(host, path, timeoutMs, settleMs = 400) {
 	const deadline = Date.now() + timeoutMs;
 	let lastSize = -1, stableSince = 0;
 	while (Date.now() < deadline) {
-		const out = docker(["exec", container, "sh", "-c", `stat -c %s ${path} 2>/dev/null || echo absent`]).trim();
+		const out = docker(["exec", container, "sh", "-c", "stat -c %s \"$1\" 2>/dev/null || echo absent", "sh", path]).trim();
 		if (out !== "absent") {
 			const size = Number(out);
 			if (size > 0 && size === lastSize) {
@@ -136,7 +136,7 @@ export async function exportInspect({ platform, host = 1, force = "player", keep
 	const filename = `testkit_inspect_${String(platform).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 	const artifact = instancePath(host, `script-output/${filename}`);
 
-	docker(["exec", `surface-export-host-${host}`, "sh", "-c", `rm -f ${artifact}`]);
+	docker(["exec", `surface-export-host-${host}`, "rm", "-f", artifact]);
 
 	const exported = lua(host, `return {success=remote.call('surface_export','export_platform_to_file',` +
 		`${index},'${force}','${filename}')}`);
@@ -146,10 +146,10 @@ export async function exportInspect({ platform, host = 1, force = "player", keep
 
 	await waitForStableFile(host, artifact, timeoutMs);
 
-	const raw = docker(["exec", `surface-export-host-${host}`, "sh", "-c", `cat ${artifact}`],
+	const raw = docker(["exec", `surface-export-host-${host}`, "cat", artifact],
 		{ maxBuffer: 256 * 1024 * 1024 });
 	if (!keepArtifact) {
-		docker(["exec", `surface-export-host-${host}`, "sh", "-c", `rm -f ${artifact}`]);
+		docker(["exec", `surface-export-host-${host}`, "rm", "-f", artifact]);
 	}
 	return new PayloadInspector(decodePayload(raw), { bytes: raw.length, artifact: keepArtifact ? artifact : null });
 }
