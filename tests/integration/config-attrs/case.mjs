@@ -1551,7 +1551,7 @@ export function createCase(context) {
 		say("\n=== MEASUREMENT: the destination's own pole-copper prune lines ===");
 		const path = instancePath(host, "factorio-current.log");
 		const out = docker(["exec", HOSTS[host].container, "sh", "-c",
-			`grep -F -e 'Pole copper pruned' -e 'pole copper prune' ${path} | tail -20 || true`]);
+			`grep -F -e 'Pole copper pruned' -e 'pole copper prune' '${path}' | tail -20 || true`]);
 		const lines = out.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 		if (lines.length === 0) {
 			say("  none in this instance's log; the destination reads above are the only account of the prune");
@@ -1567,7 +1567,7 @@ export function createCase(context) {
 		const path = instancePath(host, "factorio-current.log");
 		for (let attempt = 1; attempt <= DECLINE_LOG_ATTEMPTS; attempt++) {
 			const out = docker(["exec", HOSTS[host].container, "sh", "-c",
-				`grep -F '${uniqueName}' ${path} || true`]);
+				`grep -F '${uniqueName}' '${path}' || true`]);
 			const line = out.split(/\r?\n/).find(l => l.includes(DECLINE_LOG_MARKER));
 			if (line) return line.trim();
 			if (attempt < DECLINE_LOG_ATTEMPTS) await sleep(1000);

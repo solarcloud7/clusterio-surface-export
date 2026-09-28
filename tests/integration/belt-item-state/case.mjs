@@ -353,7 +353,7 @@ export function createCase(context) {
 		const path = instancePath(host, "factorio-current.log");
 		for (let attempt = 1; attempt <= STATE_LOG_ATTEMPTS; attempt++) {
 			const out = docker(["exec", HOSTS[host].container, "sh", "-c",
-				`grep -aF '${STATE_LOG_MARKER}' ${path} || true`]);
+				`grep -aF '${STATE_LOG_MARKER}' '${path}' || true`]);
 			// Called after arrival: restore has finished, including every item-state batch.
 			const counters = parseStateCounters(out, CLONE);
 			if (counters) return counters;
