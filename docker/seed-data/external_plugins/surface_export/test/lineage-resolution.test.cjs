@@ -35,7 +35,7 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 	const sent = [];
 	const storage = new Map();
 	const behaviour = { lose: new Set(), jobIds: {}, jobState: {}, applyError: {}, deleteError: null, presenceError: null, reserved: new Set(), offline: new Set() };
-	const counters = { prepare: 0, delete: 0, release: 0, mint: 0 };
+	const counters = { prepare: 0, delete: 0, release: 0, mint: 0, restore: 0 };
 	const host = {
 		lineageRegistry: registry, pendingTransfers: new Map(), activeTransfers: new Map(), platformStorage: storage,
 		get recoveryReservations() { return new Map([...behaviour.reserved].map(id => [id, {}])); },
@@ -64,7 +64,10 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 			sent.push({ instanceId, name, message });
 			const key = `${instanceId}:${name}:${message.step ?? ""}`;
 			if (behaviour.lose.has(key)) { behaviour.lose.delete(key); throw Object.assign(new Error("Session Closed"), { code: "SessionLost" }); }
-			if (name === "LineageCandidatesRequest") return { success: true, epoch: `epoch-${instanceId}`, platforms: candidates[instanceId] ?? [] };
+			if (name === "LineageCandidatesRequest") {
+				if (behaviour.candidatesGate) await behaviour.candidatesGate;
+				return { success: true, epoch: `epoch-${instanceId}`, platforms: candidates[instanceId] ?? [] };
+			}
 			if (name === "LineagePresenceRequest") {
 				if (behaviour.onDirectPresence) behaviour.onDirectPresence();
 				return { success: true, lineages: message.lineages.map(lineage => ({ lineage, ...holder })) };
@@ -77,6 +80,7 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 					if (behaviour.storeSnapshot !== false) storage.set(`${instanceId}:${jobId}`, { exportId: `${instanceId}:${jobId}` });
 					return { success: true, jobId };
 				}
+				if (message.step === "restore") { counters.restore++; return { success: true, restored: true }; }
 				if (message.step === "mint") { counters.mint++; return { success: true, lineage: `lineage:epoch-${instanceId}:15`, generation: 0 }; }
 				counters.release++;
 				return { success: true, platformUid: message.platformUid };
@@ -285,6 +289,7 @@ test("a failed snapshot or a forgotten Lua job ends the resolution without delet
 	assert.deepEqual([result.success, result.status], [false, "failed"]);
 	assert.match(result.error, /snapshot failed/);
 	assert.equal(c.counters.delete, 0);
+	assert.equal(c.counters.restore, 1, "a failed snapshot left the copy under the resolution lock");
 	c = cluster();
 	await c.registry.update(draft => draft.set(L, entry()));
 	c.behaviour.storeSnapshot = false;
@@ -319,4 +324,45 @@ test("keep-this whose registry changed after the other copy was deleted leaves t
 	assert.deepEqual([result.success, result.status], [false, "failed"]);
 	assert.match(result.error, /registry changed.*stays quarantined/);
 	assert.equal(c.counters.release, 0, "a copy was released against a changed registry");
+});
+
+test("a snapshot that failed, was interrupted or is unknown abandons the resolution and restores the copy's protection", async () => {
+	for (const state of ["failed", "interrupted", "unavailable"]) {
+		const c = cluster();
+		await c.registry.update(draft => draft.set(L, entry()));
+		c.behaviour.storeSnapshot = false;
+		c.behaviour.jobState["job-1"] = state;
+		const result = await c.resolver.resolve(request());
+		assert.deepEqual([result.success, result.status], [false, "failed"], state);
+		assert.equal(c.counters.restore, 1, `${state} left the copy under the resolution lock`);
+		assert.equal(c.counters.delete, 0);
+		assert.match(result.error, /nothing was deleted/);
+	}
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	c.behaviour.storeSnapshot = false;
+	c.behaviour.jobState["job-1"] = "failed";
+	c.behaviour.lose.add("1:ApplyLineageResolutionRequest:restore");
+	const pending = await c.resolver.resolve(request());
+	assert.deepEqual([pending.success, pending.status, pending.step], [true, "in_progress", "abandon"]);
+	assert.match(pending.error, /restoring the copy's protection is pending/);
+	const retried = await c.resolver.resolve(request());
+	assert.deepEqual([retried.status, retried.step], ["failed", "failed"]);
+	assert.equal(c.counters.delete, 0);
+});
+
+test("a retry during a slow admission joins the first run instead of admitting twice", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	let open;
+	c.behaviour.candidatesGate = new Promise(resolve => { open = resolve; });
+	const first = c.resolver.resolve(request());
+	await new Promise(resolve => setTimeout(resolve, 5));
+	const second = c.resolver.resolve(request());
+	open();
+	const [a, b] = await Promise.all([first, second]);
+	assert.deepEqual(a, b);
+	assert.equal(a.status, "completed");
+	assert.equal(c.counters.prepare, 1);
+	assert.equal(c.counters.delete, 1);
 });

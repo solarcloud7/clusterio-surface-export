@@ -3,7 +3,7 @@ import type { LineageVerdictName } from "./lineage";
 export const RESOLUTION_ACTIONS = ["keep_this", "keep_other", "adopt", "stale_copy", "new_platform", "release"] as const;
 export type ResolutionAction = typeof RESOLUTION_ACTIONS[number];
 
-export type ResolutionStep = "admitted" | "snapshot" | "delete" | "deleted" | "minted" | "committed" | "completed" | "failed";
+export type ResolutionStep = "admitted" | "snapshot" | "abandon" | "delete" | "deleted" | "minted" | "committed" | "completed" | "failed";
 
 export interface ResolutionRecord {
 	requestId: string;

@@ -326,23 +326,23 @@ export class ApplyLineageResolutionRequest {
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
-			requestId: { type: "string", pattern: REQUEST_ID_PATTERN }, step: { enum: ["prepare_delete", "mint", "release"] },
+			requestId: { type: "string", pattern: REQUEST_ID_PATTERN }, step: { enum: ["prepare_delete", "mint", "release", "restore"] },
 			platformIndex: { type: "integer", minimum: 1 }, platformUid: { type: "string", minLength: 1 },
 			lineage: { anyOf: [LINEAGE_SCHEMA, { type: "null" }] }, generation: { type: ["integer", "null"], minimum: 0 },
 		},
 		required: ["requestId", "step", "platformIndex", "platformUid", "lineage", "generation"], additionalProperties: false,
 	} as JsonSchema;
 	requestId: string;
-	step: "prepare_delete" | "mint" | "release";
+	step: "prepare_delete" | "mint" | "release" | "restore";
 	platformIndex: number;
 	platformUid: string;
 	lineage: string | null;
 	generation: number | null;
-	constructor(json: { requestId: string; step: "prepare_delete" | "mint" | "release"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
+	constructor(json: { requestId: string; step: "prepare_delete" | "mint" | "release" | "restore"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
 		this.requestId = json.requestId; this.step = json.step; this.platformIndex = json.platformIndex; this.platformUid = json.platformUid;
 		this.lineage = json.lineage ?? null; this.generation = json.generation ?? null;
 	}
-	static fromJSON(json: { requestId: string; step: "prepare_delete" | "mint" | "release"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
+	static fromJSON(json: { requestId: string; step: "prepare_delete" | "mint" | "release" | "restore"; platformIndex: number; platformUid: string; lineage?: string | null; generation?: number | null }) {
 		return new ApplyLineageResolutionRequest(json);
 	}
 	toJSON() {

@@ -243,7 +243,7 @@ export class LineageResolver {
 			error: pending ?? record.error ?? undefined, snapshotExportId: record.snapshotExportId, passengers: record.passengers };
 	}
 
-	private async apply(instanceId: number, record: ResolutionRecord, step: "prepare_delete" | "mint" | "release", platformIndex: number, platformUid: string,
+	private async apply(instanceId: number, record: ResolutionRecord, step: "prepare_delete" | "mint" | "release" | "restore", platformIndex: number, platformUid: string,
 		lineage: string | null = null, generation: number | null = null) {
 		if (!this.host.isInstanceOnline(instanceId) || this.host.recoveryReservations.has(instanceId)) return { pending: `Instance ${instanceId} is offline or reconciling` };
 		try {
@@ -296,11 +296,18 @@ export class LineageResolver {
 			if ("pending" in outcome) return outcome.pending!;
 			if (!outcome.reply?.success || typeof outcome.reply.jobId !== "string") return this.fail(record, outcome.reply?.error || "The snapshot was refused");
 			if (record.jobId && record.jobId !== outcome.reply.jobId) {
-				return this.fail(record, "The instance no longer knows this resolution's snapshot job; its save may have been rolled back");
+				return this.abandon(record, "The instance no longer knows this resolution's snapshot job; its save may have been rolled back");
 			}
 			return this.save(record, { jobId: outcome.reply.jobId, step: "snapshot" });
 		}
 		if (record.step === "snapshot") return this.awaitSnapshot(record);
+		if (record.step === "abandon") {
+			const outcome = await this.apply(record.deleteInstanceId!, record, "restore", record.deletePlatformIndex!, record.deletePlatformUid!);
+			if ("pending" in outcome) return `${record.error}; restoring the copy's protection is pending: ${outcome.pending}`;
+			if (!outcome.reply?.success) return `${record.error}; restoring the copy's protection was refused: ${outcome.reply?.error || "no reason"}`;
+			this.host.logger.warn(`Platform resolution ${record.requestId} abandoned: ${record.error}`);
+			return this.save(record, { status: "failed", step: "failed" });
+		}
 		if (record.step === "delete") {
 			const instanceId = record.deleteInstanceId!;
 			if (!this.host.isInstanceOnline(instanceId)) return `Instance ${instanceId} is offline or reconciling`;
@@ -336,6 +343,10 @@ export class LineageResolver {
 		return this.fail(record, `Unknown resolution step ${record.step} for ${record.action}`);
 	}
 
+	private abandon(record: ResolutionRecord, error: string) {
+		return this.save(record, { step: "abandon", error });
+	}
+
 	private async awaitSnapshot(record: ResolutionRecord): Promise<ResolutionRecord | string> {
 		const instanceId = record.deleteInstanceId!;
 		const exportId = `${instanceId}:${record.jobId}`;
@@ -346,8 +357,11 @@ export class LineageResolver {
 				try {
 					const batch = await this.host.send(instanceId, new this.messages.JobsStatusRequest([{ jobId: record.jobId! }]));
 					const status = Array.isArray(batch?.jobs) ? batch.jobs.find((job: { jobId?: string }) => job.jobId === record.jobId) : undefined;
-					if (status?.state === "failed") {
-						return this.fail(record, `The snapshot failed (${status.error || "export failed"}); the copy's previous protection was restored`);
+					if (status?.state === "failed" || status?.state === "interrupted") {
+						return this.abandon(record, `The snapshot ${status.state} (${status.error || "export failed"}); nothing was deleted`);
+					}
+					if (!status || status.state === "unavailable") {
+						return this.abandon(record, "The instance no longer knows the snapshot job and no snapshot was stored; nothing was deleted");
 					}
 				} catch (error: unknown) {
 					this.host.logger.warn(`Resolution ${record.requestId} snapshot status unavailable: ${getErrorMessage(error)}`);

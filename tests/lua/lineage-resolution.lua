@@ -278,3 +278,34 @@ do
     assert(delete(14, "ship-14", "player", "export-job", "old:140") == "SUCCESS", "a retried deletion after a lost reply was refused")
     print("PASS keep-other: the resolution snapshot job deletes the stale copy through the source-delete path and evacuates players")
 end
+
+do
+    local w = world()
+    local p = w.add(15, 150)
+    w.quarantine(15, "duplicate", {lineage = "lineage:a:150"})
+    assert(w.apply({requestId = "abandon-1", step = "prepare_delete", platformIndex = 15, platformUid = "old:150"}).success)
+    local lock = w.env.storage.locked_platforms[15]
+    assert(lock.kind == "transfer" and lock.resolution_request_id == "abandon-1")
+    local restored = w.apply({requestId = "abandon-1", step = "restore", platformIndex = 15, platformUid = "old:150"})
+    assert(restored.success and lock.kind == "quarantine" and lock.quarantine.reason == "duplicate" and p.hidden,
+        "an abandoned resolution left its copy under a releasable transfer lock")
+    assert(w.apply({requestId = "abandon-1", step = "restore", platformIndex = 15, platformUid = "old:150"}).success, "a retried restore was refused")
+    assert(lock.kind == "quarantine")
+    local live = w.add(16, 160)
+    live.hidden = false
+    w.set_queue("export-live")
+    assert(w.apply({requestId = "abandon-2", step = "prepare_delete", platformIndex = 16, platformUid = "old:160"}).success)
+    w.env.storage.locked_platforms[16] = {kind = "transfer", phase = "pre_commit", transfer_job_id = "export-live", platform_name = "ship-16",
+        force_name = "player", platform_index = 16, surface_index = 26, platform_uid = "old:160", frozen_states = {}, original_platform_hidden = false}
+    live.hidden = true
+    assert(w.apply({requestId = "abandon-2", step = "restore", platformIndex = 16, platformUid = "old:160"}).success)
+    assert(w.env.storage.locked_platforms[16] == nil and live.hidden == false, "an abandoned keep-this left the other live copy locked")
+    w.add(17, 170)
+    w.quarantine(17, "duplicate")
+    w.set_queue("export-job")
+    assert(w.apply({requestId = "abandon-3", step = "prepare_delete", platformIndex = 17, platformUid = "old:170"}).success)
+    w.env.storage.locked_platforms[17].phase = "committed"
+    assert(not w.apply({requestId = "abandon-3", step = "restore", platformIndex = 17, platformUid = "old:170"}).success,
+        "a committed deletion was abandoned")
+    print("PASS an abandoned resolution restores the quarantine or releases the live copy it locked, never a committed deletion")
+end

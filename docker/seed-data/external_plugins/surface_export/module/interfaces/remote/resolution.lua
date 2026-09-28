@@ -183,6 +183,26 @@ local function release(request)
 	return {success = true, platformUid = uid}
 end
 
+local function restore(request)
+	local record = records()[request.requestId]
+	if not (record and record.action == "delete" and record.platform_index == request.platformIndex) then
+		return {success = true, restored = false}
+	end
+	local lock = SurfaceLock.get_lock_data(request.platformIndex)
+	if lock and SurfaceLock.source_lock_is_committed(lock) and (lock.resolution_request_id == request.requestId
+		or (record.job_id and lock.transfer_job_id == record.job_id)) then
+		return {success = false, error = "The deletion is already committed"}
+	end
+	if lock and lock.resolution_request_id == request.requestId then
+		SurfaceLock.restore_resolution_protection(lock)
+	elseif lock and lock.kind == "transfer" and record.job_id and lock.transfer_job_id == record.job_id then
+		local unlocked, unlock_err = SurfaceLock.unlock_platform(request.platformIndex, nil, nil, nil, record.job_id)
+		if not unlocked then return {success = false, error = unlock_err} end
+	end
+	record.abandoned = true
+	return {success = true, restored = true}
+end
+
 function Resolution.apply(request_json)
 	if storage.source_recovery_ready ~= true then return {success = false, error = "Source recovery is not ready"} end
 	local request = decode(request_json)
@@ -190,6 +210,7 @@ function Resolution.apply(request_json)
 	if request.step == "prepare_delete" then return prepare_delete(request) end
 	if request.step == "mint" then return mint(request) end
 	if request.step == "release" then return release(request) end
+	if request.step == "restore" then return restore(request) end
 	return {success = false, error = "Unknown resolution step"}
 end
 

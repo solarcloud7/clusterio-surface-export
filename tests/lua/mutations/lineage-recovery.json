@@ -381,5 +381,23 @@
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
 		]
+	},
+	{
+		"name": "an abandoned resolution restores the converted protection",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif lock and lock.resolution_request_id == request.requestId then\n\t\tSurfaceLock.restore_resolution_protection(lock)",
+		"replace": "\tif false then\n\t\tSurfaceLock.restore_resolution_protection(lock)",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an abandoned resolution never undoes a committed deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif lock and SurfaceLock.source_lock_is_committed(lock) and (lock.resolution_request_id == request.requestId",
+		"replace": "\tif false and (lock.resolution_request_id == request.requestId",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
 	}
 ]
