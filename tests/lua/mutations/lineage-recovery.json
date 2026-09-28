@@ -570,5 +570,14 @@
 		"tests": [
 			"tests/lua/export-phase-yields.lua"
 		]
+	},
+	{
+		"name": "candidates report another local copy of their lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\t\t\tfacts.localCopy = facts.lineage and PlatformLineage.local_copy(facts.lineage, platform.index, nil) or nil\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
 	}
 ]
