@@ -225,41 +225,4 @@ function TestRunner.run_tests(test_suite_json, options)
   return results
 end
 
-function TestRunner.format_results(results)
-  local lines = {}
-  
-  table.insert(lines, "")
-  table.insert(lines, "═══════════════════════════════════════")
-  table.insert(lines, "  Integration Test Results")
-  table.insert(lines, "═══════════════════════════════════════")
-  table.insert(lines, "")
-  
-  for _, detail in ipairs(results.details) do
-    local icon = "?"
-    if detail.status == "passed" then
-      icon = "✓"
-    elseif detail.status == "failed" then
-      icon = "✗"
-    elseif detail.status == "skipped" then
-      icon = "○"
-    elseif detail.status == "error" then
-      icon = "!"
-    end
-    
-    table.insert(lines, string.format("  %s %s: %s", icon, detail.id, detail.name))
-    
-    if detail.status == "failed" or detail.status == "error" then
-      table.insert(lines, "      " .. detail.message)
-    end
-  end
-  
-  table.insert(lines, "")
-  table.insert(lines, "═══════════════════════════════════════")
-  table.insert(lines, string.format("  Passed: %d | Failed: %d | Skipped: %d", 
-    results.passed, results.failed, results.skipped))
-  table.insert(lines, "═══════════════════════════════════════")
-  
-  return table.concat(lines, "\n")
-end
-
 return TestRunner
