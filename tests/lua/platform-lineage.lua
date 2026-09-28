@@ -165,6 +165,9 @@ do
     assert(not locks.unlock_platform(3, nil, true), "startup recovery released a quarantine")
     assert(not locks.unlock_platform(3, nil, nil, nil, nil), "a jobless unlock released a quarantine")
     assert(not locks.unlock_current_lock(3, q), "local cleanup or /unlock-platform released a quarantine")
+    assert(not locks.transfer_delete_identity_ok(q, platform.surface, "job"), "a quarantine authorized source deletion")
+    assert(locks.get_source_transfer_lock_state("job", 3, "q", "player").state == "identity_mismatch",
+        "a quarantine certified transfer ownership")
     local scan = locks.scan_transfer_expiries()
     assert(scan.checked == 0 and scan.failed == 0 and scan.expired == 0, "the expiry scanner examined a quarantine")
     assert(env.storage.locked_platforms[3] == q and platform.hidden)
