@@ -315,6 +315,8 @@ function harness.set(path, value)
 	return true
 end
 
+harness.SurfaceLock = SurfaceLock
+harness.Recovery = Recovery
 _G.harness = harness
 
 while true do

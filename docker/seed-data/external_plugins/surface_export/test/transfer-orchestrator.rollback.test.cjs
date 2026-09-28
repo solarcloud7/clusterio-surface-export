@@ -10,6 +10,8 @@ const { isSessionLostError } = require(path.join(distNode, "helpers.js"));
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
 const { LineageRegistry, withLineage, mirrorHold, presenceOf } = require("./lineage-harness.cjs");
+const { normalizeSectionExport, prepareSectionImport } = require(path.join(distNode, "lib", "section-codec.js"));
+const { deflateSync } = require("node:zlib");
 
 function sessionLost(message = "Session Closed") {
 	return Object.assign(new Error(message), { code: "SessionLost" });
@@ -1482,6 +1484,21 @@ test("a resolution snapshot is never transferred and its source stays locked", a
 	const result = await h.orch.transferPlatform("1:resolution-snapshot", 2);
 	assert.equal(result.success, false);
 	assert.equal(result.safeToUnlockSource, false, "a transfer refusal unlocked a copy under resolution");
+	assert.match(result.error, /resolution snapshot/);
+	assert.equal(h.activeTransfers.size, 0);
+});
+
+test("a sectioned resolution snapshot keeps its purpose and is never transferred", async () => {
+	const payload = deflateSync(JSON.stringify(withLineage({ platform: { force: "player" }, entities: [{ id: 1 }], purpose: "resolution" }))).toString("base64");
+	const sectioned = await prepareSectionImport({ compressed: true, payload });
+	assert.equal(sectioned.section_codec, 1);
+	const exportData = await normalizeSectionExport(sectioned);
+	assert.equal(exportData.purpose, "resolution", "the sectioned codec dropped the resolution purpose");
+	const h = makeHarness(() => assert.fail("a sectioned resolution snapshot reached the destination"));
+	h.plugin.platformStorage.get = () => ({ exportData, platformName: "p", platformIndex: 3, instanceId: 1, size: 1 });
+	const result = await h.orch.transferPlatform("1:sectioned-snapshot", 2);
+	assert.equal(result.success, false);
+	assert.equal(result.safeToUnlockSource, false);
 	assert.match(result.error, /resolution snapshot/);
 	assert.equal(h.activeTransfers.size, 0);
 });

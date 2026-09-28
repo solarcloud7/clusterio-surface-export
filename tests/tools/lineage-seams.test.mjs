@@ -156,6 +156,65 @@ test("lineage seams (e): adopt refuses while a live copy exists elsewhere (unreg
 	}
 });
 
+for (const variant of ["ahead_of_registry", "stale_self"]) {
+	test(`lineage seams (e2): adopt of ${variant} asks every other server, not only the registry holder`, { skip }, async () => {
+		const c = await createCluster({ binary, ids: [1, 2, 3] });
+		try {
+			const lineage = "lineage:three-boot:555";
+			const live = await c.world(1).eval(`harness.lineage_copy("live", ${JSON.stringify(lineage)}, 3)`);
+			const holder = variant === "ahead_of_registry" ? { instanceId: 2, generation: 1 } : { instanceId: 3, generation: 2 };
+			await c.registry.update(draft => draft.set(lineage, { ...holder, platformName: "live", forceName: "player",
+				lastExportId: "x:1", updatedAt: 1, source: "transfer" }));
+			const quarantined = await c.world(3).eval(`harness.quarantine_copy("copy", ${JSON.stringify(lineage)}, ${variant === "ahead_of_registry" ? 2 : 1}, ${JSON.stringify(variant)})`);
+			const entry = await conflictFor(c, 3, quarantined);
+			assert.equal(entry.liveVerdict, variant);
+			assert.ok(entry.actions.includes("adopt"));
+			const result = await resolve(c, entry, "adopt");
+			assert.equal(result.success, false, `${variant}: adopt released a copy while instance 1 holds a live one: ${JSON.stringify(result)}`);
+			assert.match(result.error, /Instance 1 still has a copy/);
+			assert.equal((await c.platform(1, live)).usable, true);
+			assert.equal(usable(await c.copies(lineage)), 1, `${variant}: ${JSON.stringify(await c.copies(lineage))}`);
+			c.controller.controller.instances.set(4, { id: 4, isDeleted: false, config: { get: key => key === "surface_export.load_plugin" ? false : undefined } });
+			await c.world(1).eval(`(function() game.forces.player.platforms[${live}].valid = false return true end)()`);
+			const disabled = await resolve(c, entry, "adopt");
+			assert.equal(disabled.success, false, "an instance with the plugin disabled was treated as holding no copy");
+			assert.match(disabled.error, /Instance 4 could not rule out/);
+			c.controller.controller.instances.delete(4);
+			const adopted = await resolve(c, entry, "adopt");
+			assert.equal(adopted.status, "completed", `${variant}: adopt refused after every other server answered absent: ${JSON.stringify(adopted)}`);
+			assert.equal(usable(await c.copies(lineage)), 1);
+		} finally { await c.close(); }
+	});
+}
+
+test("lineage seams (e3): a listed copy is duplicate_local while another usable local copy carries its lineage", { skip }, async () => {
+	const c = await createCluster({ binary });
+	try {
+		const lineage = "lineage:local-boot:444";
+		const live = await c.world(1).eval(`harness.lineage_copy("live", ${JSON.stringify(lineage)}, 3)`);
+		const quarantined = await c.world(1).eval(`(function()
+			local index = harness.create_platform("copy", "player")
+			local platform = game.forces.player.platforms[index]
+			local hub = platform.hub
+			storage.surface_export_lineages[index] = {lineage = ${JSON.stringify(lineage)}, generation = 4, surface_index = platform.surface.index, hub_unit_number = hub.unit_number}
+			assert(harness.SurfaceLock.lock_platform(platform, platform.force, {kind = "startup"}))
+			local lock = harness.SurfaceLock.get_lock_data(index)
+			lock.kind = "quarantine"
+			lock.platform_uid = harness.Recovery.platform_uid(platform)
+			lock.quarantine = {reason = "ahead_of_registry", lineage = ${JSON.stringify(lineage)}, generation = 4, epoch = storage.source_recovery_epoch}
+			return index end)()`);
+		await c.registry.update(draft => draft.set(lineage, { instanceId: 1, generation: 3, platformName: "live", forceName: "player",
+			lastExportId: "x:1", updatedAt: 1, source: "transfer" }));
+		const entry = await conflictFor(c, 1, quarantined);
+		assert.equal(entry.liveVerdict, "duplicate_local", `a second local copy was not reported: ${entry.liveVerdict}`);
+		assert.deepEqual(entry.actions, ["stale_copy"]);
+		const result = await resolve(c, entry, "adopt");
+		assert.equal(result.success, false);
+		assert.equal(c.registry.get(lineage).generation, 3, "the registry was committed for a copy Lua must refuse to release");
+		assert.equal((await c.platform(1, live)).usable, true);
+	} finally { await c.close(); }
+});
+
 test("lineage seams (f): a copy quarantined without a hub becomes resolvable once it has one", { skip }, async () => {
 	const c = await createCluster({ binary });
 	try {
@@ -244,6 +303,30 @@ test("lineage seams (h2): abandoning after a deletion whose reply was lost finis
 		assert.equal((await c.platform(1, index)).present, false, "the deletion did not run before its reply was lost");
 		const abandoned = await c.controller.resolver.abandon(id);
 		assert.equal(abandoned.status, "completed", `a deletion that already happened was reported abandoned: ${JSON.stringify(abandoned)}`);
+	} finally { await c.close(); }
+});
+
+test("lineage seams (h3): a delete-only resolution does not quarantine the current copy when its server restarts", { skip }, async () => {
+	const { c, index, lineage, destination } = await rolledBackSource();
+	try {
+		const entry = await conflictFor(c, 1, index);
+		assert.equal(entry.liveVerdict, "duplicate");
+		const send = c.controller.controller.sendTo;
+		c.controller.controller.sendTo = async (target, message) => {
+			if (message.constructor.name === "DeleteSourcePlatformRequest") throw new Error("Session Closed");
+			return send(target, message);
+		};
+		const id = requestId("keep_other");
+		const stuck = await resolve(c, entry, "keep_other", id);
+		assert.deepEqual([stuck.status, stuck.step], ["in_progress", "delete"], JSON.stringify(stuck));
+		await c.restart(2);
+		const holder = await c.platform(2, destination);
+		assert.equal(holder.usable, true, `a restart during keep_other quarantined the current copy: ${JSON.stringify(holder)}`);
+		c.controller.controller.sendTo = send;
+		const abandoned = await c.controller.resolver.abandon(id);
+		assert.equal(abandoned.status, "failed", JSON.stringify(abandoned));
+		assert.equal(usable(await c.copies(lineage)), 1);
+		assert.equal((await c.platform(2, destination)).usable, true);
 	} finally { await c.close(); }
 });
 
