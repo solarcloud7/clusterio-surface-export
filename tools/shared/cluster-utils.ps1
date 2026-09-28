@@ -265,7 +265,7 @@ function Assert-PluginArtifactsFresh {
     $newest = $newestInput.LastWriteTimeUtc
     foreach ($tree in 'node', 'web') {
         $stamp = Join-Path $pluginRoot "dist/$tree/.prepare-build-stamp"
-        if (-not (Test-Path $stamp) -or (Get-Item $stamp).LastWriteTimeUtc -lt $newest) {
+        if (-not (Test-Path $stamp) -or (Get-Item -Force $stamp).LastWriteTimeUtc -lt $newest) {
             throw "dist/$tree is missing or older than the build inputs (newest: $($newestInput.FullName)). $Remedy"
         }
     }
