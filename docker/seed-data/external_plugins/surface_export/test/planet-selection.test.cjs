@@ -13,7 +13,6 @@ const SPACE_LOCATION_BUCKET = [
 	{ name: "surfexp_gateway_3", type: "space-location" },
 	{ name: "surfexp_gateway_4", type: "space-location" },
 	{ name: "surfexp_gateway_hub", type: "space-location" },
-	{ name: "surfexp_gateway_i_11", type: "space-location" },
 	{ name: "nauvis", type: "planet" },
 	{ name: "vulcanus", type: "planet" },
 	{ name: "gleba", type: "planet" },
@@ -45,7 +44,7 @@ test("surfaceless space-locations are NOT offered as destinations", () => {
 	const names = selectPlanetNames([SPACE_LOCATION_BUCKET]);
 	for (const notAPlanet of [
 		"surfexp_gateway_1", "surfexp_gateway_2", "surfexp_gateway_3", "surfexp_gateway_4",
-		"surfexp_gateway_hub", "surfexp_gateway_i_11",
+		"surfexp_gateway_hub",
 		"solar-system-edge", "shattered-planet", "space-location-unknown",
 	]) {
 		assert.ok(!names.includes(notAPlanet), `${notAPlanet} must never be offered as a destination`);

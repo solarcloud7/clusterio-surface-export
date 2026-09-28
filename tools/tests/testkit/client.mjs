@@ -135,10 +135,6 @@ function stage(dir, id, options, version) {
 	save(join(probe, "info.json"), { name: "se_client_probe", version: "0.0.1", title: "Disposable client probe", author: "local",
 		factorio_version: version.split(".").slice(0, 2).join("."), dependencies: names.filter(name => name !== "se_client_probe") });
 	copy(join(recipe, "scenario.lua"), join(probe, "control.lua"));
-	if (options.scenario === "starmap") {
-		writeFileSync(join(probe, "settings-updates.lua"), "local setting = data.raw[\"string-setting\"][\"surfexp-gateway-instances\"]\n"
-			+ "if setting then setting.default_value = \"11=Delta,22=Sigma,33=Theta,44=Omega\" end\n");
-	}
 	copy(join(recipe, "pointer.sh"), join(work, "pointer.sh"));
 	writeFileSync(join(probe, "run.lua"), `return {id="${id}",scenario="${options.scenario}",width=${options.width},height=${options.height}}\n`);
 	save(join(mods, "mod-list.json"), { mods: names.map(name => ({ name, enabled: true })) });

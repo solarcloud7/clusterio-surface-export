@@ -135,7 +135,7 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal)
 	if storage.source_recovery_ready ~= true then return nil, "Startup recovery is not ready" end
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
@@ -254,6 +254,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				paused = platform.paused == true,
 				schedule = platform_schedule,
 				gateway_target = gateway_target,
+				route_portal = route_portal,
 			},
 			tiles = tiles,
 			entities = {},

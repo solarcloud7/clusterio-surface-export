@@ -85,25 +85,41 @@ playable starting scenario; administrators still need to prepare the world.
 The in-game **Instance** panel shows the applied instance name and unavailable
 planets. A configuration edit does not change that panel until restart applies it.
 
-## Server destinations
+## Portals
 
-`surfexp-gateway-instances` is a startup string setting in the
-[gateway mod](../../docker/seed-data/mods-src/surfexp_gateways/settings.lua),
-empty by default. It lists Clusterio instance ids, each followed by `=` and a label,
-separated by commas, for example `836570928=Forge,902099405=Cinder`. Each entry
-adds a destination orbiting the Gateway. Players see the label on the star map
-and in platform schedules; an entry without a label is shown as `Server <id>`.
-A platform that stops at a destination is sent to that server and arrives at its
-Gateway. Ids must be digits and may appear once; otherwise the mod refuses to load.
-Labels cannot contain commas. Keep the value identical on every server, and restart
-the instances after changing it.
+The gateway mod places four coloured portals around the Gateway on every server:
+Blue, Green, Orange and Purple. The controller gives each server one colour and
+keeps it across restarts and renames. On every other server, that colour's portal
+leads to that server. A platform whose schedule stops there is sent to that server
+and arrives at its Gateway. A server's own colour is locked on that server, and a
+colour no server holds is locked everywhere.
 
-With the [reconciler](../../tools/clusterio/reconcile.mjs), set `serverDestinations`
-in the desired-state file instead of writing the setting directly. It maps instance
-names to labels, for example `"serverDestinations": { "Nauvis": "[planet=nauvis] Nauvis" }`.
-The reconciler resolves each name to its instance id, writes the setting into the
-desired mod pack and refuses an unknown instance, an empty label or a label with a
-comma. Setting both `serverDestinations` and the startup setting is refused.
+At most four servers take part; servers whose `surface_export.load_plugin` is off
+are not counted. A new server gets the lowest colour that no server has held.
+Deleting a server retires its colour: the colour stays locked everywhere and is
+never assigned automatically, because schedules on other servers may still stop
+there. A server that finds no unused colour gets none. The controller log and
+`clusterioctl surface-export gateways` report it, and the Gateways page shows it
+and every retired colour greyed out. A server without a colour can still send
+platforms through the Gateway, and other servers can reach it the same way.
+
+An administrator decides what happens to a retired colour with
+`clusterioctl surface-export portal assign <instance> <portal>`, and frees a colour
+without deleting its server with `clusterioctl surface-export portal release <portal>`;
+see [commands](commands.md#clusterio-control-client).
+
+No restart is needed: the controller sends the assignment to every running server,
+which unlocks or locks the portals immediately. When a colour passes to another
+server, the controller logs a warning and every running server announces in chat
+that the portal now leads there. Schedules that stop at that colour travel to the
+new server. Server names shown in the transfer dialog and in alerts are the
+Clusterio instance names.
+
+The assignment and the retired colours are stored in `surface_export_portal_slots.json`
+in the controller database directory. If that file cannot be read, every coloured
+portal stays locked, the portal commands are refused, and the file is left unchanged
+until it is repaired or removed. Removing it lets the controller assign the colours
+again in instance id order and forgets the retired colours.
 
 ## Mod map setting
 

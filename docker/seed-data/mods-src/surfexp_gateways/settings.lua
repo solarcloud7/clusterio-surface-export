@@ -6,13 +6,4 @@ data:extend({
 		default_value = true,
 		order = "b",
 	},
-	{
-		type = "string-setting",
-		name = "surfexp-gateway-instances",
-		setting_type = "startup",
-		default_value = "",
-		allow_blank = true,
-		auto_trim = true,
-		order = "c",
-	},
 })

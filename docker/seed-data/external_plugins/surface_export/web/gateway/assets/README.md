@@ -2,7 +2,7 @@
 
 `gateway-hub-128.png` is derived from the gateway mod's 512-pixel starmap image.
 `gateway-<colour>-64.png` (blue, green, orange, purple) are derived the same way
-from the server destination starmap images, reduced 8x.
+from the coloured portal starmap images, reduced 8x.
 Other Factorio icons use the instance mod pack's exported spritesheet.
 
 From the repository root:

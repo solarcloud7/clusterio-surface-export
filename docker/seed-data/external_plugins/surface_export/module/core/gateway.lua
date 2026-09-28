@@ -2,6 +2,9 @@ local Gateway = {}
 local PlanetPolicy = require("modules/surface_export/core/planet-policy")
 
 Gateway.PREFIX = "surfexp_gateway_"
+Gateway.HUB = "surfexp_gateway_hub"
+Gateway.PORTAL_COUNT = 4
+Gateway.OWN_LEAD = "own"
 Gateway.PASSENGER_HOLD = "surfexp_passenger_hold"
 
 function Gateway.is_gateway(name)
@@ -22,7 +25,7 @@ end
 function Gateway.is_active_gateway(name)
 	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
 	if type(active) ~= "table" then
-		return not Gateway.is_instance_gateway(name)
+		return name == Gateway.HUB
 	end
 	for _, active_name in ipairs(active) do
 		if active_name == name then
@@ -200,18 +203,93 @@ function Gateway.evacuate_passengers(platform)
 	return result
 end
 
-Gateway.INSTANCE_PREFIX = "surfexp_gateway_i_"
-
-function Gateway.is_instance_gateway(name)
-	return Gateway.is_gateway(name) and name:sub(1, #Gateway.INSTANCE_PREFIX) == Gateway.INSTANCE_PREFIX
+function Gateway.portal_slot(name)
+	if type(name) ~= "string" then
+		return nil
+	end
+	local slot = tonumber(name:match("^surfexp_gateway_([1-9])$"))
+	if not (slot and slot >= 1 and slot <= Gateway.PORTAL_COUNT and Gateway.is_gateway(name)) then
+		return nil
+	end
+	return slot
 end
 
-function Gateway.reached_instance_gateway(platform)
+function Gateway.is_portal(name)
+	return Gateway.portal_slot(name) ~= nil
+end
+
+function Gateway.is_own_portal(name)
+	local cfg = Gateway.get_gateway_config(name)
+	return Gateway.is_portal(name) and type(cfg) == "table" and cfg.own == true
+end
+
+function Gateway.own_portal()
+	for slot = 1, Gateway.PORTAL_COUNT do
+		local name = Gateway.PREFIX .. slot
+		if Gateway.is_own_portal(name) then
+			return name
+		end
+	end
+	return nil
+end
+
+function Gateway.portal_target(name)
+	local cfg = Gateway.get_gateway_config(name)
+	if not (Gateway.is_portal(name) and type(cfg) == "table" and type(cfg.targets) == "table") then
+		return nil
+	end
+	return cfg.targets[1]
+end
+
+function Gateway.location_label(name)
+	local proto = prototypes.space_location[name]
+	local label = proto and proto.localised_name or name
+	local target = Gateway.portal_target(name)
+	if target and target.instanceName then
+		return {"", label, " → ", target.instanceName}
+	end
+	return label
+end
+
+function Gateway.portal_lead_changes(gateways)
+	storage.surface_export_portal_leads = storage.surface_export_portal_leads or {}
+	local leads = storage.surface_export_portal_leads
+	local changes = {}
+	for slot = 1, Gateway.PORTAL_COUNT do
+		local name = Gateway.PREFIX .. slot
+		local cfg = gateways[name]
+		local target = type(cfg) == "table" and cfg.own ~= true and type(cfg.targets) == "table" and cfg.targets[1]
+		if type(target) == "table" and target.instanceId ~= nil then
+			local previous = leads[name]
+			if previous ~= nil and previous ~= target.instanceId then
+				changes[#changes + 1] = {portal = name, instance_name = tostring(target.instanceName or target.instanceId)}
+			end
+			leads[name] = target.instanceId
+		elseif type(cfg) == "table" and cfg.own == true then
+			leads[name] = Gateway.OWN_LEAD
+		end
+	end
+	return changes
+end
+
+function Gateway.find_target(instance_id)
+	local cfg = storage.surface_export_config
+	for _, gateway in pairs(cfg and cfg.gateways or {}) do
+		for _, target in ipairs(type(gateway) == "table" and gateway.targets or {}) do
+			if target.instanceId == instance_id then
+				return target
+			end
+		end
+	end
+	return nil
+end
+
+function Gateway.reached_portal(platform)
 	if not (platform and platform.valid) or platform.state ~= defines.space_platform_state.waiting_at_station then
 		return nil
 	end
 	local location = platform.space_location
-	if not (location and Gateway.is_instance_gateway(location.name)) then
+	if not (location and Gateway.is_portal(location.name)) then
 		return nil
 	end
 	local schedule = platform.get_schedule()
@@ -223,15 +301,20 @@ function Gateway.reached_instance_gateway(platform)
 	return location.name
 end
 
-local function own_destination(station, force)
-	return Gateway.is_instance_gateway(station) and not force.is_space_location_unlocked(station)
-end
-
-function Gateway.advance_past_arrival(schedule_payload, force)
+function Gateway.advance_past_arrival(schedule_payload, route_portal)
 	local records = schedule_payload.records or {}
 	local current = schedule_payload.current
 	local reached = type(current) == "number" and records[current]
-	if not (type(reached) == "table" and own_destination(reached.station, force)) or #records < 2 then
+	if type(reached) ~= "table" or #records < 2 then
+		return nil
+	end
+	local arrived
+	if route_portal ~= nil then
+		arrived = reached.station == route_portal
+	else
+		arrived = Gateway.is_own_portal(reached.station)
+	end
+	if not arrived then
 		return nil
 	end
 	return {
@@ -242,9 +325,45 @@ function Gateway.advance_past_arrival(schedule_payload, force)
 	}
 end
 
-function Gateway.can_resume(schedule_payload, force)
+function Gateway.can_resume(schedule_payload)
 	local record = schedule_payload and (schedule_payload.records or {})[schedule_payload.current]
-	return type(record) == "table" and type(record.station) == "string" and not own_destination(record.station, force)
+	return type(record) == "table" and type(record.station) == "string" and not Gateway.is_own_portal(record.station)
+end
+
+function Gateway.arrival_park(requested_park, gateway_target)
+	if gateway_target and not Gateway.is_gateway(gateway_target) then
+		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance", tostring(gateway_target)))
+		gateway_target = nil
+	end
+	local park_target = requested_park or gateway_target
+	if park_target and Gateway.is_portal(park_target) then
+		log(string.format("[Gateway] park target '%s' is a coloured portal; arriving at '%s' instead", park_target, Gateway.HUB))
+		park_target = Gateway.is_gateway(Gateway.HUB) and Gateway.HUB or nil
+	end
+	return park_target
+end
+
+function Gateway.route_schedule(park_target, schedule_payload, route_portal)
+	if not (park_target and Gateway.is_gateway(park_target) and schedule_payload) then
+		return schedule_payload, false
+	end
+	if route_portal ~= nil and not Gateway.is_portal(route_portal) then
+		log(string.format("[Gateway] Ignoring route_portal '%s' — not a coloured portal on this instance", tostring(route_portal)))
+		route_portal = nil
+	end
+	local advanced = Gateway.advance_past_arrival(schedule_payload, route_portal)
+	if advanced then
+		return advanced, true
+	end
+	local stripped = Gateway.strip_gateway_records(schedule_payload)
+	if not stripped then
+		log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it", park_target))
+		return schedule_payload, false
+	end
+	log(string.format("[Gateway] Gateway transfer to '%s' — not a route arrival (route portal %s, own portal %s); stripping gateway hops (records %d -> %d)",
+		park_target, tostring(route_portal or "none"), tostring(Gateway.own_portal() or "none configured"),
+		#(schedule_payload.records or {}), #stripped.records))
+	return stripped, false
 end
 
 function Gateway.strip_gateway_records(schedule_payload)

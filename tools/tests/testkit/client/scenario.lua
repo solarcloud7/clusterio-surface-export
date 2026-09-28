@@ -84,7 +84,7 @@ script.on_event(defines.events.on_tick, function()
 	local capture
 	if run.scenario == "starmap" then
 		if elapsed == 30 then
-			for _, id in ipairs({"11", "22", "33", "44"}) do game.forces.player.unlock_space_location("surfexp_gateway_i_" .. id) end
+			for slot = 1, 4 do game.forces.player.unlock_space_location("surfexp_gateway_" .. slot) end
 			player.set_controller{type = defines.controllers.remote, surface = game.surfaces.nauvis}
 		end
 		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click 64 94 0 0", [240] = "capture starmap.png 0 0 0"})[elapsed]

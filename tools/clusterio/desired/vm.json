@@ -148,12 +148,6 @@
 			}
 		}
 	},
-	"serverDestinations": {
-		"Delta": "Delta",
-		"Sigma": "Sigma",
-		"Theta": "Theta",
-		"Omega": "Omega"
-	},
 	"hosts": {
 		"clusterio-host-1": {
 			"host.public_address": "fact1.cloudstack.software"

@@ -64,7 +64,7 @@ async function invoke(command, args, reply, sent = []) {
 
 test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => {
 	assert.ok(read, "the gateways command must be registered");
-	const reply = { destinations: [{ gatewayName: "surfexp_gateway_i_2", instanceId: 2, instanceName: "fact2" }] };
+	const reply = { portals: [{ slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "fact2" }], unassigned: [{ instanceId: 5, instanceName: "fact5" }] };
 	const { sent, printed } = await invoke(read, {}, reply);
 	assert.equal(sent.length, 1);
 	assert.equal(sent[0].target, "controller");
@@ -77,4 +77,17 @@ test("gateway links cannot be written from the command line", () => {
 	assert.equal(registered.some(c => String(c.definition[0]).startsWith("set-gateway-links")), false);
 	assert.equal(messages.SetGatewayLinkRequest, undefined);
 	assert.equal(control.parseGatewayTargets, undefined);
+});
+
+test("portal assign and release send the administrator's request unchanged and print the listing", async () => {
+	const assign = registered.find(c => String(c.definition[0]) === "assign <instance> <portal>");
+	const release = registered.find(c => String(c.definition[0]) === "release <portal>");
+	assert.ok(assign && release, "the portal commands must be registered");
+	const reply = { portals: [], unassigned: [], retired: [] };
+	const { sent, printed } = await invoke(assign, { instance: 7, portal: "Green" }, reply);
+	assert.ok(sent[0].message instanceof messages.SetPortalRequest);
+	assert.deepEqual(sent[0].message.toJSON(), { action: "assign", portal: "Green", instance: "7" });
+	assert.deepEqual(JSON.parse(printed[0]), reply);
+	const released = await invoke(release, { portal: 2 }, reply);
+	assert.deepEqual(JSON.parse(JSON.stringify(released.sent[0].message)), { action: "release", portal: "2" });
 });

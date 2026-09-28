@@ -1,6 +1,6 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local function noop() end
-local function fixture(fault, deletion)
+local function fixture(fault, deletion, real_gateway)
     local platforms, created, deletes = {}, 0, 0
     local force = {valid = true, name = "player", platforms = platforms,
         get_surface_hidden = function() return false end, set_surface_hidden = noop}
@@ -28,7 +28,12 @@ local function fixture(fault, deletion)
         platforms[created] = platform
         return platform
     end
-    modules['core/gateway'] = {evacuate_passengers = function() return {success=true,failures=0} end}
+    if real_gateway then
+        env.prototypes = {space_location = {surfexp_gateway_hub = {}, surfexp_gateway_1 = {}, surfexp_gateway_2 = {}, surfexp_gateway_3 = {}, surfexp_gateway_4 = {}, nauvis = {}}}
+        force.unlock_space_location = noop
+    else
+        modules['core/gateway'] = {evacuate_passengers = function() return {success=true,failures=0} end, arrival_park = function() return nil end}
+    end
     modules['utils/game-utils'] = {ACTIVATABLE_ENTITY_TYPES = {}, delete_platform = function(target)
         deletes = deletes + 1
         if deletion == "throw" then error("injected deletion error") end
@@ -58,7 +63,7 @@ local function fixture(fault, deletion)
         if fault == "totals" then error("injected totals error") end; return 0
     end, sum_fluids = function() return 0 end}
     local real = {['control']=true,['core/source-recovery']=true,['utils/platform-identity']=true,['core/destination-hold']=true,['core/import-pipeline']=true,['core/import-completion']=true,
-        ['utils/transfer-receipts']=true,['core/async-processor']=true,['core/job-results']=true,['core/job-status']=true}
+        ['utils/transfer-receipts']=true,['core/async-processor']=true,['core/job-results']=true,['core/job-status']=true,['core/gateway']=true}
     env.require = function(path)
         if path == 'modules/clusterio/api' then return {events={on_server_startup='startup',on_instance_updated='updated'},send_json=noop} end
         local key = path:match('^modules/surface_export/(.*)$')
@@ -66,7 +71,7 @@ local function fixture(fault, deletion)
         return modules[key] or stub
     end
     local function load(key) return env.require('modules/surface_export/' .. key) end
-    return {env=env, load=load, stats=function() return created,deletes,platform end,
+    return {env=env, load=load, modules=modules, stats=function() return created,deletes,platform end,
         allow=function() deletion="success" end, reload=function() modules['core/async-processor']=nil;modules['core/import-pipeline']=nil end}
 end
 local function payload(transfer)
@@ -220,3 +225,40 @@ local _,retry_delete=missing.stats()
 assert(retry_delete==2 and not missing_platform.valid and not missing.env.storage.async_jobs[missing_job.job_id],
     'exact setup references did not permit cleanup after a missing-hub failure')
 print('PASS missing-hub setup deletion retries across reload through exact saved job references')
+
+local function routed_job(platform_meta, records, config)
+    local routed=fixture(nil,'success',true)
+    routed.env.storage.surface_export_config=config
+    local input=payload('route')
+    platform_meta.schedule={current=1,records=records}
+    input.platform=platform_meta
+    local id,err=routed.load('core/import-pipeline').queue(input,'fixture','player','RCON')
+    assert(id, tostring(err))
+    local _,job=next(routed.env.storage.async_jobs)
+    local _,_,platform=routed.stats()
+    return job, platform
+end
+local function stops(...) local list={} for i,station in ipairs({...}) do list[i]={station=station} end return list end
+local job,routed_platform=routed_job({gateway_target='surfexp_gateway_hub',route_portal='surfexp_gateway_3'},
+    stops('surfexp_gateway_3','nauvis','surfexp_gateway_1'))
+assert(job.park_target=='surfexp_gateway_hub' and routed_platform.space_location=='surfexp_gateway_hub',
+    'a route arrival parks at the Gateway')
+assert(job.imported_schedule.current==2 and #job.imported_schedule.records==3, 'a route arrival without config keeps its loop')
+assert(job.resume_route==true and job.route_hold==false, 'a route arrival whose next stop leads elsewhere resumes at release')
+job=routed_job({gateway_target='surfexp_gateway_2',route_portal='surfexp_gateway_3'},stops('surfexp_gateway_3','nauvis'))
+assert(job.park_target=='surfexp_gateway_hub', 'a portal park target is redirected to the Gateway')
+job=routed_job({gateway_target='surfexp_gateway_hub'},stops('surfexp_gateway_3','nauvis','surfexp_gateway_1'))
+assert(#job.imported_schedule.records==1 and job.imported_schedule.records[1].station=='nauvis', 'a manual Gateway transfer keeps the legacy strip')
+assert(job.resume_route==false and job.route_hold==false, 'a manual Gateway transfer neither resumes nor raises a route hold')
+job=routed_job({gateway_target='surfexp_gateway_hub',route_portal='surfexp_gateway_3'},stops('surfexp_gateway_3','surfexp_gateway_1','nauvis'),
+    {gateways={surfexp_gateway_1={targets={},own=true}}})
+assert(job.imported_schedule.current==2 and job.resume_route==false and job.route_hold==true,
+    'a route arrival whose next stop is this server holds at release')
+print('PASS a route arrival reaches the import job with its loop, park target and resume flags')
+
+local relay=fixture(nil,'success')
+local exported
+relay.modules['core/export-pipeline']={queue=function(...) exported=table.pack(...); return 'job-export' end}
+assert(relay.load('core/async-processor').queue_export(3,'player','TRANSFER',22,'surfexp_gateway_hub',nil,nil,nil,'surfexp_gateway_2')=='job-export')
+assert(exported[5]=='surfexp_gateway_hub' and exported[9]=='surfexp_gateway_2', 'the scheduler hands the reached portal to the export pipeline')
+print('PASS the reached portal passes through the export scheduler')

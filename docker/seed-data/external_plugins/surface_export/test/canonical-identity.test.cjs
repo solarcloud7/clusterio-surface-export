@@ -67,10 +67,14 @@ test("save restoration requires available recovery authority and reserves startu
 	assert.equal((await begin("c")).allowAdoption, false);
 	plugin.activeTransfers.clear();
 	assert.equal((await begin("d")).allowAdoption, true);
+	let pushes = 0;
+	plugin.gatewayConfig = { pushGatewayConfigToAllSources: async () => { pushes += 1; return new Map(); } };
 	await assert.rejects(plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "c", action: "finish"}, {id: 1}), /session changed/);
 	assert.throws(() => plugin.requireRecoveryReady(1), /reconciling/);
+	assert.equal(pushes, 0, "a refused finish must not advertise the server as online");
 	await plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch: "d", action: "finish"}, {id: 1});
 	assert.doesNotThrow(() => plugin.requireRecoveryReady(1));
+	assert.equal(pushes, 1, "finishing recovery re-pushes gateway config, so other servers stop seeing this one as offline");
 });
 
 test("canonical transfer id helpers qualify by numeric source instance and parse by first colon", () => {

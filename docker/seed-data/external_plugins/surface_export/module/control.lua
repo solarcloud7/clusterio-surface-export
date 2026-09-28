@@ -131,10 +131,7 @@ SurfaceExportModule.events = {
 	[e.on_player_clicked_gps_tag] = function(event)
 		local player = game.get_player(event.player_index)
 		if not player then return end
-		RouteAlerts.connect_from_gps(player, event.surface, TeleportGui.is_allowed, function(instance_id)
-			local cfg = Gateway.get_gateway_config(Gateway.INSTANCE_PREFIX .. instance_id)
-			return cfg and cfg.targets and cfg.targets[1]
-		end)
+		RouteAlerts.connect_from_gps(player, event.surface, TeleportGui.is_allowed, Gateway.find_target)
 	end,
 	[e.on_player_joined_game] = function(event)
 		local player = game.get_player(event.player_index)

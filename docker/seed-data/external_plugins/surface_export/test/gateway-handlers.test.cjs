@@ -33,6 +33,7 @@ async function fixture(t, prepare = async () => {}) {
 		plugin.orchestrator?.stop();
 		clearInterval(plugin.recoveryTimer);
 		plugin.subscriptions?.treeBroadcastLimiter.cancel();
+		await plugin.gatewayConfig?.slots?.flush();
 		await fs.rm(dir, {recursive: true, force: true});
 	});
 	await plugin.init();
@@ -41,24 +42,28 @@ async function fixture(t, prepare = async () => {}) {
 }
 
 test("registered gateway handlers lead every server to every other server with recovery-aware availability", async t => {
-	const {plugin, call} = await fixture(t);
+	const {plugin, call, dir} = await fixture(t);
 	assert.equal(messages.SetGatewayLinkRequest, undefined, "gateway links are not configurable");
 	plugin.recoveryReservations.set(2, {});
 	const view = await call(messages.GetGatewayConfigRequest, {instanceId: 1});
 	assert.deepEqual(view.gateways[0], {gatewayName: messages.ONE_GATE_NAME, targets: [{instanceId: 2, instanceName: "Destination",
 		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the hub offers every other server");
-	assert.deepEqual(view.gateways[1], {gatewayName: "surfexp_gateway_i_2", targets: [{instanceId: 2, instanceName: "Destination",
-		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the other server's destination leads to its hub");
-	assert.equal(view.gateways.length, 2, "a server has no destination leading to itself");
-	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME, "surfexp_gateway_i_2"]);
+	assert.deepEqual(view.gateways[1], {gatewayName: "surfexp_gateway_2", targets: [{instanceId: 2, instanceName: "Destination",
+		targetGateway: messages.ONE_GATE_NAME, online: false, address: ""}]}, "the other server's colour leads to its hub");
+	assert.equal(view.gateways.length, 2, "a server's own colour does not lead to itself");
+	assert.deepEqual(view.activeGatewayNames, [messages.ONE_GATE_NAME, "surfexp_gateway_2"]);
+	assert.equal(view.ownGatewayName, "surfexp_gateway_1");
 	assert.deepEqual(view.passengerCarry, {armor: true, inventory: false});
 	plugin.recoveryReservations.delete(2);
 	const back = await call(messages.GetGatewayConfigRequest, {instanceId: 2});
 	assert.deepEqual(back.gateways[0].targets.map(target => [target.instanceId, target.online]), [[1, true]]);
-	assert.deepEqual(await call(messages.GetGatewaysRequest, {}), {destinations: [
-		{gatewayName: "surfexp_gateway_i_1", instanceId: 1, instanceName: "1"},
-		{gatewayName: "surfexp_gateway_i_2", instanceId: 2, instanceName: "Destination"},
-	]});
+	assert.deepEqual(await call(messages.GetGatewaysRequest, {}), {portals: [
+		{slot: 1, colour: "blue", gatewayName: "surfexp_gateway_1", instanceId: 1, instanceName: "1"},
+		{slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "Destination"},
+	], unassigned: [], retired: []});
+	await plugin.gatewayConfig.slots.flush();
+	assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "surface_export_portal_slots.json"), "utf8")), {version: 1, slots: [[1, 1], [2, 2]], released: []},
+		"colour assignments are kept in the controller database directory");
 });
 
 test("a gateway link file left by an older version is neither read nor changed", async t => {

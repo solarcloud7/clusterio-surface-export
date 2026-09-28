@@ -40,6 +40,7 @@ test("the registered timing handler returns a Promise and persists evidence with
 		assert.equal(plugin.pendingTransfers.size, 0);
 	} finally {
 		plugin.subscriptions?.treeBroadcastLimiter.cancel();
+		await plugin.gatewayConfig?.slots?.flush();
 		await fs.rm(dir, { recursive: true, force: true });
 	}
 });

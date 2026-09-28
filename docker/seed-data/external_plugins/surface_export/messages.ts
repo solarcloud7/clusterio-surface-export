@@ -11,7 +11,7 @@ import type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
-	InstanceDestination,
+	PortalListingResponse,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -30,15 +30,13 @@ export type {
 	PassengerCarry,
 	PassengerManifestEntry,
 	AuditRow,
-	InstanceDestination,
+	PortalListing,
+	PortalListingResponse,
 } from "./shared/dto";
 export {
 	GATEWAY_PREFIX,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
-	INSTANCE_GATEWAY_PREFIX,
-	instanceGatewayName,
-	isInstanceGatewayName,
 } from "./shared/dto";
 import type { TimingRecord, OperationTiming } from "./shared/timing";
 const PLUGIN_NAME = "surface_export";
@@ -913,26 +911,91 @@ export class GetGatewaysRequest {
 		jsonSchema: {
 			type: "object",
 			properties: {
-				destinations: {
+				portals: {
 					type: "array",
 					items: {
 						type: "object",
 						properties: {
+							slot: { type: "integer" },
+							colour: { type: "string" },
 							gatewayName: { type: "string" },
 							instanceId: { type: "integer" },
 							instanceName: { type: "string" },
 						},
-						required: ["gatewayName", "instanceId", "instanceName"],
+						required: ["slot", "colour", "gatewayName", "instanceId", "instanceName"],
 						additionalProperties: false,
 					},
 				},
+				unassigned: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: { instanceId: { type: "integer" }, instanceName: { type: "string" } },
+						required: ["instanceId", "instanceName"],
+						additionalProperties: false,
+					},
+				},
+				retired: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							slot: { type: "integer" },
+							colour: { type: "string" },
+							gatewayName: { type: "string" },
+							formerInstanceId: { type: "integer" },
+							formerInstanceName: { type: "string" },
+						},
+						required: ["slot", "colour", "gatewayName", "formerInstanceId", "formerInstanceName"],
+						additionalProperties: false,
+					},
+				},
+				error: { type: "string" },
 			},
-			required: ["destinations"],
+			required: ["portals", "unassigned", "retired"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { destinations: InstanceDestination[] };
+			return json as PortalListingResponse;
 		},
 	};
+}
+
+export class SetPortalRequest {
+	declare ["constructor"]: typeof SetPortalRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { action: { enum: ["assign", "release"] }, portal: { type: "string" }, instance: { type: "string" } },
+		required: ["action", "portal"],
+		additionalProperties: false,
+	};
+
+	action: "assign" | "release";
+	portal: string;
+	instance?: string;
+
+	constructor(json: { action: "assign" | "release"; portal: string; instance?: string }) {
+		this.action = json.action;
+		this.portal = json.portal;
+		this.instance = json.instance;
+	}
+
+	static fromJSON(json: { action: "assign" | "release"; portal: string; instance?: string }) { return new SetPortalRequest(json); }
+	toJSON() { return { action: this.action, portal: this.portal, instance: this.instance }; }
+
+	static Response = GetGatewaysRequest.Response;
+}
+
+export interface GatewayConfigPayload {
+	gateways: ResolvedGateway[];
+	activeGatewayNames?: string[];
+	ownGatewayName?: string;
+	passengerCarry?: PassengerCarry;
+	discordInvite?: string;
 }
 
 export class GetGatewayConfigRequest {
@@ -958,9 +1021,9 @@ export class GetGatewayConfigRequest {
 	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } }, required: ["gateways"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, ownGatewayName: { type: "string" }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string };
+			return json as GatewayConfigPayload;
 		},
 	};
 }
@@ -1107,27 +1170,29 @@ export class PushGatewayConfigRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } },
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } }, ownGatewayName: { type: "string" }, passengerCarry: PASSENGER_CARRY_SCHEMA, discordInvite: { type: "string" } },
 		required: ["gateways"],
 		additionalProperties: false,
 	};
 
 	gateways: ResolvedGateway[];
 	activeGatewayNames?: string[];
+	ownGatewayName?: string;
 	passengerCarry?: PassengerCarry;
 	discordInvite?: string;
 
-	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string }) {
+	constructor(json: GatewayConfigPayload) {
 		this.gateways = json.gateways;
 		this.activeGatewayNames = json.activeGatewayNames;
+		this.ownGatewayName = json.ownGatewayName;
 		this.passengerCarry = json.passengerCarry;
 		this.discordInvite = json.discordInvite;
 	}
 
-	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[]; passengerCarry?: PassengerCarry; discordInvite?: string }) {
+	static fromJSON(json: GatewayConfigPayload) {
 		return new PushGatewayConfigRequest(json);
 	}
-	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames, passengerCarry: this.passengerCarry, discordInvite: this.discordInvite }; }
+	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames, ownGatewayName: this.ownGatewayName, passengerCarry: this.passengerCarry, discordInvite: this.discordInvite }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1689,7 +1754,6 @@ export interface IControllerPlugin {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
 		config?: { get(field: string): unknown };
-		modPacks?: { get(id: number): { settings?: { startup?: Map<string, { value?: unknown }> } } | undefined };
 		instances: {
 			get(id: number): InstanceRecordLike | undefined;
 			values(): IterableIterator<InstanceRecordLike>;
@@ -1702,6 +1766,7 @@ export interface IControllerPlugin {
 		error(msg: string): void;
 		verbose(msg: string): void;
 	};
+	gatewayConfig?: { portalOf(instanceId: number): import("./shared/portals").PortalAssignment | null };
 	platformStorage: Map<string, StoredExport>;
 	platformTree: {
 		resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string>;

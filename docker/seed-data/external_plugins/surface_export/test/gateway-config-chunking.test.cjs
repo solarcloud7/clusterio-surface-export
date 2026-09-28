@@ -448,6 +448,22 @@ test("gateway pushes apply passenger carry after the gateways only when present"
 		{ success: false, error: "carry echo mismatch" });
 });
 
+test("a pushed own portal reaches Lua as an entry without targets, marked own", async () => {
+	const plugin = Object.create(InstancePlugin.prototype);
+	const sent = [];
+	plugin.logger = noopLogger;
+	plugin.lua = { configureGateways: async (json, active) => { sent.push([JSON.parse(json), active && JSON.parse(active)]); return { gateways: 3 }; } };
+	const delta = { instanceId: 2, instanceName: "Delta", targetGateway: "surfexp_gateway_hub", online: true };
+	assert.deepEqual(await plugin.handlePushGatewayConfig({ gateways: [{ gatewayName: "surfexp_gateway_hub", targets: [delta] },
+		{ gatewayName: "surfexp_gateway_2", targets: [delta] }], activeGatewayNames: ["surfexp_gateway_hub", "surfexp_gateway_2"],
+		ownGatewayName: "surfexp_gateway_1" }), { success: true });
+	assert.deepEqual(sent[0][0], { surfexp_gateway_hub: { targets: [delta] }, surfexp_gateway_2: { targets: [delta] },
+		surfexp_gateway_1: { targets: [], own: true } });
+	assert.deepEqual(sent[0][1], ["surfexp_gateway_hub", "surfexp_gateway_2"]);
+	await plugin.handlePushGatewayConfig({ gateways: [] });
+	assert.deepEqual(sent[1][0], {}, "a server without a colour marks no portal as its own");
+});
+
 test("source deletion returns the passenger manifest and fails closed without it", async () => {
 	const passengers = [{ name: "alice", items: [{ name: "power-armor", count: 1 }] }];
 	const makePlugin = manifest => {

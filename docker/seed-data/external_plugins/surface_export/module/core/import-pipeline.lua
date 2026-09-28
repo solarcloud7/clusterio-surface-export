@@ -407,19 +407,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
 		end
 
-		local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
-		if gateway_target and not Gateway.is_gateway(gateway_target) then
-			log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
-				tostring(gateway_target)))
-			gateway_target = nil
-		end
-		local park_target = requested_park or gateway_target
-		if park_target and Gateway.is_instance_gateway(park_target) then
-			local hub = Gateway.PREFIX .. "hub"
-			log(string.format("[Gateway] park target '%s' is a server destination; arriving at '%s' instead",
-				park_target, hub))
-			park_target = Gateway.is_gateway(hub) and hub or nil
-		end
+		local platform_meta = platform_data and platform_data.platform or {}
+		local park_target = Gateway.arrival_park(requested_park, platform_meta.gateway_target)
 
 		if park_target then
 			if not is_transfer then
@@ -442,23 +431,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		Timing.stop(job_id, "platform_parking")
 		Timing.start(job_id, "schedule_restoration", "execution", "platform_preparation")
 		local route_arrival, resume_route = false, false
-		local advanced = nil
-		if park_target and Gateway.is_gateway(park_target) and imported_schedule then
-			advanced = Gateway.advance_past_arrival(imported_schedule, force)
-		end
-		if advanced then
-			imported_schedule = advanced
-			route_arrival = true
-		elseif park_target and Gateway.is_gateway(park_target) and imported_schedule then
-			local stripped = Gateway.strip_gateway_records(imported_schedule)
-			if stripped then
-				log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
-					park_target, #(imported_schedule.records or {}), #stripped.records))
-				imported_schedule = stripped
-			else
-				log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it",
-					park_target))
-			end
+		if park_target then
+			imported_schedule, route_arrival = Gateway.route_schedule(park_target, imported_schedule, platform_meta.route_portal)
 		end
 
 		if imported_schedule then
@@ -474,7 +448,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 				end
 			end
 			if route_arrival then
-				resume_route = Gateway.can_resume(imported_schedule, force)
+				resume_route = Gateway.can_resume(imported_schedule)
 				log(string.format("[Gateway] Route arrival at '%s' — continuing the schedule at record %s of %d (%s)",
 					park_target, tostring(imported_schedule.current), #(imported_schedule.records or {}),
 					resume_route and "resumes at go-live" or "next stop is this server; holding"))

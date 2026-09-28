@@ -31,7 +31,7 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    local arrival = Gateway.is_instance_gateway(gw_name) and (Gateway.PREFIX .. "hub") or gw_name
+    local arrival = Gateway.is_portal(gw_name) and Gateway.HUB or gw_name
     ctx.print(string.format("🛰  Gateway transfer: '%s' parked at '%s' → instance %d, arriving at '%s'",
       platform.name, gw_name, dest_instance_id, arrival))
 

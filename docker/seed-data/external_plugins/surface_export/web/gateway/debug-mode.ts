@@ -1,8 +1,8 @@
 
 import { createContext, useContext } from "react";
 
-import type { InstanceLike, PlatformLike, TreeLike } from "./gateway-graph";
-import { PORTAL_COLOURS, instanceGatewayName } from "./gateway-graph";
+import type { InstanceLike, PlatformLike, Portal, TreeLike } from "./gateway-graph";
+import { PORTAL_COLOURS, portalColourOfSlot, portalGatewayName } from "./gateway-graph";
 import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
 import type { TransferSummary } from "../view-models";
@@ -107,6 +107,10 @@ export function saveDebugState(state: DebugState): void {
 
 const MOCK_HOST_ID = -1;
 
+function mockPortal(slot: number | undefined, label: string): Portal | null {
+	return slot === undefined ? null : { slot, colour: portalColourOfSlot(slot), label };
+}
+
 export function withMockInstances(tree: TreeLike | null | undefined, state: DebugState): TreeLike | null | undefined {
 	if (!state.enabled || state.mockInstances <= 0) {
 		return tree;
@@ -115,6 +119,9 @@ export function withMockInstances(tree: TreeLike | null | undefined, state: Debu
 		return tree;
 	}
 	const instances: InstanceLike[] = [];
+	const held = new Set([...(tree.hosts || []).flatMap(host => host.instances || []), ...(tree.unassignedInstances || [])]
+		.map(instance => instance.portal?.slot));
+	const freeSlots = PORTAL_COLOURS.map((_colour, index) => index + 1).filter(slot => !held.has(slot));
 	for (let index = 0; index < state.mockInstances; index += 1) {
 		const instanceId = mockInstanceId(index);
 		instances.push({
@@ -125,7 +132,7 @@ export function withMockInstances(tree: TreeLike | null | undefined, state: Debu
 			status: "running",
 			defaultPlanet: "nauvis",
 			disabledPlanets: [],
-			destination: { label: `mock-instance-${index + 1}`, colour: PORTAL_COLOURS[index % PORTAL_COLOURS.length] },
+			portal: mockPortal(freeSlots[index], `mock-instance-${index + 1}`),
 			platforms: Array.from({ length: state.mockPlatforms }, (_, platformIndex) => ({
 				platformIndex: platformIndex + 1,
 				platformName: `mock-pad-${platformIndex + 1}`,
@@ -249,7 +256,7 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 			};
 		});
 		for (const [from, to] of scenario.routes || []) {
-			if (from !== index || to === from || !names[to]) {
+			if (from !== index || to === from || !names[to] || to >= PORTAL_COLOURS.length) {
 				continue;
 			}
 			platforms.push({
@@ -258,7 +265,7 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 				forceName: "player",
 				hasSpaceHub: true,
 				spaceLocation: null,
-				currentTarget: instanceGatewayName(mockInstanceId(to)),
+				currentTarget: portalGatewayName(to + 1),
 			});
 		}
 		const list = byHost.get(host) || [];
@@ -271,7 +278,7 @@ export function scenarioToTree(scenario: DebugScenario): TreeLike {
 			autoPause: spec.autoPause === true,
 			defaultPlanet: "nauvis",
 			disabledPlanets: [],
-			destination: { label: names[index], colour: PORTAL_COLOURS[index % PORTAL_COLOURS.length] },
+			portal: mockPortal(index < PORTAL_COLOURS.length ? index + 1 : undefined, names[index]),
 			platforms,
 		});
 		byHost.set(host, list);

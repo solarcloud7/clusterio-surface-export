@@ -119,7 +119,7 @@ local function build_frame(player, state)
 		local names = header.add{type = "flow", direction = "vertical"}
 		names.style.vertical_spacing = 0
 		names.add{type = "label", caption = platform.name, style = "bold_label"}
-		local where = names.add{type = "label", caption = {"", state.departed and "Left " or "Parked at ", location_name(state.gateway_name)}}
+		local where = names.add{type = "label", caption = {"", state.departed and "Left " or "Parked at ", Gateway.location_label(state.gateway_name)}}
 		where.style.font_color = COLOR_MUTED
 		if decision.passenger_count > 0 then
 			header.add{type = "empty-widget"}.style.horizontally_stretchable = true
@@ -311,7 +311,8 @@ function GatewayTransferGui.start_transfer(platform, force_name, gateway_name, t
 	end
 	local job_id
 	guard.start_fn = function()
-		local ok, id, err = pcall(TransferTrigger.start, force, platform.index, target.instanceId, target.targetGateway or gateway_name)
+		local route_portal = Gateway.is_portal(gateway_name) and gateway_name or nil
+		local ok, id, err = pcall(TransferTrigger.start, force, platform.index, target.instanceId, target.targetGateway or gateway_name, route_portal)
 		if not ok then
 			log("[Gateway] transfer start raised: " .. tostring(id))
 			local lock = SurfaceLock.get_lock_data(platform.index)

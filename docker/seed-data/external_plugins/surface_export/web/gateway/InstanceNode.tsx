@@ -1,16 +1,17 @@
 import { useCallback, useContext, useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { Handle, Position, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
 import { ONE_GATE_NAME } from "../../shared/dto";
-import type { PortalColour } from "../../shared/server-destinations";
+import type { PortalColour } from "../../shared/portals";
 import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOrientation, sourceHandleId, spreadTurns, targetHandleId } from "./gateway-graph";
-import type { PeerPortal, PlatformLike, PortalDestination } from "./gateway-graph";
+import type { PeerPortal, PlatformLike, Portal } from "./gateway-graph";
 import PlatformRows from "./PlatformRows";
 import { useGatewayDebug } from "./debug-mode";
 import { PlanetIcon, usePlanetNames } from "../icons";
-import { portalColour } from "./gateway-colours";
+import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 import gatewayBlueArt from "./assets/gateway-blue-64.png";
 import gatewayGreenArt from "./assets/gateway-green-64.png";
@@ -25,16 +26,20 @@ const NODE_FACE_ART: Record<string, string> = {
 	surfexp_gateway_hub: gatewayHubArt,
 };
 
-const PORTAL_ART: Record<PortalColour, string> = {
+export const PORTAL_ART: Record<PortalColour, string> = {
 	blue: gatewayBlueArt,
 	green: gatewayGreenArt,
 	orange: gatewayOrangeArt,
 	purple: gatewayPurpleArt,
 };
 
-const NO_PORTAL_NOTE = "No portal: this server is not listed in the gateway mod's Server destinations setting "
-	+ "(surfexp-gateway-instances), so other servers cannot schedule platforms to it. "
-	+ "Drag a platform here to transfer it instead.";
+const NO_PORTAL_NOTE = "No portal colour: at most 4 servers hold one, and a colour freed by a deleted server stays unassigned "
+	+ "until an admin assigns it with surface-export portal assign. No schedule can stop at a portal leading to this server; "
+	+ "drag a platform onto its card or use the Gateway instead.";
+
+function colourName(colour: PortalColour): string {
+	return colour.charAt(0).toUpperCase() + colour.slice(1);
+}
 
 const NODE_CENTRE = 75;
 const PORTAL_RING_RADIUS = 94;
@@ -66,18 +71,17 @@ function OutgoingPortals({ selfId, peers }: { selfId: string; peers: PeerPortal[
 					left: NODE_CENTRE + PORTAL_RING_RADIUS * Math.sin(turn),
 					top: NODE_CENTRE - PORTAL_RING_RADIUS * Math.cos(turn),
 				};
-				const label = peer.destination?.label ?? peer.instanceName;
 				return (
 					<div
 						key={peer.instanceId}
-						className={`surface-export-instance-portal${peer.destination ? "" : " surface-export-instance-portal-none"}`}
+						className={`surface-export-instance-portal${peer.portal ? "" : " surface-export-instance-portal-none"}`}
 						style={position}
-						title={peer.destination
-							? `Portal to ${label} (${peer.instanceName}): platforms scheduled to this stop travel there`
+						title={peer.portal
+							? `${colourName(peer.portal.colour)} → ${peer.instanceName}: platforms scheduled to this stop travel there`
 							: `${peer.instanceName}: ${NO_PORTAL_NOTE}`}
 					>
-						{peer.destination
-							? <img src={PORTAL_ART[peer.destination.colour]} alt={`portal to ${label}`} draggable={false} />
+						{peer.portal
+							? <img src={PORTAL_ART[peer.portal.colour]} alt={`${peer.portal.colour} portal to ${peer.instanceName}`} draggable={false} />
 							: <span className="surface-export-instance-portal-ring" />}
 						<Handle
 							type="target"
@@ -93,8 +97,8 @@ function OutgoingPortals({ selfId, peers }: { selfId: string; peers: PeerPortal[
 	);
 }
 
-function ServerFooter({ destination, instanceName, defaultPlanet, disabledPlanets }: {
-	destination: PortalDestination | null;
+function ServerFooter({ portal, instanceName, defaultPlanet, disabledPlanets }: {
+	portal: Portal | null;
 	instanceName: string;
 	defaultPlanet: string;
 	disabledPlanets: string[];
@@ -102,22 +106,18 @@ function ServerFooter({ destination, instanceName, defaultPlanet, disabledPlanet
 	const showPlanets = useContext(ShowPlanetsContext);
 	const installed = usePlanetNames();
 	const planets = showPlanets ? activePlanets(installed, defaultPlanet, disabledPlanets) : [];
-	const showLabel = !destination || destination.label.trim() !== instanceName.trim();
-	if (!showLabel && planets.length === 0) {
-		return null;
-	}
 	return (
 		<div className="surface-export-instance-footer">
-			{showLabel ? (
-				<Text
-					className="surface-export-instance-portal-label"
-					style={destination ? { color: portalColour(destination.colour) } : undefined}
-					type={destination ? undefined : "secondary"}
-					title={destination ? `Portal to ${destination.label}` : NO_PORTAL_NOTE}
-				>
-					{destination ? destination.label : "no portal"}
-				</Text>
-			) : null}
+			<Text
+				className="surface-export-instance-portal-label"
+				style={portal ? { color: portalColour(portal.colour) } : undefined}
+				type={portal ? undefined : "secondary"}
+				title={portal
+					? `On every other server, the ${colourName(portal.colour)} portal leads to ${instanceName}`
+					: NO_PORTAL_NOTE}
+			>
+				{portal ? colourName(portal.colour) : "no portal colour"}
+			</Text>
 			{planets.length === 0 ? null : <div className="surface-export-instance-planets">
 				{planets.map(name => (
 					<span
@@ -200,7 +200,7 @@ export type InstanceNodeData = {
 	platforms: PlatformLike[];
 	defaultPlanet: string;
 	disabledPlanets: string[];
-	destination: PortalDestination | null;
+	portal: Portal | null;
 	peers?: PeerPortal[];
 };
 
@@ -228,6 +228,7 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
 				+ " surface-export-instance-node-shaped"
 			}
+			style={{ "--surface-export-portal-glow": node.portal ? portalColour(node.portal.colour) : PORTAL_LINK_COLOUR } as CSSProperties}
 			onPointerDown={list.rearm}
 		>
 			<Handle
@@ -270,7 +271,7 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 
 			<OutgoingPortals selfId={id} peers={node.peers || []} />
 			<ServerFooter
-				destination={node.destination ?? null}
+				portal={node.portal ?? null}
 				instanceName={node.instanceName}
 				defaultPlanet={node.defaultPlanet || "nauvis"}
 				disabledPlanets={node.disabledPlanets || []}

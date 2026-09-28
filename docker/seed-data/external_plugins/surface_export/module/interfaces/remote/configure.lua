@@ -90,6 +90,12 @@ local function configure(config)
     local decoded = Util.json_to_table_compat(config.gateways_json)
     if type(decoded) == "table" then
       storage.surface_export_config.gateways = decoded
+      for _, change in ipairs(Gateway.portal_lead_changes(decoded)) do
+        local proto = prototypes.space_location[change.portal]
+        log(string.format("[Gateway] %s now leads to %s", change.portal, change.instance_name))
+        game.print({"", "[img=space-location/", change.portal, "] ", proto and proto.localised_name or change.portal,
+          " now leads to ", change.instance_name})
+      end
       local n = 0
       for _ in pairs(decoded) do n = n + 1 end
       log(string.format("[FactorioSurfaceExport] Gateway config updated: %d gateway(s)", n))

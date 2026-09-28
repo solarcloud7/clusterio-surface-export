@@ -1,4 +1,4 @@
-import type { PortalColour } from "../../shared/server-destinations";
+import type { PortalColour } from "../../shared/portals";
 
 export const PORTAL_HEX: Record<PortalColour, string> = {
 	blue: "#0d5cde",

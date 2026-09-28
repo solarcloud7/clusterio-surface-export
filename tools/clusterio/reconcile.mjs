@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
 // produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
-// does not: configure gateway links (every server reaches every other server; a desired file that still sets gatewayLinks is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
+// does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations or the removed surfexp-gateway-instances setting is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -91,38 +91,7 @@ function emptyValueError(where, field, value) {
 		: null;
 }
 
-export const DESTINATIONS_SETTING = "surfexp-gateway-instances";
-
-export function destinationsSettingErrors(value, instanceIds) {
-	if (value === undefined) return [];
-	if (typeof value !== "string") return [`${DESTINATIONS_SETTING} must be a string`];
-	const errors = [];
-	const seen = new Set();
-	const live = new Set(instanceIds.map(String));
-	for (const entry of value.split(",").map(part => part.trim()).filter(Boolean)) {
-		const id = entry.split("=")[0].trim();
-		if (!/^[1-9]\d*$/.test(id)) errors.push(`${DESTINATIONS_SETTING}: "${id}" must be an instance id; the mod refuses to load otherwise`);
-		else if (seen.has(id)) errors.push(`${DESTINATIONS_SETTING}: instance id ${id} is listed twice; the mod refuses to load otherwise`);
-		else if (!live.has(id)) errors.push(`${DESTINATIONS_SETTING}: ${id} is not an instance on the cluster, so its destination would lead nowhere`);
-		seen.add(id);
-	}
-	return errors;
-}
-
-export function serverDestinationsSetting(serverDestinations, instanceIds) {
-	const errors = [];
-	const entries = [];
-	for (const [name, label] of Object.entries(serverDestinations)) {
-		const id = instanceIds[name];
-		if (!Number.isInteger(id)) { errors.push(`serverDestinations: ${name} is not an instance on the cluster`); continue; }
-		if (typeof label !== "string" || !label.trim() || label.includes(",")) {
-			errors.push(`serverDestinations: the label for ${name} must be non-empty text without "," (rich text such as [planet=nauvis] is fine)`);
-			continue;
-		}
-		entries.push(`${id}=${label.trim()}`);
-	}
-	return { value: entries.join(","), errors };
-}
+export const REMOVED_DESTINATIONS_SETTING = "surfexp-gateway-instances";
 
 function configValue(value) {
 	return typeof value === "string" ? value : JSON.stringify(value);
@@ -132,21 +101,11 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	const actions = [];
 	const errors = [];
 	const restart = new Set();
-	let want = desired.modPack;
-	if (desired.serverDestinations) {
-		if (want?.settings?.startup?.[DESTINATIONS_SETTING] !== undefined) {
-			errors.push(`set serverDestinations or modPack.settings.startup["${DESTINATIONS_SETTING}"], not both`);
-		} else if (want) {
-			const computed = serverDestinationsSetting(desired.serverDestinations, live.instanceIds || {});
-			errors.push(...computed.errors);
-			want = { ...want, settings: { ...want.settings, startup: { ...want.settings?.startup, [DESTINATIONS_SETTING]: computed.value } } };
-		}
-	}
+	const want = desired.modPack;
 	const existing = live.packs.find(pack => pack.name === want?.name);
 	const packDetail = existing ? live.packDetails[existing.id] : null;
-	const destinationsValue = want?.settings?.startup?.[DESTINATIONS_SETTING] ?? packDetail?.settings?.startup?.[DESTINATIONS_SETTING];
-	errors.push(...destinationsSettingErrors(destinationsValue, Object.values(live.instanceIds || {})));
-	if (desired.serverDestinations && !want) errors.push("serverDestinations needs a modPack to write the setting into");
+	if (desired.serverDestinations !== undefined) errors.push("serverDestinations is no longer supported: the controller gives each server one of the four portal colours; remove it from the desired state");
+	if (want?.settings?.startup?.[REMOVED_DESTINATIONS_SETTING] !== undefined) errors.push(`the gateway mod no longer has the ${REMOVED_DESTINATIONS_SETTING} setting; remove it from modPack.settings.startup`);
 	if (desired.gatewayLinks !== undefined) errors.push("gatewayLinks is no longer supported: every server reaches every other server; remove it from the desired state");
 
 	const modSpecs = [];

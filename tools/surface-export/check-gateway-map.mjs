@@ -11,29 +11,25 @@ import { parseArgs } from "node:util";
 import { seededInstances } from "../shared/seeded-instances.mjs";
 
 const HUB = "surfexp_gateway_hub";
-const NUMBERED = [1, 2, 3, 4].map(i => `surfexp_gateway_${i}`);
-const DESTINATION = "surfexp_gateway_i_";
-const DESTINATION_ROUTE = "surfexp_gateway_link_i_";
+const PORTALS = [1, 2, 3, 4].map(i => `surfexp_gateway_${i}`);
+const portalRoute = name => name.replace("surfexp_gateway_", "surfexp_gateway_link_");
 const hubRoute = planet => `surfexp_gateway_link_hub${planet === "nauvis" ? "" : `_${planet}`}`;
-export function verifyGatewayMap(state, { version, baseline, hubPlanets = ["nauvis"] } = {}) {
+export function verifyGatewayMap(state, { version, baseline, hubPlanets = ["nauvis"], hiddenPortals = false } = {}) {
 	if (version) assert.equal(state.mod, version, "loaded mod version");
-	const fixedRoutes = Object.keys(state.routes).filter(name => !name.startsWith(DESTINATION_ROUTE));
+	const portalRoutes = hiddenPortals ? [] : PORTALS.map(portalRoute);
+	const fixedRoutes = Object.keys(state.routes).filter(name => !portalRoutes.includes(name));
 	assert.deepEqual(fixedRoutes.sort(), hubPlanets.map(hubRoute).sort(),
 		"only the expected planets link to the Gateway; hidden flags do not remove map lines");
 	for (const planet of hubPlanets) {
 		assert.equal(state.routes[hubRoute(planet)].from, planet, `${hubRoute(planet)} origin`);
 		assert.equal(state.routes[hubRoute(planet)].to, HUB, `${hubRoute(planet)} destination`);
 	}
-	const fixedLocations = Object.keys(state.locations).filter(name => !name.startsWith(DESTINATION));
-	assert.deepEqual(fixedLocations.sort(), [HUB, ...NUMBERED].sort());
+	assert.deepEqual(Object.keys(state.locations).sort(), [HUB, ...PORTALS].sort(), "the Gateway and its four coloured portals");
 	assert.equal(state.locations[HUB].hidden, false, `${HUB} visibility`);
-	for (const name of NUMBERED) assert.equal(state.locations[name].hidden, true, `${name} visibility`);
-	const destinations = Object.keys(state.locations).filter(name => name.startsWith(DESTINATION)).sort();
-	assert.deepEqual(Object.keys(state.routes).filter(name => name.startsWith(DESTINATION_ROUTE)).sort(),
-		destinations.map(name => DESTINATION_ROUTE + name.slice(DESTINATION.length)).sort(), "each server destination has one route");
-	for (const name of destinations) {
-		assert.equal(state.locations[name].hidden, false, `${name} visibility`);
-		const route = state.routes[DESTINATION_ROUTE + name.slice(DESTINATION.length)];
+	for (const name of PORTALS) assert.equal(state.locations[name].hidden, hiddenPortals, `${name} visibility`);
+	for (const name of hiddenPortals ? [] : PORTALS) {
+		const route = state.routes[portalRoute(name)];
+		assert.ok(route, `${name} has one route from the Gateway`);
 		assert.equal(route.from, HUB, `${name} route origin`);
 		assert.equal(route.to, name, `${name} route destination`);
 	}

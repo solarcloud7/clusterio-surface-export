@@ -195,30 +195,20 @@ test("restart-only controller fields restart instances, empty values block, and 
 	assert.ok(changed.actions[0].argv.join(" ").includes(`--color-setting startup tint ${JSON.stringify(colour)}`));
 });
 
-test("server destinations are keyed by instance id; the desired state names servers and the reconciler resolves ids", () => {
+test("portal colours are assigned by the controller; server destinations in a desired file are refused", () => {
 	const live = () => {
 		const state = liveWith({ instanceIds: { fact1: 11, fact2: 22 } });
 		state.packDetails[7].mods.FluidMustFlow.enabled = true;
 		return state;
 	};
-	const raw = value => {
-		const want = structuredClone(desired);
-		want.modPack.settings.startup["surfexp-gateway-instances"] = value;
-		return planChanges(want, live(), { modFile });
-	};
-	assert.deepEqual(raw(" 11=Forge , 22=Cinder,").errors, []);
-	for (const [value, reason] of [["fact1=Forge", /must be an instance id/], ["=Forge", /must be an instance id/], ["11,11=Again", /listed twice/], ["99=Ghost", /not an instance/]]) {
-		assert.match(raw(value).errors.join("; "), reason, value);
-	}
-	const named = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge", fact2: "[planet=vulcanus] Cinder Hall" } }, live(), { modFile });
-	assert.deepEqual(named.errors, []);
-	const edit = named.actions.find(action => action.argv.includes("surfexp-gateway-instances"));
-	assert.equal(edit.argv[edit.argv.indexOf("surfexp-gateway-instances") + 1], "11=Forge,22=[planet=vulcanus] Cinder Hall", "names become ids; labels, including rich-text icons, stay what players see");
-	const bad = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge, Inc", fact9: "Ghost" } }, live(), { modFile });
-	assert.match(bad.errors.join("; "), /label for fact1/);
-	assert.match(bad.errors.join("; "), /fact9 is not an instance/);
+	const named = planChanges({ ...structuredClone(desired), serverDestinations: { fact1: "Forge" } }, live(), { modFile });
+	assert.match(named.errors.join("; "), /serverDestinations is no longer supported: the controller gives each server one of the four portal colours/);
+	assert.equal(named.actions.some(action => action.argv.includes("surfexp-gateway-instances")), false);
+	const raw = structuredClone(desired);
+	raw.modPack.settings.startup["surfexp-gateway-instances"] = "11=Forge";
+	assert.match(planChanges(raw, live(), { modFile }).errors.join("; "), /no longer has the surfexp-gateway-instances setting/);
 	const stale = live();
 	stale.packDetails[7].settings.startup["surfexp-gateway-instances"] = "fact1=Forge";
-	assert.match(planChanges(structuredClone(desired), stale, { modFile }).errors.join("; "), /must be an instance id/,
-		"a name-based value already on the pack blocks the plan even when the desired file does not set it");
+	assert.deepEqual(planChanges(structuredClone(desired), stale, { modFile }).errors, [],
+		"a value left on the live pack by an older mod is ignored, not a reason to block the plan");
 });

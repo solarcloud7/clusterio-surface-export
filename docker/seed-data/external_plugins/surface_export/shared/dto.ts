@@ -5,19 +5,19 @@ export const GATEWAY_PREFIX = "surfexp_gateway_";
 export const ONE_GATE_NAME = `${GATEWAY_PREFIX}hub`;
 export const ONE_GATE_NAMES: string[] = [ONE_GATE_NAME];
 
-export const INSTANCE_GATEWAY_PREFIX = `${GATEWAY_PREFIX}i_`;
-export function instanceGatewayName(instanceId: number): string {
-	return `${INSTANCE_GATEWAY_PREFIX}${instanceId}`;
-}
-
-export function isInstanceGatewayName(name: string): boolean {
-	return name.startsWith(INSTANCE_GATEWAY_PREFIX);
-}
-
-export interface InstanceDestination {
+export interface PortalListing {
+	slot: number;
+	colour: import("./portals").PortalColour;
 	gatewayName: string;
 	instanceId: number;
 	instanceName: string;
+}
+
+export interface PortalListingResponse {
+	portals: PortalListing[];
+	unassigned: Array<{ instanceId: number; instanceName: string }>;
+	retired: Array<{ slot: number; colour: import("./portals").PortalColour; gatewayName: string; formerInstanceId: number; formerInstanceName: string }>;
+	error?: string;
 }
 
 export interface ResolvedGatewayTarget {
@@ -125,7 +125,7 @@ export interface InstanceNodeModel {
 	platformError: string | null;
 	defaultPlanet: string;
 	disabledPlanets: string[];
-	destination: { label: string; colour: import("./server-destinations").PortalColour } | null;
+	portal: import("./portals").PortalAssignment | null;
 }
 export interface HostNodeModel {
 	hostId: number;

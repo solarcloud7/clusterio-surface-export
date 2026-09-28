@@ -5,20 +5,22 @@ local RouteAlerts = require("modules/surface_export/core/route-alerts")
 local GatewayRoute = {}
 
 local function hold(platform, gateway_name, reason)
-	local proto = prototypes.space_location[gateway_name]
 	log(string.format("[Gateway] Route hold: platform '%s' at '%s': %s", platform.name, gateway_name, reason))
-	RouteAlerts.raise(platform, "held", gateway_name, {"", "holding at ", proto and proto.localised_name or gateway_name, ": ", reason})
+	RouteAlerts.raise(platform, "held", gateway_name, {"", "holding at ", Gateway.location_label(gateway_name), ": ", reason})
 end
 
 function GatewayRoute.on_arrival(platform, start_transfer)
-	local gateway_name = Gateway.reached_instance_gateway(platform)
+	local gateway_name = Gateway.reached_portal(platform)
 	if not gateway_name then return false end
 	if SurfaceLock.destination_hold_owns_surface(platform.surface, platform) then return false end
 	platform.paused = true
-	local cfg = Gateway.get_gateway_config(gateway_name)
-	local target = cfg and cfg.targets and cfg.targets[1]
+	if Gateway.is_own_portal(gateway_name) then
+		hold(platform, gateway_name, "this portal's colour is this server's own; edit the schedule and unpause it")
+		return true
+	end
+	local target = Gateway.portal_target(gateway_name)
 	if not target then
-		hold(platform, gateway_name, "no server is linked to this destination")
+		hold(platform, gateway_name, "no server has this portal's colour")
 		return true
 	end
 	if not target.online then
@@ -40,11 +42,14 @@ function GatewayRoute.on_no_path(platform)
 	local schedule = platform.get_schedule()
 	local record = schedule and schedule.get_records()[schedule.current]
 	local station = record and record.station
-	if not Gateway.is_instance_gateway(station) then return end
-	local proto = prototypes.space_location[station]
-	local own = not platform.force.is_space_location_unlocked(station)
-	RouteAlerts.raise(platform, "no_path", station, {"", "cannot reach ", proto and proto.localised_name or station, ": ",
-		own and "that destination is this server; remove the stop or skip it" or "no route from here"})
+	if not Gateway.is_portal(station) then return end
+	local reason = "no route from here"
+	if Gateway.is_own_portal(station) then
+		reason = "that portal's colour is this server's own; remove the stop or skip it"
+	elseif not Gateway.portal_target(station) then
+		reason = "no server has that portal's colour"
+	end
+	RouteAlerts.raise(platform, "no_path", station, {"", "cannot reach ", Gateway.location_label(station), ": ", reason})
 end
 
 return GatewayRoute
