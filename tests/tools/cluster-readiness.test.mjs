@@ -4,8 +4,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-	CHECK_INTERFACE, CHECK_PLATFORMS, CHECK_RCON, CHECK_ROSTER, CHECK_SURFACES,
-	evaluateReadiness, expectationsFor, loadReadinessManifest, runReadinessGate, toList,
+	CHECK_INTERFACE, CHECK_LEFTOVERS, CHECK_PLATFORMS, CHECK_RCON, CHECK_RECOVERY, CHECK_ROSTER, CHECK_SURFACES, CHECK_VERSION,
+	evaluateReadiness, evaluateRuntime, expectationsFor, expectedModuleVersion, latestRecoveryRefusal, loadReadinessManifest,
+	probeReadiness, runReadinessGate, throwawayPrefixes, toList, waitForRuntime,
 } from "../../tools/tests/cluster-readiness.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -19,12 +20,14 @@ function luaJsonList(list) {
 	return list.length ? list : {};
 }
 
-function probeReply({ surfaces, platforms, players, tick = 1, iface = true }) {
+const VERSION = expectedModuleVersion();
+
+function probeReply({ surfaces, platforms, players, tick = 1, iface = true, ready = true, version = VERSION }) {
 	return {
 		surfaces: luaJsonList(surfaces), surfaceCount: surfaces.length,
 		platforms: luaJsonList(platforms), platformCount: platforms.length,
 		players: luaJsonList(players), playerCount: players.length,
-		tick, iface,
+		tick, iface, ready, version,
 	};
 }
 
@@ -75,8 +78,10 @@ test("a healthy cluster passes, and every instance is actually evaluated", () =>
 	assert.deepEqual(pairsOf(decision).sort(), [
 		`${HOST1}/${CHECK_INTERFACE}`, `${HOST1}/${CHECK_PLATFORMS}`, `${HOST1}/${CHECK_RCON}`,
 		`${HOST1}/${CHECK_ROSTER}`, `${HOST1}/${CHECK_SURFACES}`,
+		`${HOST1}/${CHECK_VERSION}`, `${HOST1}/${CHECK_RECOVERY}`, `${HOST1}/${CHECK_LEFTOVERS}`,
 		`${HOST2}/${CHECK_INTERFACE}`, `${HOST2}/${CHECK_RCON}`,
 		`${HOST2}/${CHECK_ROSTER}`, `${HOST2}/${CHECK_SURFACES}`,
+		`${HOST2}/${CHECK_VERSION}`, `${HOST2}/${CHECK_RECOVERY}`, `${HOST2}/${CHECK_LEFTOVERS}`,
 	].sort());
 	for (const expectation of expectations) {
 		assert.ok(decision.results.some(r => r.instance === expectation.instance),
@@ -213,10 +218,10 @@ test("a manifest that cannot discriminate a freshly generated world is refused",
 	assert.throws(() => expectationsFor(onlyNauvis), /freshly generated world/);
 });
 
-test("the gate reports per-instance per-check lines and never probes on a healthy verdict twice", () => {
+test("the gate reports per-instance per-check lines and never probes on a healthy verdict twice", async () => {
 	const lines = [];
 	let probeCalls = 0;
-	const decision = runReadinessGate({
+	const decision = await runReadinessGate({
 		manifest,
 		log: line => lines.push(line),
 		probe: instances => {
@@ -229,4 +234,123 @@ test("the gate reports per-instance per-check lines and never probes on a health
 	assert.equal(probeCalls, 1);
 	assert.ok(lines.some(l => l.includes(HOST1) && l.includes(CHECK_PLATFORMS) && l.startsWith("  PASS")));
 	assert.ok(lines.some(l => l.includes(HOST2) && l.includes(CHECK_SURFACES) && l.startsWith("  PASS")));
+});
+
+const REFUSAL = "2026-09-28T02:18:42.324Z Source recovery startup refused; platforms remain protected. Repair the cause and restart "
+	+ "the instance: Unidentified platform in an older save; manual reconciliation required";
+
+test("the measured Dev One state (refused recovery, leaked probe platform) fails only recovery and leftovers", () => {
+	const blocked = probeReply({
+		surfaces: ["nauvis", "platform-1", "platform-2", "platform-3", "platform-4"],
+		platforms: ["lab-transfer-fixture-v1", "lab-omnibus-state-v1", "oneofeach-fixture-v1", "gwpark-probe-mukmetwc"],
+		players: ["solarcloud7"], ready: false,
+	});
+	blocked.recoveryRefusal = REFUSAL;
+	const decision = evaluateReadiness(expectations, { [HOST1]: blocked, [HOST2]: healthyHost2() });
+	assert.deepEqual(failuresOf(decision).sort(), [`${HOST1}/${CHECK_LEFTOVERS}`, `${HOST1}/${CHECK_RECOVERY}`]);
+	const recovery = decision.results.find(r => r.checkId === CHECK_RECOVERY && r.instance === HOST1);
+	assert.equal(recovery.blocked, true);
+	assert.match(recovery.detail, /Unidentified platform in an older save/);
+	const leftovers = decision.results.find(r => r.checkId === CHECK_LEFTOVERS && r.instance === HOST1);
+	assert.match(leftovers.detail, /gwpark-probe-mukmetwc/);
+	assert.match(leftovers.detail, /cleanup-test-surfaces\.ps1 -DryRun/);
+});
+
+test("recovery that has not finished and logged no refusal is pending, not passed", () => {
+	const decision = evaluateReadiness(expectations, { [HOST1]: healthyHost1(), [HOST2]: { ...healthyHost2(), ready: false } });
+	assert.deepEqual(failuresOf(decision), [`${HOST2}/${CHECK_RECOVERY}`]);
+	const recovery = decision.results.find(r => !r.ok);
+	assert.equal(recovery.pending, true);
+	assert.equal(recovery.blocked, undefined);
+});
+
+test("a stale module version fails only the version check", () => {
+	const decision = evaluateReadiness(expectations, { [HOST1]: { ...healthyHost1(), version: "0.0.0-stale" }, [HOST2]: healthyHost2() });
+	assert.deepEqual(failuresOf(decision), [`${HOST1}/${CHECK_VERSION}`]);
+});
+
+test("every shared throwaway prefix is detected as a leftover", () => {
+	for (const prefix of throwawayPrefixes()) {
+		const decision = evaluateReadiness(expectations, {
+			[HOST1]: healthyHost1(),
+			[HOST2]: probeReply({ surfaces: ["nauvis", "lab-gallery-index-v2"], platforms: [`${prefix}x1`], players: ["solarcloud7"] }),
+		});
+		assert.deepEqual(failuresOf(decision), [`${HOST2}/${CHECK_LEFTOVERS}`], prefix);
+	}
+});
+
+test("only a refusal logged after the instance's latest start counts", () => {
+	const line = (id, message, timestamp = "2026-09-28T00:00:00.000Z") => JSON.stringify({ instance_id: id, message, timestamp });
+	const start = "Surface Export plugin initializing...";
+	const refused = "Source recovery startup refused; platforms remain protected. Repair the cause and restart the instance: boom";
+	assert.equal(latestRecoveryRefusal([line(1, start), line(1, refused, "T1")], 1), `T1 ${refused}`);
+	assert.equal(latestRecoveryRefusal([line(1, refused), line(1, start)], 1), null);
+	assert.equal(latestRecoveryRefusal([line(1, start), line(2, refused)], 1), null);
+	assert.equal(latestRecoveryRefusal(["not json", "", line(1, start), "{", line(1, refused, "T2")], "1"), `T2 ${refused}`);
+	assert.equal(latestRecoveryRefusal([], 1), null);
+});
+
+test("host logs are read only for instances whose recovery is not ready", () => {
+	const asked = [];
+	const probes = probeReadiness([HOST1, HOST2], {
+		rcon: () => ({ [HOST1]: healthyHost1(), [HOST2]: { ...healthyHost2(), ready: false } }),
+		logs: instances => { asked.push(...instances); return { [HOST2]: { refusal: REFUSAL } }; },
+	});
+	assert.deepEqual(asked, [HOST2]);
+	assert.equal(probes[HOST2].recoveryRefusal, REFUSAL);
+	assert.equal(probes[HOST1].recoveryRefusal, undefined);
+	const unreadable = probeReadiness([HOST1, HOST2], {
+		rcon: () => ({ [HOST1]: healthyHost1(), [HOST2]: { ...healthyHost2(), ready: false } }),
+		logs: () => ({ [HOST2]: { error: "no such container" } }),
+	});
+	assert.equal(unreadable[HOST2].recoveryLogError, "no such container");
+	assert.equal(probeReadiness([HOST1], { rcon: () => ({ [HOST1]: healthyHost1() }), logs: () => assert.fail("read logs") })[HOST1].ready, true);
+});
+
+function clock() {
+	let now = 0;
+	return { now: () => now, sleep: async ms => { now += ms; } };
+}
+
+test("the gate polls while recovery is only pending, then passes", async () => {
+	let calls = 0;
+	const decision = await runReadinessGate({ manifest, log: () => {}, ...clock(),
+		probe: () => ++calls < 3 ? { [HOST1]: { ...healthyHost1(), ready: false }, [HOST2]: healthyHost2() } : healthy() });
+	assert.equal(decision.ok, true);
+	assert.equal(calls, 3);
+});
+
+test("the gate stops polling at once on a refusal or any identity failure, and at its deadline", async () => {
+	for (const bad of [{ ...healthyHost1(), ready: false, recoveryRefusal: REFUSAL }, { ...healthyHost1(), iface: false },
+		{ ...healthyHost1(), ready: false, iface: false }]) {
+		let calls = 0;
+		const decision = await runReadinessGate({ manifest, log: () => {}, ...clock(),
+			probe: () => { calls++; return { [HOST1]: bad, [HOST2]: healthyHost2() }; } });
+		assert.equal(decision.ok, false);
+		assert.equal(calls, 1);
+	}
+	let calls = 0;
+	const lines = [];
+	const decision = await runReadinessGate({ manifest, log: line => lines.push(line), timeoutMs: 10_000, ...clock(),
+		probe: () => { calls++; return { [HOST1]: healthyHost1(), [HOST2]: { ...healthyHost2(), ready: false } }; } });
+	assert.equal(decision.ok, false);
+	assert.equal(calls, 6);
+	assert.ok(lines.some(l => l.startsWith("  FAIL") && l.includes(HOST2) && l.includes(CHECK_RECOVERY)));
+});
+
+test("runtime readiness requires finished recovery and fails at once with the refusal line", async () => {
+	const runtime = (overrides = {}) => ({ [HOST1]: { ...healthyHost1(), ...overrides }, [HOST2]: healthyHost2() });
+	assert.deepEqual(evaluateRuntime(runtime(), VERSION).filter(r => !r.ok), []);
+	assert.deepEqual(evaluateRuntime(runtime({ ready: false }), VERSION).filter(r => !r.ok).map(r => `${r.instance}/${r.checkId}`),
+		[`${HOST1}/${CHECK_RECOVERY}`]);
+	let calls = 0;
+	await assert.rejects(waitForRuntime({ expectedVersion: VERSION, ...clock(),
+		probe: () => { calls++; return runtime({ ready: false, recoveryRefusal: REFUSAL }); } }),
+	/host-1: startup recovery refused, exports fail until repaired: .*Unidentified platform in an older save/);
+	assert.equal(calls, 1);
+	calls = 0;
+	const result = await waitForRuntime({ expectedVersion: VERSION, ...clock(),
+		probe: () => ++calls < 4 ? runtime({ ready: false }) : runtime() });
+	assert.equal(calls, 4);
+	assert.ok(result.results.every(r => r.ok));
 });

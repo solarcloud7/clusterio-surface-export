@@ -202,7 +202,7 @@ return { success = true, name = placed.name, tried = tried,
 function destinationLogLines(pattern) {
 	const path = instancePath(DEST_HOST, "factorio-current.log");
 	const out = docker(["exec", HOSTS[DEST_HOST].container, "sh", "-c",
-		`grep -aE '${pattern}' ${path} | tail -12 || true`]);
+		"grep -aE \"$1\" \"$2\" | tail -12", "sh", pattern, path]);
 	return out.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 }
 

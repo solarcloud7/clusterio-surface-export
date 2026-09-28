@@ -1,3 +1,5 @@
+#Requires -Version 7.3
+
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
 $script:RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 

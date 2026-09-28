@@ -383,6 +383,12 @@ foreach ($h in $expectedHosts) {
         throw "$probeInstance runs STALE module code ($($reported.version), build $($reported.buildId)); expected $NewVersion, build $ModuleBuildId. Deployment verification failed."
     }
 }
+Write-Host "Waiting for startup source recovery on every seeded instance..." -ForegroundColor Cyan
+node "$PSScriptRoot/../tests/cluster-readiness.mjs" --runtime
+if ($LASTEXITCODE -ne 0) {
+    throw "Startup source recovery is not ready; exports would fail with 'Startup recovery is not ready'. The cluster is NOT deployed."
+}
+Write-Host "  OK - source recovery ready" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Retrieving admin token..." -ForegroundColor Cyan

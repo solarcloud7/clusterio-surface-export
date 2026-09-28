@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -40,7 +40,8 @@ function Update-ModuleVersionStamp {}
 	return dir;
 }
 
-function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0, autoStarted = false, staleReads = 0 } = {}) {
+function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0, autoStarted = false, staleReads = 0,
+	journals = [], archiveFails = false, readinessExit = 0 } = {}) {
 	const command = `
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
@@ -48,6 +49,7 @@ $global:calls=[Collections.Generic.List[object]]::new()
 $global:uploaded = ConvertFrom-Json $env:SE_UPLOADED -AsHashtable
 $global:loaded = ConvertFrom-Json $env:SE_LOADED -AsHashtable
 function Start-Sleep {}
+function node { $global:calls.Add(@(@('node') + @(foreach ($a in $args) { "$a" }))); $global:LASTEXITCODE = [int]$env:SE_READINESS_EXIT }
 $global:reads = @{}
 $global:clock = [datetime]'2026-09-27T00:00:00'
 function Get-Date { param([string]$Format) if ($Format) { return $global:clock.ToString($Format) } $global:clock = $global:clock.AddSeconds(5); return $global:clock }
@@ -56,6 +58,11 @@ function docker {
  $global:calls.Add($argv); $global:LASTEXITCODE=0
  $j = $argv -join ' '
  if ($argv[0] -eq 'ps') { return 'Up 5 minutes (healthy)' }
+ if ($j -match 'surface_export_source_retirements\\.json') {
+  if ($env:SE_ARCHIVE_FAIL -eq '1') { $global:LASTEXITCODE = 1; return 'mv: cannot move: Permission denied' }
+  if (($env:SE_JOURNALS -split ',') -contains ($argv[1] -replace '\\D', '')) { return 'archived' }
+  return 'absent'
+ }
  if ($env:SE_AUTO_STARTED -eq '1' -and $j -match 'instance start') { $global:LASTEXITCODE = 1; return 'Error sending request: Instance is already running.' }
  if ($j -match 'instance save list (\\d+)') {
   $id = $Matches[1]
@@ -73,14 +80,16 @@ function docker {
  if ($j -match 'send-rcon' -and $j -notmatch 'server_save') { $build = [regex]::Match((Get-Content $env:PAR_BUILD_FILE -Raw), '[a-f0-9]{32}').Value; return "{""version"":""1.0.0"",""buildId"":""$build""}" }
 }
 $failure=$null
-try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement *> $null } catch { $failure=$_.Exception.Message }
-@{calls=@($global:calls | ForEach-Object { ,@($_) });error=$failure} | ConvertTo-Json -Compress -Depth 5
+$global:output=[Collections.Generic.List[string]]::new()
+try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement *>&1 | ForEach-Object { $global:output.Add("$_") } } catch { $failure=$_.Exception.Message }
+@{calls=@($global:calls | ForEach-Object { ,@($_) });error=$failure;output=@($global:output)} | ConvertTo-Json -Compress -Depth 5
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { cwd: dir, encoding: "utf8", timeout: 60_000,
 		env: { ...process.env, PAR_SCRIPT: join(dir, "tools/clusterio/patch-and-reset.ps1"),
 			PAR_BUILD_FILE: join(dir, "docker/seed-data/external_plugins/surface_export/module/build-id.lua"),
 			SE_UPLOADED: JSON.stringify({ [IDS[1]]: uploaded[1], [IDS[2]]: uploaded[2] }),
-			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit), SE_AUTO_STARTED: autoStarted ? "1" : "0", SE_STALE_READS: String(staleReads) } });
+			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit), SE_AUTO_STARTED: autoStarted ? "1" : "0", SE_STALE_READS: String(staleReads),
+				SE_JOURNALS: journals.join(","), SE_ARCHIVE_FAIL: archiveFails ? "1" : "0", SE_READINESS_EXIT: String(readinessExit) } });
 	assert.equal(result.status, 0, result.stderr);
 	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
 }
@@ -139,4 +148,83 @@ test("an instance running a save other than the uploaded one fails the reset", {
 	const result = run(fixture(t), { loaded: { 1: "lab-gallery-source-4.zip", 2: "2026-09-27 1140 _autosave_po3.zip" } });
 	assert.match(result.error || "", /Dev Two is running '2026-09-27 1140 _autosave_po3\.zip', not the uploaded seed save 'lab-gallery-destination-4\.zip', after 90s\. Nothing was deleted/);
 	assert.deepEqual(deletes(result.calls), []);
+});
+
+const JOURNAL = host => `/clusterio/data/instances/clusterio-host-${host}-instance-1/surface_export_source_retirements.json`;
+const archives = calls => calls.filter(argv => argv.some(arg => arg.endsWith("surface_export_source_retirements.json")));
+
+test("a reset archives each recovery journal by rename after the stop and before any upload or start", { skip }, t => {
+	const result = run(fixture(t), { journals: [1, 2] });
+	assert.equal(result.error, null);
+	assert.deepEqual(deletes(result.calls), []);
+	const moved = archives(result.calls);
+	assert.equal(moved.length, 2);
+	for (const [index, host] of [[0, 1], [1, 2]]) {
+		const argv = moved[index];
+		assert.deepEqual(argv.slice(0, 4), ["exec", `surface-export-host-${host}`, "sh", "-c"]);
+		assert.match(argv[4], /mv "\$1" "\$2"/);
+		assert.doesNotMatch(argv[4], /(^|\s)(rm|find|unlink|truncate)(\s|$)|>\s*"\$1"/);
+		assert.equal(argv[5], "sh");
+		assert.equal(argv[6], JOURNAL(host));
+		assert.match(argv[7], new RegExp(`^/clusterio/data/instances/clusterio-host-${host}-instance-1/surface_export_source_retirements\\.\\d{8}-\\d{6}\\.bak\\.json$`));
+		assert.equal(argv.length, 8);
+	}
+	const at = argv => result.calls.indexOf(argv);
+	const lastStop = Math.max(...result.calls.filter(argv => argv.includes("stop")).map(at));
+	const firstUpload = result.calls.findIndex(argv => argv.includes("upload"));
+	const firstStart = result.calls.findIndex(argv => argv.includes("start"));
+	assert.ok(lastStop >= 0 && at(moved[0]) > lastStop, "instances are stopped before the journal moves");
+	assert.ok(at(moved[1]) < firstUpload && at(moved[1]) < firstStart, "the journal moves before any seed upload or start");
+	assert.equal(result.output.filter(line => line.includes(" -> ") && line.includes(".bak.json")).length, 2);
+});
+
+test("a reset with no recovery journal archives nothing and still succeeds", { skip }, t => {
+	const result = run(fixture(t));
+	assert.equal(result.error, null);
+	assert.equal(archives(result.calls).length, 2);
+	assert.equal(result.output.filter(line => line.includes("nothing to archive")).length, 2);
+	assert.equal(result.output.some(line => line.includes(".bak.json")), false);
+});
+
+test("a failed journal archive stops the reset before any upload", { skip }, t => {
+	const result = run(fixture(t), { journals: [1], archiveFails: true });
+	assert.match(result.error || "", /Archiving .*surface_export_source_retirements\.json on surface-export-host-1 failed \(exit 1\)/);
+	assert.equal(result.calls.some(argv => argv.includes("upload")), false);
+	assert.equal(result.calls.some(argv => argv.includes("start")), false);
+});
+
+test("the boot check waits for source recovery and throws when it is not ready", { skip }, t => {
+	const ready = run(fixture(t));
+	const readiness = ready.calls.filter(argv => argv[0] === "node");
+	assert.equal(readiness.length, 1);
+	assert.match(readiness[0][1], /tools[\\/]clusterio[\\/]\.\.[\\/]tests[\\/]cluster-readiness\.mjs$/);
+	assert.deepEqual(readiness[0].slice(2), ["--runtime"]);
+	assert.ok(ready.calls.indexOf(readiness[0]) > ready.calls.findLastIndex(argv => argv.includes("start")));
+	const blocked = run(fixture(t), { readinessExit: 1 });
+	assert.match(blocked.error || "", /Startup source recovery is not ready after the reset/);
+});
+
+const shell = spawnSync("sh", ["-c", "exit 0"], { stdio: "ignore" }).status === 0;
+
+test("the archive shell step renames, never overwrites, and reports an absent journal", { skip: skip || !shell }, t => {
+	const source = readFileSync(new URL("tools/clusterio/patch-and-reset.ps1", repo), "utf8");
+	const script = source.match(/^\$archiveScript = '([^']+)'\r?$/m)?.[1];
+	assert.ok(script, "patch-and-reset.ps1 no longer defines $archiveScript as one single-quoted line");
+	const dir = mkdtempSync(join(tmpdir(), "journal archive "));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const journal = join(dir, "surface_export_source_retirements.json");
+	const archive = join(dir, "surface_export_source_retirements.20260927-000000.bak.json");
+	const archiveStep = () => spawnSync("sh", ["-c", script, "sh", journal, archive], { encoding: "utf8" });
+	let step = archiveStep();
+	assert.deepEqual([step.status, step.stdout.trim()], [0, "absent"]);
+	writeFileSync(journal, '{"v":1,"id":"a","retirements":[1]}');
+	step = archiveStep();
+	assert.deepEqual([step.status, step.stdout.trim()], [0, "archived"]);
+	assert.equal(existsSync(journal), false);
+	assert.equal(readFileSync(archive, "utf8"), '{"v":1,"id":"a","retirements":[1]}');
+	writeFileSync(journal, "newer");
+	step = archiveStep();
+	assert.equal(step.status, 3);
+	assert.equal(readFileSync(journal, "utf8"), "newer");
+	assert.equal(readFileSync(archive, "utf8"), '{"v":1,"id":"a","retirements":[1]}');
 });

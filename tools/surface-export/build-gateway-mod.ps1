@@ -1,4 +1,4 @@
-#Requires -Version 7
+#Requires -Version 7.3
 
 param(
 	[switch]$Upload,
@@ -102,7 +102,9 @@ Write-Host "Uploading $zipName to the cluster + adding to pack '$ModPack' + rest
 
 docker cp "$zipPath" "surface-export-controller:/tmp/$zipName" | Out-Null
 docker exec surface-export-controller sh -c "$ctl mod upload /tmp/$zipName" 2>&1 | Where-Object { $_ -notmatch 'clusterio-atlas' }
+if ($LASTEXITCODE -ne 0) { throw "Uploading $zipName to the controller failed (exit $LASTEXITCODE); the mod pack and hosts were not changed." }
 docker exec surface-export-controller sh -c "$ctl mod-pack edit `"$ModPack`" --add-mods ${modName}:${version}" 2>&1 | Where-Object { $_ -notmatch 'clusterio-atlas' }
+if ($LASTEXITCODE -ne 0) { throw "Adding ${modName}:${version} to mod pack '$ModPack' failed (exit $LASTEXITCODE); hosts were not restarted." }
 
 Write-Host "Restarting hosts to reload the mod pack..." -ForegroundColor Cyan
 docker restart surface-export-host-1 surface-export-host-2 | Out-Null
