@@ -13,7 +13,7 @@ test("gateway metadata and directory must agree with the production pin", async 
   const path = `${pins.gateway.name}_${pins.gateway.version}/info.json`;
   const info = { ...pins.gateway, factorio_version: "2.1" };
   const zip = (files, value) => ({ files, file: () => ({ async: async () => JSON.stringify(value) }) });
-  assert.equal(await gateway.verifyGateway(zip({ [path]: {} }, info)), "surfexp_gateways_0.6.5.zip");
+  assert.equal(await gateway.verifyGateway(zip({ [path]: {} }, info)), "surfexp_gateways_0.7.9.zip");
   for (const value of [{ ...info, version: "0.6.6" }, { ...info, name: "another_mod" }, { ...info, factorio_version: "1.1" }])
     await assert.rejects(gateway.verifyGateway(zip({ [path]: {} }, value)));
   for (const files of [{}, { "surfexp_gateways_0.6.6/info.json": {} }, { [path]: {}, "extra/info.json": {} }])

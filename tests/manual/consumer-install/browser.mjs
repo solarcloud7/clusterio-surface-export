@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { expectedGatewayPrototypes } from "./oracle.mjs";
 
 export async function browserAcceptance(lab, report) {
   const token = JSON.parse(lab.docker(["exec", lab.controller, "cat", lab.controlConfig || "/consumer/config-control.json"]))["control.controller_token"];
@@ -46,8 +47,9 @@ export async function browserAcceptance(lab, report) {
           const locations = Object.values(data["space-location"] || {}).filter(p => p.name.startsWith("surfexp_gateway_"));
           evidence.visibleGateways = locations.filter(p => !p.hidden).map(p => p.name).sort();
           evidence.gatewayRoutes = Object.values(data["space-connection"] || {}).filter(p => p.to === "surfexp_gateway_hub").map(p => p.from).sort();
-          assert.deepEqual(evidence.visibleGateways, ["surfexp_gateway_hub"]);
-          assert.deepEqual(evidence.gatewayRoutes, ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"]);
+          const expected = expectedGatewayPrototypes(lab.runtimeProfile.gatewayVersion);
+          assert.deepEqual(evidence.visibleGateways, expected.visibleGateways);
+          assert.deepEqual(evidence.gatewayRoutes, expected.gatewayRoutes);
         }
       }
       evidence.assets.push(asset);

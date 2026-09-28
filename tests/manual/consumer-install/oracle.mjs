@@ -3,6 +3,14 @@ import { analyze } from "../transfer-reliability/oracle.mjs";
 import { verifyGatewayMap } from "../../../tools/surface-export/check-gateway-map.mjs";
 
 const HUB_PLANETS_BEFORE_0_7 = ["nauvis", "vulcanus", "gleba", "fulgora", "aquilo"];
+const PORTALS = [1, 2, 3, 4].map(i => `surfexp_gateway_${i}`);
+
+export const beforePortals = version => /^0\.[0-6]\./.test(version);
+
+export function expectedGatewayPrototypes(version) {
+  if (beforePortals(version)) return { visibleGateways: ["surfexp_gateway_hub"], gatewayRoutes: [...HUB_PLANETS_BEFORE_0_7].sort() };
+  return { visibleGateways: [...PORTALS, "surfexp_gateway_hub"].sort(), gatewayRoutes: ["nauvis"] };
+}
 
 export function analyzeConsumer(report) {
   assert.equal(report.schemaVersion, 1);
@@ -25,19 +33,19 @@ export function analyzeConsumer(report) {
   assert.equal(report.gatewayMaps.length, 2);
   assert.equal(new Set(report.gatewayMaps.map(s => s.instanceId)).size, 2);
   assert.deepEqual(report.gatewayMaps.map(s => s.instanceId).sort(), report.freshSaves.map(s => s.instanceId).sort());
-  for (const state of report.gatewayMaps) {
-    const version = install.runtime?.gatewayVersion ?? "0.6.5";
-    const beforePortals = /^0\.[0-6]\./.test(version);
-    verifyGatewayMap(state, { version, hubPlanets: beforePortals ? HUB_PLANETS_BEFORE_0_7 : undefined, hiddenPortals: beforePortals });
-  }
+  const gatewayVersion = install.runtime?.gatewayVersion ?? "0.6.5";
+  const legacy = beforePortals(gatewayVersion);
+  for (const state of report.gatewayMaps)
+    verifyGatewayMap(state, { version: gatewayVersion, hubPlanets: legacy ? HUB_PLANETS_BEFORE_0_7 : undefined, hiddenPortals: legacy });
   const b = report.browser;
   assert.equal(b?.success, true, "browser acceptance incomplete");
   assert.equal(b.nodes.length, 2);
   assert.equal(new Set(b.nodes.map(n => n.id)).size, 2);
   assert.deepEqual(b.nodes.map(n => n.id).sort(), report.freshSaves.map(s => `instance:${s.instanceId}`).sort());
   assert.deepEqual(b.pageErrors, []); assert.deepEqual(b.failedResponses, []);
-  assert.deepEqual(b.visibleGateways, ["surfexp_gateway_hub"]);
-  assert.deepEqual(b.gatewayRoutes, ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"]);
+  const prototypes = expectedGatewayPrototypes(gatewayVersion);
+  assert.deepEqual(b.visibleGateways, prototypes.visibleGateways);
+  assert.deepEqual(b.gatewayRoutes, prototypes.gatewayRoutes);
   for (const asset of b.assets) { assert.equal(asset.status, 200); assert.ok(asset.bytes > 0); assert.match(asset.sha256, /^[a-f0-9]{64}$/); }
   assert.ok(b.assets.some(a => /locale/.test(a.name) && a.entries > 0));
   assert.ok(b.assets.some(a => /metadata/.test(a.name) && a.entries > 0));

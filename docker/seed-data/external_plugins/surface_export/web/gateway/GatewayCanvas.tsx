@@ -35,7 +35,8 @@ import {
 	sourceHandleId,
 	targetHandleId,
 } from "./gateway-graph";
-import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
+import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours";
+import { portalColourName } from "../../shared/portals";
 import { PORTAL_ART } from "./InstanceNode";
 import type { PortalListingResponse } from "../../shared/dto";
 import type { PlatformLike, Portal, TrafficPair, TrafficRouteModel } from "./gateway-graph";
@@ -108,7 +109,7 @@ function headingText(route: TrafficRouteModel, portal: Portal | null, targetName
 	return {
 		text: `${shown} → ${label}`,
 		title: `Heading to the portal of ${targetName}: ${names.join(", ")}`,
-		colour: portalColour(portal?.colour),
+		colour: portalHex(portal?.colour),
 	};
 }
 
@@ -308,8 +309,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			const reachable = { type: MarkerType.ArrowClosed, color: PORTAL_LINK_COLOUR };
 
 			return pairs.map(pair => {
-				const colour = portalColour(portalOf(pair.targetInstanceId)?.colour);
-				const reverseColour = portalColour(portalOf(pair.sourceInstanceId)?.colour);
+				const colour = portalHex(portalOf(pair.targetInstanceId)?.colour);
+				const reverseColour = portalHex(portalOf(pair.sourceInstanceId)?.colour);
 				const heading = pair.routes.length > 0;
 				if (!heading && pair.ships.length === 0) {
 					return {
@@ -629,7 +630,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 									key={portal.slot}
 									src={PORTAL_ART[portal.colour]}
 									alt={`${portal.colour} portal, unassigned`}
-									title={`${portal.colour.charAt(0).toUpperCase() + portal.colour.slice(1)}: unassigned (last led to ${portal.formerInstanceName}) — an admin can assign it with surface-export portal assign`}
+									title={`${portalColourName(portal.colour)}: unassigned (last led to ${portal.formerInstanceName}) — an admin can assign it with surface-export portal assign`}
 									draggable={false}
 								/>
 							))}

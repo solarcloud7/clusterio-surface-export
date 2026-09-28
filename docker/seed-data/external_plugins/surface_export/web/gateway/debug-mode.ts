@@ -2,7 +2,7 @@
 import { createContext, useContext } from "react";
 
 import type { InstanceLike, PlatformLike, Portal, TreeLike } from "./gateway-graph";
-import { PORTAL_COLOURS, portalColourOfSlot, portalGatewayName } from "./gateway-graph";
+import { PORTAL_COLOURS, portalColour, portalGatewayName } from "./gateway-graph";
 import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
 import type { TransferSummary } from "../view-models";
@@ -108,7 +108,7 @@ export function saveDebugState(state: DebugState): void {
 const MOCK_HOST_ID = -1;
 
 function mockPortal(slot: number | undefined, label: string): Portal | null {
-	return slot === undefined ? null : { slot, colour: portalColourOfSlot(slot), label };
+	return slot === undefined ? null : { slot, colour: portalColour(slot), label };
 }
 
 export function withMockInstances(tree: TreeLike | null | undefined, state: DebugState): TreeLike | null | undefined {

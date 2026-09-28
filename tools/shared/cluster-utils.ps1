@@ -254,17 +254,19 @@ function Sync-ControllerWebBundle {
 }
 
 function Assert-PluginArtifactsFresh {
+    param([string]$Remedy = "Run deploy.ps1 -Scope plugin -KeepSaves to build and reload.")
     $pluginRoot = Join-Path $script:RepoRoot 'docker/seed-data/external_plugins/surface_export'
     $inputs = @(
         Get-ChildItem "$pluginRoot/lib", "$pluginRoot/shared", "$pluginRoot/web" -File -Recurse
         Get-ChildItem $pluginRoot -File | Where-Object { $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.js' }
         Get-Item "$pluginRoot/scripts/build-web.mjs", "$pluginRoot/scripts/web-assets.mjs"
     )
-    $newest = ($inputs | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
+    $newestInput = $inputs | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $newest = $newestInput.LastWriteTimeUtc
     foreach ($tree in 'node', 'web') {
         $stamp = Join-Path $pluginRoot "dist/$tree/.prepare-build-stamp"
-        if (-not (Test-Path $stamp) -or (Get-Item $stamp).LastWriteTimeUtc -lt $newest) {
-            throw "dist/$tree is missing or older than the build inputs. Run deploy.ps1 -Scope plugin -KeepSaves to build and reload."
+        if (-not (Test-Path $stamp) -or (Get-Item -Force $stamp).LastWriteTimeUtc -lt $newest) {
+            throw "dist/$tree is missing or older than the build inputs (newest: $($newestInput.FullName)). $Remedy"
         }
     }
 }

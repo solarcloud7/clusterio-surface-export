@@ -23,8 +23,12 @@ const PLUGIN = "/clusterio/external_plugins/surface_export";
 const CONTROLLER = "surface-export-controller";
 const HOSTS = ["surface-export-host-1", "surface-export-host-2"];
 
-const sh = (container, script) =>
-	execFileSync("docker", ["exec", container, "sh", "-c", script], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+export const shArgv = (container, script, ...args) => ["exec", container, "sh", "-c", script, ...(args.length ? ["sh", ...args] : [])];
+
+const sh = (container, script, ...args) =>
+	execFileSync("docker", shArgv(container, script, ...args), { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+
+export const INSTANCE_BANNER_SCRIPT = 'head -1 "/clusterio/data/instances/$1/factorio-current.log" 2>/dev/null';
 
 const containerStartedMs = (container) => Date.parse(
 	execFileSync("docker", ["inspect", "-f", "{{.State.StartedAt}}", container], { encoding: "utf8" }).trim());
@@ -35,7 +39,7 @@ function newestMs(container, dir, predicate) {
 }
 
 function instanceStartedMs(container, instance) {
-	const line = sh(container, `head -1 /clusterio/data/instances/${instance}/factorio-current.log 2>/dev/null`).trim();
+	const line = sh(container, INSTANCE_BANNER_SCRIPT, instance).trim();
 	const stamp = line.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/)?.[1];
 	return stamp ? Date.parse(`${stamp}Z`) : null;
 }

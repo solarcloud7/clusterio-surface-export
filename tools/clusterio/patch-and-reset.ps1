@@ -15,12 +15,16 @@ Hot-reloads plugin code (Lua + TypeScript + web) and resets instances to seed sa
 rebuilding containers. Use this only when deliberately resetting fixture state.
 
 Usage:
-    .\patch-and-reset.ps1            # full: rebuild dist (node + web), reset saves, restart
+    .\patch-and-reset.ps1            # full: rebuild dist (node + web), reset worlds to the
+                                     # seed saves (keeps every save), restart
     .\patch-and-reset.ps1 -LuaOnly   # fast path: SKIP the ~3-min container build; Lua is
                                      # save-patched from source, so dist/ is untouched by a
-                                     # module/*.lua-only change. REFUSES to run if any TS/web
-                                     # source is newer than the newest dist artifact (a stale
-                                     # dist would silently ship old plugin code).
+                                     # module/*.lua-only change. REFUSES to run if any build
+                                     # input (lib/, shared/, web/, root TS and tsconfig files,
+                                     # webpack.config.js, scripts/build-web.mjs,
+                                     # scripts/web-assets.mjs) is newer than the build stamp
+                                     # of dist/node or dist/web (a stale dist would silently
+                                     # ship old plugin code).
 
 This script:
 1. Bumps stable plugin versions unless -SkipIncrement is set. Prereleases require -SkipIncrement.
@@ -71,34 +75,13 @@ Write-Host ""
 $WorkspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 
 if ($LuaOnly) {
-    $pluginRoot = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
-    $distNode = Join-Path $pluginRoot "dist/node"
-    $distWeb = Join-Path $pluginRoot "dist/web"
-    $remedy = ("Use 'deploy.ps1 -Scope plugin -ResetSaves' (builds AND resets), or call this script directly " +
-        "without -LuaOnly. Tree being checked: $WorkspaceRoot")
-    if (-not (Test-Path $distNode) -or -not (Test-Path $distWeb)) {
-        throw "-LuaOnly refused: dist/node or dist/web is missing. $remedy"
+    try {
+        Assert-PluginArtifactsFresh -Remedy ("A stale dist would ship old plugin code. Use 'deploy.ps1 -Scope plugin -ResetSaves' (builds AND resets), " +
+            "or call this script directly without -LuaOnly. Tree being checked: $WorkspaceRoot")
+    } catch {
+        throw "-LuaOnly refused: $($_.Exception.Message)"
     }
-    $srcCandidates = @(
-        Get-ChildItem (Join-Path $pluginRoot "lib"), (Join-Path $pluginRoot "web") -Recurse -File -ErrorAction Stop
-        Get-ChildItem $pluginRoot -File | Where-Object {
-            $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.js' -or $_.Name -eq '.npmrc'
-        }
-    )
-    $srcNewest = $srcCandidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    $distNewest = Get-ChildItem $distNode, $distWeb -Recurse -File |
-        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    if (-not $distNewest) {
-        throw "-LuaOnly refused: dist/node and dist/web exist but contain no files. $remedy"
-    }
-    if (-not $srcNewest) {
-        throw "-LuaOnly refused: found zero TS/web build inputs to compare against — this tree looks wrong; refusing to guess."
-    }
-    if ($srcNewest.LastWriteTimeUtc -gt $distNewest.LastWriteTimeUtc) {
-        throw ("-LuaOnly refused: '$($srcNewest.FullName)' ($($srcNewest.LastWriteTimeUtc)) is newer than the newest dist artifact " +
-            "'$($distNewest.Name)' ($($distNewest.LastWriteTimeUtc)). A stale dist would ship old plugin code. $remedy")
-    }
-    Write-Host "LuaOnly: dist/ is fresh (newest build input: $($srcNewest.Name)) — container build will be skipped" -ForegroundColor Yellow
+    Write-Host "LuaOnly: dist/ is fresh — container build will be skipped" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -316,8 +299,8 @@ Write-Host ""
 Write-Host "Disabling auto_pause on instances..." -ForegroundColor Yellow
 $settingsBase = @{ auto_pause = $false; only_admins_can_pause_the_game = $true; autosave_interval = 10; autosave_slots = 5; non_blocking_saving = $true }
 
-$inst1Settings = $settingsBase.Clone(); $inst1Settings["name"] = "instance 1"
-$inst2Settings = $settingsBase.Clone(); $inst2Settings["name"] = "instance 2"
+$inst1Settings = $settingsBase.Clone(); $inst1Settings["name"] = $hostInstances[1].Name
+$inst2Settings = $settingsBase.Clone(); $inst2Settings["name"] = $hostInstances[2].Name
 
 $inst1Json = ($inst1Settings | ConvertTo-Json -Compress)
 $inst2Json = ($inst2Settings | ConvertTo-Json -Compress)
@@ -394,8 +377,7 @@ Write-Host "Instances have been reset to seed save state with fresh Lua code." -
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Check logs: .\tools\clusterio\check-cluster-logs.ps1" -ForegroundColor White
-Write-Host "  2. Test export: docker exec surface-export-controller npx clusterioctl instance send-rcon 1 '/export-platform 2 2'" -ForegroundColor White
-Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
+Write-Host "  2. Probe one transfer: node tools/surface-export/probe-transfer.mjs --fixture 21" -ForegroundColor White
 
 exit 0
 }

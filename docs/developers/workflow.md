@@ -107,7 +107,7 @@ instead of `--runtime`. The JSON object requires these string fields:
   "artifact": "ci-artifacts/accepted-package",
   "commit": "<40-character source commit SHA>",
   "version": "<accepted package version>",
-  "gateway": "docker/seed-data/mods/surfexp_gateways_0.6.5.zip",
+  "gateway": "docker/seed-data/mods/surfexp_gateways_0.7.9.zip",
   "gatewaySha256": "<64-character SHA-256 of that archive>",
   "output": "ci-artifacts/new-runtime"
 }

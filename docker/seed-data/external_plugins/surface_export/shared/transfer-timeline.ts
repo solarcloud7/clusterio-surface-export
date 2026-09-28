@@ -94,39 +94,6 @@ export function describeAttribution(attribution: TimelineAttribution): { headlin
 	};
 }
 
-export const SOURCE_EXPORT_ANOMALY_MS = 5000;
-export const IMPORT_GAP_ANOMALY_MS = 5000;
-
-export function describeImportGapAnomaly(attribution: TimelineAttribution): { headline: string; detail: string } | null {
-	if (attribution.importWindowMs === null || attribution.importDetailGapMs < IMPORT_GAP_ANOMALY_MS) return null;
-	const attributed = Math.max(0, attribution.importWindowMs - attribution.importDetailGapMs);
-	return {
-		headline: `Destination import ran ${formatMs(attribution.importWindowMs)} of wall clock with only `
-			+ `${formatMs(attributed)} tick-attributed`,
-		detail: `The import phases are game.tick spans at a nominal 60 UPS; ${formatMs(attribution.importDetailGapMs)} `
-			+ "of the measured window is synchronous work inside ticks, or time below one tick of resolution. "
-			+ "Not idle time and not a missing measurement.",
-	};
-}
-
-export function describeSourceExportAnomaly(attribution: TimelineAttribution): { headline: string; detail: string } | null {
-	const callMs = attribution.sourceExportCallMs;
-	if (callMs === null || callMs < SOURCE_EXPORT_ANOMALY_MS) return null;
-	const asyncPart = attribution.sourceExportAsyncMs !== null
-		? ` The tick-measured async export that follows it took ${formatMs(attribution.sourceExportAsyncMs)}`
-			+ `${attribution.sourceExportAsyncTicks !== null ? ` (${attribution.sourceExportAsyncTicks.toLocaleString()} ticks)` : ""}.`
-		: "";
-	return {
-		headline: `Source instance spent ${formatMs(callMs)} inside one synchronous export call`,
-		detail: `The export request to the source returned after ${formatMs(callMs)} of controller wall clock. `
-			+ "That call locks the platform and scans it before the async export is queued, so no game tick "
-			+ `can attribute time inside it — the bar is the measurement, not a rendering gap.${asyncPart}`
-			+ (attribution.sourceExportAnchored
-				? " Anchored on the export_requested / export_returned events."
-				: " Back-computed from requestExportAndLockMs; this log predates the anchor events."),
-	};
-}
-
 const RESIDUAL_FLOOR_MS = 2;
 
 function finite(value: unknown): number | null {

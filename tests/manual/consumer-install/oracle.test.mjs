@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { analyzeConsumer } from "./oracle.mjs";
+import { analyzeConsumer, expectedGatewayPrototypes } from "./oracle.mjs";
 import { ConsumerLab } from "./lab.mjs";
 
 const observed = JSON.parse(readFileSync(new URL("./evidence/accepted-0.10.281.json", import.meta.url)));
@@ -23,6 +23,16 @@ test("consumer acceptance refuses missing installation, game, asset, browser and
     r => r.controllerCrash.restartedPid = r.controllerCrash.pid]) {
     const r = structuredClone(observed); mutate(r); assert.throws(() => analyzeConsumer(r));
   }
+});
+
+test("exported gateway prototypes match the loaded companion version", () => {
+  assert.deepEqual(expectedGatewayPrototypes("0.7.9"), {
+    visibleGateways: ["surfexp_gateway_1", "surfexp_gateway_2", "surfexp_gateway_3", "surfexp_gateway_4", "surfexp_gateway_hub"],
+    gatewayRoutes: ["nauvis"],
+  });
+  assert.deepEqual(expectedGatewayPrototypes("0.6.5"), {
+    visibleGateways: ["surfexp_gateway_hub"], gatewayRoutes: ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"],
+  });
 });
 
 test("consumer acceptance retains cargo, no-replay, real-retry and cleanup requirements", () => {

@@ -1,7 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { driftStatus } from "../../tools/clusterio/check-cluster-drift.mjs";
+import { spawnSync } from "node:child_process";
+
+import { driftStatus, shArgv, INSTANCE_BANNER_SCRIPT } from "../../tools/clusterio/check-cluster-drift.mjs";
+
+test("an instance directory name is passed to sh as an argument, never spliced into the script", () => {
+	const name = "Dev One; touch /tmp/pwned $(id)";
+	const argv = shArgv("surface-export-host-1", INSTANCE_BANNER_SCRIPT, name);
+	assert.deepEqual(argv, ["exec", "surface-export-host-1", "sh", "-c", INSTANCE_BANNER_SCRIPT, "sh", name]);
+	assert.equal(INSTANCE_BANNER_SCRIPT.includes(name), false);
+	assert.deepEqual(shArgv("c", "ls"), ["exec", "c", "sh", "-c", "ls"]);
+});
+
+test("the banner script reads the log of the named instance, including names with spaces", { skip: spawnSync("sh", ["-c", "exit 0"]).status !== 0 }, () => {
+	const script = INSTANCE_BANNER_SCRIPT.replace("/clusterio/data/instances/$1", "$1");
+	const echo = spawnSync("sh", ["-c", script.replace("head -1", "echo"), "sh", "Dev One; exit 7"], { encoding: "utf8" });
+	assert.deepEqual([echo.status, echo.stdout.trim()], [0, "Dev One; exit 7/factorio-current.log"]);
+});
 
 
 test("disk newer than the load moment is STALE", () => {

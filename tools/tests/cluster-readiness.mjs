@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// requires: docker with the surface-export-controller and seeded host containers running; tests/lab-gallery/manifest.json;
+// requires: docker with the surface-export-controller and seeded host containers running; exactly two seeded hosts
+//           with one instance each under docker/seed-data/hosts (source, then destination); tests/lab-gallery/manifest.json;
 //           tools/shared/test-surface-prefixes.json; host logs under /clusterio/logs/host for the source-recovery refusal
 // produces: one PASS/FAIL line per instance per check (including module version, source-recovery readiness and leftover
 //           throwaway platforms), and a gate decision (exit 0 only when every check passes) after waiting a bounded

@@ -7,7 +7,6 @@ $script:PadGridPlatform         = 'lab-omnibus-state-v1'
 $script:OneOfEachFixturePlatform = 'oneofeach-fixture-v1'
 
 function Get-TransferFixturePlatform { return $script:TransferFixturePlatform }
-function Get-PadGridPlatform { return $script:PadGridPlatform }
 
 $script:ProtectedFixtures = @(
 	$script:TransferFixturePlatform, $script:PadGridPlatform, $script:OneOfEachFixturePlatform,
@@ -60,31 +59,6 @@ function Invoke-Lua {
     }
     
     return $result
-}
-
-
-
-$script:ExpectedFactorioVersion = "2.1.17"
-
-function Assert-FactorioVersion {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [string]$Expected = $script:ExpectedFactorioVersion
-    )
-
-    $lua = "rcon.print(tostring((script and script.active_mods and script.active_mods.base) or (game.active_mods and game.active_mods.base) or 'unknown'))"
-    $detected = (Invoke-Lua -Instance $Instance -Code $lua | Out-String).Trim()
-
-    if (-not $detected -or $detected -eq "unknown") {
-        throw "Version audit: could not read Factorio version from '$Instance' (RCON empty/unresponsive?)"
-    }
-    if ($detected -ne $Expected) {
-        throw "Version audit FAILED on '$Instance': running Factorio $detected but tests are written for $Expected. " +
-              "Bump `$script:ExpectedFactorioVersion + version-compat.lua PROFILES and re-verify against lua-api.factorio.com/$detected/."
-    }
-    Write-Status "Factorio version audited: $detected (matches expected)" -Type success
-    return $detected
 }
 
 
@@ -168,16 +142,6 @@ function Resolve-PlatformHost {
     return $null
 }
 
-function Get-Platforms {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance
-    )
-    
-    $output = Send-Rcon -Instance $Instance -Command "/list-platforms"
-    return $output
-}
-
 function Get-PlatformInventory {
     param(
         [Parameter(Mandatory=$true)]
@@ -259,19 +223,6 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
     }
 }
 
-function Remove-TestSurfaces {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [Parameter(Mandatory=$true)]
-        [string]$TestName
-    )
-    
-    $luaPat = $TestName -replace "'", ""
-    $res = Remove-PlatformSurfacesWhere -Instance $Instance -PredicateLua "string.find(p.name, '$luaPat', 1, true)"
-    return @{ deleted = $res.deleted; failed = 0; names = $res.names }
-}
-
 
 
 function Step-Tick {
@@ -288,17 +239,6 @@ function Step-Tick {
     
     $output = Send-Rcon -Instance $Instance -Command "/step-tick $Ticks"
     return $output
-}
-
-function Set-GamePaused {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [bool]$Pause = $true
-    )
-    
-    $value = if ($Pause) { "true" } else { "false" }
-    Invoke-Lua -Instance $Instance -Code "game.tick_paused = $value" | Out-Null
 }
 
 
@@ -364,37 +304,6 @@ function Read-DebugFile {
 }
 
 
-
-function Get-TestCases {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Path
-    )
-    
-    if (-not (Test-Path $Path)) {
-        throw "Test cases file not found: $Path"
-    }
-    
-    return Get-Content $Path -Raw | ConvertFrom-Json
-}
-
-function Select-Tests {
-    param(
-        [Parameter(Mandatory=$true)]
-        $TestSuite,
-        [string]$TestId = "",
-        [string]$Category = ""
-    )
-    
-    $filtered = @()
-    foreach ($test in $TestSuite.tests) {
-        if ($TestId -and $test.id -ne $TestId) { continue }
-        if ($Category -and $test.category -ne $Category) { continue }
-        $filtered += $test
-    }
-    
-    return $filtered
-}
 
 function Get-SafeProperty {
     param(
@@ -582,77 +491,25 @@ function Wait-ForJob {
     return $done
 }
 
-function Start-PlatformTransfer {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$SourceInstance,
-        [Parameter(Mandatory=$true)]
-        [int]$DestInstanceId,
-        [Parameter(Mandatory=$true)]
-        [int]$PlatformIndex,
-        [ValidateSet("rcon", "controller")]
-        [string]$TransferMode = "rcon"
-    )
-
-    if ($TransferMode -eq "controller") {
-        $sourceInstanceId = Get-ClusterioInstanceId -InstanceName $SourceInstance
-        if (-not $sourceInstanceId) {
-            throw "Could not resolve source instance ID for '$SourceInstance'"
-        }
-        $output = docker exec $script:DefaultController npx clusterioctl --config $script:ControlConfig surface-export start-transfer $sourceInstanceId $PlatformIndex $DestInstanceId player 2>&1
-        return $output
-    }
-
-    $command = "/transfer-platform $PlatformIndex $DestInstanceId"
-    $output = Send-Rcon -Instance $SourceInstance -Command $command
-    return $output
-}
-
-function Get-ClusterioInstanceId {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$InstanceName,
-        [string]$Controller = $script:DefaultController
-    )
-    
-    if ($InstanceName -match '^\d+$') { return [long]$InstanceName }
-    $output = docker exec $Controller bash -c "npx clusterioctl --config $script:ControlConfig instance list 2>/dev/null"
-    foreach ($line in $output) {
-        if ($line -match "^\s*$([regex]::Escape($InstanceName))\s*\|\s*(\d+)") {
-            return [long]$Matches[1]
-        }
-    }
-    
-    Write-Warning "Could not resolve instance ID for '$InstanceName'"
-    return $null
-}
-
 
 Export-ModuleMember -Function @(
     'Send-Rcon',
     'Invoke-Lua',
 
-    'Assert-FactorioVersion',
-
     'New-TestPlatform',
     'Get-PlatformIndex',
     'Get-HostInstanceId',
     'Resolve-PlatformHost',
-    'Get-Platforms',
     'Remove-PlatformSurfacesWhere',
     'Get-PlatformInventory',
     'Get-ProtectedFixtures',
-    'Remove-TestSurfaces',
     
     'Step-Tick',
-    'Set-GamePaused',
     
     'Clear-DebugFiles',
     'Get-DebugFiles',
     'Read-DebugFile',
     
-    'Get-TestCases',
-    'Select-Tests',
     'Get-SafeProperty',
     'Assert-TransferSucceeded',
     
@@ -662,10 +519,6 @@ Export-ModuleMember -Function @(
     'Write-Status',
     
     'Wait-ForJob',
-    'Start-PlatformTransfer',
     
-    'Get-ClusterioInstanceId',
-
-    'Get-TransferFixturePlatform',
-    'Get-PadGridPlatform'
+    'Get-TransferFixturePlatform'
 )

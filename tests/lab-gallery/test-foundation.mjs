@@ -1,8 +1,6 @@
 import { developmentCluster } from "../../tools/shared/cluster-transport.mjs";
 import { pathToFileURL } from "node:url";
 
-export const CELL_WIDTH = 26;
-export const CELL_HEIGHT = 12;
 export const CELL_PITCH = { x: 28, y: 14 };
 export const PANEL_TILE_OFFSET = { x: 13, y: 11 };
 export const NAME_TEXT_OFFSET = { x: 6, y: -1.5 };

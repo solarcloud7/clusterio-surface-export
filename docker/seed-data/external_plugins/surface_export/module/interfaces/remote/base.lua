@@ -55,14 +55,4 @@ function Base.find_platform(force, name_or_index)
   return match
 end
 
-function Base.get_print_fn(player_index)
-  if player_index then
-    local player = game.get_player(player_index)
-    if player then
-      return function(msg) player.print(msg) end
-    end
-  end
-  return function(msg) rcon.print(msg) end
-end
-
 return Base

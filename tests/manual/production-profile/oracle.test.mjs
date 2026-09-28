@@ -80,6 +80,27 @@ test("each independent route, node, history and asset assertion rejects contrary
   ]) { const report = fixture(); mutate(report); assert.throws(() => analyzeProfile(report)); }
 });
 
+test("gateway 0.7.9 evidence requires four visible portals, a Nauvis-only Gateway route and no gateway mode setting", () => {
+  const current = () => {
+    const report = fixture();
+    report.runtime.pins = { gateway: { name: "surfexp_gateways", version: "0.7.9" } };
+    delete report.controllerSettings["surface_export.gateway_mode"];
+    report.browser.visibleGateways = ["surfexp_gateway_1", "surfexp_gateway_2", "surfexp_gateway_3", "surfexp_gateway_4", "surfexp_gateway_hub"];
+    report.browser.gatewayRoutes = ["nauvis"];
+    return report;
+  };
+  assert.equal(analyzeProfile(current()).verdict, "PASS");
+  for (const mutate of [
+    r => r.browser.visibleGateways = ["surfexp_gateway_hub"],
+    r => r.browser.visibleGateways.shift(),
+    r => r.browser.gatewayRoutes = ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"],
+    r => r.browser.gatewayRoutes = [],
+    r => r.controllerSettings["surface_export.gateway_mode"] = "one_gate",
+  ]) { const report = current(); mutate(report); assert.throws(() => analyzeProfile(report)); }
+  const legacy = fixture(); delete legacy.controllerSettings["surface_export.gateway_mode"];
+  assert.throws(() => analyzeProfile(legacy));
+});
+
 test("current acceptance requires a normal transfer without startup instrumentation", () => {
   const report = fixture(); report.schemaVersion = 2;
   assert.equal(profileVerdict(report).verdict, "FAIL");

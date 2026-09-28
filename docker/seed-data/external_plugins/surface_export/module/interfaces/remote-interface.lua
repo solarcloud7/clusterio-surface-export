@@ -71,7 +71,6 @@ end
 
 RemoteInterface.export_platform = export_platform
 RemoteInterface.get_export = get_export
-RemoteInterface.list_exports = list_exports
 RemoteInterface.list_platforms = list_platforms
 RemoteInterface.clear_old_exports = clear_old_exports
 RemoteInterface.export_platform_to_file = export_platform_to_file
@@ -144,7 +143,6 @@ function RemoteInterface.register()
     export_platform_to_file = export_platform_to_file,
     get_export = get_export,
     get_export_json = Base.json_wrap(get_export),
-    list_exports = list_exports,
     list_exports_json = Base.json_wrap(list_exports),
     list_platforms = list_platforms,
     list_platforms_json = Base.json_wrap(list_platforms),

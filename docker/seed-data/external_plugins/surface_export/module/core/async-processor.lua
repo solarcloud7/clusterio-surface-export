@@ -67,10 +67,6 @@ function AsyncProcessor.set_max_export_cache_size(value)
 	ExportCache.set_cap(value)
 end
 
-function AsyncProcessor.get_max_export_cache_size()
-	return ExportCache.get_cap()
-end
-
 function AsyncProcessor.get_max_concurrent_jobs()
 	return config.max_concurrent_jobs
 end
@@ -203,25 +199,6 @@ function AsyncProcessor.process_tick(recovery_only)
 
 		processed = processed + 1
 	end
-end
-
-function AsyncProcessor.get_active_jobs()
-	AsyncProcessor.init()
-
-	local jobs = {}
-	for job_id, job in pairs(storage.async_jobs) do
-		table.insert(jobs, {
-			job_id = job_id,
-			type = job.type,
-			platform_name = job.platform_name,
-			progress = calculate_progress(job),
-			entities_processed = job.current_index,
-			total_entities = job.total_entities,
-			elapsed_ticks = game.tick - job.started_tick
-		})
-	end
-
-	return jobs
 end
 
 function AsyncProcessor.get_job_status(job_id)

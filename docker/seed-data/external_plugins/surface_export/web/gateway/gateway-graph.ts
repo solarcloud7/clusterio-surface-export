@@ -3,7 +3,7 @@ import { portalSlotOf } from "../../shared/portals";
 import type { PortalAssignment } from "../../shared/portals";
 import type { PlatformStatusFields } from "../platform-actions";
 
-export { PORTAL_COLOURS, portalColour as portalColourOfSlot, portalGatewayName } from "../../shared/portals";
+export { PORTAL_COLOURS, portalColour, portalGatewayName } from "../../shared/portals";
 
 
 export type PlatformLike = PlatformStatusFields & {

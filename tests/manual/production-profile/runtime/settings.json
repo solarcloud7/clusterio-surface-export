@@ -1,7 +1,6 @@
 {
   "controller": {
-    "surface_export.max_inflight_transfers_per_instance": 1,
-    "surface_export.gateway_mode": "one_gate"
+    "surface_export.max_inflight_transfers_per_instance": 1
   },
   "host": {
     "host.allow_remote_updates": false,
