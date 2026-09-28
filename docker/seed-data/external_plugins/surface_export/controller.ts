@@ -211,7 +211,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.lineageRegistry = new LineageRegistry();
 		await this.lineageRegistry.load(path.resolve(String(this.c.config.get("controller.database_directory")), LINEAGE_REGISTRY_FILENAME));
 		if (this.lineageRegistry.fileMissing && this.hasLineageHistory()) {
-			this.lineageRegistry.markUnreadable("the file is missing although transfers or stored exports carry platform lineages");
+			this.lineageRegistry.markUnreadable("the file is missing although completed transfers or stored exports show it was written");
 		}
 		if (this.lineageRegistry.loadError) this.logger.error(this.lineageRegistry.loadError);
 		await this.orchestrator.requestQueue.init(path.join(path.dirname(this.transactionLogPath), "surface_export_transfer_queue.json"),
@@ -382,10 +382,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	hasLineageHistory(): boolean {
-		const carries = (value: unknown) => typeof value === "string" && value !== "";
-		return [...this.pendingTransfers.values()].some(intent => carries(intent.lineage))
-			|| [...this.activeTransfers.values()].some(transfer => carries(transfer.lineage))
-			|| [...this.platformStorage.values()].some(stored => carries(stored.exportData?.lineage));
+		const advanced = (value: unknown) => Number.isSafeInteger(value) && (value as number) >= 1;
+		const committed = (record: { lineage?: string | null; status?: string | null; operationType?: string | null } | undefined) =>
+			typeof record?.lineage === "string" && record.lineage !== "" && record.status === "completed" && (record.operationType ?? "transfer") === "transfer";
+		return [...this.pendingTransfers.values()].some(intent => advanced(intent.lineageGeneration))
+			|| [...this.activeTransfers.values()].some(transfer => advanced(transfer.lineageGeneration) || committed(transfer))
+			|| this.persistedTransactionLogs.some(log => committed(log.transferInfo))
+			|| [...this.platformStorage.values()].some(stored => advanced(stored.exportData?.generation));
 	}
 
 	lineageInTransit(lineage: string | null): boolean {

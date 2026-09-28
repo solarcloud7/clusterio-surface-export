@@ -93,6 +93,20 @@ test("a failed write leaves the registry unchanged and the caller informed", asy
 	assert.equal(await registry.commitTransfer(commit()), "write", "the queue stayed usable after a failed write");
 });
 
+test("a missing registry is flagged so the controller can refuse it when history shows it was written", async t => {
+	const file = await tempFile(t);
+	const registry = new LineageRegistry();
+	await registry.load(file);
+	assert.deepEqual([registry.fileMissing, registry.loadError], [true, null]);
+	registry.markUnreadable("the file is missing");
+	assert.match(registry.loadError, /unreadable \(the file is missing\)/);
+	await assert.rejects(registry.update(draft => draft.set(L, entry())), /unreadable/);
+	assert.match(registry.precheckTransfer(commit()), /unreadable/);
+	await fs.writeFile(file, JSON.stringify({ version: 1, entries: [] }));
+	await registry.load(file);
+	assert.deepEqual([registry.fileMissing, registry.loadError], [false, null], "an empty registry file was not accepted as the deliberate repair");
+});
+
 test("an unreadable registry refuses every lineage operation", async t => {
 	const file = await tempFile(t);
 	for (const content of ["not json", JSON.stringify({ version: 2, entries: [] }),

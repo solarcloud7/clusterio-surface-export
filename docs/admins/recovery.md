@@ -19,8 +19,11 @@ Both modes retain active-transfer protections. Neither reconstructs a missing
 platform automatically or rewrites a completed operation's history. Controller
 unavailability, a lost reply or an unreadable journal or registry does not
 authorize release. Switching modes does not undo an already accepted restoration.
-If the registry file is missing while transfers or stored exports carry platform
-histories, the controller treats it as unreadable: restore the file from a backup.
+If the registry file is missing although completed transfers or stored exports show
+it was written, the controller treats it as unreadable: restore the file from a
+backup. Replacing it with `{"version":1,"entries":[]}` is a deliberate override
+that forgets every recorded holder; copies that cannot then be proved current are
+quarantined.
 
 ## Platform history and quarantine
 

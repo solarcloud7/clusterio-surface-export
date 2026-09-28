@@ -75,7 +75,7 @@ surfaceExportCommands.add(new Command({
 	handler: async (args: { requestId: string }, control: ControlLike) => {
 		const response = await control.sendTo("controller", new messages.AbandonPlatformResolutionRequest({ requestId: args.requestId })) as
 			ReturnType<typeof messages.AbandonPlatformResolutionRequest.Response.fromJSON>;
-		if (response.status !== "failed") throw new Error(response.error || "The resolution was not abandoned");
+		if (response.status !== "failed" && response.status !== "completed") throw new Error(response.error || "The resolution was not abandoned");
 		console.log(JSON.stringify(response));
 	},
 }));

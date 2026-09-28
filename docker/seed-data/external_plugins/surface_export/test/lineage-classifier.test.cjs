@@ -187,6 +187,27 @@ test("two instances loading the same generation-zero copy: exactly one claims it
 	assert.equal(registry.get(L).instanceId, I);
 });
 
+test("only history that implies a registry write makes a missing registry unreadable", () => {
+	const { plugin } = controllerHarness();
+	plugin.platformStorage = new Map([["1:gen0", { exportData: { lineage: L, generation: 0 } }]]);
+	plugin.pendingTransfers.set("1:gen0", { transferId: "1:gen0", lineage: L, lineageGeneration: 0 });
+	plugin.activeTransfers.set("1:gen0", { transferId: "1:gen0", lineage: L, lineageGeneration: 0, status: "awaiting_validation" });
+	plugin.persistedTransactionLogs = [{ transferId: "1:failed", transferInfo: { operationType: "transfer", status: "failed", lineage: L } }];
+	assert.equal(plugin.hasLineageHistory(), false, "a generation-0 export or transfer that never committed was treated as registry history");
+	for (const arrange of [
+		p => p.platformStorage.set("1:gen1", { exportData: { lineage: L, generation: 1 } }),
+		p => p.pendingTransfers.set("2:gen1", { transferId: "2:gen1", lineage: L, lineageGeneration: 1 }),
+		p => p.activeTransfers.set("1:done", { transferId: "1:done", operationType: "transfer", lineage: L, lineageGeneration: 0, status: "completed" }),
+		p => p.persistedTransactionLogs.push({ transferId: "1:logged", transferInfo: { operationType: "transfer", status: "completed", lineage: L } }),
+	]) {
+		const { plugin: other } = controllerHarness();
+		other.platformStorage = new Map();
+		other.persistedTransactionLogs = [];
+		arrange(other);
+		assert.equal(other.hasLineageHistory(), true, String(arrange));
+	}
+});
+
 test("pending intents and completed history are hints the controller owns", async () => {
 	const { plugin } = controllerHarness();
 	plugin.pendingTransfers.set("1:job", { transferId: "1:job", sourceInstanceId: I, targetInstanceId: J, sourcePlatformIndex: 3,

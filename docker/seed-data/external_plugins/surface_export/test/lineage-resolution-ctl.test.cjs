@@ -67,6 +67,8 @@ test("abandon-resolution sends the request ID and fails loudly unless the resolu
 	assert.ok(sent[0].message instanceof messages.AbandonPlatformResolutionRequest);
 	assert.deepEqual(sent[0].message.toJSON(), { requestId });
 	assert.equal(JSON.parse(printed[0]).status, "failed");
+	const finished = await invoke(command, { requestId }, { success: true, requestId, status: "completed", step: "completed" });
+	assert.equal(JSON.parse(finished.printed[0]).status, "completed", "an abandon that finished a committed deletion was reported as an error");
 	await assert.rejects(invoke(command, { requestId }, { success: false, requestId, status: "in_progress", step: "deleted",
 		error: "This resolution has already deleted or committed a copy" }), /already deleted or committed/);
 });
