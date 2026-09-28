@@ -114,7 +114,7 @@ async function cmdLog() {
 		const [, hostArg, glob] = positionals;
 		if (!hostArg || !glob) fail(usage);
 		const host = Number(hostArg);
-		if (!Number.isInteger(host)) fail(`log dump: host must be 1 or 2, got "${hostArg}"`);
+		if (!Number.isInteger(host)) fail(`log dump: host must be an integer host number such as 1 or 2, got "${hostArg}"`);
 		const matches = logq.listDumps(host, glob);
 		if (!matches.length) {
 			fail(`log dump: no file matching "${glob}" in host ${host}'s script-output.\n`
