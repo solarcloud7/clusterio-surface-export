@@ -225,6 +225,28 @@ test("lineage seams (h): a deletion that keeps refusing can be abandoned with pr
 	}
 });
 
+test("lineage seams (h2): abandoning after a deletion whose reply was lost finishes it instead of reporting the copy restored", { skip }, async () => {
+	const { c, index } = await rolledBackSource({ keepDestinationCopy: false });
+	try {
+		const entry = await conflictFor(c, 1, index);
+		const send = c.controller.controller.sendTo;
+		c.controller.controller.sendTo = async (target, message) => {
+			const reply = await send(target, message);
+			if (message.constructor.name === "DeleteSourcePlatformRequest") {
+				c.controller.controller.sendTo = send;
+				throw new Error("Session Closed");
+			}
+			return reply;
+		};
+		const id = requestId("stale_copy");
+		const lost = await resolve(c, entry, "stale_copy", id);
+		assert.deepEqual([lost.status, lost.step], ["in_progress", "delete"], JSON.stringify(lost));
+		assert.equal((await c.platform(1, index)).present, false, "the deletion did not run before its reply was lost");
+		const abandoned = await c.controller.resolver.abandon(id);
+		assert.equal(abandoned.status, "completed", `a deletion that already happened was reported abandoned: ${JSON.stringify(abandoned)}`);
+	} finally { await c.close(); }
+});
+
 test("lineage seams (i): a release without a controller-issued token is refused", { skip }, async () => {
 	const c = await createCluster({ binary });
 	try {

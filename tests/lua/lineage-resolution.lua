@@ -277,7 +277,9 @@ do
             assert(recorded == nil and env.storage.async_jobs[job].export_data.lineage == nil,
                 "a resolution snapshot minted a lineage for a copy it is about to delete")
             assert(env.storage.async_jobs[job].purpose == "resolution")
+            assert(env.storage.async_jobs[job].export_data.purpose == "resolution", "a resolution snapshot can be sent as a transfer")
         else
+            assert(env.storage.async_jobs[job].export_data.purpose == nil)
             minted = recorded and recorded.lineage
         end
     end
@@ -429,4 +431,26 @@ do
     assert(lock.phase == "committed" and lock.transfer_job_id == "retired-24" and lock.resolution_request_id == nil)
     assert(not w.apply(retarget).success, "an abandoned resolution retargeted the restored tombstone")
     print("PASS retarget needs the copy held by its resolution and never moves a committed deletion")
+end
+
+do
+    local w = world()
+    w.add(25, 250)
+    w.tombstone(25, "retired-25")
+    w.set_queue("snap-25")
+    local retarget = {requestId = "rt-25", step = "retarget", platformIndex = 25, platformUid = "old:250", exportId = "retired-25"}
+    assert(w.apply({requestId = "rt-25", step = "prepare_delete", platformIndex = 25, platformUid = "old:250"}).success)
+    assert(w.apply(retarget).success)
+    w.env.storage.locked_platforms[25] = nil
+    w.env.game.forces.player.platforms[25] = nil
+    assert(w.apply(retarget).success, "a retried deletion whose copy is already gone could not be retargeted, so it can never finish")
+    w.add(26, 260)
+    w.tombstone(26, "retired-26")
+    w.set_queue("snap-26")
+    local again = {requestId = "rt-26", step = "retarget", platformIndex = 26, platformUid = "old:260", exportId = "retired-26"}
+    assert(w.apply({requestId = "rt-26", step = "prepare_delete", platformIndex = 26, platformUid = "old:260"}).success)
+    assert(w.apply(again).success)
+    assert(w.apply({requestId = "rt-26", step = "restore", platformIndex = 26, platformUid = "old:260"}).success)
+    assert(not w.apply(again).success, "an abandoned resolution retargeted the restored tombstone")
+    print("PASS a retargeted deletion can be retried after its copy is gone, but never after it was abandoned")
 end

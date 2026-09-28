@@ -127,6 +127,7 @@ end
 local function retarget(request)
 	local record = records()[request.requestId]
 	if not (record and owns(record, request, "delete")) then return {success = false, error = "Resolution request belongs to another platform"} end
+	if record.retired_export_id ~= nil and record.retired_export_id == request.exportId and not record.abandoned then return {success = true} end
 	local lock = SurfaceLock.get_lock_data(request.platformIndex)
 	if not (lock and lock.resolution_request_id == request.requestId and type(lock.resolution_restore) == "table") then
 		return {success = false, error = "The copy is not held for this resolution"}

@@ -26,7 +26,8 @@ modules["utils/surface-lock"] = {unlock_platform = function(index, _, _, _, job_
     mark("unlock"); return true
 end}
 modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap = function() mark("prune") end,
-    record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player") end}
+    record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player")
+        assert(data.purpose == purpose, "the cached export lost its resolution purpose") end}
 modules["utils/platform-schedule"] = {summarize = function() return {} end}
 modules["export_scanners/entity-scanner"] = {scan_items_on_ground = function() return {} end}
 modules["export_scanners/inventory-scanner"] = {extract_belt_items = function() mark("belt_read"); return {} end}
@@ -34,7 +35,7 @@ modules["export_scanners/fluid-registry"] = {list = function() return {} end}
 modules["export_scanners/source-cargo-integrity"] = {record = noop, verdict = function() return {ok = true} end}
 modules["validators/verification"] = {count_all_items = function() mark("verify"); return {} end,
     count_fluid_segments = function() return {} end}
-local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture", platform_uid = "fixture:copy"}
+local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture", platform_uid = "fixture:copy", purpose = purpose}
 modules["utils/json-compat"] = {encode_json_compat = function(data)
     if data == payload then encodes = encodes + 1; return '{"captured":true}' end
     return '{}'
@@ -128,6 +129,7 @@ scenario(true, nil, false, true)
 scenario(true, nil, false, "refused")
 scenario(false, nil, true)
 scenario(true, nil, false, nil, "resolution")
+scenario(true, nil, true, nil, "resolution")
 scenario(false, "surface_export_complete")
 for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
     scenario(false, phase)

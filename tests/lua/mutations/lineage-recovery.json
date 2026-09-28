@@ -525,5 +525,50 @@
 		"tests": [
 			"tests/lua/platform-lineage.lua"
 		]
+	},
+	{
+		"name": "a retargeted deletion can be retried after its copy is gone",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif record.retired_export_id ~= nil and record.retired_export_id == request.exportId and not record.abandoned then return {success = true} end\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an abandoned resolution is never retargeted again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "record.retired_export_id == request.exportId and not record.abandoned then",
+		"replace": "record.retired_export_id == request.exportId then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution export carries its purpose in the payload",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "\t\t\tpurpose = purpose,\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "the sectioned cache envelope keeps the resolution purpose",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "purpose = job.export_data.purpose,\n\t\t\ttimestamp = job.export_data.timestamp, stats",
+		"replace": "\n\t\t\ttimestamp = job.export_data.timestamp, stats",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "the compressed cache envelope keeps the resolution purpose",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "purpose = job.export_data.purpose,\n\t\t\ttick = job.export_data.tick,",
+		"replace": "\n\t\t\ttick = job.export_data.tick,",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
 	}
 ]
