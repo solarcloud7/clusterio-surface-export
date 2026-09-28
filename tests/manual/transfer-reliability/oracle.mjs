@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 import { VOLUME_SUFFIXES } from "./backup-storage.mjs";
+import { analyzeLineage } from "./lineage-resolution.mjs";
 
 export function performanceCargo(extra) {
   assert.ok(extra===0 || extra===512,"fixed fixture size required");
@@ -64,6 +65,7 @@ export function analyze(report) {
     return {verdict:"PASS",reason:"Save game mode retained pending ownership; normal recovery preserved cargo"};
   }
   if(["save-policy-game","save-policy-history","snapshot-recovery"].includes(report.case)) return analyzeSavePolicy(report);
+  if(report.case.startsWith("lineage-")) return analyzeLineage(report);
   assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source","restore-old-destination"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="coordinated-restore") return analyzeBackup(report);

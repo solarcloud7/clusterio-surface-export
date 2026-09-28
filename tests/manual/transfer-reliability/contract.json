@@ -27,6 +27,9 @@
       "control": "Latest destination checkpoint reload preserves exact cargo and completed history before stale-save injection",
       "forbiddenAssists": ["Restoring the source or controller", "Changing recovery timers, receipts, journals, cargo or verdicts", "Re-importing an artifact", "Pausing the simulation"],
       "limits": ["Read-only observation continues after a violation to record normal recovery", "Missing physical platforms do not prove every backup or cached payload is lost", "History status records a past operation, not a current physical inventory", "Two planned live runs: injected cleanup and acceptance; at most one harness-repair repeat"]},
+    {"id": "lineage-return-trip", "purpose": "Transfer A->B, reload A's older save, require the B->A return trip to be refused without loss, resolve A's copy with keep_other, then complete the return trip with exact cargo"},
+    {"id": "lineage-stale-copy", "purpose": "Transfer A->B, reload both older saves, delete A's rolled-back copy with stale_copy under its retirement, then deliberately restore its snapshot with exact cargo"},
+    {"id": "lineage-keep-this", "purpose": "Transfer A->B, reload A's older save, place a saved offline player aboard B's copy when the seed has one, resolve with keep_this and require the player moved to Nauvis and exact cargo", "limits": ["No connected client; the passenger is a saved offline LuaPlayer when the seed provides one"]},
     {"id": "performance", "purpose": "Compare fixed small/large fixtures with operation timing disabled, normal timing, and batch timing; include scheduler and queue setup boundaries"}
   ]
 }
