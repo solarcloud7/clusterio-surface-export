@@ -9,6 +9,7 @@ const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-or
 const { isSessionLostError } = require(path.join(distNode, "helpers.js"));
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const messages = require(path.join(distNode, "messages.js"));
+const { LineageRegistry, withLineage, mirrorHold } = require("./lineage-harness.cjs");
 
 function sessionLost(message = "Session Closed") {
 	return Object.assign(new Error(message), { code: "SessionLost" });
@@ -27,9 +28,10 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		isInstanceOnline: (id) => (calls.offlineInstances ? !calls.offlineInstances.has(id) : true),
 		autoPauseRefusal: async (id, role) => (calls.autoPaused?.has(id) ? `${role} instance-${id} has auto-pause on` : null),
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
+		lineageRegistry: new LineageRegistry(),
 		platformStorage: {
 			get: () => ({
-				exportData: { platform: { force: "player" } },
+				exportData: withLineage({ platform: { force: "player" } }),
 				exportMetrics: null,
 				platformName: "test-platform",
 				platformIndex: 3,
@@ -57,7 +59,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 					calls.importSends++;
 					return importSendResult(msg);
 				}
-				return sourceSendResult(msg);
+				return mirrorHold(activeTransfers, msg, sourceSendResult(msg));
 			},
 		},
 	};
@@ -1306,7 +1308,7 @@ test("compressed source identity and force survive canonical promotion", async t
         {section_codec:1,section_count:1,sections:["test"]}]) {
         const h=makeHarness(() => ({success:true}));
         t.after(() => h.orch.stop());
-        h.plugin.platformStorage.get=()=>({exportData:{...envelope,platform_uid:"selected-copy",force_name:"engineers"},
+        h.plugin.platformStorage.get=()=>({exportData:withLineage({...envelope,platform_uid:"selected-copy",force_name:"engineers"}),
             platformName:"renamed",platformIndex:3,instanceId:1,size:123});
         const result=await h.orch.transferPlatform("1:force-export",2);
         assert.equal(result.success,true);
@@ -1384,5 +1386,146 @@ test("passenger manifests stay out of transfer summaries and transfer info", () 
 	for (const view of [logger.buildTransferInfo(transfer), logger.buildTransferSummary(transfer.transferId, transfer),
 		logger.buildDetailedTransferSummary(transfer.transferId, transfer)]) {
 		assert.equal(JSON.stringify(view).includes("alice"), false);
+	}
+});
+
+const HARNESS_LINEAGE = require("./lineage-harness.cjs").HARNESS_LINEAGE;
+
+function lineageHarness(onStep = () => undefined) {
+	const order = [];
+	const h = makeHarness(() => ({ success: true }), msg => {
+		if (msg.constructor.name === "TransferStatusUpdate") return { success: true };
+		const step = msg.action || msg.constructor.name;
+		order.push(step);
+		return onStep(step, msg) ?? { success: true };
+	});
+	const commit = h.plugin.lineageRegistry.commitTransfer.bind(h.plugin.lineageRegistry);
+	h.plugin.lineageRegistry.commitTransfer = async value => { order.push("registry"); return commit(value); };
+	return { ...h, order };
+}
+
+test("a lineage transfer commits the registry after the source deletion acknowledgement and before activation", async () => {
+	const h = lineageHarness();
+	const result = await h.orch.transferPlatform("1:lineage", 2);
+	const transfer = onlyTransfer(h.activeTransfers);
+	clearTimeout(transfer.validationTimeout);
+	assert.deepEqual([h.calls.pendingPersisted.lineage, h.calls.pendingPersisted.lineageGeneration], [HARNESS_LINEAGE, 0],
+		"the recovery intent does not carry the lineage");
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.deepEqual(h.order, ["verify", "DeleteSourcePlatformRequest", "registry", "go_live"]);
+	assert.equal(transfer.status, "completed");
+	const saved = h.plugin.lineageRegistry.get(HARNESS_LINEAGE);
+	assert.deepEqual([saved.instanceId, saved.generation, saved.lastExportId, saved.source], [2, 1, result.transferId, "transfer"]);
+});
+
+test("the destination import carries the lineage only through the controller transfer envelope", async () => {
+	const imports = [];
+	const h = makeHarness(msg => { imports.push(msg.toJSON().exportData); return { success: true }; });
+	await h.orch.transferPlatform("1:envelope", 2);
+	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+	assert.deepEqual([imports[0]._lineage, imports[0]._lineageGeneration], [HARNESS_LINEAGE, 0]);
+});
+
+test("an export without a lineage is refused before anything is imported", async () => {
+	for (const exportData of [{ platform: { force: "player" } }, { lineage: "1:15", generation: 0 }, { lineage: HARNESS_LINEAGE, generation: -1 }]) {
+		const h = makeHarness(() => assert.fail("an unlineaged export reached the destination"));
+		h.plugin.platformStorage.get = () => ({ exportData, platformName: "p", platformIndex: 3, instanceId: 1, size: 1 });
+		const result = await h.orch.transferPlatform("1:legacy-export", 2);
+		assert.equal(result.success, false);
+		assert.equal(result.safeToUnlockSource, true, "the untouched source must be released");
+		assert.match(result.error, /no platform lineage/);
+		assert.equal(h.activeTransfers.size, 0);
+	}
+});
+
+for (const [name, hold, expected] of [
+	["a hold without a lineage", {}, /disagree/],
+	["a hold with another lineage", { lineage: "lineage:other:3", generation: 1 }, /does not match/],
+	["a hold at the wrong generation", { lineage: HARNESS_LINEAGE, generation: 2 }, /does not match/],
+]) {
+	test(`${name} is refused before the source is deleted`, async () => {
+		const h = lineageHarness(step => step === "verify" ? { success: true, lineage: null, ...hold } : undefined);
+		const result = await h.orch.transferPlatform("1:mismatch", 2);
+		clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+		await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+		const transfer = onlyTransfer(h.activeTransfers);
+		assert.equal(transfer.status, "cleanup_failed");
+		assert.match(transfer.error, expected);
+		assert.deepEqual(h.order, ["verify"], "the source was deleted for a mismatched destination");
+		assert.equal(h.calls.pendingRemoved, undefined);
+		assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE), undefined);
+	});
+}
+
+test("a registry that already records another holder refuses before deletion", async () => {
+	const h = lineageHarness();
+	await h.plugin.lineageRegistry.update(draft => draft.set(HARNESS_LINEAGE, { instanceId: 9, generation: 0, platformName: "p",
+		forceName: "player", lastExportId: null, updatedAt: 1, source: "claim" }));
+	const result = await h.orch.transferPlatform("1:held-elsewhere", 2);
+	clearTimeout(onlyTransfer(h.activeTransfers).validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.equal(onlyTransfer(h.activeTransfers).status, "cleanup_failed");
+	assert.match(onlyTransfer(h.activeTransfers).error, /both copies remain protected/);
+	assert.deepEqual(h.order, ["verify"]);
+	assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE).instanceId, 9);
+});
+
+test("a registry write that fails after deletion keeps the hold and the intent, and recovery finishes the commit", async () => {
+	const h = lineageHarness();
+	let failCommit = true;
+	const commit = h.plugin.lineageRegistry.commitTransfer;
+	h.plugin.lineageRegistry.commitTransfer = async value => {
+		if (failCommit) { h.order.push("registry-failed"); throw new Error("disk full"); }
+		return commit(value);
+	};
+	const result = await h.orch.transferPlatform("1:write-fails", 2);
+	const transfer = onlyTransfer(h.activeTransfers);
+	clearTimeout(transfer.validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.match(transfer.error, /Source deleted; lineage registry not updated: .*disk full/);
+	assert.deepEqual(h.order, ["verify", "DeleteSourcePlatformRequest", "registry-failed"], "the destination went live without a registry commit");
+	assert.equal(h.calls.pendingRemoved, undefined, "the recovery intent was dropped");
+	failCommit = false;
+	h.plugin.pendingTransfers = new Map([[result.transferId, h.calls.pendingPersisted]]);
+	await h.orch.recoverPendingTransfers();
+	assert.equal(transfer.status, "completed");
+	assert.deepEqual(h.order.slice(3), ["verify", "DeleteSourcePlatformRequest", "registry", "go_live"]);
+	assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE).generation, 1);
+	assert.equal(h.calls.importSends, 1, "recovery repeated the import");
+});
+
+test("a lost activation reply retries the idempotent commit without advancing the generation twice", async () => {
+	let lose = true;
+	const h = lineageHarness(step => {
+		if (step === "go_live" && lose) { lose = false; throw sessionLost(); }
+		return undefined;
+	});
+	const result = await h.orch.transferPlatform("1:activation-lost", 2);
+	const transfer = onlyTransfer(h.activeTransfers);
+	clearTimeout(transfer.validationTimeout);
+	await h.orch.handleTransferValidation({ transferId: result.transferId, success: true });
+	assert.equal(transfer.status, "cleanup_failed");
+	h.plugin.pendingTransfers = new Map([[result.transferId, h.calls.pendingPersisted]]);
+	await h.orch.recoverPendingTransfers();
+	assert.equal(transfer.status, "completed");
+	const saved = h.plugin.lineageRegistry.get(HARNESS_LINEAGE);
+	assert.deepEqual([saved.instanceId, saved.generation], [2, 1]);
+});
+
+test("recovery restores the lineage from the persisted intent, and a legacy intent commits without the registry", async () => {
+	for (const legacy of [false, true]) {
+		const h = lineageHarness(step => step === "verify" && legacy ? { success: true, lineage: null } : undefined);
+		const intent = { transferId: "1:recovered", sourceExportId: "recovered", sourceInstanceId: 1, targetInstanceId: 2,
+			sourcePlatformIndex: 3, sourcePlatformName: "p", forceName: "player", startedAt: 1, exportId: "1:recovered",
+			...(legacy ? {} : { lineage: HARNESS_LINEAGE, lineageGeneration: 0 }) };
+		h.plugin.pendingTransfers = new Map([[intent.transferId, intent]]);
+		h.plugin.persistedTransactionLogs = [];
+		await h.orch.recoverPendingTransfers();
+		const transfer = onlyTransfer(h.activeTransfers);
+		assert.equal(transfer.status, "completed", legacy ? "legacy" : "lineage");
+		assert.deepEqual(h.order, legacy ? ["verify", "DeleteSourcePlatformRequest", "go_live"]
+			: ["verify", "DeleteSourcePlatformRequest", "registry", "go_live"]);
+		assert.equal(h.plugin.lineageRegistry.get(HARNESS_LINEAGE)?.generation, legacy ? undefined : 1);
 	}
 });

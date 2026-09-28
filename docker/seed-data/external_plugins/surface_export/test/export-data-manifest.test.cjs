@@ -34,6 +34,8 @@ const TS_INJECTED = "ts_injected";
 
 const MANIFEST = [
 	{ name: "platform_uid", declared: true, origin: LUA_ENVELOPE },
+	{ name: "lineage", declared: true, origin: LUA_ENVELOPE },
+	{ name: "generation", declared: true, origin: LUA_ENVELOPE },
 	{ name: "force_name", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compressed", declared: true, origin: LUA_ENVELOPE },
 	{ name: "compression", declared: true, origin: LUA_ENVELOPE },
@@ -76,6 +78,18 @@ const MANIFEST = [
 		origin: TS_INJECTED,
 		note: "written at lib/transfer-orchestrator.ts:186 and read at instance.ts:536 and at "
 			+ "module/core/import-pipeline.lua:321",
+	},
+	{
+		name: "_lineage",
+		declared: true,
+		origin: TS_INJECTED,
+		note: "written by lib/transfer-orchestrator.ts for controller transfers and read by module/utils/platform-lineage.lua",
+	},
+	{
+		name: "_lineageGeneration",
+		declared: true,
+		origin: TS_INJECTED,
+		note: "written by lib/transfer-orchestrator.ts for controller transfers and read by module/utils/platform-lineage.lua",
 	},
 	{
 		name: "_operationId",
@@ -141,7 +155,7 @@ function envelopeKeys(source, discriminator = "compressed") {
 
 test("internal section envelope is explicit and distinct from the downloadable envelope", () => {
 	assert.deepEqual(envelopeKeys(exportPipelineSource, "section_codec"), [
-		"force_name", "platform_name", "platform_uid", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
+		"force_name", "generation", "lineage", "platform_name", "platform_uid", "section_codec", "section_count", "sections", "stats", "tick", "timestamp", "verification",
 	]);
 });
 

@@ -7,6 +7,7 @@ const path = require("node:path");
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
 const messages = require(path.join(distNode, "messages.js"));
+const { LineageRegistry, withLineage } = require("./lineage-harness.cjs");
 
 function makeHarness() {
 	const noop = () => {};
@@ -18,9 +19,10 @@ function makeHarness() {
 		removePendingTransfer: noop,
 		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
+		lineageRegistry: new LineageRegistry(),
 		platformStorage: {
 			get: () => ({
-				exportData: { platform: { force: "player" } },
+				exportData: withLineage({ platform: { force: "player" } }),
 				exportMetrics: { instanceAsyncExportMs: 450, instanceAsyncExportTicks: 27 },
 				platformName: "lab-transfer-fixture-v1",
 				platformIndex: 5,
