@@ -473,15 +473,6 @@
 		]
 	},
 	{
-		"name": "abandon recognizes a committed deletion under the original retirement",
-		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
-		"find": "\t\tor (record.retired_export_id and lock.transfer_job_id == record.retired_export_id)) then",
-		"replace": "\t\tor false) then",
-		"tests": [
-			"tests/lua/lineage-resolution.lua"
-		]
-	},
-	{
 		"name": "authorize refuses a usable platform",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
 		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tall[request.requestId] = {action = \"release\"",

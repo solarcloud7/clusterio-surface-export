@@ -246,8 +246,7 @@ local function restore(request)
 	end
 	local lock = SurfaceLock.get_lock_data(request.platformIndex)
 	if lock and SurfaceLock.source_lock_is_committed(lock) and (lock.resolution_request_id == request.requestId
-		or (record.job_id and lock.transfer_job_id == record.job_id)
-		or (record.retired_export_id and lock.transfer_job_id == record.retired_export_id)) then
+		or (record.job_id and lock.transfer_job_id == record.job_id)) then
 		return {success = false, committed = true, error = "The deletion is already committed"}
 	end
 	if lock and lock.resolution_request_id == request.requestId then

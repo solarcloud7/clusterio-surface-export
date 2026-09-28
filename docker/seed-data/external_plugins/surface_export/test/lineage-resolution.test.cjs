@@ -149,6 +149,7 @@ test("the conflict list evaluates live, labels hints and marks unchecked servers
 	listing = await c.resolver.list(I);
 	assert.equal(listing.conflicts[0].liveVerdict, "duplicate", "a returning holder did not turn the stored verdict into a decision");
 	assert.deepEqual(listing.conflicts[0].actions, ["keep_this", "keep_other"]);
+	assert.equal(listing.conflicts[0].holderPassengers, 4, "the listing does not show who is aboard the other copy");
 	assert.equal(listing.conflicts[0].storedReason, "duplicate");
 	assert.equal(listing.conflicts[0].passengers, 2);
 	assert.equal(c.registry.get(L).instanceId, H, "listing wrote to the registry");

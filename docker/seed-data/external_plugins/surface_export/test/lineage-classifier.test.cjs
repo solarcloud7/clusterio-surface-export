@@ -208,6 +208,18 @@ test("only history that implies a registry write makes a missing registry unread
 	}
 });
 
+test("an in-progress resolution holds its lineage in transit until it ends", async () => {
+	const { plugin } = controllerHarness();
+	assert.equal(plugin.lineageInTransit(L), false);
+	const record = { requestId: "req-00000001", signature: "[]", action: "keep_this", instanceId: I, platformIndex: 3, platformUid: "boot-old:15",
+		step: "delete", status: "in_progress", lineage: L };
+	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(record.requestId, record); });
+	assert.equal(plugin.lineageInTransit(L), true, "a transfer or adoption could start while a resolution of the lineage is in progress");
+	assert.equal(plugin.lineageInTransit("lineage:boot-old:16"), false);
+	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(record.requestId, { ...record, status: "failed", step: "failed" }); });
+	assert.equal(plugin.lineageInTransit(L), false);
+});
+
 test("pending intents and completed history are hints the controller owns", async () => {
 	const { plugin } = controllerHarness();
 	plugin.pendingTransfers.set("1:job", { transferId: "1:job", sourceInstanceId: I, targetInstanceId: J, sourcePlatformIndex: 3,

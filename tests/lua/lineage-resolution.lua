@@ -200,8 +200,6 @@ do
     assert(not w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4}).success,
         "a release without an authorized resolution succeeded")
     assert(w.authorize("adopt-1", 8, "old:80").success)
-    assert(not w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4,
-        token = "another-token-0123456789abcdef0123"}).success, "a release with another token succeeded")
     local blocked = w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4})
     assert(not blocked.success and p.hidden, "an adoption released a copy while another local copy carries its lineage")
     w.env.storage.surface_export_lineages[9] = nil
@@ -209,6 +207,10 @@ do
     assert(not w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4}).success,
         "an adoption released a copy while a destination hold carries its lineage")
     w.env.storage.destination_holds = nil
+    local forged = w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4,
+        token = "another-token-0123456789abcdef0123"})
+    assert(not forged.success and p.hidden, "a release with another token succeeded")
+    assert(forged.error == "The resolution was not authorized for this platform", tostring(forged.error))
     local adopted = w.apply({requestId = "adopt-1", step = "release", platformIndex = 8, platformUid = "old:80", lineage = "lineage:a:80", generation = 4})
     assert(adopted.success and not p.hidden and w.env.storage.surface_export_lineages[8].generation == 4)
     assert(w.env.storage.source_recovery_notices[8] == nil)
@@ -230,6 +232,12 @@ do
     assert(w.apply({requestId = "new-1", step = "mint", platformIndex = 11, platformUid = "old:110"}).lineage == minted.lineage)
     assert(w.apply({requestId = "new-1", step = "release", platformIndex = 11, platformUid = "old:110", lineage = minted.lineage, generation = 0}).success)
     assert(not m.hidden and w.env.storage.locked_platforms[11] == nil)
+    w.add(14, 140)
+    w.quarantine(14, "legacy_unclassified")
+    assert(w.authorize("new-3", 14, "old:140").success)
+    w.env.storage.locked_platforms[14] = nil
+    assert(not w.apply({requestId = "new-3", step = "mint", platformIndex = 14, platformUid = "old:140"}).success,
+        "a platform released after authorization was given a new lineage")
     w.add(13, 130)
     assert(not w.authorize("new-2", 13, "old:130").success and not w.apply({requestId = "new-2", step = "mint", platformIndex = 13, platformUid = "old:130"}).success,
         "a usable platform was given a new lineage by a resolution")
@@ -386,4 +394,39 @@ do
     local kept = w.apply({requestId = "refresh-2", step = "release", platformIndex = 22, platformUid = "old:220"})
     assert(kept.success and kept.platformUid == "old:220", "an ordinary release replaced the copy's identity")
     print("PASS releasing a journal-matched copy refreshes its identity; an ordinary release keeps it")
+end
+
+do
+    local w = world()
+    w.add(23, 230)
+    w.quarantine(23, "duplicate")
+    for _, token in ipairs({false, "short-token"}) do
+        for _, step in ipairs({"prepare_delete", "authorize", "mint"}) do
+            local refused = w.apply({requestId = "tok-" .. step, step = step, platformIndex = 23, platformUid = "old:230", token = token})
+            assert(not refused.success, step .. " accepted a missing or short token")
+        end
+    end
+    assert(w.env.storage.locked_platforms[23].kind == "quarantine" and #w.queued == 0, "a refused token changed the copy")
+    assert(w.apply({requestId = "del-23", step = "prepare_delete", platformIndex = 23, platformUid = "old:230"}).success)
+    local released = w.apply({requestId = "del-23", step = "release", platformIndex = 23, platformUid = "old:230"})
+    assert(not released.success and released.error == "The resolution was not authorized for this platform",
+        "a deleting resolution's record authorized a release: " .. tostring(released.error))
+    print("PASS every resolution step needs a controller-issued token, and a deletion's record never authorizes a release")
+end
+
+do
+    local w = world()
+    w.add(24, 240)
+    w.tombstone(24, "retired-24")
+    w.set_queue("snap-24")
+    local retarget = {requestId = "rt-24", step = "retarget", platformIndex = 24, platformUid = "old:240", exportId = "retired-24"}
+    assert(w.apply({requestId = "rt-24", step = "prepare_delete", platformIndex = 24, platformUid = "old:240"}).success)
+    local lock = w.env.storage.locked_platforms[24]
+    lock.phase = "committed"
+    assert(not w.apply(retarget).success, "a committed deletion was moved to another retirement")
+    lock.phase = "pre_commit"
+    assert(w.apply({requestId = "rt-24", step = "restore", platformIndex = 24, platformUid = "old:240"}).success)
+    assert(lock.phase == "committed" and lock.transfer_job_id == "retired-24" and lock.resolution_request_id == nil)
+    assert(not w.apply(retarget).success, "an abandoned resolution retargeted the restored tombstone")
+    print("PASS retarget needs the copy held by its resolution and never moves a committed deletion")
 end
