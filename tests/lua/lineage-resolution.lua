@@ -371,3 +371,19 @@ do
     assert(w.lineage.get(p) == minted and w.env.storage.locked_platforms[20] == nil, "releasing an unminted claim did not record its lineage")
     print("PASS releasing an unminted claim records exactly the lineage the controller claimed")
 end
+
+do
+    local w = world()
+    w.add(21, 210)
+    w.quarantine(21, "legacy_unclassified")
+    assert(w.authorize("refresh-1", 21, "old:210").success)
+    local released = w.apply({requestId = "refresh-1", step = "release", platformIndex = 21, platformUid = "old:210", refreshIdentity = true})
+    assert(released.success and released.platformUid and released.platformUid ~= "old:210",
+        "a released journal-matched copy kept the retired identity and would be tombstoned again at the next start")
+    w.add(22, 220)
+    w.quarantine(22, "reconcile_error")
+    assert(w.authorize("refresh-2", 22, "old:220").success)
+    local kept = w.apply({requestId = "refresh-2", step = "release", platformIndex = 22, platformUid = "old:220"})
+    assert(kept.success and kept.platformUid == "old:220", "an ordinary release replaced the copy's identity")
+    print("PASS releasing a journal-matched copy refreshes its identity; an ordinary release keeps it")
+end

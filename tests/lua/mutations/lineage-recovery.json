@@ -331,8 +331,8 @@
 	{
 		"name": "a retried prepare reuses its snapshot job",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
-		"find": "\tlocal record = all[request.requestId]\n\tif record then\n\t\tif record.platform_index ~= request.platformIndex or record.platform_uid ~= request.platformUid or record.action ~= \"delete\" then",
-		"replace": "\tlocal record = all[request.requestId]\n\tif false then\n\t\tif record.platform_index ~= request.platformIndex or record.platform_uid ~= request.platformUid or record.action ~= \"delete\" then",
+		"find": "\tif record then\n\t\tif not owns(record, request, \"delete\") then return {success = false, error = \"Resolution request belongs to another platform\"} end\n\t\treturn {success = true, jobId = record.job_id}",
+		"replace": "\tif false then\n\t\tif not owns(record, request, \"delete\") then return {success = false, error = \"Resolution request belongs to another platform\"} end\n\t\treturn {success = true, jobId = record.job_id}",
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
 		]
@@ -358,8 +358,8 @@
 	{
 		"name": "a deleting resolution never releases its platform",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
-		"find": "\tif record and record.action == \"delete\" then",
-		"replace": "\tif false then",
+		"find": "if not record or record.action ~= \"release\" or record.platform_index ~= request.platformIndex",
+		"replace": "if not record or record.platform_index ~= request.platformIndex",
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
 		]
@@ -367,7 +367,7 @@
 	{
 		"name": "an adopted tombstone gets a fresh identity",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
-		"find": "\tif retired_export_id then uid = SourceRecovery.fresh_identity(platform, retired_export_id) end\n",
+		"find": "\tif retired_export_id or request.refreshIdentity == true then uid = SourceRecovery.fresh_identity(platform, retired_export_id) end\n",
 		"replace": "",
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
@@ -398,6 +398,141 @@
 		"replace": "\tif false and (lock.resolution_request_id == request.requestId",
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution step needs a controller-sized token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "return type(token) == \"string\" and #token >= 32",
+		"replace": "return true",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution record is owned only with its token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "and record.action == action and record.token == request.token",
+		"replace": "and record.action == action",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "release needs the authorizing token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\tor record.token ~= request.token then",
+		"replace": "\t\tthen",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget keeps a retired copy on its own retirement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if original ~= nil and original ~= request.exportId then return",
+		"replace": "if false then return",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget waits for the resolution snapshot",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if (storage.async_jobs or {})[record.job_id] then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget needs the copy held by this resolution",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if not (lock and lock.resolution_request_id == request.requestId and type(lock.resolution_restore) == \"table\") then",
+		"replace": "if not lock then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget refuses a committed deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif SurfaceLock.source_lock_is_committed(lock) then return {success = false, error = \"The deletion is already committed\"} end\n\tif (storage.async_jobs",
+		"replace": "\tif (storage.async_jobs",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "abandon reports a copy that is already gone as a finished deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if not platform or SourceRecovery.platform_uid(platform) ~= record.platform_uid then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "abandon recognizes a committed deletion under the original retirement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\tor (record.retired_export_id and lock.transfer_job_id == record.retired_export_id)) then",
+		"replace": "\t\tor false) then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "authorize refuses a usable platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tall[request.requestId] = {action = \"release\"",
+		"replace": "\tall[request.requestId] = {action = \"release\"",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "mint needs an authorized record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif not record then return {success = false, error = \"The resolution was not authorized for this platform\"} end\n\tlocal platform, _, err = verify(request)\n\tif not platform then return {success = false, error = err} end\n\tif record.lineage",
+		"replace": "\tif not record then record = {} end\n\tlocal platform, _, err = verify(request)\n\tif not platform then return {success = false, error = err} end\n\tif record.lineage",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an unminted claim release records only the mintable lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\t\tand PlatformLineage.mint_value(storage.source_recovery_epoch, platform) == request.lineage\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "release refreshes the identity of a journal-matched copy",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if retired_export_id or request.refreshIdentity == true then",
+		"replace": "if retired_export_id then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a destination ignores only its own arriving hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if type(hold) == \"table\" and hold.lineage == lineage and transfer_id ~= except_transfer_id then return true end",
+		"replace": "if type(hold) == \"table\" and hold.lineage == lineage then return true end",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a destination reports another local platform with the lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "\tif held_by_other(lineage, except_index) then return true end\n\tfor transfer_id",
+		"replace": "\tfor transfer_id",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
 		]
 	}
 ]

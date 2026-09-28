@@ -147,6 +147,16 @@ do
     assert(held.present and held.held and held.generation == 3, "a held destination copy was reported absent")
     assert(not lineage.presence("epoch:77"), "presence accepted a per-copy uid")
     print("PASS presence counts live records and destination holds")
+
+    local minted_index
+    for index, record in pairs(env.storage.surface_export_lineages) do if record.lineage == minted then minted_index = index end end
+    assert(minted_index)
+    assert(lineage.local_copy(minted, 99, "other-transfer") == true, "a local platform carrying the lineage was not reported")
+    assert(lineage.local_copy(minted, minted_index, "other-transfer") == false, "the arriving copy counted as another local copy")
+    assert(lineage.local_copy("lineage:epoch:77", 99, "transfer") == false, "the transfer's own hold counted as another local copy")
+    assert(lineage.local_copy("lineage:epoch:77", 99, "other-transfer") == true, "another destination hold was not reported")
+    assert(lineage.local_copy("epoch:77", 99, "other-transfer") == false)
+    print("PASS a destination reports every other local copy of the lineage except the arriving hold")
 end
 
 do
