@@ -65,6 +65,8 @@ for _, committed in ipairs({false, true}) do
             },
         }
         modules["utils/transfer-receipts"] = assert(loadfile(root .. "utils/transfer-receipts.lua", "t", env))()
+        modules["utils/platform-lineage"] = {forget = function(index)
+            assert(deleted, "lineage forgotten before the engine deleted the source"); env.storage.forgotten = index end}
         env.require = function(name) return assert(modules[name:gsub("^modules/surface_export/", "")], name) end
         local remove = assert(loadfile(root .. "interfaces/remote/delete-platform-for-transfer.lua", "t", env))()
         for _, missing in ipairs({false, "", 7}) do

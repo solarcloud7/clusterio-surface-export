@@ -41,6 +41,7 @@ test("save restoration requires available recovery authority and reserves startu
 	plugin.recoveryReservations = new Map();
 	plugin.pendingTransfers = new Map(); plugin.activeTransfers = new Map();
 	plugin.orchestrator = { requestQueue: {} };
+	plugin.lineageRegistry = { loadError: null };
 	let mode = "plugin_history";
 	plugin.cfg = () => mode;
 	const begin = epoch => plugin.handleRecoveryPolicyRequest({instanceId: 1, epoch, action: "begin"}, {id: 1});
@@ -60,6 +61,9 @@ test("save restoration requires available recovery authority and reserves startu
 	plugin.orchestrator.requestQueue.admissionError = "unreadable";
 	await assert.rejects(begin("b"), /unavailable/);
 	delete plugin.orchestrator.requestQueue.admissionError;
+	plugin.lineageRegistry.loadError = "lineage registry unreadable";
+	await assert.rejects(begin("b"), /unavailable/, "an unreadable lineage registry authorized startup recovery");
+	plugin.lineageRegistry.loadError = null;
 	plugin.pendingTransfers.set("old", {sourceInstanceId: 1, targetInstanceId: 2});
 	assert.equal((await begin("b")).allowAdoption, false);
 	plugin.pendingTransfers.clear();
@@ -158,12 +162,13 @@ test("controller loadStorage migrates legacy raw source export ids without dropp
 });
 
 function makeTransferHarness() {
+	const { LineageRegistry, withLineage, presenceOf } = require("./lineage-harness.cjs");
 	const calls = { imports: [], sourceDeletes: [], storageDeletes: [] };
 	const activeTransfers = new Map();
 	const stored = {
 		exportId: "1:001_test",
 		sourceExportId: "001_test",
-		exportData: { platform: { force: "player" } },
+		exportData: withLineage({ platform: { force: "player" } }),
 		exportMetrics: null,
 		platformName: "test-platform",
 		platformIndex: 3,
@@ -177,6 +182,8 @@ function makeTransferHarness() {
 		removePendingTransfer: () => {},
 		isInstanceOnline: () => true, autoPauseRefusal: async () => null,
 		persistStorage: async () => {},
+		lineageRegistry: new LineageRegistry(),
+		lineagePresence: presenceOf(),
 		platformStorage: {
 			get: (id) => id === "1:001_test" ? stored : null,
 			delete: (id) => { calls.storageDeletes.push(id); },
@@ -211,6 +218,9 @@ function makeTransferHarness() {
 			},
 		},
 	};
+	const { mirrorHold } = require("./lineage-harness.cjs");
+	const send = plugin.controller.sendTo;
+	plugin.controller.sendTo = (dst, msg) => mirrorHold(activeTransfers, msg, send(dst, msg));
 	return { orch: new TransferOrchestrator(plugin, messages), activeTransfers, calls };
 }
 

@@ -9,7 +9,7 @@ import type { SurfaceExportState } from "./view-models";
 import { hasDebugInstance } from "./gateway/debug-mode";
 
 const fields = [
-	{ name: "surface_export.platform_source_of_truth", label: "Platform source of truth", group: "recovery", unit: "", help: "Choose how to handle platforms restored by loading an older save. Active and unresolved transfers remain protected in both modes.", applies: "Takes effect when each instance restarts.", min: 0 },
+	{ name: "surface_export.platform_source_of_truth", label: "Platform source of truth", group: "recovery", unit: "", help: "Choose how to handle platforms restored by loading an older save. Active and unresolved transfers remain protected, and a copy that another server still holds is quarantined, in both modes.", applies: "Takes effect when each instance restarts.", min: 0 },
 	{ name: "surface_export.transaction_log_detail_entries", group: "records", unit: "transfers", help: "Keep step timings and audit evidence for this many transfers. Failed transfers take priority; older transfers keep their summary and outcome.", applies: "Takes effect at the next log trim.", min: 10, max: 5000 },
 	{ name: "surface_export.max_storage_size", group: "records", unit: "files", help: "Keep this many platform files available to download. The oldest file is removed when the limit is reached. Transfer logs are separate.", applies: "Takes effect on the next stored export.", min: 1 },
 	{ name: "surface_export.transfer_validation_timeout_seconds", label: "Check delayed job status after", group: "recovery", unit: "seconds", help: "Check Lua job progress after this wait. Queued or delayed work remains pending; this does not cancel the transfer.", applies: "Takes effect on the next transfer.", min: 5, max: 120 },
@@ -123,7 +123,7 @@ export default function SettingsTab({ active, state }: { active: boolean; state?
 												<p id={`${id}-help`}>{field.help}</p>
 												<span className="se-setting-applies" id={`${id}-applies`}>{field.applies}</span>
 												{field.name === "surface_export.platform_source_of_truth" && <>
-													<p><strong>Save game:</strong> Accept restored platforms with a warning. Example: reload yesterday’s save to recover a destroyed platform. Copies on other instances remain unchanged.</p>
+													<p><strong>Save game:</strong> Accept a restored platform with a warning only when the server recorded as holding its current copy confirms the copy is gone. Example: reload yesterday’s save on both servers to recover a destroyed platform. A copy that another server still holds, or that cannot be checked, stays quarantined.</p>
 													<p><strong>Plugin history:</strong> Protect restored copies that already transferred away. Example: roll back one instance while keeping the platform that arrived elsewhere.</p>
 													{instances.map(instance => <p key={instance.instanceId}>{instance.instanceName}: {instance.status !== "running" || !instance.connected || !instance.recovery?.mode
 														? "applied mode unverified" : `${instance.recovery.mode === "save_game" ? "Save game" : "Plugin history"} applied${instance.recovery.mode !== saved[field.name] ? " · restart required" : ""}${instance.recovery.state !== "ready" ? " · recovery not ready" : ""}`}</p>)}

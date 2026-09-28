@@ -328,6 +328,13 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     end
 
     local lock = storage.locked_platforms and storage.locked_platforms[platform_index] or nil
+    if type(lock) == "table" and SurfaceLock.transfer_owns_quarantine(lock, transfer_id) then
+        local force = has_location(lock) and game.forces[lock.force_name] or nil
+        if (force_name and lock.force_name ~= force_name) or not SurfaceLock.matches_platform(lock, force and force.platforms[platform_index]) then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "platform identity mismatch" }
+        end
+        return { state = "pre_commit", transferId = transfer_id, error = nil }
+    end
     if type(lock) == "table" then
         if force_name and lock.force_name and lock.force_name ~= force_name then
             return { state = "identity_mismatch", transferId = transfer_id, error = "force mismatch" }
@@ -485,7 +492,7 @@ local function release_passengers(job_id)
     end
 end
 
-local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock)
+local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock, authority)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
 	end
@@ -496,6 +503,12 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local lock_data = storage.locked_platforms[platform_index]
     if not lock_data then
         return false, "Platform not locked: index " .. tostring(platform_index)
+    end
+    if lock_data.kind == "quarantine" and authority ~= "quarantine" and authority ~= "resolution" then
+        if SurfaceLock.transfer_owns_quarantine(lock_data, expected_job_id) then
+            return SurfaceLock.release_quarantine(platform_index, lock_data.quarantine)
+        end
+        return false, "Unlock refused: platform is quarantined by startup recovery; only a recovery resolution may release it"
     end
     local platform_name = lock_data.platform_name
     local released_job_id = lock_data.kind == "transfer" and lock_data.transfer_job_id or nil
@@ -509,9 +522,14 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local accepting_restoration = recovery_bootstrap and storage.source_recovery_ready == false
         and storage.source_recovery_mode == "save_game" and storage.source_recovery_allow_adoption == true
         and type(restored_job_id) == "string" and restored_job_id == lock_data.transfer_job_id
-    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration then
+    if SurfaceLock.source_lock_is_committed(lock_data) and not accepting_restoration
+        and not (authority == "resolution" and not lock_data.resolution_restore) then
         return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
             tostring(platform_name), tostring(platform_index))
+    end
+    if lock_data.resolution_restore then
+        SurfaceLock.restore_resolution_protection(lock_data)
+        return false, "Resolution stopped before deletion; the previous protection was restored"
     end
     if not has_location(lock_data) then
         return false, "Unlock refused: platform location unavailable; protection retained"
@@ -591,6 +609,80 @@ function SurfaceLock.unlock_current_lock(platform_index, observed_lock)
     return unlock_platform(platform_index, nil, nil, nil, nil, observed_lock)
 end
 
+function SurfaceLock.transfer_owns_quarantine(lock, job_id)
+    return type(lock) == "table" and lock.kind == "quarantine" and type(lock.quarantine) == "table"
+        and type(job_id) == "string" and job_id ~= "" and lock.quarantine.owner_job_id == job_id
+end
+
+function SurfaceLock.claim_quarantine_for_transfer(platform_index, job_id)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not SurfaceLock.transfer_owns_quarantine(lock, job_id) then return false, "quarantine belongs to another transfer" end
+    lock.kind = "transfer"
+    lock.transfer_job_id = job_id
+    lock.phase = SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    lock.released_quarantine = lock.quarantine
+    lock.quarantine = nil
+    return true, nil
+end
+
+function SurfaceLock.release_quarantine(platform_index, expected)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if type(lock) ~= "table" or lock.kind ~= "quarantine" or type(lock.quarantine) ~= "table" then
+        return false, "Platform is not quarantined"
+    end
+    if type(expected) ~= "table" or expected.reason ~= lock.quarantine.reason or expected.lineage ~= lock.quarantine.lineage
+        or expected.epoch ~= lock.quarantine.epoch then
+        return false, "Quarantine identity changed"
+    end
+    return unlock_platform(platform_index, nil, nil, nil, nil, lock, "quarantine")
+end
+
+local RESTORED_FIELDS = { "kind", "phase", "transfer_job_id", "committed_transfer_id", "committed_tick", "quarantine", "expires_tick" }
+
+function SurfaceLock.is_resolution_candidate(lock)
+    return type(lock) == "table" and not lock.resolution_restore
+        and (lock.kind == "quarantine" or (lock.kind == "transfer" and SurfaceLock.source_lock_is_committed(lock)))
+end
+
+function SurfaceLock.convert_for_resolution(platform_index, request_id)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not SurfaceLock.is_resolution_candidate(lock) then return false, "Platform is not quarantined or tombstoned" end
+    if type(request_id) ~= "string" or request_id == "" then return false, "Resolution request identity is required" end
+    local restore = {}
+    for _, field in ipairs(RESTORED_FIELDS) do restore[field] = lock[field] end
+    lock.resolution_restore = restore
+    lock.resolution_request_id = request_id
+    lock.kind = "transfer"
+    lock.phase = SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    lock.transfer_job_id = nil
+    lock.committed_transfer_id = nil
+    lock.committed_tick = nil
+    lock.quarantine = nil
+    lock.expires_tick = nil
+    return true, nil
+end
+
+function SurfaceLock.restore_resolution_protection(lock)
+    local restore = type(lock) == "table" and lock.resolution_restore
+    if type(restore) ~= "table" then return false end
+    for _, field in ipairs(RESTORED_FIELDS) do lock[field] = restore[field] end
+    lock.resolution_restore = nil
+    lock.resolution_request_id = nil
+    return true
+end
+
+function SurfaceLock.release_for_resolution(platform_index, token)
+    if storage.source_recovery_ready ~= true then return false, "Startup recovery is not ready" end
+    local record = type(token) == "string" and token ~= "" and (storage.surface_export_resolutions or {})[token] or nil
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if not (record and record.release == true and record.platform_index == platform_index
+        and lock and lock.platform_uid == record.platform_uid) then
+        return false, "Resolution token does not authorize releasing this platform"
+    end
+    if not SurfaceLock.is_resolution_candidate(lock) then return false, "Platform is not quarantined or tombstoned" end
+    return unlock_platform(platform_index, nil, nil, nil, nil, lock, "resolution")
+end
+
 function SurfaceLock.is_locked(platform_index)
     if not storage.locked_platforms then
         return false
@@ -606,10 +698,11 @@ function SurfaceLock.get_lock_data(platform_index)
 end
 
 function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected_job_id)
-    if not lock or lock.kind ~= "transfer" then
+    local owned_quarantine = SurfaceLock.transfer_owns_quarantine(lock, expected_job_id)
+    if not lock or (lock.kind ~= "transfer" and not owned_quarantine) then
         return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
     end
-    if type(expected_job_id) ~= "string" or expected_job_id == "" or lock.transfer_job_id ~= expected_job_id then
+    if type(expected_job_id) ~= "string" or expected_job_id == "" or (lock.transfer_job_id ~= expected_job_id and not owned_quarantine) then
         return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
             tostring(lock.transfer_job_id), tostring(expected_job_id))
     end

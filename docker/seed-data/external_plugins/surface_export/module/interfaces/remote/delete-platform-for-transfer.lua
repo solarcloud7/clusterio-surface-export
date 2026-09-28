@@ -5,6 +5,7 @@ local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PassengerTransit = require("modules/surface_export/core/passenger-transit")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id, expected_uid)
   if type(expected_job_id) ~= "string" or expected_job_id == "" then
@@ -33,6 +34,10 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   end
 
   if not SourceRecovery.matches(platform, expected_uid) then return "ERROR:source retirement identity changed" end
+  if lock.kind == "quarantine" then
+    local claimed, claim_error = SurfaceLock.claim_quarantine_for_transfer(platform_index, expected_job_id)
+    if not claimed then return "ERROR:" .. tostring(claim_error) end
+  end
   local committed, commit_error = SurfaceLock.commit_source_transfer_lock(platform_index, expected_job_id)
   if not committed then return "ERROR:" .. tostring(commit_error) end
 
@@ -64,6 +69,7 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     else
       storage.locked_platforms[platform_index] = nil
     end
+    PlatformLineage.forget(platform_index)
     if expected_job_id then
       Receipts.put("source_deleted", expected_job_id, {
         platform_index = platform_index, force_name = force_name,

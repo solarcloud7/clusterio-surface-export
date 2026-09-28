@@ -8,6 +8,7 @@ import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } fro
 import { hasRecordedOutcome, isAdmissionSettled, isSourceJobPending, isDestinationJobPending, isJobObservationPending } from "../shared/operation-lifecycle";
 import { JobObserver } from "./job-observer";
 import { isInstanceRouteRejection } from "./request-errors";
+import { isGeneration, isLineage, lineageCommitPlan } from "./lineage-registry";
 import type { JobStatusBatch } from "../shared/job-status";
 import type { TimingRecord } from "../shared/timing";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport, PassengerManifestEntry } from "../messages";
@@ -207,6 +208,8 @@ export class TransferOrchestrator {
 					this.plugin.activeTransfers.set(intent.transferId, transfer);
 					this.observationDue.set(intent.transferId, performance.now() + this.getValidationTimeoutMs());
 				}
+				transfer.lineage = intent.lineage ?? null;
+				transfer.lineageGeneration = intent.lineageGeneration ?? null;
 				// The original terminal interval and this recovery are separate observations.
 				// A restart provides no continuous monotonic origin for their combined duration.
 				delete transfer.observedDurationMs;
@@ -391,6 +394,24 @@ export class TransferOrchestrator {
 			if (refusal) return { success: false, safeToUnlockSource: true, error: `${refusal} The source platform is unchanged.` };
 		}
 		const innerData = exportData.exportData;
+		if (!isLineage(innerData?.lineage) || !isGeneration(innerData?.generation)) {
+			return { success: false, safeToUnlockSource: true,
+				error: "This export has no platform lineage and cannot be transferred. Create a new export; download is unaffected." };
+		}
+		if (this.plugin.lineageRegistry.loadError) {
+			return { success: false, safeToUnlockSource: true, error: this.plugin.lineageRegistry.loadError };
+		}
+		if (innerData.purpose === "resolution") {
+			return { success: false, safeToUnlockSource: false,
+				error: "This export is a resolution snapshot and cannot be transferred. Download it or restore it deliberately instead." };
+		}
+		const presence = (await this.plugin.lineagePresence(new Map([[targetInstanceId, new Set([innerData.lineage as string])]])))
+			.get(`${targetInstanceId}\u0000${innerData.lineage as string}`);
+		if (presence?.state !== "absent") {
+			return { success: false, safeToUnlockSource: true, error: presence?.state === "present"
+				? "The destination already has a copy of this platform, possibly quarantined; resolve the quarantined copy first. The source platform is unchanged."
+				: `The destination could not confirm it has no copy of this platform (${presence?.state === "unknown" ? presence.reason : "no answer"}). The source platform is unchanged.` };
+		}
 		timingContext.enterWith(this.txLogger.beginObservation(transferId));
 		const { payloadMetrics, itemCounts, fluidCounts } = timedSync("Payload preparation", () => buildPayloadMetrics(innerData));
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
@@ -422,6 +443,8 @@ export class TransferOrchestrator {
 		});
 		operation.payloadMetrics = payloadMetrics;
 		operation.exportMetrics = mergedExportMetrics;
+		operation.lineage = innerData.lineage as string;
+		operation.lineageGeneration = innerData.generation as number;
 
 		const finiteMs = (value: unknown): value is number =>
 			typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -493,7 +516,8 @@ export class TransferOrchestrator {
 				{ instanceId: targetInstanceId },
 				new this.messages.ImportPlatformRequest({
 					exportId,
-					exportData: { ...innerData, _transferId: transferId, _sourceInstanceId: exportData.instanceId },
+					exportData: { ...innerData, _transferId: transferId, _sourceInstanceId: exportData.instanceId,
+						_lineage: transfer.lineage ?? undefined, _lineageGeneration: transfer.lineageGeneration ?? undefined },
 					forceName: "player",
 					targetPlanet,
 				}),
@@ -574,6 +598,7 @@ export class TransferOrchestrator {
 			targetInstanceId: Number(transfer.targetInstanceId),
 			startedAt: transfer.startedAt,
 			exportId: transfer.exportId ?? null,
+			...(transfer.lineage ? { lineage: transfer.lineage, lineageGeneration: transfer.lineageGeneration ?? null } : {}),
 		});
 	}
 
@@ -866,7 +891,7 @@ export class TransferOrchestrator {
 
 	async handleValidationSuccess(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.startPhase(transferId, "cleanup");
-		const gate = (action: "verify" | "go_live", passengers?: PassengerManifestEntry[]) => timed("Destination transfer gate round trip", "round-trip", () =>
+		const gate = (action: "verify" | "go_live" | "discard", passengers?: PassengerManifestEntry[]) => timed("Destination transfer gate round trip", "round-trip", () =>
 			this.plugin.controller.sendTo({ instanceId: transfer.targetInstanceId },
 				new this.messages.DestinationTransferGateRequest({ transferId, action, passengers })));
 		const failed = async (error: string) => {
@@ -880,6 +905,23 @@ export class TransferOrchestrator {
 			await this.txLogger.persistTransactionLog(transferId);
 			return { sourceResolved: false };
 		};
+		const rollbackBeforeDelete = async (reason: string) => {
+			const sourceJobId = transfer.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId;
+			if (!sourceJobId) return failed(`${reason}; the source job identity is unavailable, so both copies remain protected`);
+			const source = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
+				{ instanceId: transfer.sourceInstanceId },
+				new this.messages.GetSourceTransferLockStateRequest({ transferId: sourceJobId, platformIndex: transfer.platformIndex,
+					platformName: transfer.platformName, forceName: transfer.forceName || "player" }),
+			)) as { state?: string } | undefined;
+			if (source?.state !== "pre_commit") {
+				return failed(`${reason}; the source is not provably undeleted (${source?.state ?? "no state"}), so both copies remain protected`);
+			}
+			const discarded = await gate("discard");
+			if (!discarded.success) return failed(`${reason}; destination hold discard not confirmed: ${discarded.error}`);
+			this.txLogger.endPhase(transferId, "cleanup");
+			this.txLogger.logTransactionEvent(transferId, "lineage_rollback", `${reason}. The destination hold was discarded before any source deletion.`, {});
+			return this.handleValidationFailure(transferId, transfer, { itemCountMatch: true, fluidCountMatch: true, mismatchDetails: reason });
+		};
 		try {
 			await this.plugin.persistPendingTransfers(transferId);
 			const held = await gate("verify");
@@ -889,6 +931,21 @@ export class TransferOrchestrator {
 			}
 			if (!held.success) return failed(`Destination hold not confirmed: ${held.error}`);
 			transfer.awaitingLateVerdict = false;
+			const intent = this.plugin.pendingTransfers?.get(transferId) ?? transfer;
+			const plan = lineageCommitPlan(intent, held as { lineage?: unknown; generation?: unknown });
+			if (plan.kind === "refused") return rollbackBeforeDelete(plan.error);
+			if ((held as { localCopy?: boolean }).localCopy === true) {
+				return rollbackBeforeDelete("The destination already has another copy of this platform; resolve the quarantined copy first");
+			}
+			const commit = plan.kind === "lineage" ? {
+				lineage: plan.lineage, transferId, sourceInstanceId: transfer.sourceInstanceId, targetInstanceId: transfer.targetInstanceId,
+				fromGeneration: plan.fromGeneration, toGeneration: plan.toGeneration,
+				platformName: transfer.platformName, forceName: transfer.forceName || "player",
+			} : null;
+			if (commit) {
+				const refusal = this.plugin.lineageRegistry.precheckTransfer(commit);
+				if (refusal) return rollbackBeforeDelete(`Lineage registry refused this transfer: ${refusal}`);
+			}
 
 			const deleteResponse = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
 				{ instanceId: transfer.sourceInstanceId },
@@ -903,6 +960,10 @@ export class TransferOrchestrator {
 			if (deleteResponse.success) {
 				const replayed = (deleteResponse as { passengers?: unknown }).passengers;
 				if (Array.isArray(replayed)) transfer.passengers = replayed as PassengerManifestEntry[];
+				if (commit) {
+					try { await this.plugin.lineageRegistry.commitTransfer(commit); }
+					catch (error) { return failed(`Source deleted; lineage registry not updated: ${getErrorMessage(error)}`); }
+				}
 				const activated = await gate("go_live", transfer.passengers);
 				if (!activated.success) return failed(`Source deleted; destination activation not confirmed: ${activated.error}`);
 				const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");

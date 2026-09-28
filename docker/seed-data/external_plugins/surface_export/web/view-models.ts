@@ -73,4 +73,8 @@ export type SurfaceExportPlugin = {
 	loadTransactionLog(transferId: string): Promise<void>;
 	refreshSnapshots?(): Promise<void>;
 	getPortals?(): Promise<import("../shared/dto").PortalListingResponse>;
+	listLineageConflicts?(): Promise<ReturnType<typeof import("../messages").ListLineageConflictsRequest.Response.fromJSON>>;
+	resolvePlatformLineage?(payload: { instanceId: number; platformIndex: number; platformUid: string;
+		action: import("../shared/lineage-resolution").ResolutionAction; requestId: string }): Promise<ReturnType<typeof import("../messages").ResolvePlatformLineageRequest.Response.fromJSON>>;
+	abandonPlatformResolution?(requestId: string): Promise<ReturnType<typeof import("../messages").AbandonPlatformResolutionRequest.Response.fromJSON>>;
 };

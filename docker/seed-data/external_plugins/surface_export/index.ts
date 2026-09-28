@@ -24,6 +24,12 @@ lib.definePermission({
 });
 
 lib.definePermission({
+	name: PERMISSIONS.RECOVERY_RESOLVE,
+	title: "Resolve Surface Export platform conflicts",
+	description: "Allows keeping, adopting, releasing or deleting copies of a platform that startup recovery quarantined.",
+});
+
+lib.definePermission({
 	name: PERMISSIONS.VIEW_LOGS,
 	title: "View Surface Export Transaction Logs",
 	description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
@@ -138,7 +144,7 @@ export const plugin = {
 		},
 		[`${PLUGIN_NAME}.platform_source_of_truth`]: {
 			title: "Platform source of truth",
-			description: "plugin_history protects restored source copies that already transferred away. save_game accepts restored copies with a warning. Applies when each instance restarts; active transfers remain protected.",
+			description: "plugin_history protects restored source copies that already transferred away. save_game accepts a restored copy with a warning only when the server recorded as holding its current copy confirms that copy is gone; duplicates and unverified copies stay quarantined in both modes. Applies when each instance restarts; active transfers remain protected.",
 			type: "string",
 			enum: ["plugin_history", "save_game"],
 			initialValue: "plugin_history",
@@ -194,6 +200,13 @@ export const plugin = {
 		messages.SetPortalRequest,
 		messages.GetGatewayConfigRequest,
 		messages.RecoveryPolicyRequest,
+		messages.LineageClassifyRequest,
+		messages.LineagePresenceRequest,
+		messages.ListLineageConflictsRequest,
+		messages.ResolvePlatformLineageRequest,
+		messages.AbandonPlatformResolutionRequest,
+		messages.LineageCandidatesRequest,
+		messages.ApplyLineageResolutionRequest,
 		messages.GetInstanceRosterRequest,
 		messages.AnnouncePlayerTravelRequest,
 		messages.RouteAlertEvent,

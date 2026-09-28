@@ -310,7 +310,7 @@ export class LuaInterface {
 		}
 	}
 
-	async destinationTransferGate(transferId: string, action: "verify" | "go_live", passengers?: PassengerManifestEntry[]): Promise<string> {
+	async destinationTransferGate(transferId: string, action: "verify" | "go_live" | "discard", passengers?: PassengerManifestEntry[]): Promise<string> {
 		if (action === "go_live" && passengers && passengers.length > 0) {
 			await this.stagePassengerManifest(transferId, passengers);
 		}
@@ -318,7 +318,15 @@ export class LuaInterface {
 			+ `"${escapeString(action)}", "${escapeString(transferId)}"))`);
 	}
 
-	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity", ...args: Array<string | number | boolean | null>): Promise<string> {
+	async resolutionCandidates(): Promise<string> {
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "resolution_candidates_json"))`);
+	}
+
+	async resolutionApply(request: Record<string, unknown>): Promise<string> {
+		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "resolution_apply_json", "${escapeString(JSON.stringify(request))}"))`);
+	}
+
+	async sourceRecovery(action: "begin" | "reconcile" | "finish" | "identity" | "presence", ...args: Array<string | number | boolean | null>): Promise<string> {
 		const values = args.map(value => value === null ? "nil"
 			: typeof value === "string" ? `"${escapeString(value)}"` : String(value));
 		return this.host.sendRcon(`/sc rcon.print(remote.call("surface_export", "source_recovery_${action}"`

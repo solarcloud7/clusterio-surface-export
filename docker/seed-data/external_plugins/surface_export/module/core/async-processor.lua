@@ -93,9 +93,9 @@ local function calculate_progress(job)
 	return math.floor((job.current_index / job.total_entities) * 100)
 end
 
-function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal)
+function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal, purpose)
 	AsyncProcessor.init()
-	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal)
+	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal, purpose)
 end
 
 function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name, receive_timing)

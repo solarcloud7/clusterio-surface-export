@@ -25,6 +25,7 @@ local ExportCache = require("modules/surface_export/utils/export-cache")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -135,7 +136,7 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal, purpose)
 	if storage.source_recovery_ready ~= true then return nil, "Startup recovery is not ready" end
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
@@ -168,10 +169,21 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
 	end
+	local resolution = purpose == "resolution"
+	local lineage, lineage_generation, lineage_err
+	if resolution then
+		lineage, lineage_generation = PlatformLineage.get(platform)
+	else
+		lineage, lineage_generation, lineage_err = PlatformLineage.for_export(platform, destination_instance_id and true or false)
+	end
+	if lineage_err then
+		Timing.finish(job_id, "failed")
+		return nil, lineage_err
+	end
 
 
 	local lock_opts = {
-		kind = destination_instance_id and "transfer" or "export",
+		kind = (destination_instance_id or resolution) and "transfer" or "export",
 		job_id = job_id,
 		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
 	}
@@ -232,6 +244,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		requester = requester_name,
 		destination_instance_id = destination_instance_id,
 		operation_id = operation_id,
+		purpose = purpose,
 		clone_dest_name = clone_dest_name,
 		started_tick = game.tick,
 		surface = surface,
@@ -247,6 +260,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
 			platform_uid = uid,
+			lineage = lineage,
+			generation = lineage_generation,
+			purpose = purpose,
 			tick = game.tick,
 			timestamp = Util.format_timestamp(game.tick),
 			platform = {
@@ -441,6 +457,7 @@ local function publish_completion(job)
 			section_codec = SectionCodec.VERSION, section_count = #job.compressed_sections, sections = job.compressed_sections,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name, tick = job.export_data.tick,
+			lineage = job.export_data.lineage, generation = job.export_data.generation, purpose = job.export_data.purpose,
 			timestamp = job.export_data.timestamp, stats = job.export_data.stats,
 			verification = job.export_data.verification,
 		})
@@ -451,6 +468,7 @@ local function publish_completion(job)
 			payload = compressed,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name,
+			lineage = job.export_data.lineage, generation = job.export_data.generation, purpose = job.export_data.purpose,
 			tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp,
 			stats = job.export_data.stats,
@@ -574,7 +592,7 @@ local function publish_completion(job)
 
 	handle_pending_file_write(export_id)
 
-	if not job.destination_instance_id then
+	if not job.destination_instance_id and job.purpose ~= "resolution" then
 		local unlock_success = Timing.scope(job.job_id, "source_unlock", SurfaceLock.unlock_platform, job.platform_index, nil, nil, nil, job.job_id)
 		if unlock_success then
 			log(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name))

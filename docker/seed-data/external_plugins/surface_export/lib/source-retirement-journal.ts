@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isGeneration, isLineage } from "../shared/lineage";
 
 export interface SourceRetirement {
 	platformUid: string;
@@ -8,6 +9,9 @@ export interface SourceRetirement {
 	platformIndex: number;
 	surfaceIndex: number;
 	forceName: string;
+	lineage?: string;
+	generation?: number;
+	hubUnitNumber?: number;
 }
 
 type Journal = { v: 1; id: string; retirements: SourceRetirement[] };
@@ -17,9 +21,24 @@ function validate(record: SourceRetirement): void {
 		|| typeof record.exportId !== "string" || !record.exportId
 		|| typeof record.forceName !== "string" || !record.forceName
 		|| !Number.isSafeInteger(record.platformIndex) || record.platformIndex < 1
-		|| !Number.isSafeInteger(record.surfaceIndex) || record.surfaceIndex < 1) {
+		|| !Number.isSafeInteger(record.surfaceIndex) || record.surfaceIndex < 1
+		|| (record.lineage !== undefined && !isLineage(record.lineage))
+		|| (record.generation !== undefined && !isGeneration(record.generation))
+		|| (record.lineage !== undefined) !== (record.generation !== undefined)
+		|| (record.hubUnitNumber !== undefined && (!Number.isSafeInteger(record.hubUnitNumber) || record.hubUnitNumber < 1))) {
 		throw new Error("Invalid source retirement identity");
 	}
+}
+
+export function retirementHubUnitNumber(record: SourceRetirement): number | null {
+	if (record.hubUnitNumber !== undefined) return record.hubUnitNumber;
+	const hub = Number(record.platformUid.slice(record.platformUid.lastIndexOf(":") + 1));
+	return Number.isSafeInteger(hub) && hub > 0 ? hub : null;
+}
+
+export function journalHubMatch(retirements: readonly SourceRetirement[], surfaceIndex: number | null, hubUnitNumber: number | null): boolean {
+	if (surfaceIndex === null || hubUnitNumber === null) return false;
+	return retirements.some(record => record.surfaceIndex === surfaceIndex && retirementHubUnitNumber(record) === hubUnitNumber);
 }
 
 // This file belongs to the instance data directory, outside every Factorio save.

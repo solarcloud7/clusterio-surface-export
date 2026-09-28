@@ -1,5 +1,6 @@
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 local PassengerArrival = require("modules/surface_export/core/passenger-arrival")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local function find_platform(platform_index, force_name)
 	local selected_force_name = force_name or "player"
@@ -34,7 +35,9 @@ local function destination_hold(action, transfer_id, platform_index, force_name)
 		return { success = true, hold = result }
 	elseif action == "verify" then
 		local ok, result = DestinationHold.verify(transfer_id)
-		return {success = ok, error = not ok and result or nil}
+		if not ok then return {success = false, error = result} end
+		return {success = true, lineage = result.lineage, generation = result.generation,
+			localCopy = result.lineage and PlatformLineage.local_copy(result.lineage, result.platform_index, transfer_id) or nil}
 	elseif action == "go_live" then
 		local passengers, staged_err = PassengerArrival.take_staged(transfer_id)
 		if staged_err then return { success = false, error = staged_err } end

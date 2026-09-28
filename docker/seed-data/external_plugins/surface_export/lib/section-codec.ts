@@ -8,7 +8,7 @@ const FRAME_BYTES = 65536;
 const MAX_FRAMES = 4096;
 const MAX_DOCUMENT_BYTES = 256 * 1024 * 1024;
 const arrays = new Set(["entities", "tiles", "belt_side_groups"]);
-const routing = ["_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet"];
+const routing = ["_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet", "_standaloneImport", "_restoreSnapshot", "_lineage", "_lineageGeneration"];
 type ObjectData = Record<string, unknown>;
 function object(value: unknown): value is ObjectData {
 	return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -51,7 +51,8 @@ export async function normalizeSectionExport(value: ObjectData): Promise<ObjectD
 	const json = timedSync("Artifact JSON encoding", () => JSON.stringify(data));
 	const payload = await timed("Artifact compression", "inclusive", () => compress(json));
 	return { compressed: true, compression: "deflate", payload: payload.toString("base64"),
-		platform_name: data.platform_name, tick: data.tick, timestamp: data.timestamp, stats: data.stats, verification: data.verification };
+		platform_name: data.platform_name, tick: data.tick, timestamp: data.timestamp, stats: data.stats, verification: data.verification,
+		lineage: data.lineage, generation: data.generation, purpose: data.purpose };
 }
 
 /** Legacy artifacts remain unchanged; oversized individual records use that path. */

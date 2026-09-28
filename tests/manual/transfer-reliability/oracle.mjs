@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 import { VOLUME_SUFFIXES } from "./backup-storage.mjs";
+import { analyzeLineage } from "./lineage-resolution.mjs";
 
 export function performanceCargo(extra) {
   assert.ok(extra===0 || extra===512,"fixed fixture size required");
@@ -64,6 +65,7 @@ export function analyze(report) {
     return {verdict:"PASS",reason:"Save game mode retained pending ownership; normal recovery preserved cargo"};
   }
   if(["save-policy-game","save-policy-history","snapshot-recovery"].includes(report.case)) return analyzeSavePolicy(report);
+  if(report.case.startsWith("lineage-")) return analyzeLineage(report);
   assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source","restore-old-destination"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="coordinated-restore") return analyzeBackup(report);
@@ -175,10 +177,24 @@ export function analyzeSavePolicy(report) {
     }
     return {verdict:"PASS",reason:"Manual snapshot import restored physical cargo; original rollback remains a separately observed failure"};
   }
-  assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
-  assert.deepEqual(report.unrelatedRestored?.cargo,expectedCargo);assert.equal(report.unrelatedRestored?.usable,true);
-  assert.equal(report.restored.destination.usable,true);
   const accepted=report.case==="save-policy-game";
+  assert.deepEqual(report.unrelatedRestored?.cargo,expectedCargo);assert.equal(report.unrelatedRestored?.usable,true);
+  if(report.lineageReviewVersion>=1) {
+    const duplicate=accepted?report.duplicateRestored:report.restored;
+    assert.deepEqual(duplicate?.source.cargo,expectedCargo);assert.deepEqual(duplicate?.destination.cargo,expectedCargo);
+    assert.equal(duplicate.source.usable,false,"a restored copy that another server still holds became usable");
+    assert.equal(duplicate.destination.usable,true);
+    const duplicateNotice=accepted?report.duplicateNotice:report.notices?.notices[report.identityAfter?.index];
+    assert.equal(duplicateNotice?.status,"protected");assert.equal(duplicateNotice?.reason,"duplicate");
+    if(accepted) {
+      assert.deepEqual(report.restored?.source.cargo,expectedCargo);
+      assert.equal(report.restored.destination.present,false,"adoption ran while the other server still held its copy");
+      assert.equal(report.notices?.notices[report.identityAfter?.index]?.reason,"rollback_other");
+    }
+  } else {
+    assert.deepEqual(report.restored?.source.cargo,expectedCargo);assert.deepEqual(report.restored?.destination.cargo,expectedCargo);
+    assert.equal(report.restored.destination.usable,true);
+  }
   assert.equal(report.browser.warnings,true,"restored-source warning unverified");
   assert.equal(report.restored.source.usable,accepted);
   assert.equal(report.notices?.mode,accepted?"save_game":"plugin_history");

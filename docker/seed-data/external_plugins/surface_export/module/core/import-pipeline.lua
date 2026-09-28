@@ -16,6 +16,7 @@ local ImportCompletion = require("modules/surface_export/core/import-completion"
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 local JobResults = require("modules/surface_export/core/job-results")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local SectionCodec = require("modules/surface_export/utils/section-codec")
 local ImportPipeline = {}
@@ -211,10 +212,18 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		platform_data._operationId = parsed_data._operationId
 		platform_data._transferId = validate_snapshot and parsed_data._operationId or nil
 		parsed_data._transferId = platform_data._transferId
+		platform_data._lineage, platform_data._lineageGeneration = nil, nil
+		parsed_data._lineage, parsed_data._lineageGeneration = nil, nil
 	end
 	local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
 	local operation_id = platform_data._operationId or parsed_data._operationId
 	local transfer_id = platform_data._transferId or parsed_data._transferId
+	local carried_lineage, carried_generation, lineage_err = PlatformLineage.transfer_carry(parsed_data)
+	if lineage_err then
+		Timing.finish(job_id, "failed")
+		PhaseProfiler.discard(job_id)
+		return nil, lineage_err
+	end
 	for _, existing in pairs(storage.async_jobs or {}) do
 		if existing ~= pending_job and existing.setup_cleanup
 			and ((transfer_id and existing.transfer_id == transfer_id)
@@ -510,6 +519,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			transfer_id = platform_data._transferId or parsed_data._transferId,
 			source_instance_id = platform_data._sourceInstanceId or parsed_data._sourceInstanceId,
 			operation_id = platform_data._operationId or parsed_data._operationId,
+			lineage = carried_lineage,
+			lineage_generation = carried_generation,
 
 			target_platform = new_platform,
 			preparation_visibility = setup_job.preparation_visibility,
@@ -576,7 +587,7 @@ function ImportPipeline.process_setup(job)
 		assert(raw, "Failed to decompress section")
 		job.decoded_data = Timing.scope(job.job_id, "decode_payload", SectionCodec.decode_step, decoder, raw)
 		if job.decoded_data then
-			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet", "_standaloneImport", "_restoreSnapshot"}) do
+			for _, key in ipairs({"_transferId", "_sourceInstanceId", "_operationId", "_targetPlanet", "_standaloneImport", "_restoreSnapshot", "_lineage", "_lineageGeneration"}) do
 				if job.section_envelope[key] ~= nil then job.decoded_data[key] = job.section_envelope[key] end
 			end
 			job.section_decoder, job.section_envelope = nil, nil

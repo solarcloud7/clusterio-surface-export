@@ -2,7 +2,7 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local function noop() end
 local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; return n end
-local function scenario(standalone, error_at, sectioned, clone)
+local function scenario(standalone, error_at, sectioned, clone, purpose)
 local events, writes, modules, encodes, attempts = {}, {}, {}, 0, 0
 local env = setmetatable({game = {tick = 100, print = function() error("export phases must not broadcast chat") end, forces = {player = {valid = true, platforms = {}}}},
     storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true}},
@@ -26,7 +26,8 @@ modules["utils/surface-lock"] = {unlock_platform = function(index, _, _, _, job_
     mark("unlock"); return true
 end}
 modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap = function() mark("prune") end,
-    record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player") end}
+    record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player")
+        assert(data.purpose == purpose, "the cached export lost its resolution purpose") end}
 modules["utils/platform-schedule"] = {summarize = function() return {} end}
 modules["export_scanners/entity-scanner"] = {scan_items_on_ground = function() return {} end}
 modules["export_scanners/inventory-scanner"] = {extract_belt_items = function() mark("belt_read"); return {} end}
@@ -34,7 +35,7 @@ modules["export_scanners/fluid-registry"] = {list = function() return {} end}
 modules["export_scanners/source-cargo-integrity"] = {record = noop, verdict = function() return {ok = true} end}
 modules["validators/verification"] = {count_all_items = function() mark("verify"); return {} end,
     count_fluid_segments = function() return {} end}
-local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture", platform_uid = "fixture:copy"}
+local payload = {entities = {{entity_id = 1}}, tiles = {}, platform_name = "fixture", platform_uid = "fixture:copy", purpose = purpose}
 modules["utils/json-compat"] = {encode_json_compat = function(data)
     if data == payload then encodes = encodes + 1; return '{"captured":true}' end
     return '{}'
@@ -73,6 +74,7 @@ local job = {job_id = "test", type = "export", started_tick = 100, current_index
 env.storage.async_jobs.test = job
 if standalone then job.destination_instance_id = nil end
 if clone then job.clone_dest_name = "clone-fixture" end
+job.purpose = purpose
 for tick = 100, 103 do
     env.game.tick = tick
     if sectioned and tick == 103 then job.compressed_sections={"compressed"} end
@@ -105,8 +107,10 @@ end
 assert(events.entities == 100 and events.belt_read == 101 and events.verify == 101)
 assert(events.serialization == 102 and (sectioned or events.compression == 103) and events.surface_export_complete == 103)
 assert(encodes == 1, "diagnostic output serialized the payload again")
-if standalone then
+if standalone and purpose ~= "resolution" then
     assert(events.unlock == 103, "standalone export unlocked before publication")
+elseif purpose == "resolution" then
+    assert(not events.unlock, "a resolution snapshot released the copy it is about to delete")
 else
     assert(not events.unlock, "transfer export released its source")
     assert(writes["debug_source_platform_fixture_103.json"] == '{"captured":true}', "diagnostic bytes differ from transport JSON")
@@ -124,6 +128,8 @@ scenario(true)
 scenario(true, nil, false, true)
 scenario(true, nil, false, "refused")
 scenario(false, nil, true)
+scenario(true, nil, false, nil, "resolution")
+scenario(true, nil, true, nil, "resolution")
 scenario(false, "surface_export_complete")
 for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
     scenario(false, phase)

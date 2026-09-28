@@ -12,7 +12,9 @@ import * as messages from "./messages";
 import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
-import { SourceRetirementJournal, type SourceRetirement } from "./lib/source-retirement-journal";
+import { SourceRetirementJournal, journalHubMatch, type SourceRetirement } from "./lib/source-retirement-journal";
+import type { LineageVerdict, PlatformFacts } from "./lib/lineage-classifier";
+import { isGeneration, isLineage } from "./lib/lineage-registry";
 import { recoveryMode, type InstanceRecoveryStatus } from "./shared/recovery";
 
 type PermissiveLink = {
@@ -115,6 +117,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
+		this.i.handle(messages.LineagePresenceRequest, this.handleLineagePresenceRequest.bind(this));
+		this.i.handle(messages.LineageCandidatesRequest, this.handleLineageCandidatesRequest.bind(this));
+		this.i.handle(messages.ApplyLineageResolutionRequest, this.handleApplyLineageResolutionRequest.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -153,7 +158,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Instance started - Surface Export recovery reconciled and plugin ready");
 	}
 
-	private async sourceRecoveryCall(action: "begin" | "reconcile" | "finish" | "identity", ...args: Array<string | number | boolean | null>) {
+	private async sourceRecoveryCall(action: "begin" | "reconcile" | "finish" | "identity" | "presence", ...args: Array<string | number | boolean | null>) {
 		const raw = await this.lua.sourceRecovery(action, ...args);
 		let response;
 		try { response = JSON.parse(raw); }
@@ -177,13 +182,23 @@ export class InstancePlugin extends BaseInstancePlugin {
 		};
 		const begin = await call("begin", epoch, journal.id, journal.retirements.length > 0, mode, policy.allowAdoption === true);
 		this.recoveryStatus.mode = mode;
-		const roster = Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {});
-		let quarantined = 0;
+		const roster = (Array.isArray(begin.platforms) ? begin.platforms : Object.values(begin.platforms || {})) as Array<Record<string, unknown>>;
 		const protectedIndexes = policy.protectedSourceIndexes ?? (policy.allowAdoption ? [] : [-1]);
-		for (const platform of roster as Array<{ platformIndex: number; platformUid: string }>) {
+		const facts = roster.map(entry => this.platformFacts(entry, journal.retirements, protectedIndexes));
+		if (protectedIndexes.includes(-1) && facts.some(platform => platform.lockKind === "startup" && !platform.journalUidMatch)) {
+			throw new Error("An unresolved handoff has no source platform index; platforms remain protected");
+		}
+		const classified = await this.i.sendTo("controller", new messages.LineageClassifyRequest({ instanceId: this.i.id, epoch, platforms: facts }));
+		this.assertRecoveryRuntime(epoch);
+		const verdicts = new Map<number, LineageVerdict>();
+		for (const verdict of classified?.verdicts ?? []) verdicts.set(verdict.platformIndex, verdict);
+		let quarantined = 0;
+		for (const platform of facts) {
+			const verdict = verdicts.get(platform.platformIndex);
+			if (!verdict) throw new Error(`Controller returned no lineage verdict for platform ${platform.platformIndex}`);
 			const retired = journal.retirements.find(record => record.platformUid === platform.platformUid);
 			const response = await call("reconcile", platform.platformIndex, platform.platformUid, retired?.exportId ?? null,
-				protectedIndexes.includes(-1) || protectedIndexes.includes(platform.platformIndex));
+				platform.protected, JSON.stringify(verdict));
 			if (response.quarantined) quarantined++;
 			if (response.notice) this.recoveryStatus.notices.push(response.notice);
 		}
@@ -196,12 +211,90 @@ export class InstancePlugin extends BaseInstancePlugin {
 			epoch,
 		);
 		this.assertRecoveryRuntime(epoch);
-		await call("finish");
+		const finished = await call("finish");
 		await this.i.sendTo("controller", new messages.RecoveryPolicyRequest({ instanceId: this.i.id, epoch, action: "finish" }));
 		this.assertRecoveryRuntime(epoch);
+		this.recoveryStatus.quarantined = Number.isSafeInteger(finished.quarantined) ? finished.quarantined : quarantined;
 		this.recoveryStatus.state = "ready";
 		await this.handlePlatformStateChanged({ force_name: "player" });
-		if (quarantined) this.logger.warn(`${quarantined} retired source platform(s) restored from a save remain quarantined; matching pending transfers may retry deletion.`);
+		if (quarantined) this.logger.warn(`${quarantined} platform(s) restored from a save remain protected or quarantined; review the recovery notices.`);
+	}
+
+	private platformFacts(entry: Record<string, unknown>, retirements: SourceRetirement[], protectedIndexes: number[]): PlatformFacts {
+		const integer = (value: unknown) => Number.isSafeInteger(value) ? value as number : null;
+		const text = (value: unknown) => typeof value === "string" && value !== "" ? value : null;
+		const platformIndex = integer(entry.platformIndex);
+		if (platformIndex === null || platformIndex < 1) throw new Error("Recovery roster contains an invalid platform index");
+		const platformUid = text(entry.platformUid);
+		const lineage = entry.lineage === undefined || entry.lineage === null ? null : entry.lineage;
+		if (lineage !== null && (!isLineage(lineage) || !isGeneration(entry.generation))) {
+			throw new Error(`Recovery roster reports an invalid lineage for platform ${platformIndex}`);
+		}
+		const hubUnitNumber = integer(entry.hubUnitNumber);
+		const surfaceIndex = integer(entry.surfaceIndex);
+		return {
+			platformIndex, platformUid, hadIdentity: entry.hadIdentity === true,
+			lineage, generation: lineage === null ? null : entry.generation as number,
+			hubUnitNumber, surfaceIndex, platformName: text(entry.platformName), forceName: text(entry.forceName),
+			lockKind: text(entry.lockKind), jobOwns: entry.jobOwns === true,
+			journalUidMatch: platformUid !== null && retirements.some(record => record.platformUid === platformUid),
+			journalHubMatch: journalHubMatch(retirements, surfaceIndex, hubUnitNumber),
+			protected: protectedIndexes.includes(platformIndex),
+		};
+	}
+
+	private parseLuaJson(raw: string, action: string): Record<string, unknown> {
+		try { return JSON.parse(raw); }
+		catch (error) { throw new Error(`${action} returned invalid JSON: ${raw.slice(0, 500)}`, { cause: error }); }
+	}
+
+	async handleLineageCandidatesRequest(request: messages.LineageCandidatesRequest): Promise<ReturnType<typeof messages.LineageCandidatesRequest.Response.fromJSON>> {
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
+		const epoch = this.timingEpoch;
+		const response = this.parseLuaJson(await this.lua.resolutionCandidates(), "Resolution candidates");
+		this.assertRecoveryRuntime(epoch);
+		if (response.success !== true) throw new Error(String(response.error || "Resolution candidates refused"));
+		const retirements = this.retirementJournal.snapshot().retirements;
+		const listed = Array.isArray(response.platforms) ? response.platforms : Object.values(response.platforms || {});
+		const text = (value: unknown) => typeof value === "string" && value !== "" ? value : null;
+		const integer = (value: unknown) => Number.isSafeInteger(value) ? value as number : null;
+		const platforms = (listed as Array<Record<string, unknown>>).map(entry => ({
+			...this.platformFacts(entry, retirements, request.protectedSourceIndexes),
+			retiredExportId: retirements.find(record => record.platformUid === text(entry.platformUid))?.exportId ?? text(entry.retiredExportId),
+			state: (entry.state === "tombstone" || entry.state === "resolving" ? entry.state : "quarantine") as "quarantine" | "tombstone" | "resolving",
+			reason: text(entry.reason), ownerJobId: text(entry.ownerJobId),
+			holderInstanceId: integer(entry.holderInstanceId), holderGeneration: integer(entry.holderGeneration),
+			resolutionRequestId: text(entry.resolutionRequestId),
+			passengers: integer(entry.passengers), localCopy: entry.localCopy === true,
+		}));
+		return { success: true, epoch, platforms };
+	}
+
+	async handleApplyLineageResolutionRequest(request: messages.ApplyLineageResolutionRequest): Promise<ReturnType<typeof messages.ApplyLineageResolutionRequest.Response.fromJSON>> {
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
+		const epoch = this.timingEpoch;
+		const response = this.parseLuaJson(await this.lua.resolutionApply({ requestId: request.requestId, step: request.step,
+			platformIndex: request.platformIndex, platformUid: request.platformUid, token: request.token, lineage: request.lineage,
+			generation: request.generation, exportId: request.exportId, refreshIdentity: request.refreshIdentity }), "Resolution step");
+		this.assertRecoveryRuntime(epoch);
+		const reply: ReturnType<typeof messages.ApplyLineageResolutionRequest.Response.fromJSON> = { success: response.success === true };
+		if (typeof response.error === "string") reply.error = response.error;
+		if (typeof response.jobId === "string") reply.jobId = response.jobId;
+		if (isLineage(response.lineage)) reply.lineage = response.lineage;
+		if (isGeneration(response.generation)) reply.generation = response.generation;
+		if (typeof response.platformUid === "string") reply.platformUid = response.platformUid;
+		if (response.committed === true) reply.committed = true;
+		if (reply.success) void this.handlePlatformStateChanged({ force_name: "player" });
+		return reply;
+	}
+
+	async handleLineagePresenceRequest(request: messages.LineagePresenceRequest): Promise<ReturnType<typeof messages.LineagePresenceRequest.Response.fromJSON>> {
+		if (this.recoveryStatus?.state !== "ready") throw new Error("Source recovery is not ready");
+		const epoch = this.timingEpoch;
+		const response = await this.sourceRecoveryCall("presence", JSON.stringify(request.lineages));
+		this.assertRecoveryRuntime(epoch);
+		const lineages = Array.isArray(response.lineages) ? response.lineages : Object.values(response.lineages || {});
+		return { success: true, epoch, lineages: lineages as Array<{ lineage: string; present: boolean; generation?: number; held?: boolean; platformIndex?: number; platformUid?: string; platformName?: string; forceName?: string; passengers?: number }> };
 	}
 
 	private appliedDebugMode = false;
@@ -600,6 +693,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
 				platformUid: platform.platform_uid ?? null,
+				lineage: platform.lineage ?? null,
+				lineageGeneration: platform.lineage_generation ?? null,
+				lockKind: platform.lock_kind ?? null,
 				platformName: platform.platform_name,
 				forceName: platform.force_name || forceName || "player",
 				surfaceIndex: platform.surface_index ?? null,
@@ -667,6 +763,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			exportData._standaloneImport = true;
 			delete exportData._transferId;
 			delete exportData._sourceInstanceId;
+			delete exportData._lineage;
+			delete exportData._lineageGeneration;
 			const receipt = await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
 
 			this.logger.info("Platform import chunks sent successfully");
@@ -886,12 +984,16 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live"; passengers?: messages.PassengerManifestEntry[] }) {
+	async handleDestinationTransferGate(request: { transferId: string; action: "verify" | "go_live" | "discard"; passengers?: messages.PassengerManifestEntry[] }): Promise<ReturnType<typeof messages.DestinationTransferGateRequest.Response.fromJSON>> {
 		return this.withTiming(request.transferId, undefined, "Destination transfer gate", async () => {
 			try {
 				const response = JSON.parse(await this.lua.destinationTransferGate(request.transferId, request.action, request.passengers));
-				return response.success === true ? { success: true }
-					: { success: false, error: String(response.error || "Destination gate refused") };
+				if (response.success !== true) return { success: false, error: String(response.error || "Destination gate refused") };
+				if (request.action !== "verify") return { success: true };
+				const reply: ReturnType<typeof messages.DestinationTransferGateRequest.Response.fromJSON> = { success: true };
+				if (isLineage(response.lineage) && isGeneration(response.generation)) { reply.lineage = response.lineage; reply.generation = response.generation; }
+				if (response.localCopy === true) reply.localCopy = true;
+				return reply;
 			} catch (error) {
 				return { success: false, error: getErrorMessage(error) };
 			}
@@ -924,7 +1026,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 				retirement = prior;
 			} else {
 				retirement = { platformUid: identity.platformUid, surfaceIndex: identity.surfaceIndex,
-					platformIndex, forceName, exportId: request.exportId };
+					platformIndex, forceName, exportId: request.exportId,
+					...(isLineage(identity.lineage) && isGeneration(identity.generation) ? { lineage: identity.lineage, generation: identity.generation } : {}),
+					...(Number.isSafeInteger(identity.hubUnitNumber) && identity.hubUnitNumber > 0 ? { hubUnitNumber: identity.hubUnitNumber } : {}) };
 				await this.retirementJournal.retire(retirement);
 			}
 			const result = await this.lua.deleteSourcePlatform(

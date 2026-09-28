@@ -1,9 +1,14 @@
 local root = "docker/seed-data/external_plugins/surface_export/module/"
+local json = assert(loadfile(root .. "core/json.lua"))()
+local function verdict(fields) return json.encode(fields) end
+local function normal(lineage, generation) return verdict({verdict = "normal", lineage = lineage, generation = generation}) end
 local force = {name = "player", platforms = {}}
 local platform = {valid = true, index = 3, force = force, surface = {valid = true, index = 8},
     hub = {valid = true, unit_number = 15}}
 force.platforms[3] = platform
-local env = setmetatable({storage = {}, game = {forces = {player = force}}}, {__index = _G})
+local env = setmetatable({storage = {}, game = {forces = {player = force}}, log = function() end,
+    helpers = {json_to_table = function(text) local ok, value = pcall(json.decode, text); if ok then return value end end}},
+    {__index = _G})
 local locks = {}
 env.storage.locked_platforms = locks
 local lock_api = {
@@ -25,15 +30,18 @@ local lock_api = {
 env.require = function(name)
     if name:find("destination-hold", 1, true) then return {reconcile_legacy = function() end} end
     if name:find("platform-identity", 1, true) then return assert(loadfile(root .. "utils/platform-identity.lua", "t", env))() end
+    if name:find("platform-lineage", 1, true) then return assert(loadfile(root .. "utils/platform-lineage.lua", "t", env))() end
     return lock_api
 end
 local recovery = assert(loadfile(root .. "core/source-recovery.lua", "t", env))()
 recovery.startup()
 assert(platform.hidden and not env.storage.source_recovery_ready)
 local boot = recovery.begin("boot-a", "journal-a", false)
-assert(boot.success and boot.platforms[1].platformUid == "boot-a:15")
-assert(recovery.reconcile(3, "boot-a:15", nil).success)
+assert(boot.success and boot.platforms[1].platformUid == "boot-a:15" and boot.platforms[1].hubUnitNumber == 15)
+assert(boot.platforms[1].hadIdentity == false and boot.platforms[1].lineage == nil and boot.platforms[1].lockKind == "startup")
+assert(recovery.reconcile(3, "boot-a:15", nil, false, verdict({verdict = "normal", mint = true, lineage = "lineage:boot-a:15", generation = 0})).success)
 assert(recovery.finish().success and not platform.hidden)
+assert(env.storage.surface_export_lineages[3].lineage == "lineage:boot-a:15")
 
 -- Simulate loading the earlier checkpoint: saved identities survive, the runtime lock does not.
 recovery.startup()
@@ -41,8 +49,10 @@ assert(platform.hidden, "restored source was usable before reconciliation")
 assert(not recovery.begin("boot-b", "wrong-journal", true).success)
 assert(platform.hidden, "foreign authority released a restored source")
 assert(recovery.begin("boot-b", "journal-a", true).success)
-assert(not recovery.reconcile(3, "foreign-platform", "job-a").success)
-assert(recovery.reconcile(3, "boot-a:15", "job-a").quarantined)
+local foreign = recovery.reconcile(3, "foreign-platform", "job-a", false, normal("lineage:boot-a:15", 0))
+assert(foreign.quarantined and locks[3].kind == "quarantine" and locks[3].quarantine.reason == "reconcile_error" and platform.hidden)
+locks[3].kind, locks[3].quarantine = "startup", nil
+assert(recovery.reconcile(3, "boot-a:15", "job-a", false, verdict({verdict = "duplicate", lineage = "lineage:boot-a:15", generation = 0})).quarantined)
 assert(recovery.finish().success)
 assert(platform.hidden and locks[3].phase == "committed")
 assert(recovery.source_identity(3, "player", "job-a").platformUid == "boot-a:15")
@@ -59,15 +69,25 @@ assert(recovery.matches(platform, "boot-b:16"))
 env.storage.source_recovery_identities = {}
 env.storage.source_recovery_surface_epochs = {}
 recovery.startup()
-assert(not recovery.begin("boot-c", "journal-a", true).success)
+local legacy = recovery.begin("boot-c", "journal-a", true)
+assert(legacy.success and legacy.platforms[1].hadIdentity == false and legacy.platforms[1].platformUid == "boot-c:16")
+assert(legacy.platforms[1].lineage == nil, "a lineage followed a replaced hub")
 assert(platform.hidden and not env.storage.source_recovery_ready)
 assert(not recovery.finish().success)
+assert(recovery.reconcile(3, "boot-c:16", nil, false, verdict({verdict = "legacy_unclassified"})).quarantined)
+assert(platform.hidden and locks[3].kind == "quarantine" and recovery.finish().success)
 -- Factorio throws on member reads from invalid entity handles.
+locks[3] = nil
 env.storage.source_recovery_identities[3] = {surface_index = 8, hub_unit_number = 16, uid = "boot-b:16"}
 platform.hub = setmetatable({valid = false}, {__index = function() error("invalid LuaEntity read") end})
+recovery.startup()
 local valid_read, result = pcall(recovery.begin, "boot-d", "journal-a", true)
-assert(valid_read and not result.success, "invalid hub crashed recovery instead of refusing")
-print("PASS startup protection, retired identity quarantine, replay binding, and untracked-save refusal")
+assert(valid_read and result.success, "invalid hub crashed or blocked recovery")
+assert(result.platforms[1].platformUid == nil and result.platforms[1].hubUnitNumber == nil)
+assert(recovery.reconcile(3, nil, nil, false, verdict({verdict = "no_identity"})).quarantined)
+assert(locks[3].quarantine.reason == "no_identity" and platform.hidden and recovery.finish().success)
+locks[3] = nil
+print("PASS startup protection, retired identity quarantine, replay binding, and per-platform untracked-save quarantine")
 
 -- Startup must not perform transfer-only cargo preparation or wait for scheduler work
 -- that is intentionally suspended until reconciliation finishes.
@@ -105,7 +125,19 @@ assert(recovery.begin("boot-save", "journal-a", true, "save_game", true).success
 env.storage.surface_export_passengers = {[5] = {state = "returned", job_id = "job-old", platform_index = 3, platform_uid = "boot-b:16"},
     [6] = {state = "returned", job_id = "job-other", platform_index = 3, platform_uid = "boot-b:16"}}
 env.storage.surface_export_arrivals = {pat = {["returned:job-old"] = {platform_index = 3, platform_uid = "boot-b:16", items = {}}}}
-local accepted = recovery.reconcile(3, "boot-b:16", "job-old")
+env.storage.surface_export_lineages = {[3] = {lineage = "lineage:boot-b:16", generation = 1, surface_index = 8, hub_unit_number = 16}}
+local rollback = {verdict = "rollback_other", adopt = true, lineage = "lineage:boot-b:16", generation = 1, adoptGeneration = 3,
+    holderInstanceId = 2, holderGeneration = 2}
+local duplicate = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict({verdict = "duplicate", adopt = true, adoptGeneration = 3,
+    lineage = "lineage:boot-b:16", generation = 1}))
+assert(duplicate.quarantined and not duplicate.accepted and locks[3].phase == "committed", "save_game adopted a copy another server still holds")
+locks[3] = {kind = "transfer", phase = "pre_commit", transfer_job_id = "job-old", surface_index = 8, resolution_request_id = "req-delete",
+    resolution_restore = {kind = "transfer", phase = "committed", transfer_job_id = "job-old"}}
+local resolving = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict(rollback))
+assert(not resolving.accepted and platform.hidden ~= false and locks[3].resolution_request_id == "req-delete"
+    and env.storage.surface_export_lineages[3].generation == 1, "save_game adopted a copy an administrator resolution is deleting")
+locks[3] = {kind = "startup", surface_index = 8}
+local accepted = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict(rollback))
 assert(env.storage.surface_export_passengers[5].platform_uid == accepted.platformUid
     and env.storage.surface_export_arrivals.pat["returned:job-old"].platform_uid == accepted.platformUid,
     "passenger records of the adopted transfer follow the new identity")
@@ -115,16 +147,18 @@ assert(accepted.accepted and not platform.hidden, "save-game policy did not acce
 assert(recovery.finish().success)
 assert(not recovery.matches(platform, "boot-b:16"), "old identity can address an accepted restoration")
 assert(recovery.matches(platform, accepted.platformUid), "new identity was not retained")
+assert(env.storage.surface_export_lineages[3].generation == 3, "adoption did not advance the lineage generation")
 local first_id = recovery.export_job_id(1, "same-platform")
 recovery.startup()
 assert(recovery.begin("next-boot", "journal-a", true, "plugin_history", false).success)
-assert(recovery.reconcile(3, accepted.platformUid, nil).success)
+assert(recovery.reconcile(3, accepted.platformUid, nil, false, normal("lineage:boot-b:16", 3)).success)
 assert(recovery.finish().success)
 assert(recovery.matches(platform, accepted.platformUid), "restart changed the accepted platform identity")
 assert(recovery.export_job_id(1, "same-platform") ~= first_id, "old save reused an export operation ID")
 recovery.startup()
 assert(recovery.begin("blocked-boot", "journal-a", true, "save_game", false).success)
-assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined)
+rollback.generation = 3; rollback.adoptGeneration = 4
+assert(recovery.reconcile(3, accepted.platformUid, "pending-job", false, verdict(rollback)).quarantined)
 assert(platform.hidden, "save-game mode released unresolved ownership")
 print("PASS save-game adoption, persistent fresh identity, new export IDs, and unresolved ownership protection")
 
@@ -192,7 +226,7 @@ print("PASS restoration notices require the live platform identity")
 recovery.startup()
 assert(recovery.begin("pending-boot", "journal-a", true, "save_game", true).success)
 env.storage.async_jobs = {pending = {platform_index = 3}}
-assert(recovery.reconcile(3, accepted.platformUid, "pending-job").quarantined,
+assert(recovery.reconcile(3, accepted.platformUid, "pending-job", false, verdict(rollback)).quarantined,
     "controller history overrode a job still owned by the loaded save")
 assert(platform.hidden)
 print("PASS loaded Lua jobs retain ownership in Save game mode")
@@ -221,11 +255,12 @@ locks[3] = nil
 env.storage.async_jobs = {}
 recovery.startup()
 assert(recovery.begin("pre-retirement", "journal-a", false, "save_game", false).success)
-assert(not recovery.reconcile(3, accepted.platformUid, nil, true).success,
-    "startup released a source still owned by an unresolved controller handoff")
-assert(platform.hidden and locks[3].kind == "startup")
-assert(not recovery.finish().success)
-print("PASS pre-retirement checkpoint stays protected while ownership is unresolved")
+local unresolved = recovery.reconcile(3, accepted.platformUid, nil, true, normal("lineage:boot-b:16", 3))
+assert(unresolved.success and unresolved.quarantined, "startup released a source still owned by an unresolved controller handoff")
+assert(platform.hidden and locks[3].kind == "quarantine" and locks[3].quarantine.reason == "unresolved_handoff")
+local finished = recovery.finish()
+assert(finished.success and finished.quarantined == 1 and platform.hidden, "one unresolved platform blocked the instance or was released")
+print("PASS pre-retirement checkpoint stays protected per platform while ownership is unresolved")
 
 local live_notice = env.storage.source_recovery_notices[3]
 local live_identity = env.storage.source_recovery_identities[3]
@@ -234,15 +269,19 @@ env.storage.source_recovery_identities[99] = {uid = "gone"}
 local receipts = {source_delete = {records = {old = {platform_index = 99}}, order = {"old"}, next_slot = 2}}
 env.storage.surface_export_transfer_receipts = receipts
 local preserved_lock = locks[3]
-local hub = platform.hub
-platform.hub = {valid = false}
-assert(not recovery.begin("prune-failed", "journal-a", true).success)
-assert(env.storage.source_recovery_notices[99] and env.storage.source_recovery_identities[99],
-    "partial roster pruned metadata")
-platform.hub = hub
+env.storage.surface_export_lineages[99] = {lineage = "lineage:gone:1", generation = 0}
+for index = 1000, 1500 do
+    force.platforms[index] = {valid = true, index = index, force = force, surface = {valid = true, index = index},
+        hub = {valid = true, unit_number = index}}
+end
+assert(not recovery.begin("prune-failed", "journal-a", true).success, "an oversized roster was truncated")
+assert(env.storage.source_recovery_notices[99] and env.storage.source_recovery_identities[99]
+    and env.storage.surface_export_lineages[99], "partial roster pruned metadata")
+for index = 1000, 1500 do force.platforms[index] = nil end
 assert(recovery.begin("prune-complete", "journal-a", true).success)
-assert(not env.storage.source_recovery_notices[99] and not env.storage.source_recovery_identities[99],
-    "absent platform metadata was retained")
+assert(not env.storage.source_recovery_notices[99] and not env.storage.source_recovery_identities[99]
+    and not env.storage.surface_export_lineages[99], "absent platform metadata was retained")
+assert(env.storage.surface_export_lineages[3], "present platform lineage was pruned")
 assert(env.storage.source_recovery_notices[3] == live_notice and env.storage.source_recovery_identities[3] == live_identity)
 assert(locks[3] == preserved_lock and env.storage.surface_export_transfer_receipts == receipts and receipts.source_delete.records.old,
     "metadata pruning changed transfer authority")

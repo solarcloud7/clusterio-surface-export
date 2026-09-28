@@ -36,6 +36,7 @@ env.require = function(name)
         ACTIVATABLE_ENTITY_TYPES = {inserter = true}, delete_platform = function() deleteCalls = deleteCalls + 1; return deleteAccepted end,
     } end
     if name:find("surface-lock", 1, true) then return {complete_cargo_pods = function() return 0, 0, 0 end} end
+    if name:find("platform-lineage", 1, true) then return assert(loadfile(root .. "utils/platform-lineage.lua", "t", env))() end
     error(name)
 end
 local holds = assert(loadfile(root .. "core/destination-hold.lua", "t", env))()
@@ -133,6 +134,39 @@ uid = "replacement:3"
 assert(not holds.go_live("identity"), "stale release receipt acknowledged a replacement")
 uid = "destination:3"
 print("PASS destination UID and job bind verification, activation, discard, and release receipts")
+
+platform.hub = {valid = true, unit_number = 44}
+local carried = {lineage = "lineage:source-boot:9", generation = 2}
+assert(not holds.stage("bad-lineage", platform, force, true, nil, "import-l", {lineage = "9", generation = 2}),
+    "a per-copy uid became a destination lineage")
+assert(not holds.stage("zero-generation", platform, force, true, nil, "import-l", {lineage = carried.lineage, generation = 0}),
+    "a transfer arrival kept generation zero")
+local staged_lineage, lineage_hold = holds.stage("lineage", platform, force, true, nil, "import-l", carried)
+assert(staged_lineage and lineage_hold.lineage == carried.lineage and lineage_hold.generation == 2)
+assert(not holds.stage("lineage", platform, force, true, nil, "import-l", {lineage = "lineage:other:9", generation = 2}),
+    "a re-stage changed the held lineage")
+local verified, verified_hold = holds.verify("lineage", "import-l")
+assert(verified and verified_hold.lineage == carried.lineage and verified_hold.generation == 2)
+assert(not (env.storage.surface_export_lineages or {})[3], "a held copy recorded its lineage before release")
+local live_copy = {valid = true, index = 7, name = "older copy", surface = {valid = true, index = 70}, hub = {valid = true, unit_number = 70}}
+force.platforms[7] = live_copy
+env.storage.surface_export_lineages = {[7] = {lineage = carried.lineage, generation = 1, surface_index = 70, hub_unit_number = 70}}
+assert(not holds.go_live("lineage", "import-l"), "release created a second live local copy of one lineage")
+assert(holds.get("lineage") and platform.hidden, "refused release lost the hold")
+force.platforms[7] = nil
+live_copy.valid = false
+assert(holds.go_live("lineage", "import-l"), "a record left by a platform that already departed blocked its return")
+assert(env.storage.surface_export_lineages[3].lineage == carried.lineage and env.storage.surface_export_lineages[3].generation == 2)
+local lineage_receipt = env.storage.surface_export_transfer_receipts.destination_live.records.lineage
+assert(lineage_receipt.lineage == carried.lineage and lineage_receipt.generation == 2)
+local replayed, replayed_receipt = holds.verify("lineage", "import-l")
+assert(replayed and replayed_receipt.lineage == carried.lineage, "a lost activation reply lost the lineage")
+local standalone_ok = holds.stage("standalone", platform, force, true, nil, "import-s")
+assert(standalone_ok and holds.go_live("standalone", "import-s"))
+assert(env.storage.surface_export_lineages[3].lineage == carried.lineage, "a standalone arrival rewrote a lineage")
+env.storage.surface_export_lineages = nil
+platform.hub = nil
+print("PASS destination holds carry the transfer lineage and record it only at release")
 
 local function legacy(id)
     env.storage.destination_holds[id] = {transfer_id=id, force_name="player", platform_index=3,

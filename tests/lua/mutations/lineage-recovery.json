@@ -1,0 +1,592 @@
+[
+	{
+		"name": "the internal unlock refuses a quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if lock_data.kind == \"quarantine\" and authority ~= \"quarantine\" and authority ~= \"resolution\" then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "the expiry scanner never examines a quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true }",
+		"replace": "local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true, quarantine = true }",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a quarantine release needs the matching identity",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if type(expected) ~= \"table\" or expected.reason ~= lock.quarantine.reason or expected.lineage ~= lock.quarantine.lineage",
+		"replace": "if type(expected) ~= \"table\"",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "startup recovery unlocks only on the normal verdict",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if verdict.verdict == \"normal\" or adopting then",
+		"replace": "if true then",
+		"tests": [
+			"tests/lua/platform-lineage.lua",
+			"tests/lua/source-recovery.lua"
+		]
+	},
+	{
+		"name": "automatic adoption needs the rollback_other verdict",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "return verdict.verdict == \"rollback_other\" and verdict.adopt == true",
+		"replace": "return verdict.adopt == true",
+		"tests": [
+			"tests/lua/platform-lineage.lua",
+			"tests/lua/source-recovery.lua"
+		]
+	},
+	{
+		"name": "a minted lineage must match this platform at generation zero",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if verdict.generation ~= 0 or verdict.lineage ~= PlatformLineage.mint_value(storage.source_recovery_epoch, platform) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a normal verdict must match the local lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if current ~= verdict.lineage or generation ~= verdict.generation then\n\t\treturn false, \"Platform lineage changed during recovery\"",
+		"replace": "if false then\n\t\treturn false, \"Platform lineage changed during recovery\"",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "an unresolved handoff quarantines its platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if unresolved_source then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-recovery.lua"
+		]
+	},
+	{
+		"name": "only controller transfers carry the payload lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "data._standaloneImport == true or ",
+		"replace": "",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "ensure refuses under a recovery lock",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if lock and (lock.kind == \"startup\" or lock.kind == \"quarantine\") then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "ensure waits for startup recovery",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if storage.source_recovery_ready ~= true or not storage.source_recovery_epoch then",
+		"replace": "if not storage.source_recovery_epoch then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "ensure refuses a destination hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if SurfaceLock.destination_hold_owns_surface(platform.surface, platform) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a transfer export needs a lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if is_transfer then return nil, nil,",
+		"replace": "if false then return nil, nil,",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "one lineage per local platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if held_by_other(lineage, platform.index) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua",
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "a lineage is stored only as the prefixed form",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "lineage:match(\"^lineage:[^:%s]+:[1-9]%d*$\") ~= nil",
+		"replace": "lineage ~= \"\"",
+		"tests": [
+			"tests/lua/platform-lineage.lua",
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "presence counts destination holds",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if type(hold) == \"table\" and hold.lineage == lineage then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "presence answers only when ready",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if storage.source_recovery_ready ~= true then return {success = false, error = \"Source recovery is not ready\"} end\n\tlocal lineages",
+		"replace": "local lineages",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "release records the carried lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "if hold.lineage then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "a destination arrival is above generation zero",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "and PlatformLineage.valid_generation(carried.generation) and carried.generation > 0) then",
+		"replace": "and PlatformLineage.valid_generation(carried.generation)) then",
+		"tests": [
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "a stale record from a departed platform does not block a lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if other and other.valid and PlatformLineage.get(other) == lineage then return true end",
+		"replace": "return true",
+		"tests": [
+			"tests/lua/platform-lineage.lua",
+			"tests/lua/destination-transfer-gate.lua"
+		]
+	},
+	{
+		"name": "a confirmed source deletion forgets its lineage record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/delete-platform-for-transfer.lua",
+		"find": "    PlatformLineage.forget(platform_index)\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "only the owning transfer settles an in-transit quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "and type(job_id) == \"string\" and job_id ~= \"\" and lock.quarantine.owner_job_id == job_id",
+		"replace": "and type(job_id) == \"string\" and job_id ~= \"\"",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "the owning transfer rollback releases its quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "        if SurfaceLock.transfer_owns_quarantine(lock_data, expected_job_id) then\n",
+		"replace": "        if false then\n",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "the owning transfer can prove its quarantined source was never deleted",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if type(lock) == \"table\" and SurfaceLock.transfer_owns_quarantine(lock, transfer_id) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "the owning transfer deletes its quarantined source",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/delete-platform-for-transfer.lua",
+		"find": "  if lock.kind == \"quarantine\" then\n",
+		"replace": "  if false then\n",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "only in-transit and unresolved-handoff quarantines record an owner",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "owner_job_id = (reason == \"in_transit\" or reason == \"unresolved_handoff\") and verdict",
+		"replace": "owner_job_id = verdict",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "an absent platform leaves no orphan lock",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if orphan and orphan.kind == \"startup\" then storage.locked_platforms[platform_index] = nil end",
+		"replace": "if false then end",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "an unrecorded adoption stays quarantined",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "\t\t\tif not recorded then\n",
+		"replace": "\t\t\tif false then\n",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a standalone import hold never adopts the payload lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "and (job.platform_data or {})._standaloneImport ~= true) then return nil end",
+		"replace": ") then return nil end",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "any unlock of a converted lock restores its protection",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "    if lock_data.resolution_restore then\n",
+		"replace": "    if false then\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "only a resolution may release a tombstone",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "and not (authority == \"resolution\" and not lock_data.resolution_restore) then",
+		"replace": "and not (true and not lock_data.resolution_restore) then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution release needs its matching token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if not (record and record.release == true and record.platform_index == platform_index\n        and lock and lock.platform_uid == record.platform_uid) then",
+		"replace": "if not lock then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution release waits for startup recovery",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "    if storage.source_recovery_ready ~= true then return false, \"Startup recovery is not ready\" end\n    local record",
+		"replace": "    local record",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution never converts an in-flight transfer lock",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "    if not SurfaceLock.is_resolution_candidate(lock) then return false, \"Platform is not quarantined or tombstoned\" end\n    if type(request_id)",
+		"replace": "    if type(request_id)",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution snapshot keeps its lock at completion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": " and job.purpose ~= \"resolution\" then",
+		"replace": " then",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "a resolution snapshot reads the lineage without minting",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "\tif resolution then\n\t\tlineage, lineage_generation = PlatformLineage.get(platform)",
+		"replace": "\tif false then\n\t\tlineage, lineage_generation = PlatformLineage.get(platform)",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a retried prepare reuses its snapshot job",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif record then\n\t\tif not owns(record, request, \"delete\") then return {success = false, error = \"Resolution request belongs to another platform\"} end\n\t\treturn {success = true, jobId = record.job_id}",
+		"replace": "\tif false then\n\t\tif not owns(record, request, \"delete\") then return {success = false, error = \"Resolution request belongs to another platform\"} end\n\t\treturn {success = true, jobId = record.job_id}",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a refused snapshot restores the protection it converted",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\tif converted then SurfaceLock.restore_resolution_protection(SurfaceLock.get_lock_data(platform.index)) end\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an adoption refuses another local copy or hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\tif held_elsewhere(request.lineage, platform.index) then",
+		"replace": "\t\tif false then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a deleting resolution never releases its platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if not record or record.action ~= \"release\" or record.platform_index ~= request.platformIndex",
+		"replace": "if not record or record.platform_index ~= request.platformIndex",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an adopted tombstone gets a fresh identity",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif retired_export_id or request.refreshIdentity == true then uid = SourceRecovery.fresh_identity(platform, retired_export_id) end\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "minting a new platform keeps it quarantined until the claim",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tif PlatformLineage.get(platform)",
+		"replace": "\tif PlatformLineage.get(platform)",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an abandoned resolution restores the converted protection",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif lock and lock.resolution_request_id == request.requestId then\n\t\tSurfaceLock.restore_resolution_protection(lock)",
+		"replace": "\tif false then\n\t\tSurfaceLock.restore_resolution_protection(lock)",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an abandoned resolution never undoes a committed deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif lock and SurfaceLock.source_lock_is_committed(lock) and (lock.resolution_request_id == request.requestId",
+		"replace": "\tif false and (lock.resolution_request_id == request.requestId",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution step needs a controller-sized token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "return type(token) == \"string\" and #token >= 32",
+		"replace": "return true",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution record is owned only with its token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "and record.action == action and record.token == request.token",
+		"replace": "and record.action == action",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "release needs the authorizing token",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\tor record.token ~= request.token then",
+		"replace": "\t\tthen",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget keeps a retired copy on its own retirement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if original ~= nil and original ~= request.exportId then return",
+		"replace": "if false then return",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget waits for the resolution snapshot",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if (storage.async_jobs or {})[record.job_id] then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget needs the copy held by this resolution",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if not (lock and lock.resolution_request_id == request.requestId and type(lock.resolution_restore) == \"table\") then",
+		"replace": "if not lock then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "retarget refuses a committed deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif SurfaceLock.source_lock_is_committed(lock) then return {success = false, error = \"The deletion is already committed\"} end\n\tif (storage.async_jobs",
+		"replace": "\tif (storage.async_jobs",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "abandon reports a copy that is already gone as a finished deletion",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if not platform or SourceRecovery.platform_uid(platform) ~= record.platform_uid then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "authorize refuses a usable platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tall[request.requestId] = {action = \"release\"",
+		"replace": "\tall[request.requestId] = {action = \"release\"",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "mint needs an authorized record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif not record then return {success = false, error = \"The resolution was not authorized for this platform\"} end\n\tlocal platform, _, err = verify(request)\n\tif not platform then return {success = false, error = err} end\n\tif record.lineage",
+		"replace": "\tif not record then record = {} end\n\tlocal platform, _, err = verify(request)\n\tif not platform then return {success = false, error = err} end\n\tif record.lineage",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an unminted claim release records only the mintable lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\t\tand PlatformLineage.mint_value(storage.source_recovery_epoch, platform) == request.lineage\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "release refreshes the identity of a journal-matched copy",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "if retired_export_id or request.refreshIdentity == true then",
+		"replace": "if retired_export_id then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a destination ignores only its own arriving hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if type(hold) == \"table\" and hold.lineage == lineage and transfer_id ~= except_transfer_id then return true end",
+		"replace": "if type(hold) == \"table\" and hold.lineage == lineage then return true end",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a destination reports another local platform with the lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "\tif held_by_other(lineage, except_index) then return true end\n\tfor transfer_id",
+		"replace": "\tfor transfer_id",
+		"tests": [
+			"tests/lua/platform-lineage.lua"
+		]
+	},
+	{
+		"name": "a retargeted deletion can be retried after its copy is gone",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif record.retired_export_id ~= nil and record.retired_export_id == request.exportId and not record.abandoned then return {success = true} end\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "an abandoned resolution is never retargeted again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "record.retired_export_id == request.exportId and not record.abandoned then",
+		"replace": "record.retired_export_id == request.exportId then",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a resolution export carries its purpose in the payload",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "\t\t\tpurpose = purpose,\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "the sectioned cache envelope keeps the resolution purpose",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "purpose = job.export_data.purpose,\n\t\t\ttimestamp = job.export_data.timestamp, stats",
+		"replace": "\n\t\t\ttimestamp = job.export_data.timestamp, stats",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "the compressed cache envelope keeps the resolution purpose",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "purpose = job.export_data.purpose,\n\t\t\ttick = job.export_data.tick,",
+		"replace": "\n\t\t\ttick = job.export_data.tick,",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "candidates report another local copy of their lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\t\t\t\tfacts.localCopy = facts.lineage and PlatformLineage.local_copy(facts.lineage, platform.index, nil) or nil\n",
+		"replace": "\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "save_game startup adoption skips a copy under resolution",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "verdict.adopt == true and not (lock and lock.resolution_request_id)",
+		"replace": "verdict.adopt == true",
+		"tests": [
+			"tests/lua/source-recovery.lua"
+		]
+	}
+]

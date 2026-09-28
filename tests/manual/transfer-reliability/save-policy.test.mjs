@@ -54,6 +54,23 @@ test("policy oracle rejects missing warnings, changed cargo, stale identities an
   const protectedReport=policy(false);protectedReport.restored.source.usable=true;
   assert.throws(()=>analyze(protectedReport));
 });
+test("lineage-era policy reports quarantine a duplicate and adopt only after the other copy is gone",()=>{
+  const lineage=accepted=>{
+    const report=policy(accepted);report.lineageReviewVersion=1;
+    const duplicate={source:{...copy(),usable:false},destination:copy()};
+    if(accepted) {
+      report.duplicateRestored=duplicate;report.duplicateNotice={status:"protected",reason:"duplicate"};
+      report.restored={source:copy(),destination:{present:false}};report.notices.notices[3].reason="rollback_other";
+    } else {report.restored=duplicate;report.notices.notices[3].reason="duplicate";}
+    return report;
+  };
+  for(const accepted of [true,false]) assert.equal(analyze(lineage(accepted)).verdict,"PASS");
+  for(const mutate of [r=>r.duplicateRestored.source.usable=true,r=>r.duplicateNotice.reason="unverified",
+    r=>r.restored.destination={present:true,usable:true,cargo:structuredClone(expectedCargo)},r=>r.notices.notices[3].reason="duplicate"]) {
+    const report=lineage(true);mutate(report);assert.throws(()=>analyze(report));
+  }
+  const history=lineage(false);history.restored.source.usable=true;assert.throws(()=>analyze(history));
+});
 test("snapshot recovery requires original failure and separately validated recovery evidence",()=>{
   assert.equal(analyze(snapshot()).verdict,"PASS");
   for(const mutate of [r=>r.rollback.destination.present=true,r=>r.originalHistory.status="recovered",

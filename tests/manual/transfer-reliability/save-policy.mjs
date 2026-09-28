@@ -6,7 +6,7 @@ import { recoveryBrowser } from "./recovery-browser.mjs";
 
 export const contract = {
   requires: ["owned disposable Docker lab", "resolved runtime profile", "verified pre-transfer checkpoint"],
-  produces: ["both save policies", "physical restored cargo", "fresh identities", "delayed-message observations"],
+  produces: ["both save policies", "lineage duplicate quarantine", "save_game adoption only after the other copy is gone", "physical restored cargo", "fresh identities", "delayed-message observations"],
   "does not": ["mutate the development cluster", "automatically reconstruct missing platforms", "claim universal crash safety"],
 };
 const find = name => `local p;for _,v in pairs(game.forces.player.platforms) do if v.name==${JSON.stringify(name)} then assert(not p);p=v end end;assert(p,'fixture missing');`;
@@ -21,6 +21,7 @@ const setMode = (lab,mode) => {
 
 export async function savePolicyCase(lab,report,save) {
   report.ownershipReviewVersion=1;
+  report.lineageReviewVersion=1;
   report.mode=report.case==="save-policy-game"?"save_game":"plugin_history";
   await recoveryReady(lab,1);await recoveryReady(lab,2);
   setMode(lab,report.mode);
@@ -31,24 +32,33 @@ export async function savePolicyCase(lab,report,save) {
   assert.deepEqual(report.before.cargo,expectedCargo);assert.deepEqual(report.unrelatedBefore.cargo,expectedCargo);
   await lab.checkpoint("manual-policy-created",[1]);await lab.load(1,"manual-policy-created");await recoveryReady(lab,1);
   report.identityBefore=identity(lab,name);
-  report.checkpoint=await lab.checkpoint("manual-policy-before",[1]);save();
+  report.checkpoint=await lab.checkpoint("manual-policy-before",report.mode==="save_game"?[1,2]:[1]);save();
   lab.lua(1,find(other)+"assert(game.delete_surface(p.surface),'fixture deletion refused');return {success=true}");
   assert.equal(lab.probe(1,"read",other).state.present,false,"local destruction did not occur");
   report.transferId=start(lab,name);report.outcome=await terminal(lab,report.transferId);
   assert.equal(report.outcome.status,"completed");
   report.transferred=sample(lab,name);assert.equal(report.transferred.source.present,false);
   await lab.load(1,"manual-policy-before");await recoveryReady(lab,1);
+  if(report.mode==="save_game") {
+    report.duplicateRestored=sample(lab,name);
+    report.duplicateNotice=lab.lua(1,find(name)+"return {success=true,notice=storage.source_recovery_notices[p.index]}").result.notice;save();
+    assert.equal(report.duplicateRestored.source.usable,false,"save_game adopted a copy the destination still holds");
+    assert.equal(report.duplicateNotice?.reason,"duplicate");
+    await lab.load(2,"manual-policy-before");await recoveryReady(lab,2);
+    await lab.load(1,"manual-policy-before");await recoveryReady(lab,1);
+  }
   report.restored=sample(lab,name);report.unrelatedRestored=lab.probe(1,"read",other).state;
   report.identityAfter=identity(lab,name);
   report.notices=lab.lua(1,"return {success=true,notices=storage.source_recovery_notices,mode=storage.source_recovery_mode}").result;
   save();
   assert.deepEqual(report.restored.source.cargo,expectedCargo);
-  assert.deepEqual(report.restored.destination.cargo,expectedCargo);
   assert.deepEqual(report.unrelatedRestored.cargo,expectedCargo);assert.equal(report.unrelatedRestored.usable,true);
   assert.equal(report.restored.source.usable,report.mode==="save_game");
-  assert.equal(report.restored.destination.usable,true);
+  if(report.mode==="save_game") assert.equal(report.restored.destination.present,false);
+  else {assert.deepEqual(report.restored.destination.cargo,expectedCargo);assert.equal(report.restored.destination.usable,true);}
   const notice=report.notices.notices[report.identityAfter.index];
   assert.equal(notice.status,report.mode==="save_game"?"accepted":"protected");
+  assert.equal(notice.reason,report.mode==="save_game"?"rollback_other":"duplicate");
   if(report.mode==="plugin_history") {
     assert.equal(report.identityAfter.uid,report.identityBefore.uid);
     report.browser=await recoveryBrowser(lab,report);save();return;

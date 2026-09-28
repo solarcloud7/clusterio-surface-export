@@ -1,6 +1,7 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local function list_platforms(force_name)
   local force = game.forces[force_name or "player"]
@@ -65,9 +66,14 @@ local function list_platforms(force_name)
         end
       end
 
+      local lineage, lineage_generation = PlatformLineage.get(platform)
+      local lock_data = SurfaceLock.get_lock_data(platform.index)
       table.insert(platforms, {
         platform_index = platform.index,
         platform_uid = SourceRecovery.platform_uid(platform),
+        lineage = lineage,
+        lineage_generation = lineage_generation,
+        lock_kind = lock_data and lock_data.kind or nil,
         platform_name = platform.name,
         force_name = force.name,
         surface_index = surface_index,

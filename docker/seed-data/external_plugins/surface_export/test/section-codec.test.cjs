@@ -21,6 +21,16 @@ test('sections preserve every field, cargo quality, lane identity and false valu
   assert.equal(artifact.section_codec, undefined, 'internal frames escaped into downloadable format');
 });
 
+test('the section codec carries the travelling lineage in both directions', async () => {
+  const data = { entities: [{ id: 1 }], lineage: 'lineage:boot:7', generation: 2, platform_name: 'ship' };
+  const compressed = await prepareSectionImport({ compressed: true, payload: zip(data), _transferId: '1:job',
+    _lineage: 'lineage:boot:7', _lineageGeneration: 2 });
+  assert.equal(compressed._lineage, 'lineage:boot:7', 'a compressed transfer lost its lineage');
+  assert.equal(compressed._lineageGeneration, 2);
+  const artifact = await normalizeSectionExport(compressed);
+  assert.deepEqual([artifact.lineage, artifact.generation], ['lineage:boot:7', 2], 'a sectioned export lost its lineage');
+});
+
 test('legacy artifacts and oversized individual records retain the legacy path', async () => {
   const original = { compressed: true, payload: zip({ entities: [{ inventory: 'x'.repeat(70000) }] }) };
   assert.equal(await prepareSectionImport(original), original);
