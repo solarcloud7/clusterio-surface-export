@@ -15,7 +15,7 @@ const find = name => `local p;for _,v in pairs(game.forces.player.platforms) do 
 const read = (lab, host, name) => lab.probe(host, "read", name).state;
 const both = (lab, name) => ({ a: read(lab, 1, name), b: read(lab, 2, name) });
 const lastJson = raw => JSON.parse(raw.trim().split(/\r?\n/).at(-1));
-const attempt = run => { try { return { output: run() }; } catch (error) { return { error: String(error.evidence ?? error.message ?? error) }; } };
+const attempt = run => { try { return { output: run() }; } catch (error) { return { error: typeof error.evidence === "object" ? JSON.stringify(error.evidence) : String(error.evidence ?? error.message ?? error) }; } };
 
 function setHistoryMode(lab) {
   lab.ctl("controller", "config", "set", "surface_export.platform_source_of_truth", "plugin_history");
