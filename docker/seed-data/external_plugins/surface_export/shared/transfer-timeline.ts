@@ -31,12 +31,6 @@ export type TimelineAttribution = {
 	overlapTrimmedMs: number;
 	detailGapMs: number;
 	detailGapPct: number;
-	sourceExportCallMs: number | null;
-	sourceExportAsyncMs: number | null;
-	sourceExportAsyncTicks: number | null;
-	sourceExportAnchored: boolean;
-	importWindowMs: number | null;
-	importDetailGapMs: number;
 };
 
 export type TransferTimeline = {
@@ -172,8 +166,6 @@ export function buildTransferTimeline(events: readonly TimelineEventInput[] | nu
  const residualMs = Math.max(0, totalMs - attributedMs);
  return { rows: rows.sort((a,b) => a.startMs - b.startMs), totalMs, attribution: {
   totalMs, attributedMs, residualMs, residualPct: totalMs ? residualMs / totalMs * 100 : 0,
-  overlapTrimmedMs: 0, detailGapMs: 0, detailGapPct: 0, sourceExportCallMs: null,
-  sourceExportAsyncMs: null, sourceExportAsyncTicks: null, sourceExportAnchored: false,
-  importWindowMs: null, importDetailGapMs: 0,
+  overlapTrimmedMs: 0, detailGapMs: 0, detailGapPct: 0,
  } };
 }

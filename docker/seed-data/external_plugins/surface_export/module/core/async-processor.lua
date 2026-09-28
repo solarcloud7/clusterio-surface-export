@@ -98,11 +98,6 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
 	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name, operation_id, expected_uid, route_portal)
 end
 
-function AsyncProcessor.queue_import_from_file(filename, new_platform_name, force_name, requester_name)
-	AsyncProcessor.init()
-	return ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
-end
-
 function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name, receive_timing)
 	AsyncProcessor.init()
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
