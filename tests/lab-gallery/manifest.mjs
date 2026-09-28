@@ -2,10 +2,6 @@ import { readFileSync } from "node:fs";
 import { FAIL_SAFE_HOOKS, NON_DESTRUCTIVE_HOOKS } from "../../docker/seed-data/external_plugins/surface_export/scripts/fail-safe-hooks.mjs";
 
 
-export function meterMiningTarget(manifestValue) {
-	return manifestValue === null ? false : manifestValue;
-}
-
 export function loadGalleryManifest(repoRoot) {
 	return JSON.parse(readFileSync(new URL("tests/lab-gallery/manifest.json", repoRoot), "utf8"));
 }
