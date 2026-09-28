@@ -139,6 +139,7 @@ function RemoteInterface.register()
     source_recovery_reconcile = Base.json_wrap(SourceRecovery.reconcile),
     source_recovery_finish = Base.json_wrap(SourceRecovery.finish),
     source_recovery_identity = Base.json_wrap(SourceRecovery.source_identity),
+    source_recovery_presence = Base.json_wrap(SourceRecovery.lineage_presence),
     export_platform = export_platform,
     export_platform_to_file = export_platform_to_file,
     get_export = get_export,

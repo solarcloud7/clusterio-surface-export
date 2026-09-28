@@ -485,7 +485,7 @@ local function release_passengers(job_id)
     end
 end
 
-local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock)
+local function unlock_platform(platform_index, expected_name, recovery_bootstrap, restored_job_id, expected_job_id, observed_lock, quarantine_release)
 	if storage.source_recovery_ready == false and not recovery_bootstrap then
 		return false, "Startup recovery has not authorized platform use"
 	end
@@ -496,6 +496,9 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     local lock_data = storage.locked_platforms[platform_index]
     if not lock_data then
         return false, "Platform not locked: index " .. tostring(platform_index)
+    end
+    if lock_data.kind == "quarantine" and quarantine_release ~= true then
+        return false, "Unlock refused: platform is quarantined by startup recovery; only a recovery resolution may release it"
     end
     local platform_name = lock_data.platform_name
     local released_job_id = lock_data.kind == "transfer" and lock_data.transfer_job_id or nil
@@ -589,6 +592,18 @@ end
 function SurfaceLock.unlock_current_lock(platform_index, observed_lock)
     if type(observed_lock) ~= "table" then return false, "Local lock identity is required" end
     return unlock_platform(platform_index, nil, nil, nil, nil, observed_lock)
+end
+
+function SurfaceLock.release_quarantine(platform_index, expected)
+    local lock = SurfaceLock.get_lock_data(platform_index)
+    if type(lock) ~= "table" or lock.kind ~= "quarantine" or type(lock.quarantine) ~= "table" then
+        return false, "Platform is not quarantined"
+    end
+    if type(expected) ~= "table" or expected.reason ~= lock.quarantine.reason or expected.lineage ~= lock.quarantine.lineage
+        or expected.epoch ~= lock.quarantine.epoch then
+        return false, "Quarantine identity changed"
+    end
+    return unlock_platform(platform_index, nil, nil, nil, nil, lock, true)
 end
 
 function SurfaceLock.is_locked(platform_index)

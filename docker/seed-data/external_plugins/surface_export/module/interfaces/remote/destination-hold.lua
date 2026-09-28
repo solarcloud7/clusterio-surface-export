@@ -34,7 +34,8 @@ local function destination_hold(action, transfer_id, platform_index, force_name)
 		return { success = true, hold = result }
 	elseif action == "verify" then
 		local ok, result = DestinationHold.verify(transfer_id)
-		return {success = ok, error = not ok and result or nil}
+		if not ok then return {success = false, error = result} end
+		return {success = true, lineage = result.lineage, generation = result.generation}
 	elseif action == "go_live" then
 		local passengers, staged_err = PassengerArrival.take_staged(transfer_id)
 		if staged_err then return { success = false, error = staged_err } end

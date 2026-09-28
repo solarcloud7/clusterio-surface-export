@@ -4,6 +4,7 @@ local Gateway = require("modules/surface_export/core/gateway")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local Receipts = require("modules/surface_export/utils/transfer-receipts")
 local platform_identity = require("modules/surface_export/utils/platform-identity")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 
 local DestinationHold = {}
 
@@ -152,7 +153,7 @@ local function find_hold_for_platform(holds, surface_index, platform_index, exce
 	return nil, nil
 end
 
-function DestinationHold.stage(transfer_id, platform, force, fail_closed, preparation_visibility, job_id)
+function DestinationHold.stage(transfer_id, platform, force, fail_closed, preparation_visibility, job_id, carried)
 	if type(transfer_id) ~= "string" or transfer_id == "" then
 		return false, "transfer_id is required"
 	end
@@ -171,6 +172,10 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 	local holds = ensure_storage()
 	local uid = platform_identity(platform)
 	if not uid then return false, "Destination platform identity is unavailable" end
+	if carried ~= nil and not (type(carried) == "table" and PlatformLineage.valid(carried.lineage)
+		and PlatformLineage.valid_generation(carried.generation) and carried.generation > 0) then
+		return false, "Destination lineage is invalid"
+	end
 	job_id = job_id or transfer_id
 	local existing = holds[transfer_id]
 	if Receipts.get("destination_live", transfer_id) then
@@ -178,7 +183,8 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 	end
 	if existing then
 		if existing.preparation_failed then return false, "Previous destination preparation failed" end
-		if existing.force_name == force.name and matches(existing, platform, job_id) then
+		if existing.force_name == force.name and matches(existing, platform, job_id)
+			and existing.lineage == (carried and carried.lineage) and existing.generation == (carried and carried.generation) then
 			return true, existing
 		end
 		return false, "transfer_id already holds a different destination platform"
@@ -202,6 +208,7 @@ function DestinationHold.stage(transfer_id, platform, force, fail_closed, prepar
 		transfer_id = transfer_id, force_name = force.name, platform_index = platform.index,
 		platform_name = platform.name, surface_index = surface.index,
 		platform_uid = uid, job_id = job_id,
+		lineage = carried and carried.lineage or nil, generation = carried and carried.generation or nil,
 		original_hidden = original_hidden, original_platform_hidden = original_platform_hidden,
 		original_paused = original_paused, active_states = active_states, held_tick = game.tick,
 		preparation_failed = true,
@@ -303,6 +310,10 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 	local holds = ensure_storage()
 	local hold, force, platform, err = resolve_hold(transfer_id, job_id)
 	if err then return false, err end
+	if hold.lineage then
+		local recorded, record_err = PlatformLineage.record(platform, hold.lineage, hold.generation)
+		if not recorded then return false, "Destination lineage could not be recorded: " .. tostring(record_err) end
+	end
 	local arrivals = record_arrivals(transfer_id, hold, passengers)
 	local surface = platform.surface
 	local restored, kept_inactive = restore_active_states(surface, hold.active_states)
@@ -329,6 +340,7 @@ function DestinationHold.go_live(transfer_id, job_id, passengers)
 		transfer_id = transfer_id, platform_index = hold.platform_index,
 		surface_index = hold.surface_index, force_name = hold.force_name, tick = game.tick,
 		platform_uid = hold.platform_uid, job_id = hold.job_id,
+		lineage = hold.lineage, generation = hold.generation,
 	})
 	holds[transfer_id] = nil
 	log(string.format("[DestinationHold] go-live transfer %s on platform '%s' (restored=%d, kept_inactive=%d, passengers=%d)",

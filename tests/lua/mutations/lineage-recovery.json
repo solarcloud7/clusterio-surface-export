@@ -1,0 +1,135 @@
+[
+	{
+		"name": "the internal unlock refuses a quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if lock_data.kind == \"quarantine\" and quarantine_release ~= true then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "the expiry scanner never examines a quarantine",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true }",
+		"replace": "local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true, quarantine = true }",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "a quarantine release needs the matching identity",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if type(expected) ~= \"table\" or expected.reason ~= lock.quarantine.reason or expected.lineage ~= lock.quarantine.lineage",
+		"replace": "if type(expected) ~= \"table\"",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "startup recovery unlocks only on the normal verdict",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if verdict.verdict == \"normal\" or adopting then",
+		"replace": "if true then",
+		"tests": ["tests/lua/platform-lineage.lua", "tests/lua/source-recovery.lua"]
+	},
+	{
+		"name": "automatic adoption needs the rollback_other verdict",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "return verdict.verdict == \"rollback_other\" and verdict.adopt == true",
+		"replace": "return verdict.adopt == true",
+		"tests": ["tests/lua/platform-lineage.lua", "tests/lua/source-recovery.lua"]
+	},
+	{
+		"name": "a minted lineage must match this platform at generation zero",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if verdict.generation ~= 0 or verdict.lineage ~= PlatformLineage.mint_value(storage.source_recovery_epoch, platform) then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "a normal verdict must match the local lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if current ~= verdict.lineage or generation ~= verdict.generation then\n\t\treturn false, \"Platform lineage changed during recovery\"",
+		"replace": "if false then\n\t\treturn false, \"Platform lineage changed during recovery\"",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "an unresolved handoff quarantines its platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if unresolved_source then",
+		"replace": "if false then",
+		"tests": ["tests/lua/source-recovery.lua"]
+	},
+	{
+		"name": "only controller transfers carry the payload lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "data._standaloneImport == true or ",
+		"replace": "",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "ensure refuses under a recovery lock",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if lock and (lock.kind == \"startup\" or lock.kind == \"quarantine\") then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "ensure waits for startup recovery",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if storage.source_recovery_ready ~= true or not storage.source_recovery_epoch then",
+		"replace": "if not storage.source_recovery_epoch then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "ensure refuses a destination hold",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if SurfaceLock.destination_hold_owns_surface(platform.surface, platform) then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "a transfer export needs a lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if is_transfer then return nil, nil,",
+		"replace": "if false then return nil, nil,",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "one lineage per local platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if held_by_other(lineage, platform.index) then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua", "tests/lua/destination-transfer-gate.lua"]
+	},
+	{
+		"name": "a lineage is stored only as the prefixed form",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "lineage:match(\"^lineage:[^:%s]+:[1-9]%d*$\") ~= nil",
+		"replace": "lineage ~= \"\"",
+		"tests": ["tests/lua/platform-lineage.lua", "tests/lua/destination-transfer-gate.lua"]
+	},
+	{
+		"name": "presence counts destination holds",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/platform-lineage.lua",
+		"find": "if type(hold) == \"table\" and hold.lineage == lineage then",
+		"replace": "if false then",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "presence answers only when ready",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-recovery.lua",
+		"find": "if storage.source_recovery_ready ~= true then return {success = false, error = \"Source recovery is not ready\"} end\n\tlocal lineages",
+		"replace": "local lineages",
+		"tests": ["tests/lua/platform-lineage.lua"]
+	},
+	{
+		"name": "release records the carried lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "if hold.lineage then",
+		"replace": "if false then",
+		"tests": ["tests/lua/destination-transfer-gate.lua"]
+	},
+	{
+		"name": "a destination arrival is above generation zero",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/destination-hold.lua",
+		"find": "and PlatformLineage.valid_generation(carried.generation) and carried.generation > 0) then",
+		"replace": "and PlatformLineage.valid_generation(carried.generation)) then",
+		"tests": ["tests/lua/destination-transfer-gate.lua"]
+	}
+]

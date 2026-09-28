@@ -25,6 +25,7 @@ local ExportCache = require("modules/surface_export/utils/export-cache")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
+local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -168,6 +169,11 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
 	end
+	local lineage, lineage_generation, lineage_err = PlatformLineage.for_export(platform, destination_instance_id and true or false)
+	if lineage_err then
+		Timing.finish(job_id, "failed")
+		return nil, lineage_err
+	end
 
 
 	local lock_opts = {
@@ -247,6 +253,8 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
 			platform_uid = uid,
+			lineage = lineage,
+			generation = lineage_generation,
 			tick = game.tick,
 			timestamp = Util.format_timestamp(game.tick),
 			platform = {
@@ -441,6 +449,7 @@ local function publish_completion(job)
 			section_codec = SectionCodec.VERSION, section_count = #job.compressed_sections, sections = job.compressed_sections,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name, tick = job.export_data.tick,
+			lineage = job.export_data.lineage, generation = job.export_data.generation,
 			timestamp = job.export_data.timestamp, stats = job.export_data.stats,
 			verification = job.export_data.verification,
 		})
@@ -451,6 +460,7 @@ local function publish_completion(job)
 			payload = compressed,
 			platform_name = job.export_data.platform_name,
 			platform_uid = job.export_data.platform_uid, force_name = job.force_name,
+			lineage = job.export_data.lineage, generation = job.export_data.generation,
 			tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp,
 			stats = job.export_data.stats,

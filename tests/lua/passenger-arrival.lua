@@ -137,6 +137,7 @@ env.require = function(name)
 	if name:find("core/gateway", 1, true) then return {} end
 	if name:find("route-alerts", 1, true) then return {raise = function() end} end
 	if name:find("surface-lock", 1, true) then return {complete_cargo_pods = function() return 0, 0, 0 end} end
+	if name:find("platform-lineage", 1, true) then return assert(loadfile(root .. "utils/platform-lineage.lua", "t", env))() end
 	error(name)
 end
 local arrival = assert(loadfile(root .. "core/passenger-arrival.lua", "t", env))()

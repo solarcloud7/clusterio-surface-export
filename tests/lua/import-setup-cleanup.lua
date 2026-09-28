@@ -212,7 +212,10 @@ missing.env.storage.destination_holds['no-hub']={transfer_id='no-hub',preparatio
 missing.reload()
 local recovery=missing.load('core/source-recovery')
 recovery.startup()
-assert(not recovery.begin('new-boot','journal',false).success, 'unidentified setup unexpectedly reconciled')
+local unidentified=recovery.begin('new-boot','journal',false)
+assert(unidentified.success and unidentified.platforms[1].platformUid==nil and unidentified.platforms[1].jobOwns,
+    'unidentified setup gained an identity or lost its owning job')
+assert(not missing.env.storage.source_recovery_ready, 'begin opened the recovery gate')
 local waiting_export={type='export',job_id='must-wait',started_tick=0}
 missing.env.storage.async_jobs[waiting_export.job_id]=waiting_export
 missing.allow();missing.env.game.tick=missing_job.setup_cleanup.next_tick
