@@ -208,7 +208,7 @@ try {
 	const readDeadline = Date.now() + 30_000;
 	while (Date.now() < readDeadline) {
 		try {
-			raw = docker(["exec", HOSTS[SOURCE_HOST].container, "sh", "-c", `cat ${dumpPath}`]);
+			raw = docker(["exec", HOSTS[SOURCE_HOST].container, "cat", dumpPath]);
 			if (raw && raw.length > 0) break;
 		} catch (readError) {
 			console.log(`  NOTE  waiting for ${DUMP_FILE} to land on disk (${readError.message.split("\n")[0]})`);
