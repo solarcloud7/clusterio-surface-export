@@ -14,7 +14,9 @@ must resolve inside the initially empty `/consumer/node_modules` installation.
   auto-discovers an installed plugin when no plugin list exists. Add it only if absent.
 - Create both saves through the public CLI, without development seed saves.
 - Require real locale/prototype/icon exports and an authenticated browser loading the plugin.
-- Require one visible gateway and connections to the five basic planets on each instance.
+- Require the visible Gateway and its four visible coloured portals on each instance, with
+  Nauvis as the only planet connected to the Gateway. Companion ZIPs before 0.7 are checked
+  against their one visible gateway connected to the five basic planets.
 - Reuse the independent physical cargo and lost-source-reply recovery fixture. Kill the controller
   child with SIGKILL; the installer's generated `run-controller.sh` restarts it in the same PID
   namespace. Verify a different controller PID and a real recovery retry. Neither the

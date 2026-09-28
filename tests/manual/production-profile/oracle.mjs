@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { analyze, evaluateCopies } from "../transfer-reliability/oracle.mjs";
 import { settings } from "./runtime/provision.mjs";
+import { beforePortals, expectedGatewayPrototypes } from "../consumer-install/oracle.mjs";
 
 import { preservesInstalledCode } from "./mounts.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
@@ -43,7 +44,9 @@ export function analyzeProfile(report) {
   }
   assert.equal(report.instances?.length, 2);
   assert.equal(new Set(report.instances.map(i => i.id)).size, 2);
-  assert.deepEqual(report.controllerSettings, settings.controller);
+  const gatewayVersion = report.runtime?.pins?.gateway?.version ?? "0.6.5";
+  assert.deepEqual(report.controllerSettings, beforePortals(gatewayVersion)
+    ? { ...settings.controller, "surface_export.gateway_mode": "one_gate" } : settings.controller);
   assert.deepEqual(report.controllerLocalSettings, settings.controllerLocal);
   for (const n of [1, 2]) assert.deepEqual(report.hostSettings[n], settings.host);
   for (const instance of report.instances) for (const [key, value] of Object.entries(settings.instance).filter(([k]) => k.startsWith("surface_export.")))
@@ -101,8 +104,9 @@ export function analyzeProfile(report) {
   assert.deepEqual(report.browser.failedResponses, []);
   assert.equal(report.browser.nodes.length, 2);
   assert.deepEqual(report.browser.nodes.map(n => n.id).sort(), report.instances.map(i => `instance:${i.id}`).sort());
-  assert.deepEqual(report.browser.visibleGateways, ["surfexp_gateway_hub"]);
-  assert.deepEqual(report.browser.gatewayRoutes, ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"]);
+  const prototypes = expectedGatewayPrototypes(gatewayVersion);
+  assert.deepEqual(report.browser.visibleGateways, prototypes.visibleGateways);
+  assert.deepEqual(report.browser.gatewayRoutes, prototypes.gatewayRoutes);
   for (const asset of report.browser.assets) { assert.equal(asset.status, 200); assert.ok(asset.bytes > 0); }
   assert.ok(report.browser.assets.some(a => a.png && a.status === 200));
   assert.ok(report.browser.assets.some(a => /locale/.test(a.name) && a.entries > 0 && a.status === 200));
