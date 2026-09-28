@@ -89,8 +89,10 @@ do
     assert(not lineage.valid("lineage:a:b:15") and not lineage.valid("lineage:boot:0") and not lineage.valid("lineage::15"))
     assert(lineage.valid_generation(0) and not lineage.valid_generation(-1) and not lineage.valid_generation(1.5))
     local p = add(3, 30)
-    assert(not lineage.ensure(p), "lineage minted before recovery was ready")
+    assert(not lineage.ensure(p), "lineage minted before recovery began")
     env.storage.source_recovery_epoch = "epoch"
+    env.storage.source_recovery_ready = false
+    assert(not lineage.ensure(p), "lineage minted while recovery was reconciling")
     env.storage.source_recovery_ready = true
     for _, kind in ipairs({"startup", "quarantine"}) do
         lock_data[3] = {kind = kind}
