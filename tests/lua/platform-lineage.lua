@@ -255,6 +255,7 @@ do
     local answer = recovery.lineage_presence(json.encode({"lineage:old:60", "lineage:none:1"}))
     assert(answer.success and answer.lineages[1].present == true and answer.lineages[1].generation == 3,
         "a quarantined copy was reported absent")
+    assert(answer.lineages[1].platformIndex == 6 and answer.lineages[1].platformUid == uid, "presence did not identify the holding copy")
     assert(answer.lineages[2].present == false)
     env.storage.source_recovery_ready = false
     assert(not recovery.lineage_presence(json.encode({"lineage:old:60"})).success, "a reconciling instance answered presence")

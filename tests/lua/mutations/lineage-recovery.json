@@ -2,7 +2,7 @@
 	{
 		"name": "the internal unlock refuses a quarantine",
 		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
-		"find": "if lock_data.kind == \"quarantine\" and quarantine_release ~= true then",
+		"find": "if lock_data.kind == \"quarantine\" and authority ~= \"quarantine\" and authority ~= \"resolution\" then",
 		"replace": "if false then",
 		"tests": [
 			"tests/lua/platform-lineage.lua"

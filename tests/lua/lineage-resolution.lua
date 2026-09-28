@@ -115,8 +115,10 @@ do
     storage.surface_export_resolutions.tok = {platform_index = 4, platform_uid = "other:40", release = true}
     assert(not w.locks.release_for_resolution(4, "tok"), "a token for another copy released this one")
     storage.surface_export_resolutions.tok = {platform_index = 4, platform_uid = "old:40", release = true}
-    storage.source_recovery_ready = false
-    assert(not w.locks.release_for_resolution(4, "tok"), "a resolution released a platform during startup recovery")
+    for _, state in ipairs({false, "unset"}) do
+        storage.source_recovery_ready = state ~= "unset" and state or nil
+        assert(not w.locks.release_for_resolution(4, "tok"), "a resolution released a platform before startup recovery was ready")
+    end
     storage.source_recovery_ready = true
     assert(storage.locked_platforms[4] == lock and p.hidden)
     assert(w.locks.release_for_resolution(4, "tok"))
@@ -154,6 +156,10 @@ do
     assert(not w.apply({requestId = "req-del", step = "prepare_delete", platformIndex = 7, platformUid = "old:70"}).success)
     assert(not w.apply({requestId = "req-del", step = "release", platformIndex = 6, platformUid = "old:60"}).success,
         "a deleting resolution released its own platform")
+    assert(not w.locks.unlock_platform(6, nil, nil, nil, "export-job"), "the failed snapshot unlock released the copy")
+    assert(w.env.storage.locked_platforms[6].kind == "quarantine", "a failed snapshot did not restore the quarantine")
+    assert(not w.apply({requestId = "req-del", step = "release", platformIndex = 6, platformUid = "old:60"}).success and p.hidden,
+        "a deleting resolution released its platform after its snapshot failed")
     w.set_queue(nil)
     local refused = w.apply({requestId = "req-t", step = "prepare_delete", platformIndex = 7, platformUid = "old:70"})
     assert(not refused.success and refused.error:find("refused", 1, true))

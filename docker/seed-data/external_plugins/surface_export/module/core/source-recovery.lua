@@ -335,7 +335,10 @@ function Recovery.lineage_presence(lineages_json)
 	for index, lineage in ipairs(lineages) do
 		local result, err = PlatformLineage.presence(lineage)
 		if not result then return {success = false, error = err} end
-		answers[index] = {lineage = lineage, present = result.present, generation = result.generation, held = result.held}
+		local copy = result.platform
+		answers[index] = {lineage = lineage, present = result.present, generation = result.generation, held = result.held,
+			platformIndex = copy and copy.index or nil, platformUid = copy and identity(copy) or nil,
+			platformName = copy and copy.name or nil, forceName = result.force and result.force.name or nil}
 	end
 	return {success = true, epoch = storage.source_recovery_epoch, lineages = answers}
 end

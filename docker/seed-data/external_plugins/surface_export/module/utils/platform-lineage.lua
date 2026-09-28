@@ -124,7 +124,7 @@ function PlatformLineage.presence(lineage)
 				local platform = force.platforms[index]
 				if platform and platform.valid then
 					local current, generation = PlatformLineage.get(platform)
-					if current == lineage then return {present = true, generation = generation} end
+					if current == lineage then return {present = true, generation = generation, platform = platform, force = force} end
 				end
 			end
 		end
