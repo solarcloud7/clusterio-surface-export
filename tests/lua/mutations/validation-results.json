@@ -1,0 +1,56 @@
+[
+	{
+		"name": "stored results are capped",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "if #older >= MAX_STORED_RESULTS then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	},
+	{
+		"name": "the cap is 100 results",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "local MAX_STORED_RESULTS = 100",
+		"replace": "local MAX_STORED_RESULTS = 101",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	},
+	{
+		"name": "eviction keeps exactly the cap",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "for index = MAX_STORED_RESULTS, #older do",
+		"replace": "for index = MAX_STORED_RESULTS + 1, #older do",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	},
+	{
+		"name": "the oldest stored tick is evicted first",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "return a.timestamp > b.timestamp",
+		"replace": "return a.timestamp < b.timestamp",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	},
+	{
+		"name": "equal ticks evict in id order",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "return tostring(a.id) > tostring(b.id)",
+		"replace": "return tostring(a.id) < tostring(b.id)",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	},
+	{
+		"name": "the result being stored is never evicted",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "if id ~= result_id then",
+		"replace": "if true then",
+		"tests": [
+			"tests/lua/validation-results.lua"
+		]
+	}
+]

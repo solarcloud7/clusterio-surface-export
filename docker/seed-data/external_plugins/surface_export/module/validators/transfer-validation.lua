@@ -8,6 +8,7 @@ local TransferValidation = {}
 local Timing = require("modules/surface_export/utils/operation-timing")
 
 local EXACT_EPSILON = 1e-6
+local MAX_STORED_RESULTS = 100
 
 local function aggregate_fluid_counts_by_name(fluid_counts)
     local by_name = {}
@@ -324,13 +325,25 @@ function TransferValidation.store_validation_result(result_id, validation_result
         result = validation_result,
         timestamp = game.tick
     }
-    return true
-end
 
-function TransferValidation.clear_validation_result(result_id)
-    if storage.validation_results and type(result_id) == "string" then
-        storage.validation_results[result_id] = nil
+    local older = {}
+    for id, entry in pairs(storage.validation_results) do
+        if id ~= result_id then
+            older[#older + 1] = {id = id, timestamp = type(entry) == "table" and tonumber(entry.timestamp) or -1}
+        end
     end
+    if #older >= MAX_STORED_RESULTS then
+        table.sort(older, function(a, b)
+            if a.timestamp ~= b.timestamp then
+                return a.timestamp > b.timestamp
+            end
+            return tostring(a.id) > tostring(b.id)
+        end)
+        for index = MAX_STORED_RESULTS, #older do
+            storage.validation_results[older[index].id] = nil
+        end
+    end
+    return true
 end
 
 function TransferValidation.get_validation_result(result_id)
@@ -347,21 +360,6 @@ function TransferValidation.get_validation_result(result_id)
     end
 
     return nil
-end
-
-function TransferValidation.cleanup_old_results(max_age_ticks)
-    if not storage.validation_results then
-        return
-    end
-
-    max_age_ticks = max_age_ticks or 36000
-
-    for result_id, stored in pairs(storage.validation_results) do
-        local age = game.tick - stored.timestamp
-        if age > max_age_ticks then
-            storage.validation_results[result_id] = nil
-        end
-    end
 end
 
 return TransferValidation
