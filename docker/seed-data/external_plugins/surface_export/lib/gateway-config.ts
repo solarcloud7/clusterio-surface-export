@@ -4,11 +4,7 @@ import { getErrorMessage } from "../helpers";
 import { timed } from "./timing";
 import { instanceAddress } from "./platform-tree";
 import { PortalSlots, type PortalHolderChange } from "./portal-slots";
-import { PORTAL_COLOURS, PORTAL_SLOT_COUNT, portalColour, portalGatewayName, type PortalAssignment } from "../shared/portals";
-
-function colourName(colour: string): string {
-	return colour.charAt(0).toUpperCase() + colour.slice(1);
-}
+import { PORTAL_COLOURS, PORTAL_SLOT_COUNT, portalColour, portalColourName, portalGatewayName, type PortalAssignment } from "../shared/portals";
 
 export class GatewayConfig {
 	constructor(
@@ -69,7 +65,7 @@ export class GatewayConfig {
 
 	private warnHolderChanges(changes: PortalHolderChange[]) {
 		for (const change of changes) {
-			this.logger.warn(`The ${colourName(portalColour(change.slot))} portal now leads to ${this.instanceName(change.instanceId)} `
+			this.logger.warn(`The ${portalColourName(portalColour(change.slot))} portal now leads to ${this.instanceName(change.instanceId)} `
 				+ `(instance ${change.instanceId}) instead of ${this.instanceName(change.previousInstanceId)} (instance ${change.previousInstanceId}); `
 				+ "schedules that stop there now travel to the new server");
 		}
@@ -201,7 +197,7 @@ export class GatewayConfig {
 	async handleSetPortalRequest(request: { action: "assign" | "release"; portal: string; instance?: string }) {
 		const slot = this.resolvePortal(request.portal);
 		await this.settle();
-		const name = colourName(portalColour(slot));
+		const name = portalColourName(portalColour(slot));
 		if (request.action === "assign") {
 			if (request.instance === undefined) throw new Error("assign needs an instance");
 			const instanceId = this.resolveServer(request.instance);

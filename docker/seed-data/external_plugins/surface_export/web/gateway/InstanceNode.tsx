@@ -5,13 +5,13 @@ import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
 import { ONE_GATE_NAME } from "../../shared/dto";
-import type { PortalColour } from "../../shared/portals";
+import { portalColourName, type PortalColour } from "../../shared/portals";
 import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOrientation, sourceHandleId, spreadTurns, targetHandleId } from "./gateway-graph";
 import type { PeerPortal, PlatformLike, Portal } from "./gateway-graph";
 import PlatformRows from "./PlatformRows";
 import { useGatewayDebug } from "./debug-mode";
 import { PlanetIcon, usePlanetNames } from "../icons";
-import { PORTAL_LINK_COLOUR, portalColour } from "./gateway-colours";
+import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 import gatewayBlueArt from "./assets/gateway-blue-64.png";
 import gatewayGreenArt from "./assets/gateway-green-64.png";
@@ -36,10 +36,6 @@ export const PORTAL_ART: Record<PortalColour, string> = {
 const NO_PORTAL_NOTE = "No portal colour: at most 4 servers hold one, and a colour freed by a deleted server stays unassigned "
 	+ "until an admin assigns it with surface-export portal assign. No schedule can stop at a portal leading to this server; "
 	+ "drag a platform onto its card or use the Gateway instead.";
-
-function colourName(colour: PortalColour): string {
-	return colour.charAt(0).toUpperCase() + colour.slice(1);
-}
 
 const NODE_CENTRE = 75;
 const PORTAL_RING_RADIUS = 94;
@@ -77,7 +73,7 @@ function OutgoingPortals({ selfId, peers }: { selfId: string; peers: PeerPortal[
 						className={`surface-export-instance-portal${peer.portal ? "" : " surface-export-instance-portal-none"}`}
 						style={position}
 						title={peer.portal
-							? `${colourName(peer.portal.colour)} → ${peer.instanceName}: platforms scheduled to this stop travel there`
+							? `${portalColourName(peer.portal.colour)} → ${peer.instanceName}: platforms scheduled to this stop travel there`
 							: `${peer.instanceName}: ${NO_PORTAL_NOTE}`}
 					>
 						{peer.portal
@@ -110,13 +106,13 @@ function ServerFooter({ portal, instanceName, defaultPlanet, disabledPlanets }: 
 		<div className="surface-export-instance-footer">
 			<Text
 				className="surface-export-instance-portal-label"
-				style={portal ? { color: portalColour(portal.colour) } : undefined}
+				style={portal ? { color: portalHex(portal.colour) } : undefined}
 				type={portal ? undefined : "secondary"}
 				title={portal
-					? `On every other server, the ${colourName(portal.colour)} portal leads to ${instanceName}`
+					? `On every other server, the ${portalColourName(portal.colour)} portal leads to ${instanceName}`
 					: NO_PORTAL_NOTE}
 			>
-				{portal ? colourName(portal.colour) : "no portal colour"}
+				{portal ? portalColourName(portal.colour) : "no portal colour"}
 			</Text>
 			{planets.length === 0 ? null : <div className="surface-export-instance-planets">
 				{planets.map(name => (
@@ -228,7 +224,7 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
 				+ " surface-export-instance-node-shaped"
 			}
-			style={{ "--surface-export-portal-glow": node.portal ? portalColour(node.portal.colour) : PORTAL_LINK_COLOUR } as CSSProperties}
+			style={{ "--surface-export-portal-glow": node.portal ? portalHex(node.portal.colour) : PORTAL_LINK_COLOUR } as CSSProperties}
 			onPointerDown={list.rearm}
 		>
 			<Handle
