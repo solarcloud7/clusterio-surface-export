@@ -145,7 +145,8 @@ test("an automatic assignment or retirement that cannot be saved is neither adve
 		assert.deepEqual(slots.assignments(), [{ slot: 1, instanceId: 10 }], "the unsaved retirement and assignments are not in effect");
 		assert.deepEqual(controller.pushed, [[20, undefined, [ONE_GATE_NAME]], [30, undefined, [ONE_GATE_NAME]]],
 			"no server is told about a colour that was not saved, and the deleted holder is no destination");
-		assert.deepEqual((await gateways.handleGetGatewaysRequest({})).portals, []);
+		const listing = await gateways.handleGetGatewaysRequest({});
+		assert.deepEqual([listing.portals, listing.pluginOff], [[], []], "a deleted holder whose retirement is unsaved is not listed as plugin off");
 		await slots.flush();
 	});
 	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), committed);
