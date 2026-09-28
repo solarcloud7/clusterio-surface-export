@@ -73,10 +73,12 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 
 const readiness = await runReadinessGate();
 if (!readiness.ok) {
-	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite against a mis-seeded, "
-		+ "blank-booted or unreachable cluster. Resolve the failed checks above before re-running. "
-		+ "To rebuild a disposable cluster from seeds, use ./tools/clusterio/deploy.ps1 -Scope cluster -ResetData -SkipIncrement "
-		+ "(deletes its existing data). Without -ResetData, cluster deployment preserves volumes.");
+	console.error("ERROR: cluster readiness preflight FAILED — refusing to run any suite. Read the FAIL lines above; "
+		+ "each names what is wrong. Leftover test platforms name their dry-run cleanup audit; refused source recovery "
+		+ "quotes the host-log refusal to repair. A wrong or blank world or a stale module version is fixed by "
+		+ "./tools/clusterio/deploy.ps1 -Scope lua -ResetSaves -SkipIncrement, which resets the worlds to the seed saves and keeps every save. "
+		+ "Only as a last resort, when the cluster's data itself must be rebuilt, use "
+		+ "./tools/clusterio/deploy.ps1 -Scope cluster -ResetData -SkipIncrement: it deletes the cluster's existing data.");
 	process.exit(3);
 }
 
