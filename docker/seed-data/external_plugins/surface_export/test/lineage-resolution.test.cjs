@@ -195,7 +195,10 @@ test("every action re-checks at action time and refuses on any uncertainty", asy
 		["a copy with a transfer in flight", c => { c.host.pendingTransfers.set("1:t", { transferId: "1:t", lineage: L, sourceInstanceId: H, targetInstanceId: I, sourcePlatformIndex: 5 }); }, {}, /in_transit|in flight/],
 		["a copy owned by an unresolved handoff", c => { c.host.pendingTransfers.set("1:u", { transferId: "1:u", sourceInstanceId: I, targetInstanceId: H, sourcePlatformIndex: 3 }); }, {}, /unresolved|owns this copy/],
 		["a changed identity", c => {}, { platformUid: "boot-new:15" }, /changed or is no longer quarantined/],
-		["a reconciling instance", c => { c.behaviour.reserved.add(I); }, {}, /reconciling/],
+		["a reconciling instance", c => { c.behaviour.reserved.add(I); c.host.isInstanceOnline = () => true; }, {}, /reconciling its loaded save/],
+		["a transfer that starts after evaluation", c => {
+			c.behaviour.onDirectPresence = () => { c.host.pendingTransfers.set("2:t", { transferId: "2:t", lineage: L, sourceInstanceId: H, targetInstanceId: 3, sourcePlatformIndex: 9 }); };
+		}, { action: "keep_this" }, /in flight/],
 		["a registry change after evaluation", c => {
 			c.behaviour.onDirectPresence = () => { void c.registry.update(draft => draft.set(L, entry({ generation: 3, lastExportId: "2:y" }))); };
 		}, { action: "keep_this" }, /registry changed/],
