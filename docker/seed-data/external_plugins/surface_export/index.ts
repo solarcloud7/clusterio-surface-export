@@ -116,8 +116,8 @@ export const plugin = {
 		},
 		[`${PLUGIN_NAME}.discord_invite`]: {
 			title: "Discord invite link",
-			description: "Community Discord invite shown on every server: a Discord button in the top-left bar with a copyable link, "
-				+ "and a line in chat when a player joins. Leave empty to hide both.",
+			description: "Community Discord invite printed in chat to each player who joins a server. "
+				+ "Leave empty to print nothing.",
 			type: "string",
 			optional: true,
 			initialValue: null,
