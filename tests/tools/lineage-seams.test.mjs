@@ -330,6 +330,33 @@ test("lineage seams (h3): a delete-only resolution does not quarantine the curre
 	} finally { await c.close(); }
 });
 
+test("lineage seams (h4): save_game startup adoption never overrides an in-progress deletion of the same copy", { skip }, async () => {
+	const { c, index, lineage } = await rolledBackSource({ keepDestinationCopy: false });
+	try {
+		const entry = await conflictFor(c, 1, index);
+		assert.equal(entry.liveVerdict, "rollback_other");
+		const send = c.controller.controller.sendTo;
+		c.controller.controller.sendTo = async (target, message) => {
+			if (message.constructor.name === "DeleteSourcePlatformRequest") throw new Error("Session Closed");
+			return send(target, message);
+		};
+		const id = requestId("stale_copy");
+		const stuck = await resolve(c, entry, "stale_copy", id);
+		assert.deepEqual([stuck.status, stuck.step], ["in_progress", "delete"], JSON.stringify(stuck));
+		c.controller.controller.sendTo = send;
+		const registered = c.registry.get(lineage);
+		c.state.mode = "save_game";
+		await c.restart(1);
+		const after = await c.platform(1, index);
+		assert.equal(after.usable, false, `save_game startup adopted a copy an administrator is deleting: ${JSON.stringify(after)}`);
+		assert.deepEqual(c.registry.get(lineage), registered, "startup adoption changed the registry during a deletion");
+		const done = await resolve(c, entry, "stale_copy", id);
+		assert.equal(done.status, "completed", JSON.stringify(done));
+		assert.equal((await c.platform(1, index)).present, false);
+		assert.deepEqual(c.registry.get(lineage), registered);
+	} finally { await c.close(); }
+});
+
 test("lineage seams (i): a release without a controller-issued token is refused", { skip }, async () => {
 	const c = await createCluster({ binary });
 	try {

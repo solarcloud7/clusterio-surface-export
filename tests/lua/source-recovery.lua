@@ -131,6 +131,11 @@ local rollback = {verdict = "rollback_other", adopt = true, lineage = "lineage:b
 local duplicate = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict({verdict = "duplicate", adopt = true, adoptGeneration = 3,
     lineage = "lineage:boot-b:16", generation = 1}))
 assert(duplicate.quarantined and not duplicate.accepted and locks[3].phase == "committed", "save_game adopted a copy another server still holds")
+locks[3] = {kind = "transfer", phase = "pre_commit", transfer_job_id = "job-old", surface_index = 8, resolution_request_id = "req-delete",
+    resolution_restore = {kind = "transfer", phase = "committed", transfer_job_id = "job-old"}}
+local resolving = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict(rollback))
+assert(not resolving.accepted and platform.hidden ~= false and locks[3].resolution_request_id == "req-delete"
+    and env.storage.surface_export_lineages[3].generation == 1, "save_game adopted a copy an administrator resolution is deleting")
 locks[3] = {kind = "startup", surface_index = 8}
 local accepted = recovery.reconcile(3, "boot-b:16", "job-old", false, verdict(rollback))
 assert(env.storage.surface_export_passengers[5].platform_uid == accepted.platformUid
