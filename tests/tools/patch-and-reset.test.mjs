@@ -28,12 +28,11 @@ function Update-ModuleVersionStamp {}
 	const plugin = "docker/seed-data/external_plugins/surface_export";
 	put(`${plugin}/package.json`, '{"version":"1.0.0"}');
 	put(`${plugin}/module/module.json`, '{"version":"1.0.0"}');
-	put(`${plugin}/lib/a.ts`, "");
-	put(`${plugin}/web/b.tsx`, "");
-	put(`${plugin}/dist/node/a.js`, "");
-	put(`${plugin}/dist/web/b.js`, "");
+	for (const name of BUILD_INPUTS) put(`${plugin}/${name}`, "");
+	put(`${plugin}/dist/node/.prepare-build-stamp`, "");
+	put(`${plugin}/dist/web/.prepare-build-stamp`, "");
 	const past = new Date(Date.now() - 3_600_000);
-	for (const name of [`${plugin}/lib/a.ts`, `${plugin}/web/b.tsx`]) utimesSync(join(dir, name), past, past);
+	for (const name of BUILD_INPUTS) utimesSync(join(dir, plugin, name), past, past);
 	for (const [host, save] of [[1, "lab-gallery-source.zip"], [2, "lab-gallery-destination.zip"]]) {
 		put(`docker/seed-data/hosts/clusterio-host-${host}/clusterio-host-${host}-instance-1/${save}`, "");
 	}
@@ -227,4 +226,34 @@ test("the archive shell step renames, never overwrites, and reports an absent jo
 	assert.equal(step.status, 3);
 	assert.equal(readFileSync(journal, "utf8"), "newer");
 	assert.equal(readFileSync(archive, "utf8"), '{"v":1,"id":"a","retirements":[1]}');
+});
+
+const BUILD_INPUTS = ["lib/a.ts", "shared/c.ts", "web/b.tsx", "scripts/build-web.mjs", "scripts/web-assets.mjs"];
+
+for (const input of ["shared/c.ts", "scripts/build-web.mjs", "scripts/web-assets.mjs", "web/b.tsx"]) {
+	test(`-LuaOnly refuses before any cluster call when ${input} is newer than the dist build stamps`, { skip }, t => {
+		const dir = fixture(t);
+		const future = new Date(Date.now() + 60_000);
+		const path = join(dir, "docker/seed-data/external_plugins/surface_export", input);
+		utimesSync(path, future, future);
+		const result = run(dir);
+		assert.match(result.error || "", /^-LuaOnly refused: dist\/node is missing or older than the build inputs/);
+		assert.ok(result.error.includes(path), result.error);
+		assert.deepEqual(result.calls, []);
+	});
+}
+
+test("the server name in factorio.settings is the resolved instance name", { skip }, t => {
+	const result = run(fixture(t));
+	assert.equal(result.error, null);
+	const names = result.calls.filter(argv => argv.includes("factorio.settings")).map(argv => [argv.at(-3), JSON.parse(argv.at(-1)).name]);
+	assert.deepEqual(names, [[IDS[1], "Dev One"], [IDS[2], "Dev Two"]]);
+});
+
+test("-LuaOnly refuses when a dist build stamp is missing", { skip }, t => {
+	const dir = fixture(t);
+	rmSync(join(dir, "docker/seed-data/external_plugins/surface_export/dist/web/.prepare-build-stamp"));
+	const result = run(dir);
+	assert.match(result.error || "", /^-LuaOnly refused: dist\/web is missing or older than the build inputs/);
+	assert.deepEqual(result.calls, []);
 });
