@@ -2,7 +2,6 @@ import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from ".
 
 export const PLUGIN_NAME = "surface_export";
 
-export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
 export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
 export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;

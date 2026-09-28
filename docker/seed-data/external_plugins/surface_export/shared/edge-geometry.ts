@@ -1,7 +1,5 @@
 export const GATE_CENTRE_OFFSET_Y = -16;
 
-export const PORTAL_DIAMETER_FRACTION = 0.6;
-
 export const CAPTION_CLEARANCE = 45;
 
 export const CAPTION_WIDTH = 190;

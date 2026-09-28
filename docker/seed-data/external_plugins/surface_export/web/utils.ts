@@ -111,23 +111,6 @@ export function formatNumeric(value: number | null, maxFractionDigits = 1) {
 	return value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits });
 }
 
-export function formatCompactEnergy(value: number | null) {
-	if (typeof value !== "number" || Number.isNaN(value)) {
-		return "-";
-	}
-	const abs = Math.abs(value);
-	if (abs >= 1e9) {
-		return `${(value / 1e9).toLocaleString(undefined, { maximumFractionDigits: 1 })}B`;
-	}
-	if (abs >= 1e6) {
-		return `${(value / 1e6).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
-	}
-	if (abs >= 1e3) {
-		return `${(value / 1e3).toLocaleString(undefined, { maximumFractionDigits: 1 })}K`;
-	}
-	return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
-
 export function formatSigned(value: number | null, maxFractionDigits = 1) {
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return "-";

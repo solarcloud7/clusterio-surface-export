@@ -81,10 +81,6 @@ export function shipsInFlight(summaries: readonly TransferSummary[] | null | und
 	});
 }
 
-export function instancePairKey(a: number, b: number): string {
-	return a <= b ? `${a}|${b}` : `${b}|${a}`;
-}
-
 export function transientEdgeId(transferId: string): string {
 	return `xfer:${transferId}`;
 }
