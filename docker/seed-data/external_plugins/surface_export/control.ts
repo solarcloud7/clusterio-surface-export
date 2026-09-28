@@ -35,6 +35,38 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
+	definition: ["conflicts [instanceId]", "List quarantined platform copies, their live verdict and the actions each allows (JSON; hints are not authority)",
+		(yargs: YargsLike) => {
+			yargs.positional("instanceId", { type: "number", describe: "Only this instance" });
+		}],
+	handler: async (args: { instanceId?: number }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.ListLineageConflictsRequest({ instanceId: args.instanceId ?? null }));
+		console.log(JSON.stringify(response, null, 2));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
+	definition: ["resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>",
+		"Resolve one quarantined copy; reuse requestId when retrying the same request after a lost reply",
+		(yargs: YargsLike) => {
+			yargs.positional("instanceId", { type: "number", describe: "Instance holding the quarantined copy" });
+			yargs.positional("platformIndex", { type: "number", describe: "Platform index shown by conflicts" });
+			yargs.positional("platformUid", { type: "string", describe: "Platform identity shown by conflicts" });
+			yargs.positional("action", { type: "string", choices: ["keep_this", "keep_other", "adopt", "stale_copy", "new_platform", "release"],
+				describe: "Action offered by conflicts for this copy" });
+			yargs.positional("requestId", { type: "string", describe: "Unique ID for this resolution request" });
+		}],
+	handler: async (args: { instanceId: number; platformIndex: number; platformUid: string; action: string; requestId: string }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.ResolvePlatformLineageRequest({
+			instanceId: args.instanceId, platformIndex: args.platformIndex, platformUid: args.platformUid,
+			action: args.action as messages.ResolvePlatformLineageRequest["action"], requestId: args.requestId,
+		})) as messages.SimpleResponse;
+		if (!response.success) throw new Error(response.error || "Platform resolution refused");
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];

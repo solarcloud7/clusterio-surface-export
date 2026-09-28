@@ -31,6 +31,8 @@ const {
 	ListTransactionLogsRequest,
 	GetTransactionLogRequest,
 	StartPlatformTransferRequest,
+	ListLineageConflictsRequest,
+	ResolvePlatformLineageRequest,
 	SetSurfaceExportSubscriptionRequest,
 	SurfaceExportTreeUpdateEvent,
 	SurfaceExportTransferUpdateEvent,
@@ -108,7 +110,7 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		children: <><RecoveryWarnings state={state} /><GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} /></>,
+		children: <><RecoveryWarnings state={state} plugin={plugin} /><GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} /></>,
 	});
 
 	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} state={state} /> });
@@ -369,6 +371,14 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async startTransfer(payload: { platformName?: string; sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
+	}
+
+	async listLineageConflicts() {
+		return this.link.send(new ListLineageConflictsRequest({})) as Promise<ReturnType<typeof messageDefs.ListLineageConflictsRequest.Response.fromJSON>>;
+	}
+
+	async resolvePlatformLineage(payload: ConstructorParameters<typeof messageDefs.ResolvePlatformLineageRequest>[0]) {
+		return this.link.send(new ResolvePlatformLineageRequest(payload)) as Promise<ReturnType<typeof messageDefs.ResolvePlatformLineageRequest.Response.fromJSON>>;
 	}
 
 	async loadTransactionLog(transferId: string) {

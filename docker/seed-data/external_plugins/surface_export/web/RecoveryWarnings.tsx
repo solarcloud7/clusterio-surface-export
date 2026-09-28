@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, Button } from "antd";
-import type { SurfaceExportState } from "./view-models";
+import type { SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import LineageConflicts from "./LineageConflicts";
 import type { RecoveryNotice } from "../shared/recovery";
 
 const QUARANTINE_TEXT: Record<string, string> = {
@@ -29,7 +30,7 @@ function noticeText(notice: RecoveryNotice, identified: boolean): string {
 	return "This restored source remains protected. Review its previous transfer before choosing which copy to keep.";
 }
 
-export default function RecoveryWarnings({ state }: { state: SurfaceExportState }) {
+export default function RecoveryWarnings({ state, plugin }: { state: SurfaceExportState; plugin?: SurfaceExportPlugin }) {
 	const [acknowledged, setAcknowledged] = useState<string[]>(() => {
 		try {
 			const value = JSON.parse(localStorage.getItem("surface-export.recovery-acknowledged") || "[]");
@@ -44,7 +45,7 @@ export default function RecoveryWarnings({ state }: { state: SurfaceExportState 
 	};
 	const instances = [...(state.tree?.hosts.flatMap(host => host.instances) || []), ...(state.tree?.unassignedInstances || [])];
 	const offline = instances.filter(instance => !instance.connected || instance.status !== "running");
-	return <>{offline.length > 0 && <Alert data-testid="recovery-unverified" style={{marginBottom:16}} type="info" showIcon
+	return <>{plugin && <LineageConflicts plugin={plugin} state={state} />}{offline.length > 0 && <Alert data-testid="recovery-unverified" style={{marginBottom:16}} type="info" showIcon
 		message={`Recovery state unverified on ${offline.length} offline instance${offline.length === 1 ? "" : "s"}`}
 		description="Offline platforms have not been checked. This does not establish that a copy is missing." />}
 	{instances.map(instance => {
