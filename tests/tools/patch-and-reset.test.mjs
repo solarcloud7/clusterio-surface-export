@@ -9,6 +9,8 @@ const skip = spawnSync("pwsh", ["-NoProfile", "-Command", "exit 0"], { stdio: "i
 const repo = new URL("../../", import.meta.url);
 const IDS = { 1: "836570928", 2: "902099405" };
 const CTL = ["exec", "surface-export-controller", "npx", "clusterioctl", "--config", "/clusterio/tokens/config-control.json"];
+const START = (seconds = "180") => ["exec", "surface-export-controller", "timeout", "-k", "10", seconds, "npx", "clusterioctl", "--config", "/clusterio/tokens/config-control.json", "--log-level", "error", "instance", "start"];
+const NEGATIVE_RCON = "-140462620.552 Info RemoteCommandProcessor.cpp:119: Starting RCON interface at IP ADDR:({0.0.0.0:64865})";
 
 function fixture(t, script = process.env.PATCH_AND_RESET_UNDER_TEST) {
 	const dir = mkdtempSync(join(tmpdir(), "patch-and-reset-"));
@@ -40,18 +42,21 @@ function Update-ModuleVersionStamp {}
 }
 
 function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0, autoStarted = false, staleReads = 0,
-	journals = [], archiveFails = false, readinessExit = 0 } = {}) {
+	journals = [], archiveFails = false, readinessExit = 0, hangs = {}, stopHangs = false, rconLine = NEGATIVE_RCON, params = {} } = {}) {
 	const command = `
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 $global:calls=[Collections.Generic.List[object]]::new()
 $global:uploaded = ConvertFrom-Json $env:SE_UPLOADED -AsHashtable
 $global:loaded = ConvertFrom-Json $env:SE_LOADED -AsHashtable
+$global:hangs = ConvertFrom-Json $env:SE_HANGS -AsHashtable
+$global:state = @{}
 function Start-Sleep {}
 function node { $global:calls.Add(@(@('node') + @(foreach ($a in $args) { "$a" }))); $global:LASTEXITCODE = [int]$env:SE_READINESS_EXIT }
 $global:reads = @{}
 $global:clock = [datetime]'2026-09-27T00:00:00'
 function Get-Date { param([string]$Format) if ($Format) { return $global:clock.ToString($Format) } $global:clock = $global:clock.AddSeconds(5); return $global:clock }
+function Get-StubState { param($Id) if ($global:state.ContainsKey($Id)) { $global:state[$Id] } else { 'running' } }
 function docker {
  $argv = @(foreach ($a in $args) { foreach ($b in @($a)) { "$b" } })
  $global:calls.Add($argv); $global:LASTEXITCODE=0
@@ -62,6 +67,15 @@ function docker {
   if (($env:SE_JOURNALS -split ',') -contains ($argv[1] -replace '\\D', '')) { return 'archived' }
   return 'absent'
  }
+ if ($argv[2] -eq 'sh' -and $argv[1] -eq 'surface-export-controller' -and $argv[4] -match 'clusterioctl') { return '4242' }
+ if ($argv[2] -eq 'sh' -and $argv[4] -match 'config\\.ini') { $id = @{ '1' = '${IDS[1]}'; '2' = '${IDS[2]}' }[$argv[1] -replace '\\D', '']; if ((Get-StubState $id) -ne 'stopped') { return '2968' } return }
+ if ($argv[2] -eq 'sh' -and $argv[4] -match 'Starting RCON interface') { return $env:SE_RCON_LINE }
+ if ($j -match 'instance stop (\\d+)') { if ($env:SE_STOP_HANGS -eq '1' -and $global:state[$Matches[1]] -eq 'starting') { $global:LASTEXITCODE = 124; return } $global:state[$Matches[1]] = 'stopped'; return }
+ if ($j -match 'instance start (\\d+)') {
+  $id = $Matches[1]
+  if ([int]$global:hangs[$id] -gt 0) { $global:hangs[$id] = [int]$global:hangs[$id] - 1; $global:state[$id] = 'starting'; $global:LASTEXITCODE = 124; return }
+  $global:state[$id] = 'running'
+ }
  if ($env:SE_AUTO_STARTED -eq '1' -and $j -match 'instance start') { $global:LASTEXITCODE = 1; return 'Error sending request: Instance is already running.' }
  if ($j -match 'instance save list (\\d+)') {
   $id = $Matches[1]
@@ -69,7 +83,7 @@ function docker {
   if ($global:reads[$id] -le [int]$env:SE_STALE_READS) { return @('instanceId | type | name | size | loaded | loadByDefault', '---', "$id | file | lab-gallery-source.zip | 1 | false | false") }
   return @('instanceId | type | name | size | loaded | loadByDefault', '---', "$id | file | lab-gallery-source.zip | 1 | false | false", "$id | file | $($global:loaded[$id]) | 1 | true | false")
  }
- if ($j -match 'instance list') { return @('name | id | assignedHost | gamePort | status', '---', 'Dev One | ${IDS[1]} | 1 | 34100 | running', 'Dev Two | ${IDS[2]} | 2 | 34200 | running') }
+ if ($j -match 'instance list') { return @('name | id | assignedHost | gamePort | status', '---', "Dev One | ${IDS[1]} | 1 | 34100 | $(Get-StubState '${IDS[1]}')", "Dev Two | ${IDS[2]} | 2 | 34200 | $(Get-StubState '${IDS[2]}')") }
  if ($j -match 'instance\\.json') { $n = $args[1] -replace '\\D', ''; return "/clusterio/data/instances/clusterio-host-$n-instance-1/instance.json\`t{""instance.id"": $(@{ '1' = ${IDS[1]}; '2' = ${IDS[2]} }[$n])}" }
  if ($j -match 'save upload (\\d+)') {
   $global:LASTEXITCODE = [int]$env:SE_UPLOAD_EXIT
@@ -80,7 +94,8 @@ function docker {
 }
 $failure=$null
 $global:output=[Collections.Generic.List[string]]::new()
-try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement *>&1 | ForEach-Object { $global:output.Add("$_") } } catch { $failure=$_.Exception.Message }
+$extra = ConvertFrom-Json $env:SE_PARAMS -AsHashtable
+try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement @extra *>&1 | ForEach-Object { $global:output.Add("$_") } } catch { $failure=$_.Exception.Message }
 @{calls=@($global:calls | ForEach-Object { ,@($_) });error=$failure;output=@($global:output)} | ConvertTo-Json -Compress -Depth 5
 `;
 	const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { cwd: dir, encoding: "utf8", timeout: 60_000,
@@ -88,7 +103,9 @@ try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement *>&1 | ForEach-Object { $global:
 			PAR_BUILD_FILE: join(dir, "docker/seed-data/external_plugins/surface_export/module/build-id.lua"),
 			SE_UPLOADED: JSON.stringify({ [IDS[1]]: uploaded[1], [IDS[2]]: uploaded[2] }),
 			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit), SE_AUTO_STARTED: autoStarted ? "1" : "0", SE_STALE_READS: String(staleReads),
-				SE_JOURNALS: journals.join(","), SE_ARCHIVE_FAIL: archiveFails ? "1" : "0", SE_READINESS_EXIT: String(readinessExit) } });
+				SE_JOURNALS: journals.join(","), SE_ARCHIVE_FAIL: archiveFails ? "1" : "0", SE_READINESS_EXIT: String(readinessExit),
+				SE_HANGS: JSON.stringify(Object.fromEntries(Object.entries(hangs).map(([host, count]) => [IDS[host], count]))),
+				SE_STOP_HANGS: stopHangs ? "1" : "0", SE_RCON_LINE: rconLine, SE_PARAMS: JSON.stringify(params) } });
 	assert.equal(result.status, 0, result.stderr);
 	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
 }
@@ -108,8 +125,8 @@ test("a reset uploads each seed save, starts on the stored name, and deletes not
 		[...CTL, "--log-level", "info", "instance", "save", "upload", IDS[2], "/clusterio/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip"],
 	]);
 	assert.deepEqual(result.calls.filter(argv => argv.includes("start")), [
-		[...CTL, "instance", "start", IDS[1], "--save", "lab-gallery-source-4.zip"],
-		[...CTL, "instance", "start", IDS[2], "--save", "lab-gallery-destination-4.zip"],
+		[...START(), IDS[1], "--save", "lab-gallery-source-4.zip"],
+		[...START(), IDS[2], "--save", "lab-gallery-destination-4.zip"],
 	]);
 	const restart = result.calls.findIndex(argv => argv[0] === "restart");
 	assert.ok(restart > result.calls.indexOf(uploads[1]), "uploads finish before the containers restart");
@@ -201,6 +218,71 @@ test("the boot check waits for source recovery and throws when it is not ready",
 	assert.ok(ready.calls.indexOf(readiness[0]) > ready.calls.findLastIndex(argv => argv.includes("start")));
 	const blocked = run(fixture(t), { readinessExit: 1 });
 	assert.match(blocked.error || "", /Startup source recovery is not ready after the reset/);
+});
+
+const DIR2 = "/clusterio/data/instances/clusterio-host-2-instance-1";
+const startsOf = (calls, id) => calls.filter(argv => argv.includes("start") && argv.includes(id));
+const stopsOf = (calls, id) => calls.filter(argv => argv.includes("stop") && argv.includes(id));
+const sweeps = calls => calls.filter(argv => argv[1] === "surface-export-controller" && argv[2] === "sh");
+
+test("a start that does not return is diagnosed, stopped, and retried once on the same save", { skip }, t => {
+	const result = run(fixture(t), { hangs: { 2: 1 } });
+	assert.equal(result.error, null, JSON.stringify(result.output));
+	assert.deepEqual(deletes(result.calls), []);
+	assert.deepEqual(startsOf(result.calls, IDS[2]), [
+		[...START(), IDS[2], "--save", "lab-gallery-destination-4.zip"],
+		[...START(), IDS[2], "--save", "lab-gallery-destination-4.zip"],
+	]);
+	const [first, retry] = startsOf(result.calls, IDS[2]).map(argv => result.calls.indexOf(argv));
+	const between = result.calls.slice(first + 1, retry);
+	const sweep = sweeps(between);
+	assert.equal(sweep.length, 1);
+	assert.deepEqual([...sweep[0].slice(0, 4), ...sweep[0].slice(5)], ["exec", "surface-export-controller", "sh", "-c", "sh", IDS[2]]);
+	assert.ok(sweep[0][4].includes('" instance start $1 "'));
+	const lateStops = stopsOf(between, IDS[2]);
+	assert.equal(lateStops.length, 1);
+	assert.deepEqual(lateStops[0].slice(0, 6), ["exec", "surface-export-controller", "timeout", "-k", "10", "420"]);
+	assert.ok(between.indexOf(sweep[0]) < between.indexOf(lateStops[0]), "the waiting client is killed before the stop");
+	const scans = between.filter(argv => argv[1] === "surface-export-host-2" && argv[2] === "sh");
+	assert.ok(scans.length >= 2);
+	for (const argv of scans) assert.deepEqual([argv.length, argv[5], argv[6]], [7, "sh", DIR2]);
+	const warning = result.output.find(line => line.includes("did not return within 180s (attempt 1)"));
+	assert.ok(warning, JSON.stringify(result.output));
+	assert.ok(warning.includes("status 'starting'"));
+	assert.ok(warning.includes("PID 2968"));
+	assert.ok(warning.includes(`non-seconds timestamp, so Clusterio never saw RCON ready: '${NEGATIVE_RCON}'`));
+	assert.ok(result.calls.findIndex(argv => argv[0] === "node") > retry);
+});
+
+test("a start that does not return twice fails the reset with the diagnosis", { skip }, t => {
+	const result = run(fixture(t), { hangs: { 2: 2 } });
+	assert.ok(result.error?.includes(`instance start ${IDS[2]} --save lab-gallery-destination-4.zip did not return within 180s twice`), result.error);
+	assert.ok(result.error.includes(`attempt 2: status 'starting'; Factorio running on surface-export-host-2 as PID 2968; factorio-current.log started RCON with a non-seconds timestamp, so Clusterio never saw RCON ready: '${NEGATIVE_RCON}'`), result.error);
+	assert.ok(result.error.includes("Nothing was deleted"));
+	assert.equal(startsOf(result.calls, IDS[2]).length, 2);
+	assert.equal(stopsOf(result.calls.slice(result.calls.indexOf(startsOf(result.calls, IDS[2])[0])), IDS[2]).length, 1);
+	assert.equal(sweeps(result.calls).length, 2);
+	assert.equal(result.calls.some(argv => argv[0] === "node"), false);
+	assert.deepEqual(deletes(result.calls), []);
+});
+
+test("a stop that does not finish fails without a retry and the deadlines are parameters", { skip }, t => {
+	const result = run(fixture(t), { hangs: { 2: 1 }, stopHangs: true, params: { StartTimeoutSec: 5, StopTimeoutSec: 30 } });
+	assert.match(result.error || "", new RegExp(`^Instance ${IDS[2]} did not stop within 30s \\(clusterioctl instance stop exit 124\\): status 'starting'; Factorio running .* PID 2968;`));
+	assert.equal(startsOf(result.calls, IDS[2]).length, 1);
+	assert.deepEqual(startsOf(result.calls, IDS[2])[0].slice(0, 6), START("5").slice(0, 6));
+	const lateStop = stopsOf(result.calls, IDS[2]).at(-1);
+	assert.deepEqual(lateStop.slice(0, 6), ["exec", "surface-export-controller", "timeout", "-k", "10", "30"]);
+	assert.deepEqual(deletes(result.calls), []);
+});
+
+test("an RCON line with a seconds timestamp is reported without the timestamp finding", { skip }, t => {
+	const line = "   2.085 Info RemoteCommandProcessor.cpp:119: Starting RCON interface at IP ADDR:({0.0.0.0:57222})";
+	const result = run(fixture(t), { hangs: { 2: 1 }, rconLine: line });
+	assert.equal(result.error, null);
+	const warning = result.output.find(line => line.includes("did not return within 180s (attempt 1)"));
+	assert.ok(warning.includes(`factorio-current.log started RCON: '${line}'`), warning);
+	assert.equal(result.output.some(text => text.includes("non-seconds")), false);
 });
 
 const shell = spawnSync("sh", ["-c", "exit 0"], { stdio: "ignore" }).status === 0;

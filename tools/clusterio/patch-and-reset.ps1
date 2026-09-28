@@ -1,7 +1,9 @@
 param(
     [switch]$Help = $false,
     [switch]$LuaOnly = $false,
-    [switch]$SkipIncrement
+    [switch]$SkipIncrement,
+    [ValidateRange(1, 3600)][int]$StartTimeoutSec = 180,
+    [ValidateRange(1, 3600)][int]$StopTimeoutSec = 420
 )
 
 if ($Help) {
@@ -37,7 +39,11 @@ This script:
    are kept; nothing is deleted. Each upload is stored under a new name, which the boot check
    below requires each instance to have loaded
 5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
-   saves with the latest Lua; the controller re-reads dist/web/manifest.json
+   saves with the latest Lua; the controller re-reads dist/web/manifest.json. Each instance start
+   is bounded by -StartTimeoutSec (default 180). A start that does not return is diagnosed, its
+   instance is stopped within -StopTimeoutSec (default 420, above the instances'
+   factorio.shutdown_timeout of 300) and started once more on the same save; a second timeout
+   fails the reset
 6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
    remote interface present — a Lua error at save-load kills the headless server (exit 255),
    and before this check the only signal was the server dying later. It then runs
@@ -305,8 +311,12 @@ Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[1].Id --save $uploadedSaves[1] }
-Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start $hostInstances[2].Id --save $uploadedSaves[2] }
+foreach ($h in 1, 2) {
+    Invoke-InstanceLifecycle "start host-$h instance" 'already running' {
+        Start-InstanceWithDeadline -InstanceId $hostInstances[$h].Id -HostNumber "$h" -Save $uploadedSaves[$h] -DataDir $hostInstances[$h].Dir `
+            -StartTimeoutSec $StartTimeoutSec -StopTimeoutSec $StopTimeoutSec
+    }
+}
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 
