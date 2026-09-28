@@ -74,14 +74,25 @@ export class GatewayConfig {
 		}
 	}
 
-	portals(): messages.PortalListingResponse {
-		const portals = this.assignedPortals().map(entry => ({
+	private pluginOffPortals(): Array<{ slot: number; instanceId: number }> {
+		const live = new Set(this.liveInstances().map(inst => inst.id));
+		const existing = new Set(this.existingInstances().map(inst => inst.id));
+		return this.slots.assignments().filter(entry => existing.has(entry.instanceId) && !live.has(entry.instanceId));
+	}
+
+	private portalListing(entry: { slot: number; instanceId: number }): messages.PortalListing {
+		return {
 			slot: entry.slot,
 			colour: portalColour(entry.slot),
 			gatewayName: portalGatewayName(entry.slot),
 			instanceId: entry.instanceId,
 			instanceName: this.instanceName(entry.instanceId),
-		}));
+		};
+	}
+
+	portals(): messages.PortalListingResponse {
+		const portals = this.assignedPortals().map(entry => this.portalListing(entry));
+		const pluginOff = this.slots.loadError ? [] : this.pluginOffPortals().map(entry => this.portalListing(entry));
 		const unassigned = this.slots.loadError ? [] : this.slots.unassigned(this.liveInstances().map(inst => inst.id))
 			.map(instanceId => ({ instanceId, instanceName: this.instanceName(instanceId) }));
 		const retired = this.slots.loadError ? [] : this.slots.retired().map(entry => ({
@@ -91,7 +102,9 @@ export class GatewayConfig {
 			formerInstanceId: entry.previousInstanceId,
 			formerInstanceName: this.instanceName(entry.previousInstanceId),
 		}));
-		return this.slots.loadError ? { portals, unassigned, retired, error: this.slots.loadError } : { portals, unassigned, retired };
+		return this.slots.loadError
+			? { portals, pluginOff, unassigned, retired, error: this.slots.loadError }
+			: { portals, pluginOff, unassigned, retired };
 	}
 
 	activeGatewayNamesFor(sourceInstanceId: number): string[] {
@@ -204,6 +217,11 @@ export class GatewayConfig {
 		if (request.action === "assign") {
 			if (request.instance === undefined) throw new Error("assign needs an instance");
 			const instanceId = this.resolveServer(request.instance);
+			const off = this.pluginOffPortals().find(entry => entry.slot === slot);
+			if (off) {
+				throw new Error(`The ${name} portal is held by ${this.instanceName(off.instanceId)} (instance ${off.instanceId}), `
+					+ "whose surface_export plugin is off; release it first");
+			}
 			this.warnHolderChanges(await this.slots.assign(slot, instanceId));
 			this.logger.info(`The ${name} portal was assigned to ${this.instanceName(instanceId)} (instance ${instanceId}) by an administrator`);
 		} else {

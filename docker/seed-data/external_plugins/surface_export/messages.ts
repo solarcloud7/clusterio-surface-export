@@ -926,6 +926,21 @@ export class GetGatewaysRequest {
 						additionalProperties: false,
 					},
 				},
+				pluginOff: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							slot: { type: "integer" },
+							colour: { type: "string" },
+							gatewayName: { type: "string" },
+							instanceId: { type: "integer" },
+							instanceName: { type: "string" },
+						},
+						required: ["slot", "colour", "gatewayName", "instanceId", "instanceName"],
+						additionalProperties: false,
+					},
+				},
 				unassigned: {
 					type: "array",
 					items: {
@@ -952,7 +967,7 @@ export class GetGatewaysRequest {
 				},
 				error: { type: "string" },
 			},
-			required: ["portals", "unassigned", "retired"],
+			required: ["portals", "pluginOff", "unassigned", "retired"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as PortalListingResponse;

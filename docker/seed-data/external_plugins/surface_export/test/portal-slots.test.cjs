@@ -327,8 +327,14 @@ test("a server keeps its colour while its plugin is off, is not advertised meanw
 	assert.equal(gateways.portalOf(2), null);
 	const listing = await gateways.handleGetGatewaysRequest({});
 	assert.deepEqual([listing.portals.map(portal => portal.instanceId), listing.unassigned, listing.retired], [[1, 3], [], []]);
+	assert.deepEqual(listing.pluginOff, [{ slot: 2, colour: "green", gatewayName: "surfexp_gateway_2", instanceId: 2, instanceName: "s2" }],
+		"the listing shows the colour as held by the server whose plugin is off");
 	await gateways.pushGatewayConfigToAllSources();
 	assert.deepEqual(sent, [1, 3], "a server with its plugin off is not pushed gateway config");
+	sent.length = 0;
+	await assert.rejects(gateways.handleSetPortalRequest({ action: "assign", portal: "green", instance: "3" }),
+		/The Green portal is held by s2 \(instance 2\), whose surface_export plugin is off; release it first/);
+	assert.deepEqual([slots.slotOf(2), slots.slotOf(3), slots.retired(), sent], [2, 3, [], []], "a refused assignment changes and pushes nothing");
 
 	instances.set(4, instance(4));
 	loaded.set(4, true);
@@ -339,6 +345,7 @@ test("a server keeps its colour while its plugin is off, is not advertised meanw
 	await gateways.settle();
 	assert.deepEqual(gateways.portalOf(2), { slot: 2, colour: PORTAL_COLOURS[1], label: "s2" }, "turning the plugin back on restores the same colour");
 	assert.ok(gateways.activeGatewayNamesFor(1).includes("surfexp_gateway_2"));
+	assert.deepEqual((await gateways.handleGetGatewaysRequest({})).pluginOff, []);
 
 	loaded.set(2, false);
 	await gateways.settle();
@@ -351,6 +358,17 @@ test("a server keeps its colour while its plugin is off, is not advertised meanw
 	assert.deepEqual(slots.retired(), [{ slot: 2, previousInstanceId: 2 }, { slot: 3, previousInstanceId: 3 }],
 		"a server removed from the instance list retires its colour");
 	assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), { version: 1, slots: [[1, 1], [4, 4]], released: [[2, 2], [3, 3]] });
+});
+
+test("an administrator releases the colour of a server whose plugin is off, and it is retired", async () => {
+	const { instances, gateways } = adminFixture([[1, "Delta"], [2, "Sigma"]]);
+	gateways.activeGatewayNamesFor(1);
+	instances.get(2).config = { get: key => key === "surface_export.load_plugin" ? false : undefined };
+	const listing = await gateways.handleSetPortalRequest({ action: "release", portal: "green" });
+	assert.deepEqual([listing.portals.map(portal => portal.slot), listing.pluginOff, listing.retired.map(portal => [portal.slot, portal.formerInstanceId])],
+		[[1], [], [[2, 2]]]);
+	await gateways.handleSetPortalRequest({ action: "assign", portal: "green", instance: "Delta" });
+	assert.equal(gateways.portalOf(1).slot, 2, "once released, the colour can be assigned to another server");
 });
 
 test("servers without the plugin loaded take no colour and are no destination", async () => {

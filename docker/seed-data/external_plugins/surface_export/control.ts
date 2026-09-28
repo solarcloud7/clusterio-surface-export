@@ -193,7 +193,7 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
-	definition: ["gateways", "Print the coloured portal held by each server, the retired colours and the servers without a colour as JSON; the Gateway reaches every other server"],
+	definition: ["gateways", "Print the coloured portal held by each server, the colours held by servers whose plugin is off, the retired colours and the servers without a colour as JSON; the Gateway reaches every other server"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const response = await control.sendTo("controller", new messages.GetGatewaysRequest());
 		console.log(JSON.stringify(response));

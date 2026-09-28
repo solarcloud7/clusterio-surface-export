@@ -168,10 +168,13 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const tree = state?.tree;
 	const [retiredPortals, setRetiredPortals] = useState<PortalListingResponse["retired"]>([]);
+	const [pluginOffPortals, setPluginOffPortals] = useState<PortalListingResponse["pluginOff"]>([]);
 	useEffect(() => {
 		let cancelled = false;
 		plugin.getPortals?.().then(listing => {
-			if (!cancelled) setRetiredPortals(listing.retired || []);
+			if (cancelled) return;
+			setRetiredPortals(listing.retired || []);
+			setPluginOffPortals(listing.pluginOff || []);
 		}).catch((err: unknown) => {
 			console.warn("surface_export: could not read the portal colours", err);
 		});
@@ -635,6 +638,19 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								/>
 							))}
 						</div> : null}
+						{pluginOffPortals.map(portal => (
+							<div
+								key={portal.slot}
+								className="surface-export-plugin-off-portal"
+								title={`${portalColourName(portal.colour)} is held by ${portal.instanceName}, whose surface_export plugin is off; `
+									+ "it leads there again when the plugin is turned back on"}
+							>
+								<img src={PORTAL_ART[portal.colour]} alt={`${portal.colour} portal, plugin off`} draggable={false} />
+								<Text type="secondary" style={{ fontSize: 12 }}>
+									{`${portalColourName(portal.colour)} — ${portal.instanceName} (plugin off)`}
+								</Text>
+							</div>
+						))}
 						<Text type="secondary" style={{ fontSize: 12, display: "block", maxWidth: 220, textAlign: "right" }}>
 							{canEdit
 								? "every server reaches every other · drag a platform onto a portal to transfer it"

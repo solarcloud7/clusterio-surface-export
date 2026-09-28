@@ -44,11 +44,12 @@ clusterioctl surface-export portal assign <instance> <portal>
 clusterioctl surface-export portal release <portal>
 ```
 
-`gateways` prints which server each coloured portal leads to, the retired colours
+`gateways` prints which server each coloured portal leads to, the colours held by
+servers whose `surface_export.load_plugin` is off (`pluginOff`), the retired colours
 and the servers without a colour. `portal assign` makes a colour lead to a server;
 `<instance>` is an instance name or id and `<portal>` is `1`-`4` or `blue`, `green`,
-`orange` or `purple`. A colour held by another server is refused until it is
-released. A server that already holds a colour moves, and the colour it leaves is
+`orange` or `purple`. A colour held by another server, including one whose plugin
+is off, is refused until it is released. A server that already holds a colour moves, and the colour it leaves is
 retired. `portal release` frees a colour without deleting its server; the colour
 is retired. Both need `surface_export.exports.transfer`, save the assignment at
 once and push it to every running server. See [portals](configuration.md#portals).
