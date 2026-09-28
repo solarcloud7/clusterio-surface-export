@@ -12,17 +12,98 @@ page shows the applied value and any outstanding restart requirement.
 
 | Mode | Effect | Example |
 |---|---|---|
-| Plugin history (default) | Keeps a restored source protected when history records it as transferred away. | Reload an older source save while retaining the platform that already arrived elsewhere. |
-| Save game | Accepts a restored source with a fresh persistent identity once no active or unresolved handoff owns it. Another usable copy may exist. | Deliberately reload yesterday's save to recover a destroyed platform. |
+| Plugin history (default) | Keeps a restored copy protected when history records it as transferred away, and quarantines any copy whose platform history another server holds. | Reload an older source save while retaining the platform that already arrived elsewhere. |
+| Save game | Accepts a restored copy automatically only when the server recorded as holding the platform's current copy answers that it no longer has it. A copy that another server still holds, or that cannot be checked, is quarantined as in Plugin history. | Reload yesterday's save on both servers to recover a destroyed platform. |
 
 Both modes retain active-transfer protections. Neither reconstructs a missing
 platform automatically or rewrites a completed operation's history. Controller
-unavailability or an unreadable journal does not authorize release. Switching modes
-does not undo an already accepted restoration's new identity.
+unavailability, a lost reply or an unreadable journal or registry does not
+authorize release. Switching modes does not undo an already accepted restoration.
 
-Gateways shows detected conflicts and distinguishes accepted, protected and
-unverified states. An offline instance is unverified, not empty. An accepted-copy
-warning can be acknowledged locally; this does not remove historical records.
+## Platform history and quarantine
+
+Every platform carries a platform history (lineage) that moves with it on each
+transfer, plus a generation that increases on each transfer. The controller file
+`surface_export_lineage_registry.json` records which server holds each history's
+current generation. At startup each server compares its platforms with that record.
+A copy that cannot be proved current is quarantined: it stays hidden and inactive,
+and players aboard stay where they are. The rest of the server starts normally.
+
+| Reason | Meaning |
+|---|---|
+| `duplicate` | Another server holds the current copy of this platform. |
+| `rollback_other` | The server recorded as holding the current copy answered that it no longer has it. |
+| `unverified` | The server recorded as holding the current copy did not answer (offline, restarting or lost reply). |
+| `in_transit` | A transfer of this platform is still unresolved. |
+| `unresolved_handoff` | An unresolved transfer owns this source platform. |
+| `stale_self` | This server later received a newer copy of this platform. |
+| `ahead_of_registry` | This copy is newer than the controller's record. |
+| `unregistered` | This copy has been transferred before, but the controller has no record of it. |
+| `legacy_unclassified` | The platform predates platform history and matches a platform this server transferred away. |
+| `duplicate_local` | Two platforms on this server carry the same platform history. |
+| `no_identity` | The platform has no hub, so it has no stable identity. |
+| `reconcile_error` | Startup could not verify the platform. |
+
+A quarantine is not released by a restart, `/unlock-platform`, a lock timeout or
+an export. An `in_transit` or `unresolved_handoff` quarantine is settled by its
+own transfer: a rollback releases the copy and a completed transfer deletes it.
+Other quarantines stay until an administrator resolves them.
+
+## Resolve a quarantined copy
+
+Gateways lists quarantined copies and restored copies that remain protected. Each
+entry shows the stored reason and a live re-evaluation. Actions follow the live
+result, so a copy quarantined while its holder was offline becomes decidable once
+that server answers. **Check again** repeats the evaluation. Hints such as a matching
+hub number or transfer history are labelled as hints; platform names are never used.
+Resolving needs the `surface_export.recovery.resolve` permission.
+
+| Live result | Actions |
+|---|---|
+| `duplicate` | **Keep this copy**: the other server's copy is saved as a snapshot and deleted, then this copy becomes current and is released. **Keep the other copy**: this copy is saved as a snapshot and deleted. |
+| `rollback_other`, `unregistered`, `stale_self`, `ahead_of_registry` | **Adopt this copy**: the controller record moves to this copy and it is released. **Delete this copy**: snapshot, then delete. |
+| `legacy_unclassified` | **Treat as a new platform**: the copy gets a new platform history and is released. **Delete this copy**. |
+| `duplicate_local` | **Delete this copy**. |
+| `no_identity` | **Release after inspection**: the copy is released without a platform history. It cannot be exported or transferred until it has a hub. |
+| Startup could not verify it (`reconcile_error`) but the live result matches the record | **Release after inspection** or **Delete this copy**. |
+| `unverified`, `in_transit`, `unresolved_handoff` | None. The entry states what must happen first. |
+
+Every action re-checks the registry, the other server's answer and in-flight
+transfers when it is submitted, and is refused if anything changed or is uncertain.
+The confirmation shows how many players are aboard the copy that will be deleted.
+They are moved to the default planet by the normal source-deletion path; the count
+does not block the action.
+
+Deletion first stores a snapshot of the copy with the other exports. **Snapshots are
+not pinned**: the normal export limit can remove one later, like any stored export.
+Download or restore it promptly if you may need it. If the snapshot fails, the copy
+returns to its previous protection. The deletion itself uses the transfer
+source-deletion path, which records the source retirement and a deletion receipt.
+
+Each resolution has a request ID. Progress is saved in the registry file after each
+confirmed step. If a reply is lost or a server is offline, submit the same request
+ID again: the resolution continues from its last confirmed step and never starts a
+second action. A different action needs a new request ID.
+
+For an authenticated Clusterio CLI installation:
+
+```text
+clusterioctl surface-export conflicts [instanceId]
+clusterioctl surface-export resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>
+```
+
+`conflicts` prints the entries as JSON, including the offered `actions`. `action` is
+one of `keep_this`, `keep_other`, `adopt`, `stale_copy`, `new_platform` or `release`,
+and must be offered for that copy.
+
+A seed reset archives the instance's recovery journal but leaves the controller
+registry, which other servers also use. Platforms in a freshly reset save start new
+platform histories and start normally. Old registry entries for the replaced save
+remain and are not used by that save's platforms.
+
+Gateways also shows accepted and protected restored copies. An offline instance is
+unverified, not empty. An accepted-copy warning can be acknowledged locally; this
+does not remove historical records.
 
 ## Restore an available snapshot
 

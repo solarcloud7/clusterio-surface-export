@@ -39,6 +39,8 @@ clusterioctl surface-export list
 clusterioctl surface-export list-transfers
 clusterioctl surface-export start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]
 clusterioctl surface-export restore-snapshot <exportId> <targetInstanceId> <requestId> [platformName]
+clusterioctl surface-export conflicts [instanceId]
+clusterioctl surface-export resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>
 clusterioctl surface-export gateways
 clusterioctl surface-export portal assign <instance> <portal>
 clusterioctl surface-export portal release <portal>
@@ -53,6 +55,10 @@ is off, is refused until it is released. A server that already holds a colour mo
 retired. `portal release` frees a colour without deleting its server; the colour
 is retired. Both need `surface_export.exports.transfer`, save the assignment at
 once and push it to every running server. See [portals](configuration.md#portals).
+
+`conflicts` lists quarantined and protected platform copies with their live result
+and offered actions. `resolve-platform` applies one offered action; retry a lost reply
+with the same request ID. Both are described in [recovery](recovery.md#resolve-a-quarantined-copy).
 
 The plugin resolves live identity when starting a transfer; copying an index from
 another instance or an old save is not sufficient. Stored export transfer and
@@ -71,6 +77,7 @@ using a file path; an in-game command cannot read arbitrary files on your comput
 | `surface_export.exports.list` | Stored export listing/retrieval. |
 | `surface_export.exports.transfer` | Transfer and import actions, including snapshot recovery, and portal colour assignment. |
 | `surface_export.logs.view` | Transaction summaries and details. |
+| `surface_export.recovery.resolve` | Resolve quarantined platform copies (keep, adopt, release or delete a copy). |
 | `core.controller.get_config` | Read controller settings. |
 | `core.controller.update_config` | Change controller settings. |
 

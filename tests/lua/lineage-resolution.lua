@@ -22,20 +22,30 @@ local function world()
         local short = name:match("^modules/surface_export/(.*)$") or name
         if modules[short] then return modules[short] end
         local loaded
-        if short == "utils/platform-identity" or short == "utils/surface-lock" or short == "utils/platform-lineage" then
+        if short == "utils/platform-identity" or short == "utils/surface-lock" or short == "utils/platform-lineage"
+            or short == "utils/transfer-receipts" then
             loaded = assert(loadfile(root .. short .. ".lua", "t", env))()
         elseif short == "core/source-recovery" then
             loaded = assert(loadfile(root .. short .. ".lua", "t", env))()
         elseif short == "utils/game-utils" then
-            loaded = {ACTIVATABLE_ENTITY_TYPES = {}}
+            loaded = {ACTIVATABLE_ENTITY_TYPES = {}, delete_platform = function(p)
+                env.deleted = (env.deleted or 0) + 1; force.platforms[p.index] = nil; p.valid = false; return true end}
+        elseif short == "utils/operation-timing" then
+            loaded = setmetatable({scope = function(_, _, fn, ...) return fn(...) end}, {__index = function() return noop end})
         elseif short == "utils/platform-schedule" then
             loaded = {apply = function() return true end, capture = function() return {} end}
         elseif short == "core/passenger-transit" then
-            loaded = {transfer_released = noop}
+            loaded = {transfer_released = noop, depart = function() return {} end, settle = noop, notify_departed = noop}
         elseif short == "core/destination-hold" then
             loaded = {reconcile_legacy = noop}
         elseif short == "core/gateway" then
-            loaded = {collect_passengers = function(p) return p.aboard or {}, 0, true end,
+            loaded = {evacuate_passengers = function(p)
+                    env.evacuated = env.evacuated or {}
+                    for _, player in ipairs(p.aboard or {}) do env.evacuated[#env.evacuated + 1] = player.name end
+                    p.aboard = {}
+                    return {success = true, failures = 0}
+                end,
+                collect_passengers = function(p) return p.aboard or {}, 0, true end,
                 passenger_count = function(players, characters) return math.max(#players, characters) end}
         elseif short == "core/async-processor" then
             loaded = {queue_export = function(index, force_name, requester, destination, _, _, operation, uid, _, purpose)
@@ -249,4 +259,22 @@ do
     end
     assert(minted == "lineage:boot-now:120", "the control export did not mint a lineage")
     print("PASS a resolution snapshot reads the lineage without minting one")
+end
+
+do
+    local w = world()
+    local p = w.add(14, 140)
+    p.aboard = {{name = "pat"}}
+    w.quarantine(14, "duplicate", {lineage = "lineage:a:140"})
+    w.env.storage.surface_export_lineages = {[14] = {lineage = "lineage:a:140", generation = 1, surface_index = 24, hub_unit_number = 140}}
+    local prepared = w.apply({requestId = "keep-other", step = "prepare_delete", platformIndex = 14, platformUid = "old:140"})
+    assert(prepared.success and w.env.storage.locked_platforms[14].transfer_job_id == "export-job")
+    local delete = assert(loadfile(root .. "interfaces/remote/delete-platform-for-transfer.lua", "t", w.env))()
+    assert(delete(14, "ship-14", "player", "export-job", "old:140") == "SUCCESS", "the resolution snapshot job could not delete its copy")
+    assert(w.env.deleted == 1 and not p.valid and w.env.storage.locked_platforms[14] == nil)
+    assert(w.env.evacuated and w.env.evacuated[1] == "pat", "players aboard the deleted copy were not evacuated")
+    assert(w.env.storage.surface_export_lineages[14] == nil, "the deleted copy kept its lineage record")
+    assert(w.env.storage.surface_export_transfer_receipts.source_deleted.records["export-job"], "no deletion receipt for a lost reply")
+    assert(delete(14, "ship-14", "player", "export-job", "old:140") == "SUCCESS", "a retried deletion after a lost reply was refused")
+    print("PASS keep-other: the resolution snapshot job deletes the stale copy through the source-delete path and evacuates players")
 end
