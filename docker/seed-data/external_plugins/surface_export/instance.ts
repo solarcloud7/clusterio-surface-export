@@ -265,7 +265,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			reason: text(entry.reason), ownerJobId: text(entry.ownerJobId),
 			holderInstanceId: integer(entry.holderInstanceId), holderGeneration: integer(entry.holderGeneration),
 			resolutionRequestId: text(entry.resolutionRequestId),
-			passengers: integer(entry.passengers),
+			passengers: integer(entry.passengers), localCopy: entry.localCopy === true,
 		}));
 		return { success: true, epoch, platforms };
 	}

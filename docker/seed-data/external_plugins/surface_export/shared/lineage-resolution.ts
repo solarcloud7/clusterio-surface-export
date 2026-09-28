@@ -42,6 +42,8 @@ export interface ResolutionRecord {
 
 export type PublicResolutionRecord = Omit<ResolutionRecord, "token">;
 
+export const RELEASING_RESOLUTIONS: ReadonlySet<ResolutionAction> = new Set(["adopt", "keep_this", "new_platform", "release"]);
+
 export interface ConflictEntry {
 	instanceId: number;
 	platformIndex: number;
@@ -89,7 +91,7 @@ export function resolutionActions(verdict: LineageVerdictName, state: ConflictEn
 		case "normal": return { actions: ["release", "stale_copy"], blocked: null };
 		case "no_identity": return { actions: [], blocked: "This copy has no hub, so it has no identity yet. Once it has a hub, check again to release or delete it." };
 		case "unverified": return { actions: [], blocked: "The server recorded as holding the current copy cannot confirm it. Bring that server online and check again." };
-		case "in_transit": return { actions: [], blocked: "A transfer or resolution of this platform is still unresolved. It settles this copy when it finishes." };
+		case "in_transit": return { actions: [], blocked: "A transfer, or a resolution that can release a copy, of this platform is still unresolved. Check again when it finishes: a transfer settles the copy it owns, and any other copy then shows its own actions." };
 		case "unresolved_handoff": return { actions: [], blocked: "An unresolved transfer owns this copy. It releases or deletes the copy when it settles." };
 		default: return { actions: [], blocked: "This copy needs no resolution." };
 	}

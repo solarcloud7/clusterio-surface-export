@@ -75,6 +75,7 @@ function Resolution.candidates()
 				facts.retiredExportId = tombstone and lock.transfer_job_id or (lock.resolution_restore and lock.resolution_restore.transfer_job_id) or nil
 				facts.resolutionRequestId = lock.resolution_request_id
 				facts.passengers = passengers(platform)
+				facts.localCopy = facts.lineage and PlatformLineage.local_copy(facts.lineage, platform.index, nil) or nil
 				list[#list + 1] = facts
 			end
 		end

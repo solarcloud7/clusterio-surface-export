@@ -52,7 +52,7 @@ export async function normalizeSectionExport(value: ObjectData): Promise<ObjectD
 	const payload = await timed("Artifact compression", "inclusive", () => compress(json));
 	return { compressed: true, compression: "deflate", payload: payload.toString("base64"),
 		platform_name: data.platform_name, tick: data.tick, timestamp: data.timestamp, stats: data.stats, verification: data.verification,
-		lineage: data.lineage, generation: data.generation };
+		lineage: data.lineage, generation: data.generation, purpose: data.purpose };
 }
 
 /** Legacy artifacts remain unchanged; oversized individual records use that path. */

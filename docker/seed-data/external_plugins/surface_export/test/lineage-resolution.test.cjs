@@ -43,6 +43,7 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 		logger: { warn() {}, info() {} },
 		isInstanceOnline: id => !behaviour.offline.has(id) && !behaviour.reserved.has(id),
 		instanceIds: () => [I, H],
+		knownInstanceIds: () => [I, H, ...(behaviour.extraInstances ?? [])],
 		lineageInTransit(lineage) {
 			return !!lineage && ([...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
 				|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer)));
@@ -262,6 +263,38 @@ test("adopt refuses unless every server that could hold a live copy answers abse
 	const c = cluster({ candidates: { [I]: [candidate({ generation: 1, reason: "unregistered" })] }, presence: { [H]: { state: "absent" } } });
 	const result = await c.resolver.resolve(request({ action: "adopt" }));
 	assert.equal(result.status, "completed");
+});
+
+test("every adopt asks every other known server, including one with the plugin disabled", async () => {
+	for (const [verdict, registered, generation] of [["ahead_of_registry", entry({ generation: 1 }), 2], ["stale_self", entry({ instanceId: I, generation: 3 }), 1],
+		["rollback_other", entry(), 2]]) {
+		const X = 7;
+		const c = cluster({ candidates: { [I]: [candidate({ generation, reason: verdict })] }, presence: { [H]: { state: "absent" }, [X]: { state: "present" } } });
+		c.behaviour.extraInstances = [X];
+		await c.registry.update(draft => draft.set(L, registered));
+		const result = await c.resolver.resolve(request({ action: "adopt" }));
+		assert.equal(result.success, false, `${verdict}: adopt asked only the registry holder`);
+		assert.match(result.error, /Instance 7 still has a copy/, verdict);
+		assert.equal(c.counters.authorize + c.counters.release, 0);
+		const offline = cluster({ candidates: { [I]: [candidate({ generation, reason: verdict })] }, presence: { [H]: { state: "absent" } } });
+		offline.behaviour.extraInstances = [X];
+		offline.behaviour.offline.add(X);
+		await offline.registry.update(draft => draft.set(L, registered));
+		const refused = await offline.resolver.resolve(request({ action: "adopt" }));
+		assert.equal(refused.success, false, `${verdict}: an instance that cannot answer was treated as holding no copy`);
+		assert.match(refused.error, /Instance 7 could not rule out/);
+	}
+});
+
+test("a candidate that shares its lineage with another local copy is duplicate_local", async () => {
+	const c = cluster({ candidates: { [I]: [candidate({ generation: 3, reason: "ahead_of_registry", localCopy: true })] }, holder: { present: false } });
+	await c.registry.update(draft => draft.set(L, entry({ instanceId: I, generation: 2 })));
+	const listing = await c.resolver.list(I);
+	assert.equal(listing.conflicts[0].liveVerdict, "duplicate_local");
+	assert.deepEqual(listing.conflicts[0].actions, ["stale_copy"]);
+	const result = await c.resolver.resolve(request({ action: "adopt" }));
+	assert.equal(result.success, false);
+	assert.equal(c.registry.get(L).generation, 2, "adopt committed the registry for a copy Lua refuses to release");
 });
 
 test("a journal-matched copy is deleted under its original retirement, and a stuck delete can be abandoned", async () => {

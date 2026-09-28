@@ -11,6 +11,7 @@ import { GatewayConfig } from "./lib/gateway-config";
 import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots";
 import { LineageRegistry, LINEAGE_REGISTRY_FILENAME } from "./lib/lineage-registry";
 import { LineageResolver } from "./lib/lineage-resolution";
+import { RELEASING_RESOLUTIONS } from "./shared/lineage-resolution";
 import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier";
 import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle";
 import { RouteAlertRelay } from "./lib/route-alert-relay";
@@ -356,6 +357,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			isInstanceOnline: id => self().isInstanceOnline(id),
 			instanceIds: () => [...self().c.instances.values()]
 				.filter(instance => !instance.isDeleted && instance.config.get("surface_export.load_plugin") !== false).map(instance => instance.id),
+			knownInstanceIds: () => [...self().c.instances.values()].filter(instance => !instance.isDeleted).map(instance => instance.id),
 			lineageInTransit: lineage => self().lineageInTransit(lineage),
 			completedTransferFrom: (id, uid) => self().completedTransferFrom(id, uid),
 			owningSourceJob: (id, facts) => self().owningSourceJob(id, facts),
@@ -395,7 +397,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!lineage) return false;
 		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
 			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer))
-			|| (this.lineageRegistry?.listResolutions() ?? []).some(record => record.status === "in_progress" && record.lineage === lineage);
+			|| (this.lineageRegistry?.listResolutions() ?? []).some(record => record.status === "in_progress" && record.lineage === lineage
+				&& RELEASING_RESOLUTIONS.has(record.action));
 	}
 
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null {

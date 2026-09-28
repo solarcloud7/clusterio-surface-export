@@ -16,6 +16,7 @@ export interface ResolverHost {
 	logger: { warn(message: string): void; info(message: string): void };
 	isInstanceOnline(instanceId: number): boolean;
 	instanceIds(): number[];
+	knownInstanceIds(): number[];
 	lineageInTransit(lineage: string | null): boolean;
 	completedTransferFrom(instanceId: number, platformUid: string | null): boolean;
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null;
@@ -91,11 +92,12 @@ export class LineageResolver {
 	async evaluate(instanceId: number, epoch: string, candidates: ResolutionCandidate[]): Promise<Evaluated[]> {
 		const counts = new Map<string, number>();
 		for (const candidate of candidates) if (candidate.lineage) counts.set(candidate.lineage, (counts.get(candidate.lineage) ?? 0) + 1);
+		const localCopies = new Set(candidates.filter(candidate => candidate.localCopy === true).map(candidate => candidate.platformIndex));
 		const context: ClassifyContext = { instanceId, epoch, mode: "plugin_history", allowAdoption: false };
 		const hints = (facts: PlatformFacts): ControllerHints => ({
 			inTransit: this.host.lineageInTransit(facts.lineage),
 			historyMatch: this.host.completedTransferFrom(instanceId, facts.platformUid),
-			duplicateLocal: facts.lineage !== null && (counts.get(facts.lineage) ?? 0) > 1,
+			duplicateLocal: facts.lineage !== null && ((counts.get(facts.lineage) ?? 0) > 1 || localCopies.has(facts.platformIndex)),
 			ownerJobId: this.host.owningSourceJob(instanceId, facts),
 		});
 		const wanted = new Map<number, Set<string>>();
@@ -225,9 +227,7 @@ export class LineageResolver {
 		}
 		const lineage = candidate.lineage ?? (action === "release" && verdict.mint ? verdict.lineage ?? null : null);
 		if (action === "adopt" && lineage) {
-			const others = verdict.verdict === "unregistered"
-				? this.host.instanceIds().filter(id => id !== instanceId)
-				: entry && entry.instanceId !== instanceId ? [entry.instanceId] : [];
+			const others = this.host.knownInstanceIds().filter(id => id !== instanceId);
 			const refusal = await this.presenceAbsent(lineage, others);
 			if (refusal) return this.refuse(request, `${refusal}; adoption refused`);
 		}

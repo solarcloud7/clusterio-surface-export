@@ -22,8 +22,15 @@ authorize release. Switching modes does not undo an already accepted restoration
 If the registry file is missing although completed transfers or stored exports show
 it was written, the controller treats it as unreadable: restore the file from a
 backup. Replacing it with `{"version":1,"entries":[]}` is a deliberate override
-that forgets every recorded holder; copies that cannot then be proved current are
-quarantined.
+that forgets every recorded holder. After it, each server claims its generation-0
+platforms at startup without asking other servers, and copies at a later generation
+are quarantined as `unregistered`. Use the override only when no server can hold a
+second live copy of any platform, for example when every server was reset or
+restored from the same backup as the lost file.
+
+Stored exports made before platform history existed carry no lineage. They can
+still be downloaded or restored as a snapshot, but not transferred; create a fresh
+export of the platform to transfer it.
 
 ## Platform history and quarantine
 
@@ -50,9 +57,14 @@ and players aboard stay where they are. The rest of the server starts normally.
 | `reconcile_error` | Startup could not verify the platform. |
 
 A quarantine is not released by a restart, `/unlock-platform`, a lock timeout or
-an export. An `in_transit` or `unresolved_handoff` quarantine is settled by its
-own transfer: a rollback releases the copy and a completed transfer deletes it.
-Other quarantines stay until an administrator resolves them.
+an export. An `unresolved_handoff` quarantine, and an `in_transit` quarantine of a
+transfer's own source, is settled by that transfer: a rollback releases the copy and
+a completed transfer deletes it. An `in_transit` quarantine of any other copy, for
+example one made while a resolution that can release a copy was in progress, is not
+settled automatically: check again once the transfer or resolution finishes, and
+resolve it with the actions then offered. Resolutions that only delete a copy do
+not put other copies in transit. Other quarantines stay until an administrator
+resolves them.
 
 ## Resolve a quarantined copy
 
@@ -75,8 +87,15 @@ Resolving needs the `surface_export.recovery.resolve` permission.
 
 Every action re-checks the registry, the other server's answer and in-flight
 transfers when it is submitted, and is refused if anything changed or is uncertain.
-**Adopt this copy** is also refused unless every server that could hold a live copy
-answers that it has none.
+**Adopt this copy** is also refused unless every other server of the cluster answers
+that it has no copy, whatever the registry records. A server that is offline,
+reconciling or has the plugin disabled cannot answer, so adoption is refused until
+it is online with the plugin enabled or is deleted from the cluster.
+
+Each resolution's server-side steps are bound to a random value the controller
+issues when the resolution is admitted, so another request cannot continue or
+release a resolution it did not start. This is not authentication: anyone with RCON
+or script access to the server can already change any platform.
 The confirmation shows how many players are aboard the copy that will be deleted.
 They are moved to the default planet by the normal source-deletion path; the count
 does not block the action.

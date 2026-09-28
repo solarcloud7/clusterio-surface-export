@@ -63,6 +63,7 @@ export interface ResolutionCandidate extends PlatformFacts {
 	retiredExportId: string | null;
 	resolutionRequestId: string | null;
 	passengers: number | null;
+	localCopy?: boolean;
 }
 
 export interface LineageVerdict {

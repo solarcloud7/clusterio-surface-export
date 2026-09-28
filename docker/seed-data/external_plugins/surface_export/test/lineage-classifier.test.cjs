@@ -218,6 +218,17 @@ test("an in-progress resolution holds its lineage in transit until it ends", asy
 	assert.equal(plugin.lineageInTransit("lineage:boot-old:16"), false);
 	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(record.requestId, { ...record, status: "failed", step: "failed" }); });
 	assert.equal(plugin.lineageInTransit(L), false);
+	for (const action of ["adopt", "new_platform", "release"]) {
+		const id = `req-${action}-0001`;
+		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action }); });
+		assert.equal(plugin.lineageInTransit(L), true, `${action} did not hold its lineage in transit`);
+		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action, status: "completed", step: "completed" }); });
+	}
+	for (const action of ["stale_copy", "keep_other"]) {
+		const id = `req-${action}-0001`;
+		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action }); });
+		assert.equal(plugin.lineageInTransit(L), false, `a delete-only ${action} quarantined other copies of its lineage`);
+	}
 });
 
 test("pending intents and completed history are hints the controller owns", async () => {

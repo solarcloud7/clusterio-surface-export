@@ -454,3 +454,22 @@ do
     assert(not w.apply(again).success, "an abandoned resolution retargeted the restored tombstone")
     print("PASS a retargeted deletion can be retried after its copy is gone, but never after it was abandoned")
 end
+
+do
+    local w = world()
+    w.add(27, 270)
+    w.env.storage.surface_export_lineages = {[27] = {lineage = "lineage:a:270", generation = 2, surface_index = 37, hub_unit_number = 270}}
+    w.quarantine(27, "ahead_of_registry", {lineage = "lineage:a:270"})
+    local function listed(index)
+        for _, facts in pairs(w.resolution.candidates().platforms) do if facts.platformIndex == index then return facts end end
+    end
+    assert(not listed(27).localCopy, "a copy alone on its server was reported as sharing its lineage")
+    local live = w.add(28, 280)
+    live.hidden = false
+    w.env.storage.surface_export_lineages[28] = {lineage = "lineage:a:270", generation = 3, surface_index = 38, hub_unit_number = 280}
+    assert(listed(27).localCopy == true, "a second local copy of the lineage was not reported")
+    w.env.storage.surface_export_lineages[28] = nil
+    w.env.storage.destination_holds = {incoming = {lineage = "lineage:a:270", generation = 3}}
+    assert(listed(27).localCopy == true, "a destination hold of the lineage was not reported")
+    print("PASS candidates report another local copy or hold of their lineage")
+end
