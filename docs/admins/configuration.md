@@ -94,8 +94,9 @@ leads to that server. A platform whose schedule stops there is sent to that serv
 and arrives at its Gateway. A server's own colour is locked on that server, and a
 colour no server holds is locked everywhere.
 
-At most four servers take part; servers whose `surface_export.load_plugin` is off
-are not counted. A new server gets the lowest colour that no server has held.
+At most four servers hold a colour. A server whose `surface_export.load_plugin` is off
+and holds no colour is not counted; one that holds a colour keeps it, and so uses one
+of the four, until an administrator releases it. A new server gets the lowest colour that no server has held.
 Turning a server's `surface_export.load_plugin` off does not retire its colour.
 While the plugin is off, that colour is locked on every other server, and
 `clusterioctl surface-export gateways` and the Gateways page list it as held by

@@ -967,7 +967,7 @@ export class GetGatewaysRequest {
 				},
 				error: { type: "string" },
 			},
-			required: ["portals", "pluginOff", "unassigned", "retired"],
+			required: ["portals", "unassigned", "retired"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as PortalListingResponse;
