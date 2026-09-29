@@ -1,3 +1,6 @@
+// requires: one workflow run's package tarball and its acceptance report from the same immutable artifact
+// produces: a verdict that the tarball's identity, version and channel match the report, appended to the run summary
+// does not: run the acceptance fixture, publish, or certify a tarball that was rebuilt or repacked
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";

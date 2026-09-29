@@ -18,10 +18,11 @@ There is no separate plugin settings store.
 | `max_storage_size` | 20 | Stored Payload Downloads: retained platform payload files. The oldest file is removed when the limit is reached on a subsequent store. Transfer history is separate. |
 | `transaction_log_detail_entries` | 100 | Saved Detailed Transfer Logs: retained timings and audit evidence, with failures prioritized. The UI accepts 10–5,000. Other operations retain summaries. |
 | `transfer_validation_timeout_seconds` | 30 | Delay before verifying job status after payload acceptance. Clamped to 5–120 seconds; takes effect on the next transfer. Queued or progressing work stays nonterminal. Missing status retains ownership for recovery. |
-| `platform_source_of_truth` | `plugin_history` | `plugin_history` protects previously transferred source copies restored from saves. `save_game` accepts a restored copy with a fresh identity when no unresolved handoff owns it. Applied at instance restart. |
+| `platform_source_of_truth` | `plugin_history` | `plugin_history` quarantines every restored copy whose travel history is uncertain until an administrator decides. `save_game` additionally accepts a restored copy when the server recorded as holding the platform confirms it no longer has it; duplicates and unverifiable copies are quarantined in both modes. Applied at instance restart. See [recovery](recovery.md). |
 | `max_inflight_transfers_per_instance` | 1 | Experimental admission limit, 1–4; not exposed in the Settings tab. Unresolved recovery blocks admission. |
 | `passenger_carry_armor` | `true` | Armor carry over?: passengers take their worn armor through a gateway. Set it in the plugin's Settings tab under **Gateway passengers**; it is sent with the gateway configuration and applies to the next transfer. See [passenger transfer](passenger-transfer.md). |
 | `passenger_carry_inventory` | `false` | Inventory carry over?: passengers take their main inventory, weapons, ammunition and logistic trash. Set it in the plugin's Settings tab under **Gateway passengers**; it is sent with the gateway configuration and applies to the next transfer. |
+| `discord_invite` | empty | Discord invite link: printed in chat to each player who joins any server of the cluster. Empty prints nothing. Chat relay to Discord is the separate `discord_bridge` plugin; see [deployment](deployment.md#discord-bridge). |
 
 The Settings tab shows configured and applied recovery modes and restart
 requirements. Both modes retain active-transfer protections and existing outcomes.

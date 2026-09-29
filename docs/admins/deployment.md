@@ -17,16 +17,19 @@ of the Clusterio deployment.
 
 ## Release availability
 
-Plugin `0.11.0-beta.3` is published under npm's `beta` tag and requires exactly
-Clusterio `2.0.0-alpha.27`. Its [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/runs/34970578220)
-passed package acceptance and integration checks before publication. The published
-archive matches the tested archive byte for byte.
+Plugin `0.11.0-beta.6` is the current release under npm's `beta` tag. It requires
+exactly Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
+`surfexp_gateways` mod `0.7.9`. Every release is published by the
+[release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
+from a `v*` tag after package acceptance and integration checks; the published
+archive matches the tested archive byte for byte. What changed in each version is
+in the plugin's [changelog](../../docker/seed-data/external_plugins/surface_export/CHANGELOG.md).
 
-At publication on **2026-09-15 UTC**, `latest` still pointed to `0.9.82`. That
-version's Clusterio peer requirement, `^2.0.0`, excludes the pinned prerelease
-`2.0.0-alpha.27`, and it does not provide the newer upload and save-recovery
-behavior. Select the beta version explicitly. Do not bypass npm peer checks with
-`--force` or `--legacy-peer-deps` to install the older release.
+npm's `latest` tag still points to `0.9.82`. That version's Clusterio peer
+requirement, `^2.0.0`, excludes the pinned prerelease `2.0.0-alpha.27`, and it does
+not provide the newer upload, portal and save-recovery behavior. Select the beta
+version explicitly. Do not bypass npm peer checks with `--force` or
+`--legacy-peer-deps` to install the older release.
 
 ## Install the npm package
 
@@ -36,8 +39,8 @@ Run these commands in the Clusterio installation directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@0.11.0-beta.3 peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.3
+npm view @solarcloud7/plugin-surface-export@0.11.0-beta.6 peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.6
 ```
 
 ### Accepted candidate archive
@@ -86,8 +89,8 @@ layer is not a durable installation.
 
 ## Enable the gateway mod and verify startup
 
-Add a compatible `surfexp_gateways` release from the Mod Portal to the instances'
-Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
+Add the matching `surfexp_gateways` release (`0.7.9` for this plugin version) from
+the Mod Portal to the instances' Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
 bundled mods enabled. Players need the matching mod pack when joining; the gateway
 mod alone does not provide the server-side transfer implementation.
 
@@ -131,3 +134,65 @@ The [consumer-install fixture](../../tests/manual/consumer-install/README.md) ex
 Clusterio's published installer and plugin registration with a candidate npm tarball.
 Its recorded results identify exact tested versions. Docker-based backup and restart
 fixtures are test infrastructure, not an alternative operator installation path.
+
+## Apply a desired state with the reconcile tool
+
+A cluster's mods, mod pack and controller, host and instance configuration can be
+kept in one desired-state file and applied from a checkout of this repository. The
+file for the public cluster is `tools/clusterio/desired/vm.json`. The tool needs
+Docker with the development controller container (it uploads mod ZIPs from
+`docker/seed-data/mods`) and, for a remote cluster, an entry in the ignored file
+`tools/clusterio/remote-clusters.local.json` of the form
+`{"vm": {"url": "https://controller.example/", "controlConfig": "C:/path/to/config-control.json"}}`.
+
+```text
+node tools/clusterio/reconcile.mjs plan  --cluster vm --desired tools/clusterio/desired/vm.json
+node tools/clusterio/reconcile.mjs apply --cluster vm --desired tools/clusterio/desired/vm.json --yes [--restart]
+```
+
+`plan` prints the exact `clusterioctl` commands it would run and the items it
+refuses. `apply --yes` runs them in order, stops at the first failure and re-plans.
+Exit code 0 means the configuration converged and nothing needs a restart; 4 means
+it converged but a running instance still uses its previous configuration (pass
+`--restart` or restart it yourself; stopped instances are never started); 1 means
+something is blocked or still differs. The tool never deletes mods, mod packs or
+instances, never replaces a stored mod version and never creates instances or
+hosts: see [production rollout](production-rollout.md) for creating servers.
+
+## Roll back a deployment
+
+There is no automatic rollback. Before updating, take a coordinated
+[backup](recovery.md#back-up-a-deployment) and note the installed plugin version,
+mod pack contents and the desired-state file revision. To roll back:
+
+1. Stop the affected instances through the normal save-preserving procedure.
+2. Reinstall the previous plugin version with the same `npm install --save-exact`
+   route on the controller, hosts and control clients, and restart the controller
+   and hosts.
+3. Restore the previous mod pack (a desired-state file from the previous revision
+   applied with the reconcile tool, or edit the pack by hand) and restart the
+   instances on their existing saves.
+4. Verify loaded versions in the web interface and run one supervised transfer.
+
+Saves written by a newer plugin keep their travel histories and recovery journals;
+an older plugin that predates those fields ignores them but does not remove them.
+Never reset saves or volumes to roll back. Fresh-install acceptance does not
+establish compatibility with every historical save or code rollback, so rehearse
+the rollback on a copy first.
+
+## Discord bridge
+
+The Discord invite printed to joining players is the controller setting
+`surface_export.discord_invite` (see [configuration](configuration.md)). Relaying
+chat to Discord uses the separate `@hornwitser/discord_bridge` Clusterio plugin,
+which is not part of this repository: install and register it on the controller
+like any other plugin, set `discord_bridge.channel_id` (the desired-state file
+carries it), and set the bot token with
+
+```text
+node tools/clusterio/set-discord-token.mjs --cluster vm
+```
+
+which reads `DISCORD_BOT_TOKEN` from the ignored repository `.env` and prints only
+the token length. Creating the bot and inviting it to the server is done in Discord;
+the tool does not check that Discord accepts the token.

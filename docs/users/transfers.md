@@ -31,7 +31,12 @@ It is a space location, not another planet. Every server can reach every other
 server through it; there are no links to configure. Four coloured portals orbit
 the Gateway: Blue, Green, Orange and Purple. Each colour belongs to one
 server, and that portal leads there from every other server. The transfer dialog
-and route alerts show where a portal leads, for example "Blue → Delta".
+and route alerts show where a portal leads, for example "Blue → Delta". The
+colours are assigned by the cluster, so read the portal's label rather than
+memorising a colour. The public cluster has four servers, each starting on a
+different planet: Delta (Nauvis), Sigma (Vulcanus), Theta (Fulgora) and Omega
+(Gleba). Join any of them from the Factorio server browser; their names start
+with "Clusterio: PlatformExport".
 Your own server's colour is locked. A platform whose schedule stops at a portal is
 sent automatically and continues its schedule on the other server.
 
