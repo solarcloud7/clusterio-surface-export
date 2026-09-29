@@ -51,7 +51,7 @@ export function quarantineRow(conflict: ConflictEntry): QuarantineRow {
 			instanceId: conflict.instanceId,
 			platformName: conflict.platformName,
 			generation: leftGeneration,
-			transferId: conflict.lastTransferId ?? null,
+			transferId: conflict.lastTransferId ?? (conflict.retiredExportId ? `${conflict.instanceId}:${conflict.retiredExportId}` : null),
 			state: "present",
 			newer: comparable && leftGeneration! > rightGeneration!,
 		},

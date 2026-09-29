@@ -38,7 +38,7 @@ test("Keep both is not offered when the controller withholds new_platform", () =
 
 test("a copy whose holder lost it offers Delete on the left and Keep in the centre", () => {
 	const row = quarantineRow(conflict({ liveVerdict: "rollback_other", state: "quarantine", holderPresence: "absent",
-		...resolutionActions("rollback_other", "quarantine"), lastTransferId: null }));
+		...resolutionActions("rollback_other", "quarantine"), lastTransferId: null, retiredExportId: null }));
 	assert.equal(row.deleteLeft, "stale_copy");
 	assert.equal(row.deleteRight, null, "there is no right copy to delete");
 	assert.equal(row.keep, "adopt");
@@ -80,6 +80,13 @@ test("blocked verdicts offer no buttons", () => {
 	const row = quarantineRow(conflict({ liveVerdict: "unverified", ...resolutionActions("unverified", "tombstone") }));
 	assert.deepEqual([row.deleteLeft, row.deleteRight, row.keep], [null, null, null]);
 	assert.match(row.blocked, /cannot confirm/);
+});
+
+test("a copy that never arrived by transfer links to the transfer that carried it away", () => {
+	const row = quarantineRow(conflict({ generation: 0, lastTransferId: null }));
+	assert.equal(row.left.transferId, "11:124_iron", "a retired copy's trips did not link to its retiring transfer");
+	assert.equal(quarantineRow(conflict({ lastTransferId: null, retiredExportId: null })).left.transferId, null,
+		"a copy with no known transfer invented a link");
 });
 
 test("registry resolution markers are not linked as transfers", () => {
