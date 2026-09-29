@@ -1,5 +1,5 @@
 import { Button, Modal, Tooltip, message } from "antd";
-import { ReloadOutlined, WarningOutlined } from "@ant-design/icons";
+import { CheckOutlined, DeleteOutlined, InfoCircleOutlined, ReloadOutlined, TeamOutlined, WarningOutlined } from "@ant-design/icons";
 import { useAccount } from "@clusterio/web_ui";
 import { PERMISSIONS } from "../messages";
 import { newRestoreRequestId } from "../shared/snapshot";
@@ -96,37 +96,49 @@ export default function QuarantinedPlatforms({ plugin, state, view }: {
 		const requestId = newRestoreRequestId();
 		const left = nameOf(row.left.instanceId), right = nameOf(row.right.instanceId);
 		const name = conflict.platformName || `Platform ${conflict.platformIndex}`;
-		let title: string, body: string, ok: string;
+		const label = (copy: QuarantineCopy, server: string) => `${server} · ${copy.generation === null ? "untracked" : `Trip ${copy.generation}`}`;
+		const takeBoth = action === "new_platform" && row.centerAction === "new_platform";
+		let title: string, ok: string, keeps: string | null = null, deletes: string | null = null, note: string | null = null;
 		switch (action) {
-			case "keep_this": title = `Keep ${left}'s copy of ${name}?`; body = `${right}'s copy is saved as a snapshot and then deleted.`; ok = "Keep"; break;
-			case "keep_other": title = `Keep ${right}'s copy of ${name}?`; body = `${left}'s copy is saved as a snapshot and then deleted.`; ok = "Keep"; break;
-			case "stale_copy": title = row.rightKeeps ? `Keep ${right}'s copy of ${name}?` : `Discard ${left}'s copy of ${name}?`;
-				body = `${left}'s copy is saved as a snapshot and then deleted.${row.right.state === "present" ? "" : " No other copy was found, so the snapshot is the only one left."}`;
-				ok = row.rightKeeps ? "Keep" : "Discard"; break;
-			case "adopt": title = `Keep ${left}'s copy of ${name}?`; body = "It becomes the current copy and can travel again."; ok = "Keep"; break;
-			case "release": title = `Keep ${left}'s copy of ${name}?`; body = "It is released unchanged and can travel again."; ok = "Keep"; break;
-			case "new_platform": title = row.centerAction === "new_platform" ? `Take both copies of ${name}?` : `Keep ${left}'s copy as a new platform?`;
-				body = row.centerAction === "new_platform"
-					? `${left}'s copy becomes a separate platform. Everything aboard it now exists twice.`
-					: "It gets a new platform history and can travel again."; ok = row.centerAction === "new_platform" ? "Take both" : "Keep"; break;
+			case "keep_this": title = `Keep ${left}'s copy?`; ok = "Keep"; keeps = label(row.left, left); deletes = label(row.right, right); break;
+			case "keep_other": title = `Keep ${right}'s copy?`; ok = "Keep"; keeps = label(row.right, right); deletes = label(row.left, left); break;
+			case "stale_copy": title = row.rightKeeps ? `Keep ${right}'s copy?` : `Discard ${left}'s copy?`; ok = row.rightKeeps ? "Keep" : "Discard";
+				keeps = row.rightKeeps ? label(row.right, right) : null; deletes = label(row.left, left);
+				if (!row.rightKeeps) note = "No other copy was found. The snapshot will be the only one left."; break;
+			case "adopt": title = `Keep ${left}'s copy?`; ok = "Keep"; keeps = label(row.left, left); note = "It becomes the current copy and can travel again."; break;
+			case "release": title = `Keep ${left}'s copy?`; ok = "Keep"; keeps = label(row.left, left); note = "Released unchanged. It can travel again."; break;
+			case "new_platform": title = takeBoth ? "Take both copies?" : `Keep ${left}'s copy?`; ok = takeBoth ? "Take both" : "Keep";
+				keeps = takeBoth ? `${label(row.left, left)} and ${label(row.right, right)}` : label(row.left, left);
+				note = takeBoth ? "Everything aboard will exist twice." : "It becomes a new platform with its own history."; break;
 		}
+		const deleted = action === "keep_this" ? row.right : row.left;
 		const aboard = action === "keep_this" ? conflict.holderPassengers : conflict.passengers;
+		const deletesNewer = deletes !== null && deleted.newer;
+		const hints = [conflict.hints.journalHubMatch && "hub matches a transferred platform",
+			conflict.hints.journalUidMatch && "identity matches a transferred platform",
+			conflict.hints.historyMatch && "transfer history names this copy",
+			conflict.hints.presence].filter(Boolean).join("; ") || "none";
 		modal.confirm({
-			title, okText: ok, okButtonProps: { danger: DELETES.has(action) || row.centerAction === action },
-			content: <div data-testid="lineage-resolution-confirm">
-				<p>{body}</p>
-				{DELETES.has(action) && aboard ? <p>{aboard} player{aboard === 1 ? "" : "s"} aboard the deleted copy {aboard === 1 ? "is" : "are"} moved to the default planet.</p> : null}
+			title, okText: ok, width: 480, okButtonProps: { danger: DELETES.has(action) || takeBoth },
+			content: <div data-testid="lineage-resolution-confirm" className="se-confirm">
+				<p className="se-confirm-platform">{name}</p>
+				<ul className="se-confirm-outcomes">
+					{keeps && <li className="is-keep"><CheckOutlined /><span><b>Keep</b> {keeps}</span></li>}
+					{deletes && <li className="is-delete"><DeleteOutlined /><span><b>Delete</b> {deletes}<small>snapshot saved first</small></span></li>}
+					{deletesNewer && <li className="is-warn"><WarningOutlined /><span>That is the newer copy.</span></li>}
+					{deletes && aboard ? <li><TeamOutlined /><span>{aboard} player{aboard === 1 ? "" : "s"} aboard move{aboard === 1 ? "s" : ""} to the default planet.</span></li> : null}
+					{note && <li className="is-note"><InfoCircleOutlined /><span>{note}</span></li>}
+				</ul>
 				<details className="se-quarantine-details"><summary>Technical details</summary>
-					<p>{VERDICT_TEXT[conflict.liveVerdict] || conflict.liveVerdict}</p>
-					{DELETES.has(action) && <p>The snapshot is stored with other exports and is not pinned: normal export cleanup can remove it later.</p>}
-					<p>Hints (not proof): {[conflict.hints.journalHubMatch && "hub matches a transferred platform",
-						conflict.hints.journalUidMatch && "identity matches a transferred platform",
-						conflict.hints.historyMatch && "transfer history names this copy",
-						conflict.hints.presence].filter(Boolean).join("; ") || "none"}. Platform names are never used to decide.</p>
-					<p>Request {requestId}</p>
+					<dl className="se-confirm-details">
+						<dt>Reason</dt><dd>{VERDICT_TEXT[conflict.liveVerdict] || conflict.liveVerdict}</dd>
+						{deletes && <><dt>Snapshot</dt><dd>Stored with other exports, not pinned. Export cleanup can remove it later.</dd></>}
+						<dt>Hints</dt><dd>{hints}. Not proof; platform names are never used to decide.</dd>
+						<dt>Request</dt><dd><code>{requestId}</code></dd>
+					</dl>
 				</details>
 			</div>,
-			onOk: () => submit(conflict, action, requestId, title.replace(/\?$/, "")),
+			onOk: () => submit(conflict, action, requestId, `${title.replace(/\?$/, "")} (${name})`),
 		});
 	};
 

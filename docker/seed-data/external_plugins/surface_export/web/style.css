@@ -651,3 +651,17 @@ body.surface-export-page .site-layout-content-container {
 .se-quarantine-details p { font-size: 12px; margin: 6px 0 0; }
 
 .surface-export-platform-node-row.is-quarantined { background: rgba(255, 77, 79, 0.16); box-shadow: inset 0 0 0 1px rgba(255, 77, 79, 0.7); border-radius: 4px; }
+.se-confirm-platform { margin: 0 0 10px; font-size: 13px; opacity: 0.7; overflow-wrap: anywhere; }
+.se-confirm-outcomes { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.se-confirm-outcomes li { display: flex; align-items: baseline; gap: 10px; font-size: 14px; }
+.se-confirm-outcomes li .anticon { flex: none; font-size: 15px; opacity: 0.85; }
+.se-confirm-outcomes li.is-keep .anticon { color: #73d13d; }
+.se-confirm-outcomes li.is-delete .anticon { color: #ff4d4f; }
+.se-confirm-outcomes li.is-warn .anticon { color: #faad14; }
+.se-confirm-outcomes li.is-note, .se-confirm-outcomes li.is-note .anticon { opacity: 0.75; }
+.se-confirm-outcomes li b { font-weight: 500; }
+.se-confirm-outcomes li small { display: block; font-size: 12px; opacity: 0.65; }
+.se-confirm-details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 12px; }
+.se-confirm-details dt { opacity: 0.6; }
+.se-confirm-details dd { margin: 0; overflow-wrap: anywhere; }
+.se-confirm-details code { font-size: 11px; }
