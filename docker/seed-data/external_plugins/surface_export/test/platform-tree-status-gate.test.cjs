@@ -19,6 +19,7 @@ function makeInstance(id, hostId, status, debugMode) {
 		isDeleted: false,
 		status,
 		gamePort: 34100,
+		startedAtMs: status === "running" ? 1_700_000_000_000 : 0,
 		config: {
 			get(key) {
 				if (key === "instance.name") { return `instance-${id}`; }
@@ -62,6 +63,8 @@ test("an instance that is not running is never polled for platforms", async () =
 	assert.deepEqual(initNode.platforms, []);
 	assert.equal(initNode.platformError, null,
 		"a not-yet-running instance is not an error condition — the tree already carries its status");
+	assert.equal(initNode.startedAtMs, null, "a stopped instance reported a start time");
+	assert.equal(nodes.find(node => node.instanceId === 12).startedAtMs, 1_700_000_000_000, "a running instance lost its start time");
 });
 
 test("a running instance on a connected host is polled", async () => {

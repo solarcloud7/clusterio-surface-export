@@ -124,6 +124,7 @@ export interface InstanceNodeModel {
 	gamePort: number | null;
 	address: string;
 	status: string;
+	startedAtMs?: number | null;
 	connected: boolean;
 	platforms: PlatformModel[];
 	platformError: string | null;

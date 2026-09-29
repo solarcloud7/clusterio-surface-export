@@ -15,15 +15,15 @@ export interface QuarantineRow {
 	key: string;
 	left: QuarantineCopy;
 	right: QuarantineCopy;
-	leftAction: ResolutionAction | null;
-	centerAction: ResolutionAction | null;
-	rightAction: ResolutionAction | null;
-	rightKeeps: boolean;
+	deleteLeft: ResolutionAction | null;
+	deleteRight: ResolutionAction | null;
+	keep: ResolutionAction | null;
+	keepBoth: boolean;
 	blocked: string | null;
 	resolution: ConflictEntry["resolution"];
 }
 
-const LEFT_ACTIONS: readonly ResolutionAction[] = ["keep_this", "adopt", "release"];
+const KEEP_ACTIONS: readonly ResolutionAction[] = ["adopt", "release", "new_platform"];
 
 function holderState(conflict: ConflictEntry): CopyState {
 	if (conflict.holderInstanceId === null) return "none";
@@ -34,12 +34,6 @@ function holderState(conflict: ConflictEntry): CopyState {
 
 export function quarantineRow(conflict: ConflictEntry): QuarantineRow {
 	const actions = conflict.actions;
-	const duplicate = conflict.liveVerdict === "duplicate";
-	const leftAction = LEFT_ACTIONS.find(action => actions.includes(action))
-		?? (!duplicate && actions.includes("new_platform") ? "new_platform" : null);
-	const centerAction: ResolutionAction | null = duplicate && actions.includes("new_platform") ? "new_platform" : null;
-	const rightAction: ResolutionAction | null = actions.includes("keep_other") ? "keep_other"
-		: actions.includes("stale_copy") ? "stale_copy" : null;
 	const leftGeneration = conflict.generation;
 	const rightGeneration = conflict.holderInstanceId === null ? null : conflict.holderGeneration;
 	const comparable = leftGeneration !== null && rightGeneration !== null && leftGeneration !== rightGeneration;
@@ -62,13 +56,18 @@ export function quarantineRow(conflict: ConflictEntry): QuarantineRow {
 			newer: comparable && leftGeneration! > rightGeneration!,
 		},
 		right,
-		leftAction,
-		centerAction,
-		rightAction,
-		rightKeeps: rightAction === "keep_other" || (rightAction === "stale_copy" && right.state === "present"),
+		deleteLeft: actions.includes("keep_other") ? "keep_other" : actions.includes("stale_copy") ? "stale_copy" : null,
+		deleteRight: actions.includes("keep_this") && right.state === "present" ? "keep_this" : null,
+		keep: KEEP_ACTIONS.find(action => actions.includes(action)) ?? null,
+		keepBoth: right.state === "present",
 		blocked: conflict.blocked,
 		resolution: conflict.resolution,
 	};
+}
+
+export function tripsLabel(generation: number | null): string {
+	if (generation === null) return "untracked";
+	return `${generation} trip${generation === 1 ? "" : "s"}`;
 }
 
 export function quarantinedKeys(conflicts: readonly ConflictEntry[]): Set<string> {

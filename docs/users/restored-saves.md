@@ -72,18 +72,21 @@ wait.
 ## What administrators decide
 
 The **Surface Export** entry in the sidebar shows a red count while anything waits
-for a decision, on every page of the web interface, and so does the **Gateways** tab. The
-**Quarantined Platforms** list has one row per waiting copy: the quarantined copy on
-the left, the copy the records call current on the right. Each side shows its server,
-trip number and platform name, and the side with more trips is green. The map
-highlights the same platforms in red. Only the choices that are safe at that moment
-are shown:
+for a decision, on every page of the web interface, and so does the **Gateways** tab.
+The **Quarantined Platforms** list has one row per waiting copy: the quarantined copy
+on the left, the copy the records call current on the right. Each side shows the
+platform name, its trip count, which server holds it and how long that server has
+been online, so a server that was just restored from an old save stands out. The
+side with more trips is green. The map highlights the same platforms in red.
+
+Each side has a red **Delete** button that removes that side's copy. The centre
+button keeps instead:
 
 | Situation | Choices |
 |---|---|
-| Two servers hold a copy of the same platform | **Keep** on the left (the right-hand copy is deleted), or **Keep** on the right (the left-hand copy is deleted). |
-| The left copy is the only one left, or its record is missing or out of date | **Keep** on the left (it becomes the current copy), or **Discard** on the right (the left copy is deleted). |
-| The platform is older than travel histories and may be a copy of one that left | **Keep** on the left (it becomes a new platform), or **Discard**. When records show it already left, only **Discard** is offered. |
+| Two servers hold a copy of the same platform | **Delete** the left copy, or **Delete** the right copy. **Keep both** is shown but not available yet. |
+| The left copy is the only one left, or its record is missing or out of date | **Delete** it, or **Keep** it (it becomes the current copy). |
+| The platform is older than travel histories and may be a copy of one that left | **Delete** it, or **Keep** it as a new platform. When records show it already left, only **Delete** is offered. |
 
 Safeguards apply to every choice:
 

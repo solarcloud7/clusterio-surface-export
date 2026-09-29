@@ -635,33 +635,21 @@ body.surface-export-page .site-layout-content-container {
 .se-quarantine-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .se-quarantine-header h3 { margin: 0; font-size: 15px; font-weight: 500; flex: 1; }
 .se-quarantine-icon { font-size: 16px; opacity: 0.7; }
-.se-quarantine-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 120px minmax(0, 1fr) 72px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.se-quarantine-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) 110px minmax(0, 1fr) 76px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .se-quarantine-row > .ant-btn { justify-self: stretch; }
 .se-quarantine-slot { display: block; }
 .se-quarantine-center { display: flex; justify-content: center; text-align: center; }
 .se-quarantine-copy { padding: 6px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.04); min-width: 0; }
 .se-quarantine-copy.is-newer { background: rgba(82, 196, 26, 0.14); }
-.se-quarantine-copy.is-newer .se-quarantine-copy-title, .se-quarantine-copy.is-newer .se-quarantine-copy-name, .se-quarantine-copy.is-newer a { color: #73d13d; }
+.se-quarantine-copy.is-newer .se-quarantine-copy-ship, .se-quarantine-copy.is-newer .se-quarantine-copy-where, .se-quarantine-copy.is-newer a { color: #73d13d; }
 .se-quarantine-copy.is-missing, .se-quarantine-copy.is-empty { background: transparent; border: 1px dashed rgba(255, 255, 255, 0.18); }
-.se-quarantine-copy-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.se-quarantine-copy-title a { text-decoration: underline; color: inherit; }
-.se-quarantine-copy-name { font-size: 12px; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-quarantine-copy-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.se-quarantine-copy-ship { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-quarantine-copy-trips { font-size: 12px; font-style: italic; opacity: 0.75; text-decoration: underline; color: inherit; white-space: nowrap; }
+.se-quarantine-copy-where { font-size: 12px; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .se-quarantine-note { font-size: 12px; opacity: 0.7; }
-.se-quarantine-details summary { cursor: pointer; opacity: 0.75; }
-.se-quarantine-details p { font-size: 12px; margin: 6px 0 0; }
 
 .surface-export-platform-node-row.is-quarantined { background: rgba(255, 77, 79, 0.16); box-shadow: inset 0 0 0 1px rgba(255, 77, 79, 0.7); border-radius: 4px; }
-.se-confirm-platform { margin: 0 0 10px; font-size: 13px; opacity: 0.7; overflow-wrap: anywhere; }
-.se-confirm-outcomes { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
-.se-confirm-outcomes li { display: flex; align-items: baseline; gap: 10px; font-size: 14px; }
-.se-confirm-outcomes li .anticon { flex: none; font-size: 15px; opacity: 0.85; }
-.se-confirm-outcomes li.is-keep .anticon { color: #73d13d; }
-.se-confirm-outcomes li.is-delete .anticon { color: #ff4d4f; }
-.se-confirm-outcomes li.is-warn .anticon { color: #faad14; }
-.se-confirm-outcomes li.is-note, .se-confirm-outcomes li.is-note .anticon { opacity: 0.75; }
-.se-confirm-outcomes li b { font-weight: 500; }
-.se-confirm-outcomes li small { display: block; font-size: 12px; opacity: 0.65; }
-.se-confirm-details { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 12px; }
-.se-confirm-details dt { opacity: 0.6; }
-.se-confirm-details dd { margin: 0; overflow-wrap: anywhere; }
-.se-confirm-details code { font-size: 11px; }
+
+.se-confirm-platform { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.se-confirm-platform i { font-size: 12px; opacity: 0.75; }
