@@ -394,8 +394,8 @@
 	{
 		"name": "minting a new platform keeps it quarantined until the claim",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
-		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tif PlatformLineage.get(platform)",
-		"replace": "\tif PlatformLineage.get(platform)",
+		"find": "\tif not releasable(platform) then return {success = false, error = \"Platform is not quarantined or tombstoned\"} end\n\tlocal current = PlatformLineage.get(platform)",
+		"replace": "\tlocal current = PlatformLineage.get(platform)",
 		"tests": [
 			"tests/lua/lineage-resolution.lua"
 		]
