@@ -205,7 +205,7 @@ export function analyzeSavePolicy(report) {
       for(const state of [report.manualUnlocked?.source,report.standalone?.physical.source]) {
         assert.equal(state?.usable,true);assert.deepEqual(state.cargo,expectedCargo);
       }
-      assert.equal(report.browser.acceptedNotListed,true);
+      assert.equal("acceptedNotListed" in report.browser?report.browser.acceptedNotListed:report.browser.acknowledgementPersisted,true);
     }
     assert.equal(report.browser.restartRequired,true,"restart requirement unverified");
     assert.notEqual(report.identityAfter.uid,report.identityBefore.uid);
