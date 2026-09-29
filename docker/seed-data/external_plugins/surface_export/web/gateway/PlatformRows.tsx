@@ -8,6 +8,7 @@ import { isMockInstanceId } from "./debug-mode";
 import { platformActionKey, useNodeActions } from "./node-actions";
 import { platformStatus } from "../platform-actions";
 import { PlanetIcon } from "../icons";
+import { useIsQuarantined } from "../lineage-conflicts";
 
 const { Text } = Typography;
 
@@ -18,7 +19,8 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 	canEdit: boolean;
 }) {
 	const actions = useNodeActions();
-	const status = platformStatus(platform, null);
+	const quarantined = useIsQuarantined(instanceId, platform.platformIndex);
+	const status = quarantined ? { text: "quarantined", tag: "red" } : platformStatus(platform, null);
 	const key = platformActionKey(instanceId, platform.platformIndex);
 	const locationName = platform.spaceLocation || platform.currentTarget;
 	const isMock = isMockInstanceId(instanceId);
@@ -34,7 +36,7 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 	};
 
 	return (
-		<div className="surface-export-platform-node-row">
+		<div className={`surface-export-platform-node-row${quarantined ? " is-quarantined" : ""}`} data-quarantined={quarantined || undefined}>
 			{locationName
 				? <PlanetIcon name={locationName} size={18} title={`at ${locationName}`} />
 				: <span className="surface-export-icon-placeholder" />}

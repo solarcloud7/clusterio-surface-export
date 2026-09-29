@@ -58,6 +58,10 @@ export interface ConflictEntry {
 	holderInstanceId: number | null;
 	holderGeneration: number | null;
 	holderPassengers: number | null;
+	holderPresence: "present" | "absent" | "unknown" | null;
+	holderPlatformName: string | null;
+	holderLastTransferId: string | null;
+	lastTransferId: string | null;
 	ownerJobId: string | null;
 	retiredExportId: string | null;
 	passengers: number | null;

@@ -273,6 +273,8 @@ export class TransactionLogger {
 			platformName: transfer.platformName,
 			platformIndex: transfer.platformIndex,
 			platformUid: transfer.platformUid,
+			lineage: transfer.lineage ?? null,
+			lineageGeneration: transfer.lineageGeneration ?? null,
 			forceName: transfer.forceName,
 			sourceInstanceId: transfer.sourceInstanceId,
 			sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),

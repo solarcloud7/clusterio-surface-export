@@ -146,6 +146,7 @@ test("the conflict list evaluates live, labels hints and marks unchecked servers
 	assert.equal(listing.conflicts[0].liveVerdict, "unverified", "an offline holder was treated as absent");
 	assert.deepEqual(listing.conflicts[0].actions, []);
 	assert.match(listing.conflicts[0].hints.presence, /offline/);
+	assert.equal(listing.conflicts[0].holderPresence, "unknown", "an offline holder was shown as missing or present");
 	c.behaviour.offline.delete(H);
 	listing = await c.resolver.list(I);
 	assert.equal(listing.conflicts[0].liveVerdict, "duplicate", "a returning holder did not turn the stored verdict into a decision");
@@ -154,6 +155,28 @@ test("the conflict list evaluates live, labels hints and marks unchecked servers
 	assert.equal(listing.conflicts[0].storedReason, "duplicate");
 	assert.equal(listing.conflicts[0].passengers, 2);
 	assert.equal(c.registry.get(L).instanceId, H, "listing wrote to the registry");
+	assert.deepEqual([listing.conflicts[0].holderPresence, listing.conflicts[0].holderPlatformName, listing.conflicts[0].holderLastTransferId],
+		["present", "ship", "2:x"], "the listing does not describe the holder's copy and its last transfer");
+});
+
+test("the conflict list links only transfers, never resolution markers, and marks an absent holder", async () => {
+	const c = cluster({ candidates: { [I]: [candidate({ reason: "rollback_other" })] }, presence: { [H]: { state: "absent" } } });
+	await c.registry.update(draft => draft.set(L, entry({ lastExportId: "resolution:req-00000009", source: "resolution" })));
+	const listing = await c.resolver.list(I);
+	assert.equal(listing.conflicts[0].liveVerdict, "rollback_other");
+	assert.equal(listing.conflicts[0].holderPresence, "absent");
+	assert.equal(listing.conflicts[0].holderLastTransferId, null, "a resolution marker was offered as a transfer link");
+	assert.equal(listing.conflicts[0].lastTransferId, null, "a host without transfer lookup invented a link");
+});
+
+test("the conflict list links each quarantined copy to the transfer that produced its trip", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	const asked = [];
+	c.host.transferIntoTrip = (instanceId, lineage, generation) => { asked.push([instanceId, lineage, generation]); return "2:051_ship"; };
+	const listing = await c.resolver.list(I);
+	assert.deepEqual(asked, [[I, L, 1]], "the lookup did not use this copy's server, travel ID and trip");
+	assert.equal(listing.conflicts[0].lastTransferId, "2:051_ship");
 });
 
 test("duplicate after rollback: keep-other snapshots and deletes only this copy through the source-delete path", async () => {

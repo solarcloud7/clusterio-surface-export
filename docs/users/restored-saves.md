@@ -71,14 +71,18 @@ wait.
 
 ## What administrators decide
 
-Quarantined platforms appear on the **Gateways** page, with the reason and the
-choices that are safe at that moment. The choices depend on the situation:
+The **Gateways** tab shows a warning while anything waits for a decision. The
+**Quarantined Platforms** list has one row per waiting copy: the quarantined copy on
+the left, the copy the records call current on the right. Each side shows its server,
+trip number and platform name, and the side with more trips is green. The map
+highlights the same platforms in red. Only the choices that are safe at that moment
+are shown:
 
 | Situation | Choices |
 |---|---|
-| Two servers hold a copy of the same platform | **Keep this copy** (the other copy is deleted), or **Keep the other copy** (this copy is deleted). |
-| This copy is the only one left, or its record is missing or out of date | **Adopt this copy** (it becomes the current copy), or **Delete this copy**. |
-| The platform is older than travel histories and may be a copy of one that left | **Treat as a new platform**, or **Delete this copy**. When records show it already left, only **Delete this copy** is offered. |
+| Two servers hold a copy of the same platform | **Keep** on the left (the right-hand copy is deleted), or **Keep** on the right (the left-hand copy is deleted). |
+| The left copy is the only one left, or its record is missing or out of date | **Keep** on the left (it becomes the current copy), or **Discard** on the right (the left copy is deleted). |
+| The platform is older than travel histories and may be a copy of one that left | **Keep** on the left (it becomes a new platform), or **Discard**. When records show it already left, only **Discard** is offered. |
 
 Safeguards apply to every choice:
 
@@ -87,7 +91,7 @@ Safeguards apply to every choice:
   snapshots in time.
 - **Everything is checked again when the button is pressed.** If anything changed,
   or a server cannot be reached, the action is refused and nothing happens.
-  **Adopt this copy** needs every other server to confirm it has no copy, so it is
+  Keeping the only copy left needs every other server to confirm it has no copy, so it is
   refused while any server is offline or has the plugin turned off.
 - **A lost reply is safe to retry.** Retrying continues where the action stopped and
   never repeats a deletion.

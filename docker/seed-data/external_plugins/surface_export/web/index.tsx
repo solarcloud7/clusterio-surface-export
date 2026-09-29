@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from "react";
 import { Badge, Tabs, Tooltip } from "antd";
+import { WarningOutlined } from "@ant-design/icons";
 
 import {
 	BaseWebPlugin,
@@ -12,6 +13,8 @@ import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
 import RecoveryWarnings from "./RecoveryWarnings";
+import QuarantinedPlatforms from "./QuarantinedPlatforms";
+import { QuarantineContext, useLineageConflicts, useQuarantineKeys } from "./lineage-conflicts";
 import SettingsTab from "./SettingsTab";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
@@ -90,6 +93,8 @@ function SurfaceExportPage() {
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
+	const quarantine = useLineageConflicts(plugin, state);
+	const quarantinedKeys = useQuarantineKeys(quarantine.conflicts);
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
 		return t && ["logs", "gateways", "settings"].includes(t) ? t : "gateways";
@@ -100,7 +105,8 @@ function SurfaceExportPage() {
 		params.set("tab", key);
 		window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 	}
-	const tabItems: Array<{ key: string; label: string; children: React.ReactNode }> = [];
+	const tabItems: Array<{ key: string; label: React.ReactNode; children: React.ReactNode }> = [];
+	const quarantined = quarantine.conflicts.length;
 	if (state.canViewLogs !== false) {
 		tabItems.push({
 			key: "logs",
@@ -110,8 +116,16 @@ function SurfaceExportPage() {
 	}
 	tabItems.push({
 		key: "gateways",
-		label: "Gateways",
-		children: <><RecoveryWarnings state={state} plugin={plugin} /><GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} /></>,
+		label: quarantined
+			? <Tooltip title={`${quarantined} quarantined platform${quarantined === 1 ? "" : "s"} waiting for a decision`}>
+				<span data-testid="gateways-tab-warning">Gateways <WarningOutlined className="se-tab-warning" /> <span className="se-tab-warning">{quarantined}</span></span>
+			</Tooltip>
+			: "Gateways",
+		children: <QuarantineContext.Provider value={quarantinedKeys}>
+			<RecoveryWarnings state={state} />
+			<QuarantinedPlatforms plugin={plugin} state={state} view={quarantine} />
+			<GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />
+		</QuarantineContext.Provider>,
 	});
 
 	tabItems.push({ key: "settings", label: "Settings", children: <SettingsTab active={activeTab === "settings"} state={state} /> });

@@ -44,19 +44,22 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
     }
     if(report.mode) {
       await page.goto(`${lab.url}/surface-export?tab=gateways`);
-      const warning=page.getByTestId("save-recovery-warning").filter({hasText:report.name});
-      await warning.waitFor();
-      const wording=report.mode==="save_game"?"accepted this restored copy":"remains protected";
-      assert.ok((await warning.innerText()).includes(wording));evidence.warnings=true;
-      await page.screenshot({path:join(lab.directory,"save-recovery-warning.png"),fullPage:true});
-      const transferUrl=await warning.getByRole("link",{name:"View transfer"}).getAttribute("href");
+      await page.locator(".react-flow__node-instance").first().waitFor();
+      const row=page.getByTestId("lineage-conflict").filter({hasText:report.name});
       if(report.mode==="save_game") {
-        await warning.getByRole("button",{name:"Acknowledge",exact:true}).click();
-        await warning.waitFor({state:"hidden"});await page.reload();
-        await page.getByRole("tab",{name:"Gateways",exact:true}).waitFor();
-        assert.equal(await warning.count(),0);evidence.acknowledgementPersisted=true;
-      } else assert.equal(await warning.getByRole("button",{name:"Acknowledge",exact:true}).count(),0);
-      await page.goto(`${lab.url}${transferUrl}`);
+        await page.waitForTimeout(2000);
+        assert.equal(await row.count(),0,"an accepted restored copy was listed as quarantined");evidence.acceptedNotListed=true;
+        await page.goto(`${lab.url}/surface-export?tab=logs&transfer=${encodeURIComponent(report.transferId)}`);
+      } else {
+        await row.waitFor();
+        await page.getByTestId("gateways-tab-warning").waitFor();
+        await page.locator(".surface-export-platform-node-row.is-quarantined").filter({hasText:report.name}).first().waitFor();
+        await page.screenshot({path:join(lab.directory,"quarantined-platforms.png"),fullPage:true});
+        const transferUrl=await row.getByTestId("quarantine-left").getByRole("link").getAttribute("href");
+        assert.match(transferUrl,/tab=logs&transfer=/,"the quarantined copy's trip does not link to its last transfer");
+        await page.goto(`${lab.url}${transferUrl}`);
+      }
+      evidence.warnings=true;
     } else await page.goto(`${lab.url}/surface-export?tab=logs&transfer=${encodeURIComponent(report.transferId)}`);
     const detail=page.getByTestId("transfer-detail");
     await detail.getByRole("heading",{name:report.name,exact:true}).waitFor();

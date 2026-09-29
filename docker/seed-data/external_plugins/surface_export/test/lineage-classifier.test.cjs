@@ -319,3 +319,24 @@ test("gallery batch lifecycle: the live pair restored after golden transfers cla
 	assert.deepEqual(verdicts.map(verdict => verdict.verdict), ["normal", "normal", "normal"],
 		"a coincidental golden-save journal record quarantined a live platform");
 });
+
+
+test("transferIntoTrip finds only the completed transfer that brought this travel ID to this trip on this server", () => {
+	const plugin = Object.create(ControllerPlugin.prototype);
+	const record = (overrides) => ({ transferId: "x", operationType: "transfer", targetInstanceId: I, lineage: L, lineageGeneration: 1,
+		status: "completed", completedAt: 10, ...overrides });
+	Object.assign(plugin, {
+		activeTransfers: new Map([["a", record({ transferId: "2:older", completedAt: 5 })]]),
+		persistedTransactionLogs: [{ transferInfo: record({ transferId: "2:newer", completedAt: 20 }) },
+			{ transferInfo: record({ transferId: "2:failed", status: "failed", completedAt: 30 }) },
+			{ transferInfo: record({ transferId: "2:elsewhere", targetInstanceId: J, completedAt: 40 }) },
+			{ transferInfo: record({ transferId: "2:other-trip", lineageGeneration: 2, completedAt: 50 }) },
+			{ transferInfo: record({ transferId: "2:other-lineage", lineage: "lineage:x:1", completedAt: 60 }) },
+			{ transferInfo: record({ transferId: "2:export", operationType: "export", completedAt: 70 }) }],
+		auditIndex: new Map(),
+	});
+	assert.equal(plugin.transferIntoTrip(I, L, 2), "2:newer");
+	assert.equal(plugin.transferIntoTrip(I, L, 0), null, "trip 0 was never delivered by a transfer");
+	assert.equal(plugin.transferIntoTrip(I, null, 2), null);
+	assert.equal(plugin.transferIntoTrip(J, L, 4), null);
+});

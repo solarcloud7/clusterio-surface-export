@@ -70,26 +70,35 @@ resolves them.
 
 ## Resolve a quarantined copy
 
-Gateways lists quarantined copies and restored copies that remain protected. Each
-entry shows the stored reason and a live re-evaluation. Actions follow the live
-result, so a copy quarantined while its holder was offline becomes decidable once
-that server answers. **Check again** repeats the evaluation. Hints such as a matching
-hub number or transfer history are labelled as hints; platform names are never used.
-Resolving needs the `surface_export.recovery.resolve` permission.
+The Gateways tab shows a warning and a count while any copy is quarantined, and the
+**Quarantined Platforms** list above the map has one row per quarantined copy. The
+left side is the quarantined copy; the right side is the copy the controller records
+as current, on another server or on the same one. Each side shows the server, the
+trip number and the platform name, and the side with more trips is green. A trip
+number opens the transfer that brought that copy to that trip; when that transfer is
+not recorded, it opens the platform's transfer history. On the map, quarantined
+platforms stay listed under their server with a red highlight.
 
-| Live result | Actions |
-|---|---|
-| `duplicate` | **Keep this copy**: the other server's copy is saved as a snapshot and deleted, then this copy becomes current and is released. **Keep the other copy**: this copy is saved as a snapshot and deleted. |
-| `rollback_other`, `unregistered`, `stale_self`, `ahead_of_registry` | **Adopt this copy**: the controller record moves to this copy and it is released. **Delete this copy**: snapshot, then delete. |
-| `legacy_unclassified` | **Treat as a new platform**: the copy gets a new platform history and is released. **Delete this copy**. Only **Delete this copy** is offered when the copy is a retired transfer source or transfer history names it. |
-| `duplicate_local` | **Delete this copy**. |
-| `no_identity` | None while the platform has no hub. Once it has a hub, **Check again** lists the actions for its live result. |
-| Startup could not verify it (`reconcile_error`) but the live result matches the record | **Release after inspection** or **Delete this copy**. |
-| `unverified`, `in_transit`, `unresolved_handoff` | None. The entry states what must happen first. |
+Actions follow a live re-evaluation, so a copy quarantined while its holder was
+offline becomes decidable once that server answers. The list refreshes every 30
+seconds and when a server changes state; the refresh button repeats the evaluation.
+Hints such as a matching hub number or transfer history are shown under **Technical
+details** in the confirmation and are labelled as hints; platform names are never
+used. Resolving needs the `surface_export.recovery.resolve` permission.
+
+| Live result | Left **Keep** | Right button |
+|---|---|---|
+| `duplicate` | The other server's copy is saved as a snapshot and deleted, then this copy becomes current and is released. | **Keep**: this copy is saved as a snapshot and deleted. |
+| `rollback_other`, `unregistered`, `ahead_of_registry` | The controller record moves to this copy and it is released. | **Discard**: this copy is saved as a snapshot and deleted. The right side shows whether the recorded copy was found. |
+| `stale_self` | The controller record moves to this copy and it is released. | **Keep**: this older copy is saved as a snapshot and deleted. |
+| `legacy_unclassified` | The copy gets a new platform history and is released. Not offered when the copy is a retired transfer source or transfer history names it. | **Discard**: snapshot, then delete. |
+| `duplicate_local` | None. | **Discard**: snapshot, then delete. |
+| Startup could not verify it (`reconcile_error`) but the live result matches the record | The copy is released unchanged. | **Discard**: snapshot, then delete. |
+| `no_identity`, `unverified`, `in_transit`, `unresolved_handoff` | None. The row shows **Waiting**; its tooltip states what must happen first. | None. |
 
 Every action re-checks the registry, the other server's answer and in-flight
 transfers when it is submitted, and is refused if anything changed or is uncertain.
-**Adopt this copy** is also refused unless every other server of the cluster answers
+Moving the controller record to a quarantined copy is also refused unless every other server of the cluster answers
 that it has no copy, whatever the registry records. A server that is offline,
 reconciling or has the plugin disabled cannot answer, so adoption is refused until
 it is online with the plugin enabled or is deleted from the cluster.
@@ -117,7 +126,7 @@ second action. A different action needs a new request ID.
 
 **Abandon** ends a resolution that has not yet deleted a copy or changed the
 registry, for example a deletion that keeps being refused. The copy returns to its
-previous protection, and the other copy of a **Keep this copy** resolution is
+previous protection, and the other copy of a left **Keep** on a duplicate is
 unlocked. A resolution that has already deleted a copy or changed the registry
 cannot be abandoned; retry it with the same request ID to finish it.
 
@@ -141,9 +150,10 @@ registry, which other servers also use. Platforms in a freshly reset save start 
 platform histories and start normally. Old registry entries for the replaced save
 remain and are not used by that save's platforms.
 
-Gateways also shows accepted and protected restored copies. An offline instance is
-unverified, not empty. An accepted-copy warning can be acknowledged locally; this
-does not remove historical records.
+Gateways lists protected restored copies with the other quarantined platforms. A
+copy that save game mode accepted is not listed. An offline instance is unverified,
+not empty, and a server whose startup recovery is blocked shows its error above the
+list.
 
 ## Restore an available snapshot
 
