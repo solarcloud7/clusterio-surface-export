@@ -142,6 +142,7 @@ SurfaceExportModule.events = {
 		refresh_player(event)
 		if player then GatewayTransferGui.offer(player) end
 		if player then GameUtils.pcall_warn("[Community] join notice", function() CommunityLinks.on_join(player) end) end
+		if player then GameUtils.pcall_warn("[SourceRecovery] quarantine notice", function() SourceRecovery.announce_pending(player) end) end
 	end,
 	[e.on_player_respawned] = refresh_player,
 	[e.on_player_changed_surface] = refresh_player,

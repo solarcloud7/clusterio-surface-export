@@ -186,7 +186,7 @@ export class LineageResolver {
 			const reason = current.error ? `Abandoned by an administrator after: ${current.error}` : "Abandoned by an administrator";
 			const next = DELETE_ACTIONS.includes(current.action)
 				? await this.abandonRecord(current, reason)
-				: await this.fail(current, `${reason}; no copy was changed`);
+				: await this.fail(current, `${reason}; ${current.step === "minted" ? "the copy keeps its new platform history and stays quarantined" : "no copy was changed"}`);
 			return this.resume(next);
 		});
 	}
@@ -418,10 +418,11 @@ export class LineageResolver {
 			return { ...this.registry.resolution(record.requestId)! };
 		}
 		if (record.step === "admitted" && record.action === "new_platform") {
-			const outcome = await this.apply(record.instanceId, record, "mint", record.platformIndex, record.platformUid);
+			const outcome = await this.apply(record.instanceId, record, "mint", record.platformIndex, record.platformUid, { lineage: record.lineage });
 			if ("pending" in outcome) return outcome.pending!;
 			if (!outcome.reply?.success || typeof outcome.reply.lineage !== "string") return this.fail(record, outcome.reply?.error || "The new lineage was refused");
-			return this.save(record, { lineage: outcome.reply.lineage, step: "minted" });
+			if (outcome.reply.lineage === record.lineage) return this.fail(record, "The new lineage equals the current one; the copy would still share its history");
+			return this.save(record, { lineage: outcome.reply.lineage, step: "minted", registrySnapshot: "null" });
 		}
 		if ((record.step === "admitted" && record.action === "release") || record.step === "committed") {
 			const outcome = await this.apply(record.instanceId, record, "release", record.platformIndex, record.platformUid,

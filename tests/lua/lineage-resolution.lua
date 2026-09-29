@@ -247,6 +247,35 @@ do
 end
 
 do
+    local w = world()
+    local d = w.add(15, 150)
+    w.tombstone(15, "retired-15")
+    w.env.storage.surface_export_lineages = w.env.storage.surface_export_lineages or {}
+    w.env.storage.surface_export_lineages[15] = {lineage = "lineage:boot-old:150", generation = 2, surface_index = 25, hub_unit_number = 150}
+    assert(w.authorize("both-1", 15, "old:150").success)
+    assert(not w.apply({requestId = "both-1", step = "mint", platformIndex = 15, platformUid = "old:150"}).success,
+        "a copy with a lineage was minted without naming the lineage it replaces")
+    assert(not w.apply({requestId = "both-1", step = "mint", platformIndex = 15, platformUid = "old:150", lineage = "lineage:boot-old:999"}).success,
+        "a mint replaced a lineage other than the one it named")
+    local minted = w.apply({requestId = "both-1", step = "mint", platformIndex = 15, platformUid = "old:150", lineage = "lineage:boot-old:150"})
+    assert(minted.success and minted.lineage == "lineage:boot-now:150" and minted.generation == 0, "keeping both did not mint a fresh lineage for the duplicate")
+    assert(w.env.storage.surface_export_lineages[15].lineage == "lineage:boot-now:150" and w.env.storage.surface_export_lineages[15].generation == 0)
+    assert(d.hidden and w.env.storage.locked_platforms[15] ~= nil, "minting released the duplicate before the registry claim")
+    assert(w.apply({requestId = "both-1", step = "mint", platformIndex = 15, platformUid = "old:150", lineage = "lineage:boot-old:150"}).lineage == minted.lineage)
+    local released = w.apply({requestId = "both-1", step = "release", platformIndex = 15, platformUid = "old:150", lineage = minted.lineage, generation = 0})
+    assert(released.success and released.platformUid == "boot-now:150" and not d.hidden and w.env.storage.locked_platforms[15] == nil,
+        "the kept duplicate did not get a fresh identity and an unlocked surface")
+    local s = w.add(16, 160)
+    w.tombstone(16, "retired-16")
+    w.env.storage.surface_export_lineages[16] = {lineage = "lineage:boot-now:160", generation = 1, surface_index = 26, hub_unit_number = 160}
+    assert(w.authorize("both-2", 16, "old:160").success)
+    local same = w.apply({requestId = "both-2", step = "mint", platformIndex = 16, platformUid = "old:160", lineage = "lineage:boot-now:160"})
+    assert(not same.success and same.error:find("minted in this session", 1, true) and s.hidden
+        and w.env.storage.surface_export_lineages[16].lineage == "lineage:boot-now:160", "a mint that would keep the shared lineage was accepted")
+    print("PASS keeping both copies replaces the duplicate's lineage only when the mint names it and produces a different one")
+end
+
+do
     local minted
     for _, purpose in ipairs({"resolution", "download"}) do
         local stub = setmetatable({}, {__index = function() return noop end})

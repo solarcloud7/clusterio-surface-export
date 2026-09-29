@@ -140,6 +140,21 @@ function Recovery.notice(platform_index)
 	return (storage.source_recovery_notices or {})[platform_index]
 end
 
+function Recovery.announce_pending(player)
+	if not (player and player.valid and player.admin) then return 0 end
+	local announced = 0
+	for index, notice in pairs(storage.source_recovery_notices or {}) do
+		if (notice.status == "quarantined" or notice.status == "protected") and not notice.announced then
+			notice.announced = true
+			announced = announced + 1
+			player.print("[Surface Export] " .. tostring(notice.platformName or ("Platform " .. tostring(index)))
+				.. " is quarantined on this server (" .. tostring(notice.reason or "unverified")
+				.. "). Choose which copy to keep on the web interface: Surface Export > Gateways.")
+		end
+	end
+	return announced
+end
+
 function Recovery.clear_notice(platform_index)
 	if storage.source_recovery_notices then storage.source_recovery_notices[platform_index] = nil end
 end

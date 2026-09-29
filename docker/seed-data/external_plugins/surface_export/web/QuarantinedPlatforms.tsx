@@ -151,9 +151,7 @@ export default function QuarantinedPlatforms({ plugin, state, view }: {
 						{canResolve && row.resolution.status === "in_progress" && <Button size="small" type="link" danger disabled={busy}
 							onClick={() => void abandon(row.resolution!.requestId)}>Abandon</Button>}</span>
 						: row.keep && canResolve ? <Button size="small" disabled={busy || !conflict.platformUid} onClick={() => confirmKeep(conflict, row)}>{row.keepBoth ? "Keep both" : "Keep"}</Button>
-							: row.keepBoth && canResolve && conflict.liveVerdict === "duplicate"
-								? <Tooltip title="Keeping both copies is not available yet."><Button size="small" disabled>Keep both</Button></Tooltip>
-								: row.blocked && !row.deleteLeft && !row.deleteRight ? <Tooltip title={row.blocked}><span className="se-quarantine-note">Waiting</span></Tooltip> : null}
+							: row.blocked && !row.deleteLeft && !row.deleteRight ? <Tooltip title={row.blocked}><span className="se-quarantine-note">Waiting</span></Tooltip> : null}
 				</div>
 				<CopyCard copy={row.right} instance={instanceOf(row.right.instanceId)} serverName={nameOf(row.right.instanceId)} side="right"
 					aboard={conflict.holderPassengers} />

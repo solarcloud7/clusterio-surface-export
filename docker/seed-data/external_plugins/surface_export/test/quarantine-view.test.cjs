@@ -21,7 +21,7 @@ test("a duplicate offers Delete on both sides and each side deletes its own copy
 	const row = quarantineRow(conflict());
 	assert.equal(row.deleteLeft, "keep_other", "deleting the quarantined copy keeps the other server's copy");
 	assert.equal(row.deleteRight, "keep_this", "deleting the other server's copy keeps this one");
-	assert.equal(row.keep, null, "Keep both is not offered until the controller allows it for duplicates");
+	assert.equal(row.keep, "new_platform", "Keep both gives the quarantined copy a new platform history");
 	assert.equal(row.keepBoth, true);
 	assert.deepEqual([row.left.newer, row.right.newer], [false, true]);
 	assert.deepEqual([row.left.generation, row.right.generation], [2, 3]);
@@ -30,10 +30,9 @@ test("a duplicate offers Delete on both sides and each side deletes its own copy
 	assert.equal(row.right.state, "present");
 });
 
-test("Keep both becomes live when a duplicate offers new_platform", () => {
-	const row = quarantineRow(conflict({ actions: ["keep_this", "keep_other", "new_platform"] }));
-	assert.equal(row.keep, "new_platform");
-	assert.equal(row.keepBoth, true);
+test("Keep both is not offered when the controller withholds new_platform", () => {
+	const row = quarantineRow(conflict({ actions: ["keep_this", "keep_other"] }));
+	assert.equal(row.keep, null);
 	assert.deepEqual([row.deleteLeft, row.deleteRight], ["keep_other", "keep_this"]);
 });
 

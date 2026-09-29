@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { Badge, Tabs, Tooltip } from "antd";
+import { Badge, Tabs, Tooltip, notification } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 
 import {
@@ -233,6 +233,17 @@ export class WebPlugin extends BaseWebPlugin {
 		this.applyLiveStatus(null, null);
 	}
 
+	private announceQuarantine(entry: { instanceId: number; platformIndex: number; platformName: string | null }) {
+		const instances = [...(this.state.tree?.hosts.flatMap(host => host.instances) ?? []), ...(this.state.tree?.unassignedInstances ?? [])];
+		const server = instances.find(instance => instance.instanceId === entry.instanceId)?.instanceName ?? `instance ${entry.instanceId}`;
+		notification.warning({
+			key: `quarantine:${entry.instanceId}:${entry.platformIndex}`,
+			message: `${entry.platformName || `Platform ${entry.platformIndex}`} was quarantined`,
+			description: `On ${server}. Choose which copy to keep: Surface Export > Gateways.`,
+			duration: 0,
+		});
+	}
+
 	private startQuarantinePolling() {
 		this.stopQuarantinePolling();
 		void this.refreshQuarantine();
@@ -251,7 +262,14 @@ export class WebPlugin extends BaseWebPlugin {
 	async refreshQuarantine(): Promise<void> {
 		if (!this.link.connector.connected || this.quarantineDenied) return;
 		try {
+			const previous = this.state.quarantine;
 			const listing = await this.listLineageConflicts();
+			if (previous) {
+				const known = new Set(previous.conflicts.map(entry => `${entry.instanceId}:${entry.platformIndex}`));
+				for (const entry of listing.conflicts) {
+					if (!known.has(`${entry.instanceId}:${entry.platformIndex}`)) this.announceQuarantine(entry);
+				}
+			}
 			this.setState({ quarantine: { conflicts: listing.conflicts, unavailable: listing.unavailable, error: null } });
 		} catch (err: unknown) {
 			if (/permission denied/i.test(getErrorMessage(err))) {

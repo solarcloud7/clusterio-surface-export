@@ -347,6 +347,24 @@
 		]
 	},
 	{
+		"name": "keeping both refuses a mint that keeps the shared lineage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif current and lineage == current then\n",
+		"replace": "\tif false then\n",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
+		"name": "a mint names the lineage it replaces",
+		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
+		"find": "\tif current and current ~= request.lineage then return {success = false, error = \"Platform already has a lineage\"} end\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/lineage-resolution.lua"
+		]
+	},
+	{
 		"name": "an adoption refuses another local copy or hold",
 		"file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/resolution.lua",
 		"find": "\t\tif held_elsewhere(request.lineage, platform.index) then",

@@ -424,3 +424,19 @@ do
     assert(lock_module.clear_committed_source_lock_after_delete(4, "job-r"), "the source lock clears after a late retried deletion")
     print("PASS a commit retried after the tombstone retention keeps its tombstone")
 end
+
+
+-- One warning per quarantined platform, to the first administrator who joins.
+do
+    env.storage.source_recovery_notices = {[3] = {platformIndex = 3, platformName = "ship", status = "quarantined", reason = "duplicate"},
+        [4] = {platformIndex = 4, platformName = "other", status = "accepted", reason = "rollback_other"}}
+    local printed = {}
+    local admin = {valid = true, admin = true, print = function(message) printed[#printed + 1] = message end}
+    local crew = {valid = true, admin = false, print = function(message) error("a non-administrator was warned: " .. tostring(message)) end}
+    assert(recovery.announce_pending(crew) == 0)
+    assert(recovery.announce_pending(admin) == 1 and #printed == 1, "an administrator did not get exactly one warning")
+    assert(printed[1]:find("ship", 1, true) and printed[1]:find("quarantined", 1, true) and printed[1]:find("Gateways", 1, true))
+    assert(recovery.announce_pending(admin) == 0 and #printed == 1, "the warning repeated")
+    assert(env.storage.source_recovery_notices[4].announced == nil, "an accepted copy was marked as warned")
+    print("PASS a quarantined platform is announced once, to an administrator")
+end
