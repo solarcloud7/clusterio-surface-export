@@ -90,11 +90,12 @@ not necessarily an importable snapshot.
 Host, instance and platform selectors help locate platforms. Reset reframes the
 map and clears saved positions. Positions and line style are local to your browser.
 
-Save-recovery warnings list platforms that a server set aside after loading an older
-save, with the reason. An offline or unanswered server makes a copy **unverified**,
-which is not proof that the platform is missing. See
-[when a server loads an older save](restored-saves.md) for what this means and what
-administrators can do.
+When a server loads an older save and brings back an older copy of a platform, the
+Gateways tab shows a warning and lists it under **Quarantined Platforms**, and the map
+highlights it in red. An administrator chooses which copy to keep. An offline or
+unanswered server makes a copy **unverified**, which is not proof that the platform is
+missing. See [when a server loads an older save](restored-saves.md) for what this means
+and what administrators can do.
 
 Continue with [reading transaction logs](transaction-logs.md). Administrators can
 use [configuration](../admins/configuration.md) and [recovery](../admins/recovery.md).

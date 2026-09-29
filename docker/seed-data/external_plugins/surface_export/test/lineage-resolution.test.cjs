@@ -90,7 +90,7 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 				if (message.step === "retarget") { counters.retarget++; return { success: true }; }
 				if (message.step === "mint") { counters.mint++; return { success: true, lineage: `lineage:epoch-${instanceId}:15`, generation: 0 }; }
 				counters.release++;
-				return { success: true, platformUid: message.platformUid };
+				return { success: true, platformUid: message.refreshIdentity ? `fresh:${message.platformUid}` : message.platformUid };
 			}
 			if (name === "JobsStatusRequest") {
 				return { version: 1, epoch: "e", jobs: message.jobs.map(job => ({ jobId: job.jobId, state: behaviour.jobState[job.jobId] ?? "running" })) };
@@ -110,7 +110,7 @@ const request = (overrides = {}) => ({ instanceId: I, platformIndex: 3, platform
 
 test("each live verdict offers only its own actions", () => {
 	const table = {
-		duplicate: ["keep_this", "keep_other"], rollback_other: ["adopt", "stale_copy"], unregistered: ["adopt", "stale_copy"],
+		duplicate: ["keep_this", "keep_other", "new_platform"], rollback_other: ["adopt", "stale_copy"], unregistered: ["adopt", "stale_copy"],
 		stale_self: ["adopt", "stale_copy"], ahead_of_registry: ["adopt", "stale_copy"], legacy_unclassified: ["new_platform", "stale_copy"],
 		duplicate_local: ["stale_copy"], normal: ["release", "stale_copy"], no_identity: [],
 		unverified: [], in_transit: [], unresolved_handoff: [],
@@ -146,14 +146,37 @@ test("the conflict list evaluates live, labels hints and marks unchecked servers
 	assert.equal(listing.conflicts[0].liveVerdict, "unverified", "an offline holder was treated as absent");
 	assert.deepEqual(listing.conflicts[0].actions, []);
 	assert.match(listing.conflicts[0].hints.presence, /offline/);
+	assert.equal(listing.conflicts[0].holderPresence, "unknown", "an offline holder was shown as missing or present");
 	c.behaviour.offline.delete(H);
 	listing = await c.resolver.list(I);
 	assert.equal(listing.conflicts[0].liveVerdict, "duplicate", "a returning holder did not turn the stored verdict into a decision");
-	assert.deepEqual(listing.conflicts[0].actions, ["keep_this", "keep_other"]);
+	assert.deepEqual(listing.conflicts[0].actions, ["keep_this", "keep_other", "new_platform"]);
 	assert.equal(listing.conflicts[0].holderPassengers, 4, "the listing does not show who is aboard the other copy");
 	assert.equal(listing.conflicts[0].storedReason, "duplicate");
 	assert.equal(listing.conflicts[0].passengers, 2);
 	assert.equal(c.registry.get(L).instanceId, H, "listing wrote to the registry");
+	assert.deepEqual([listing.conflicts[0].holderPresence, listing.conflicts[0].holderPlatformName, listing.conflicts[0].holderLastTransferId],
+		["present", "ship", "2:x"], "the listing does not describe the holder's copy and its last transfer");
+});
+
+test("the conflict list links only transfers, never resolution markers, and marks an absent holder", async () => {
+	const c = cluster({ candidates: { [I]: [candidate({ reason: "rollback_other" })] }, presence: { [H]: { state: "absent" } } });
+	await c.registry.update(draft => draft.set(L, entry({ lastExportId: "resolution:req-00000009", source: "resolution" })));
+	const listing = await c.resolver.list(I);
+	assert.equal(listing.conflicts[0].liveVerdict, "rollback_other");
+	assert.equal(listing.conflicts[0].holderPresence, "absent");
+	assert.equal(listing.conflicts[0].holderLastTransferId, null, "a resolution marker was offered as a transfer link");
+	assert.equal(listing.conflicts[0].lastTransferId, null, "a host without transfer lookup invented a link");
+});
+
+test("the conflict list links each quarantined copy to the transfer that produced its trip", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	const asked = [];
+	c.host.transferIntoTrip = (instanceId, lineage, generation) => { asked.push([instanceId, lineage, generation]); return "2:051_ship"; };
+	const listing = await c.resolver.list(I);
+	assert.deepEqual(asked, [[I, L, 1]], "the lookup did not use this copy's server, travel ID and trip");
+	assert.equal(listing.conflicts[0].lastTransferId, "2:051_ship");
 });
 
 test("duplicate after rollback: keep-other snapshots and deletes only this copy through the source-delete path", async () => {
@@ -225,6 +248,49 @@ test("adopt, new-platform and release commit the registry before the Lua release
 	assert.match(result.error, /registry changed/);
 	assert.equal(c.counters.release, 0);
 	assert.equal(c.registry.get(L).instanceId, H);
+});
+
+test("keep both on a duplicate gives this copy a new lineage and touches neither the other copy nor its registry entry", async () => {
+	const c = cluster({ candidates: { [I]: [candidate({ state: "tombstone", lockKind: "transfer", retiredExportId: "124_ship" })] } });
+	await c.registry.update(draft => draft.set(L, entry()));
+	const result = await c.resolver.resolve(request({ action: "new_platform" }));
+	assert.deepEqual([result.success, result.status], [true, "completed"], result.error);
+	const steps = c.sent.filter(item => item.message.step).map(item => [item.instanceId, item.message.step, item.message.lineage, item.message.generation, item.message.refreshIdentity]);
+	assert.deepEqual(steps, [[I, "authorize", null, null, false], [I, "mint", L, null, false], [I, "release", "lineage:epoch-1:15", 0, true]],
+		"the mint did not name the lineage it replaces, or the release did not refresh the retired identity");
+	assert.equal(c.counters.delete, 0, "a copy was deleted");
+	assert.equal(c.sent.some(item => item.instanceId === H), false, "the other server was touched");
+	assert.deepEqual(c.registry.get(L), entry(), "the other copy's registry entry changed");
+	assert.deepEqual([c.registry.get("lineage:epoch-1:15").instanceId, c.registry.get("lineage:epoch-1:15").generation], [I, 0]);
+	const record = c.registry.resolution("req-00000001");
+	assert.deepEqual([record.lineage, record.newGeneration, record.releasedUid], ["lineage:epoch-1:15", 0, "fresh:boot-old:15"],
+		"the resolution did not record the fresh identity the release returned");
+});
+
+test("keep both fails closed when the minted lineage is the one the copies already share", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	const send = c.host.send.bind(c.host);
+	c.host.send = async (id, message) => (message.step === "mint" ? { success: true, lineage: L, generation: 0 } : send(id, message));
+	const result = await c.resolver.resolve(request({ action: "new_platform" }));
+	assert.deepEqual([result.success, result.status], [false, "failed"]);
+	assert.match(result.error, /equals the current one/);
+	assert.equal(c.counters.release, 0, "a copy sharing its lineage was released");
+	assert.deepEqual(c.registry.get(L), entry());
+});
+
+test("keep both refuses a new lineage that another claim took while minting", async () => {
+	const c = cluster();
+	await c.registry.update(draft => draft.set(L, entry()));
+	const send = c.host.send.bind(c.host);
+	c.host.send = async (id, message) => {
+		if (message.step === "mint") await c.registry.update(draft => draft.set("lineage:epoch-1:15", entry({ generation: 0, instanceId: H })));
+		return send(id, message);
+	};
+	const result = await c.resolver.resolve(request({ action: "new_platform" }));
+	assert.deepEqual([result.success, result.status], [false, "failed"]);
+	assert.match(result.error, /registry changed/);
+	assert.equal(c.counters.release, 0);
 });
 
 test("every Lua step carries one controller-issued token that listings never show", async () => {

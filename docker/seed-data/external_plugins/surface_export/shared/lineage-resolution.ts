@@ -58,6 +58,10 @@ export interface ConflictEntry {
 	holderInstanceId: number | null;
 	holderGeneration: number | null;
 	holderPassengers: number | null;
+	holderPresence: "present" | "absent" | "unknown" | null;
+	holderPlatformName: string | null;
+	holderLastTransferId: string | null;
+	lastTransferId: string | null;
 	ownerJobId: string | null;
 	retiredExportId: string | null;
 	passengers: number | null;
@@ -78,7 +82,7 @@ export interface ResolutionFlags {
 export function resolutionActions(verdict: LineageVerdictName, state: ConflictEntry["state"], flags: ResolutionFlags = {}): { actions: ResolutionAction[]; blocked: string | null } {
 	if (state === "resolving") return { actions: [], blocked: "A resolution is already in progress for this copy; retry or abandon it with the same request ID." };
 	switch (verdict) {
-		case "duplicate": return { actions: ["keep_this", "keep_other"], blocked: null };
+		case "duplicate": return { actions: ["keep_this", "keep_other", "new_platform"], blocked: null };
 		case "rollback_other":
 		case "unregistered":
 		case "stale_self":

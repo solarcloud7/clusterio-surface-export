@@ -77,6 +77,10 @@ local function record_notice(platform_index, platform, uid, status, reason, verd
 		lineage = verdict and verdict.lineage or nil, generation = verdict and verdict.generation or nil,
 		holderInstanceId = verdict and verdict.holderInstanceId or nil,
 		holderGeneration = verdict and verdict.holderGeneration or nil}
+	local previous = storage.source_recovery_notices[platform_index]
+	if previous and previous.announced and previous.platformUid == uid and previous.status == status and previous.reason == reason then
+		notice.announced = true
+	end
 	storage.source_recovery_notices[platform_index] = notice
 	return notice
 end
@@ -138,6 +142,22 @@ end
 
 function Recovery.notice(platform_index)
 	return (storage.source_recovery_notices or {})[platform_index]
+end
+
+function Recovery.announce_pending(player)
+	if not (player and player.valid and player.admin) then return 0 end
+	local announced = 0
+	for index, notice in pairs(storage.source_recovery_notices or {}) do
+		if (notice.status == "quarantined" or notice.status == "protected") and not notice.announced
+			and SurfaceLock.is_resolution_candidate(SurfaceLock.get_lock_data(index)) then
+			notice.announced = true
+			announced = announced + 1
+			local why = notice.status == "quarantined" and notice.reason and (" (" .. tostring(notice.reason) .. ")") or ""
+			player.print("[Surface Export] " .. tostring(notice.platformName or ("Platform " .. tostring(index)))
+				.. " is quarantined on this server" .. why .. ". Choose which copy to keep on the web interface: Surface Export > Gateways.")
+		end
+	end
+	return announced
 end
 
 function Recovery.clear_notice(platform_index)

@@ -15,6 +15,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get("transfer"));
 	const [restore, setRestore] = useState<RestoreSnapshot | null>(null);
 	const [search, setSearch] = useState(""), [outcome, setOutcome] = useState("all"), [operation, setOperation] = useState("all");
+	const [platform, setPlatform] = useState<string | null>(() => new URLSearchParams(window.location.search).get("platform") || null);
 	const [page, setPage] = useState(1), [preview, setPreview] = useState(false);
 	const debugAvailable = hasDebugInstance(state.tree);
 	useEffect(() => { if (!debugAvailable) setPreview(false); }, [debugAvailable]);
@@ -48,10 +49,13 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	}, [selected, sorted]);
 	// Revisit and reconnect both refresh evidence that may have missed live events.
 	useEffect(() => { if (selected && state.liveStatus === "live") load(selected); }, [selected, plugin, state.liveStatus]);
+	const platformOptions = useMemo(() => [...new Set(sorted.map(row => row.platformName).filter((name): name is string => Boolean(name)))]
+		.map(name => ({ value: name, label: name })), [sorted]);
 	const filtered = useMemo(() => sorted.filter(row => (outcome === "all" || outcomeGroup(row.status) === outcome)
 		&& (operation === "all" || (row.operationType || "transfer") === operation)
+		&& (platform === null || row.platformName === platform)
 		&& [row.platformName, row.transferId, row.sourceInstanceName, row.targetInstanceName, row.sourceInstanceId, row.targetInstanceId]
-			.join(" ").toLowerCase().includes(search.trim().toLowerCase())), [sorted, search, outcome, operation]);
+			.join(" ").toLowerCase().includes(search.trim().toLowerCase())), [sorted, search, outcome, operation, platform]);
 	const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 10)));
 	const row = sorted.find(entry => entry.transferId === selected);
 	const request = selected ? requests[selected] : undefined;
@@ -64,6 +68,9 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		<div className="se-logs-layout">
 			<section className="se-history" aria-label="Operation history">
 				<div className="se-history-controls">
+					<Select aria-label="Platform filter" showSearch allowClear placeholder="All platforms" value={platform ?? undefined}
+						options={platformOptions} optionFilterProp="label" data-testid="platform-filter"
+						onChange={(value?: string) => { setPlatform(value ?? null); setPage(1); }} />
 					<Input prefix={<SearchOutlined />} allowClear aria-label="Search loaded operations" placeholder="Platform, instance or operation ID" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
 					<div className="se-history-filters"><Select aria-label="Outcome filter" value={outcome} onChange={value => { setOutcome(value); setPage(1); }} options={[
 						{ value: "all", label: "All outcomes" }, { value: "completed", label: "Completed" }, { value: "attention", label: "Needs attention" }, { value: "active", label: "In progress" },

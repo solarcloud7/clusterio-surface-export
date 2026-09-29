@@ -401,7 +401,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
 			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer))
 			|| (this.lineageRegistry?.listResolutions() ?? []).some(record => record.status === "in_progress" && record.lineage === lineage
-				&& RELEASING_RESOLUTIONS.has(record.action));
+				&& RELEASING_RESOLUTIONS.has(record.action) && !(record.action === "new_platform" && record.step === "admitted"));
 	}
 
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null {
@@ -434,6 +434,22 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return [...this.activeTransfers.values()].some(completed)
 			|| this.persistedTransactionLogs.some(log => completed(log.transferInfo))
 			|| [...this.auditIndex.values()].some(completed);
+	}
+
+	transferIntoTrip(instanceId: number, lineage: string | null, generation: number | null): string | null {
+		if (!lineage || generation === null || generation < 1) return null;
+		type Info = { transferId?: string | null; operationType?: string | null; targetInstanceId?: number | null; lineage?: string | null;
+			lineageGeneration?: number | null; status?: string | null; completedAt?: number | null };
+		const records: Array<Info | undefined> = [...this.activeTransfers.values(), ...this.persistedTransactionLogs.map(log => log.transferInfo),
+			...this.auditIndex.values()];
+		let best: { transferId: string; completedAt: number } | null = null;
+		for (const record of records) {
+			if (!record?.transferId || (record.operationType ?? "transfer") !== "transfer" || record.targetInstanceId !== instanceId
+				|| record.lineage !== lineage || record.lineageGeneration !== generation - 1 || record.status !== "completed") continue;
+			const completedAt = record.completedAt ?? 0;
+			if (!best || completedAt > best.completedAt) best = { transferId: record.transferId, completedAt };
+		}
+		return best?.transferId ?? null;
 	}
 
 	async lineagePresence(wanted: Map<number, Set<string>>): Promise<Map<string, Presence>> {

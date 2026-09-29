@@ -18,6 +18,7 @@ import gatewayGreenArt from "./assets/gateway-green-64.png";
 import gatewayOrangeArt from "./assets/gateway-orange-64.png";
 import gatewayPurpleArt from "./assets/gateway-purple-64.png";
 import AutoPauseIcon from "./AutoPauseIcon";
+import { QuarantineContext } from "../lineage-conflicts";
 import { ShowPlanetsContext } from "./node-actions";
 
 const { Text } = Typography;
@@ -211,11 +212,13 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 		return false;
 	});
 	const list = useAutoHide(Boolean(selected) && !multiSelected, PLATFORM_LIST_VISIBLE_MS);
+	const quarantine = useContext(QuarantineContext);
+	const quarantinedPlatforms = node.platforms.filter(platform => quarantine.has(`${node.instanceId}:${platform.platformIndex}`));
 
 	const updateNodeInternals = useUpdateNodeInternals();
 	useEffect(() => {
 		updateNodeInternals(id);
-	}, [id, list.visible, node.platforms.length, updateNodeInternals]);
+	}, [id, list.visible, node.platforms.length, quarantinedPlatforms.length, updateNodeInternals]);
 	const gateway = ONE_GATE_NAME;
 
 	return (
@@ -273,9 +276,9 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 				disabledPlanets={node.disabledPlanets || []}
 			/>
 
-			{list.visible ? (
+			{list.visible || quarantinedPlatforms.length ? (
 				<PlatformRows
-					platforms={node.platforms}
+					platforms={list.visible ? node.platforms : quarantinedPlatforms}
 					instanceId={node.instanceId}
 					instanceName={node.instanceName}
 					canEdit={Boolean(isConnectable)}

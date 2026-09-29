@@ -1,8 +1,10 @@
 # Read transaction logs
 
 Open **Surface Export → Transaction Logs** to inspect transfers, exports and
-imports. Search by platform, instance or operation ID, then select an operation
-from the list. Filters apply to the loaded history; the count shows that scope.
+imports. Choose a platform from the platform list, which puts the most recently
+active platforms first, or search by platform, instance or operation ID, then select
+an operation from the list. Filters apply to the loaded history; the count shows
+that scope.
 
 ## Outcome and recovery
 

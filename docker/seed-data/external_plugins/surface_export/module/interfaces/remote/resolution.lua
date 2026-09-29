@@ -176,9 +176,13 @@ local function mint(request)
 	if not platform then return {success = false, error = err} end
 	if record.lineage then return {success = true, lineage = record.lineage, generation = 0} end
 	if not releasable(platform) then return {success = false, error = "Platform is not quarantined or tombstoned"} end
-	if PlatformLineage.get(platform) then return {success = false, error = "Platform already has a lineage"} end
+	local current = PlatformLineage.get(platform)
+	if current and current ~= request.lineage then return {success = false, error = "Platform already has a lineage"} end
 	local lineage = PlatformLineage.mint_value(storage.source_recovery_epoch, platform)
 	if not lineage then return {success = false, error = "Platform lineage is unavailable"} end
+	if current and lineage == current then
+		return {success = false, error = "The copy's lineage was minted in this session; restart the server before keeping both copies"}
+	end
 	local recorded, record_err = PlatformLineage.record(platform, lineage, 0)
 	if not recorded then return {success = false, error = record_err} end
 	record.lineage = lineage

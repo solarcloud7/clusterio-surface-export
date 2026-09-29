@@ -95,10 +95,10 @@ test("offline recovery evidence cannot claim an absent copy or an available dest
 test("ownership review acceptance rejects missing unlock, replay and browser proof",()=>{
   const restored=policy();Object.assign(restored,{ownershipReviewVersion:1,manualLocked:{source:{...copy(),usable:false}},
     manualUnlocked:{source:copy()},standalone:{physical:{source:copy()}}});
-  restored.browser.acknowledgementPersisted=true;
+  restored.browser.acceptedNotListed=true;
   assert.equal(analyze(restored).verdict,"PASS");
   for(const mutate of [r=>r.manualUnlocked.source.usable=false,r=>r.standalone.physical.source.cargo.entities.pop(),
-    r=>r.browser.acknowledgementPersisted=false,r=>delete r.manualLocked]) {
+    r=>r.browser.acceptedNotListed=false,r=>delete r.manualLocked]) {
     const changed=structuredClone(restored);mutate(changed);assert.throws(()=>analyze(changed));
   }
   const recovered=snapshot();Object.assign(recovered,{ownershipReviewVersion:1,

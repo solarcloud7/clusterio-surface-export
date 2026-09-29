@@ -10,6 +10,11 @@ export function instanceAddress(publicAddress: string | null | undefined, gamePo
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
 }
 
+function startTime(instance: { status?: string; startedAtMs?: number }): number | null {
+	const started = instance.startedAtMs;
+	return instance.status === "running" && typeof started === "number" && Number.isFinite(started) && started > 0 ? started : null;
+}
+
 export class PlatformTree {
 	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
@@ -176,6 +181,7 @@ export class PlatformTree {
 				gamePort,
 				address: instanceAddress((host as { publicAddress?: string } | null)?.publicAddress, gamePort),
 				status: String(instance.status || ""),
+				startedAtMs: startTime(instance),
 				connected: Boolean(host?.connected),
 				platforms: [],
 				platformError: null,

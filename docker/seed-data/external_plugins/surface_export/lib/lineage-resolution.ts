@@ -19,6 +19,7 @@ export interface ResolverHost {
 	knownInstanceIds(): number[];
 	lineageInTransit(lineage: string | null): boolean;
 	completedTransferFrom(instanceId: number, platformUid: string | null): boolean;
+	transferIntoTrip?(instanceId: number, lineage: string | null, generation: number | null): string | null;
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null;
 	lineagePresence(wanted: Map<number, Set<string>>): Promise<Map<string, Presence>>;
 	send(instanceId: number, message: unknown): Promise<any>;
@@ -131,7 +132,7 @@ export class LineageResolver {
 		for (const id of instanceId === null ? this.host.instanceIds() : [instanceId]) {
 			try {
 				const listing = await this.candidates(id);
-				for (const { candidate, verdict, holderPresence } of await this.evaluate(id, listing.epoch, listing.platforms)) {
+				for (const { candidate, verdict, entry, holderPresence } of await this.evaluate(id, listing.epoch, listing.platforms)) {
 					const gate = resolutionActions(verdict.verdict, candidate.state, { journalUidMatch: candidate.journalUidMatch, historyMatch: verdict.hints.historyMatch });
 					const active = resolutions.find(record => record.instanceId === id && record.platformIndex === candidate.platformIndex
 						&& (record.platformUid === candidate.platformUid || record.releasedUid === candidate.platformUid) && record.status === "in_progress")
@@ -144,6 +145,9 @@ export class LineageResolver {
 						lineage: candidate.lineage ?? null, generation: candidate.generation ?? null,
 						holderInstanceId: verdict.holderInstanceId ?? null, holderGeneration: verdict.holderGeneration ?? null,
 						holderPassengers: holderPresence?.state === "present" ? holderPresence.passengers ?? null : null,
+						holderPresence: holderPresence?.state ?? null, holderPlatformName: entry?.platformName ?? null,
+						holderLastTransferId: entry?.source === "transfer" ? entry.lastExportId ?? null : null,
+						lastTransferId: this.host.transferIntoTrip?.(id, candidate.lineage ?? null, candidate.generation ?? null) ?? null,
 						ownerJobId: verdict.ownerJobId ?? candidate.ownerJobId ?? null, retiredExportId: candidate.retiredExportId ?? null,
 						passengers: candidate.passengers ?? null, actions: active ? [] : gate.actions,
 						blocked: active ? "A resolution is in progress for this copy; retry or abandon it with the same request ID." : gate.blocked,
@@ -182,7 +186,7 @@ export class LineageResolver {
 			const reason = current.error ? `Abandoned by an administrator after: ${current.error}` : "Abandoned by an administrator";
 			const next = DELETE_ACTIONS.includes(current.action)
 				? await this.abandonRecord(current, reason)
-				: await this.fail(current, `${reason}; no copy was changed`);
+				: await this.fail(current, `${reason}; ${current.action === "new_platform" ? "the copy stays quarantined and may already carry a new platform history" : "no copy was changed"}`);
 			return this.resume(next);
 		});
 	}
@@ -414,10 +418,11 @@ export class LineageResolver {
 			return { ...this.registry.resolution(record.requestId)! };
 		}
 		if (record.step === "admitted" && record.action === "new_platform") {
-			const outcome = await this.apply(record.instanceId, record, "mint", record.platformIndex, record.platformUid);
+			const outcome = await this.apply(record.instanceId, record, "mint", record.platformIndex, record.platformUid, { lineage: record.lineage });
 			if ("pending" in outcome) return outcome.pending!;
 			if (!outcome.reply?.success || typeof outcome.reply.lineage !== "string") return this.fail(record, outcome.reply?.error || "The new lineage was refused");
-			return this.save(record, { lineage: outcome.reply.lineage, step: "minted" });
+			if (outcome.reply.lineage === record.lineage) return this.fail(record, "The new lineage equals the current one; the copy would still share its history");
+			return this.save(record, { lineage: outcome.reply.lineage, step: "minted", registrySnapshot: "null" });
 		}
 		if ((record.step === "admitted" && record.action === "release") || record.step === "committed") {
 			const outcome = await this.apply(record.instanceId, record, "release", record.platformIndex, record.platformUid,
