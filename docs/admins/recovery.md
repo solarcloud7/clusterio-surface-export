@@ -70,8 +70,11 @@ resolves them.
 
 ## Resolve a quarantined copy
 
-The **Surface Export** entry in the sidebar and the Gateways tab show a red count
-while any copy is quarantined, on every page of the web interface. The
+A quarantine is announced once: anyone with the Surface Export page open gets one
+browser notification per newly quarantined copy, and in game the first administrator
+to join after the server started gets one chat line per quarantined platform, which is
+never repeated. The **Surface Export** entry in the sidebar and the Gateways tab show
+a red count while any copy is quarantined, on every page of the web interface. The
 **Quarantined Platforms** list above the map has one row per quarantined copy. The
 left side is the quarantined copy; the right side is the copy the controller records
 as current, on another server or on the same one. Each side shows the platform name,
