@@ -22,6 +22,7 @@ const READ_ONLY = [
 	["surface-export", "gateways"],
 	["surface-export", "list"],
 	["surface-export", "list-transfers"],
+	["surface-export", "conflicts"],
 ];
 
 const LOCAL_ONLY = new Set(["control-config", "plugin"]);

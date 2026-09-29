@@ -1,3 +1,6 @@
+// requires: a built plugin directory whose dist/web/manifest.json names every asset to ship, and a new destination path outside it
+// produces: a staged copy of the package containing only the current manifest's web assets, for package acceptance
+// does not: build, prune the live asset directory, or prove the staged package installs
 import assert from "node:assert/strict";
 import { cpSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
