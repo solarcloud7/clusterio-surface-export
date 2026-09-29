@@ -90,7 +90,7 @@ function cluster({ registry = new LineageRegistry(), candidates = { [I]: [candid
 				if (message.step === "retarget") { counters.retarget++; return { success: true }; }
 				if (message.step === "mint") { counters.mint++; return { success: true, lineage: `lineage:epoch-${instanceId}:15`, generation: 0 }; }
 				counters.release++;
-				return { success: true, platformUid: message.platformUid };
+				return { success: true, platformUid: message.refreshIdentity ? `fresh:${message.platformUid}` : message.platformUid };
 			}
 			if (name === "JobsStatusRequest") {
 				return { version: 1, epoch: "e", jobs: message.jobs.map(job => ({ jobId: job.jobId, state: behaviour.jobState[job.jobId] ?? "running" })) };
@@ -263,7 +263,8 @@ test("keep both on a duplicate gives this copy a new lineage and touches neither
 	assert.deepEqual(c.registry.get(L), entry(), "the other copy's registry entry changed");
 	assert.deepEqual([c.registry.get("lineage:epoch-1:15").instanceId, c.registry.get("lineage:epoch-1:15").generation], [I, 0]);
 	const record = c.registry.resolution("req-00000001");
-	assert.deepEqual([record.lineage, record.newGeneration, record.releasedUid], ["lineage:epoch-1:15", 0, "boot-old:15"]);
+	assert.deepEqual([record.lineage, record.newGeneration, record.releasedUid], ["lineage:epoch-1:15", 0, "fresh:boot-old:15"],
+		"the resolution did not record the fresh identity the release returned");
 });
 
 test("keep both fails closed when the minted lineage is the one the copies already share", async () => {

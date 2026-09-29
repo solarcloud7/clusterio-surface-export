@@ -179,6 +179,8 @@ export class WebPlugin extends BaseWebPlugin {
 	private resubscribeTimer: number | null = null;
 	private quarantineTimer: number | null = null;
 	private quarantineDenied = false;
+	private announcedQuarantine = new Set<string>();
+	private quarantineSeeded = false;
 	private watchers: Array<() => void> = [];
 	private lastConnectionEvent: ConnectionEvent | null = null;
 	private resubscribeGeneration = 0;
@@ -262,14 +264,18 @@ export class WebPlugin extends BaseWebPlugin {
 	async refreshQuarantine(): Promise<void> {
 		if (!this.link.connector.connected || this.quarantineDenied) return;
 		try {
-			const previous = this.state.quarantine;
 			const listing = await this.listLineageConflicts();
-			if (previous) {
-				const known = new Set(previous.conflicts.map(entry => `${entry.instanceId}:${entry.platformIndex}`));
-				for (const entry of listing.conflicts) {
-					if (!known.has(`${entry.instanceId}:${entry.platformIndex}`)) this.announceQuarantine(entry);
-				}
+			const unavailable = new Set(listing.unavailable.map(entry => entry.instanceId));
+			const current = new Set(listing.conflicts.map(entry => `${entry.instanceId}:${entry.platformIndex}`));
+			for (const entry of listing.conflicts) {
+				const key = `${entry.instanceId}:${entry.platformIndex}`;
+				if (this.quarantineSeeded && !this.announcedQuarantine.has(key)) this.announceQuarantine(entry);
+				this.announcedQuarantine.add(key);
 			}
+			for (const key of [...this.announcedQuarantine]) {
+				if (!current.has(key) && !unavailable.has(Number(key.split(":")[0]))) this.announcedQuarantine.delete(key);
+			}
+			this.quarantineSeeded = true;
 			this.setState({ quarantine: { conflicts: listing.conflicts, unavailable: listing.unavailable, error: null } });
 		} catch (err: unknown) {
 			if (/permission denied/i.test(getErrorMessage(err))) {

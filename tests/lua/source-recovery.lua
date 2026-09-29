@@ -26,6 +26,9 @@ local lock_api = {
     transfer_delete_identity_ok = function(lock, _, id)
         return lock and lock.kind == "transfer" and lock.transfer_job_id == id, "wrong transfer"
     end,
+    is_resolution_candidate = function(lock)
+        return lock ~= nil and (lock.kind == "quarantine" or (lock.kind == "transfer" and lock.phase == "committed"))
+    end,
 }
 env.require = function(name)
     if name:find("destination-hold", 1, true) then return {reconcile_legacy = function() end} end
@@ -429,7 +432,10 @@ end
 -- One warning per quarantined platform, to the first administrator who joins.
 do
     env.storage.source_recovery_notices = {[3] = {platformIndex = 3, platformName = "ship", status = "quarantined", reason = "duplicate"},
-        [4] = {platformIndex = 4, platformName = "other", status = "accepted", reason = "rollback_other"}}
+        [4] = {platformIndex = 4, platformName = "other", status = "accepted", reason = "rollback_other"},
+        [5] = {platformIndex = 5, platformName = "in-flight", status = "protected", reason = "reconcile_error"}}
+    locks[3] = {kind = "quarantine"}
+    locks[5] = {kind = "transfer", phase = "pre_commit"}
     local printed = {}
     local admin = {valid = true, admin = true, print = function(message) printed[#printed + 1] = message end}
     local crew = {valid = true, admin = false, print = function(message) error("a non-administrator was warned: " .. tostring(message)) end}
@@ -438,5 +444,8 @@ do
     assert(printed[1]:find("ship", 1, true) and printed[1]:find("quarantined", 1, true) and printed[1]:find("Gateways", 1, true))
     assert(recovery.announce_pending(admin) == 0 and #printed == 1, "the warning repeated")
     assert(env.storage.source_recovery_notices[4].announced == nil, "an accepted copy was marked as warned")
+    assert(env.storage.source_recovery_notices[5].announced == nil, "a copy that the web listing cannot show was announced")
+    locks[5] = {kind = "transfer", phase = "committed"}
+    assert(recovery.announce_pending(admin) == 1 and not printed[2]:find("(", 1, true), "a retired transfer source was not announced without a verdict in brackets")
     print("PASS a quarantined platform is announced once, to an administrator")
 end

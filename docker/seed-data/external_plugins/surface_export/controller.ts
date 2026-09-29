@@ -401,7 +401,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return [...this.pendingTransfers.values()].some(intent => intent.lineage === lineage)
 			|| [...this.activeTransfers.values()].some(transfer => transfer.lineage === lineage && hasUnresolvedPlatformOwnership(transfer))
 			|| (this.lineageRegistry?.listResolutions() ?? []).some(record => record.status === "in_progress" && record.lineage === lineage
-				&& RELEASING_RESOLUTIONS.has(record.action));
+				&& RELEASING_RESOLUTIONS.has(record.action) && !(record.action === "new_platform" && record.step === "admitted"));
 	}
 
 	owningSourceJob(instanceId: number, platform: PlatformFacts): string | null {

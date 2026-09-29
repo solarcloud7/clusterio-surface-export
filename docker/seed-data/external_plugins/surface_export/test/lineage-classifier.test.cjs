@@ -239,10 +239,17 @@ test("an in-progress resolution holds its lineage in transit until it ends", asy
 	assert.equal(plugin.lineageInTransit(L), false);
 	for (const action of ["adopt", "new_platform", "release"]) {
 		const id = `req-${action}-0001`;
-		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action }); });
+		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action, step: action === "new_platform" ? "minted" : "delete" }); });
 		assert.equal(plugin.lineageInTransit(L), true, `${action} did not hold its lineage in transit`);
 		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action, status: "completed", step: "completed" }); });
 	}
+	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set("req-both-0001", { ...record, requestId: "req-both-0001", action: "new_platform", step: "admitted" }); });
+	assert.equal(plugin.lineageInTransit(L), false,
+		"keep both held the OTHER copy's lineage in transit before minting its own; a holder restart in that window would quarantine the live copy");
+	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set("req-both-0001", { ...record, requestId: "req-both-0001", action: "new_platform", step: "minted", lineage: "lineage:boot-new:15" }); });
+	assert.equal(plugin.lineageInTransit(L), false);
+	assert.equal(plugin.lineageInTransit("lineage:boot-new:15"), true, "the minted lineage was not held in transit until the claim");
+	await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set("req-both-0001", { ...record, requestId: "req-both-0001", action: "new_platform", status: "completed", step: "completed", lineage: "lineage:boot-new:15" }); });
 	for (const action of ["stale_copy", "keep_other"]) {
 		const id = `req-${action}-0001`;
 		await plugin.lineageRegistry.update((_draft, resolutions) => { resolutions.set(id, { ...record, requestId: id, action }); });

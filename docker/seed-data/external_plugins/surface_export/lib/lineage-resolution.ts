@@ -186,7 +186,7 @@ export class LineageResolver {
 			const reason = current.error ? `Abandoned by an administrator after: ${current.error}` : "Abandoned by an administrator";
 			const next = DELETE_ACTIONS.includes(current.action)
 				? await this.abandonRecord(current, reason)
-				: await this.fail(current, `${reason}; ${current.step === "minted" ? "the copy keeps its new platform history and stays quarantined" : "no copy was changed"}`);
+				: await this.fail(current, `${reason}; ${current.action === "new_platform" ? "the copy stays quarantined and may already carry a new platform history" : "no copy was changed"}`);
 			return this.resume(next);
 		});
 	}

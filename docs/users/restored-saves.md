@@ -84,7 +84,7 @@ button keeps instead:
 
 | Situation | Choices |
 |---|---|
-| Two servers hold a copy of the same platform | **Delete** the left copy, or **Delete** the right copy, or **Keep both**: the older copy becomes a separate platform, so everything aboard it then exists twice. |
+| Two servers hold a copy of the same platform | **Delete** the left copy, or **Delete** the right copy, or **Keep both**: the quarantined copy becomes a separate platform, so everything aboard it then exists twice. |
 | The left copy is the only one left, or its record is missing or out of date | **Delete** it, or **Keep** it (it becomes the current copy). |
 | The platform is older than travel histories and may be a copy of one that left | **Delete** it, or **Keep** it as a new platform. When records show it already left, only **Delete** is offered. |
 
