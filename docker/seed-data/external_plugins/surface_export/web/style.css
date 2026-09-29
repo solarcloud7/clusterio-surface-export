@@ -631,10 +631,10 @@ body.surface-export-page .site-layout-content-container {
 
 .se-tab-warning { color: #ff4d4f; }
 
-.se-quarantine { margin-bottom: 16px; padding: 12px 16px; border: 1px solid rgba(255, 77, 79, 0.45); border-radius: 8px; background: rgba(255, 77, 79, 0.04); }
+.se-quarantine { margin-bottom: 16px; padding: 12px 16px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
 .se-quarantine-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .se-quarantine-header h3 { margin: 0; font-size: 15px; font-weight: 500; flex: 1; }
-.se-quarantine-icon { color: #ff4d4f; font-size: 16px; }
+.se-quarantine-icon { font-size: 16px; opacity: 0.7; }
 .se-quarantine-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) 120px minmax(0, 1fr) 72px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .se-quarantine-row > .ant-btn { justify-self: stretch; }
 .se-quarantine-slot { display: block; }

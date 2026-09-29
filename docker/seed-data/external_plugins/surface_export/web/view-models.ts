@@ -48,7 +48,14 @@ export type LogDetail = {
 
 export type LiveStatus = "live" | "reconnecting" | "offline" | "degraded";
 
+export type QuarantineListing = {
+	conflicts: import("../shared/lineage-resolution").ConflictEntry[];
+	unavailable: Array<{ instanceId: number; reason: string }>;
+	error: string | null;
+};
+
 export type SurfaceExportState = {
+	quarantine: QuarantineListing | null;
 	tree: PlatformTreeState | null;
 	loadingTree: boolean;
 	treeError: string | null;
@@ -74,6 +81,8 @@ export type SurfaceExportPlugin = {
 	refreshSnapshots?(): Promise<void>;
 	getPortals?(): Promise<import("../shared/dto").PortalListingResponse>;
 	listLineageConflicts?(): Promise<ReturnType<typeof import("../messages").ListLineageConflictsRequest.Response.fromJSON>>;
+	refreshQuarantine?(): Promise<void>;
+	watchQuarantine?(callback: () => void): () => void;
 	resolvePlatformLineage?(payload: { instanceId: number; platformIndex: number; platformUid: string;
 		action: import("../shared/lineage-resolution").ResolutionAction; requestId: string }): Promise<ReturnType<typeof import("../messages").ResolvePlatformLineageRequest.Response.fromJSON>>;
 	abandonPlatformResolution?(requestId: string): Promise<ReturnType<typeof import("../messages").AbandonPlatformResolutionRequest.Response.fromJSON>>;

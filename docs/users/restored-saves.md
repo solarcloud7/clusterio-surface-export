@@ -71,7 +71,8 @@ wait.
 
 ## What administrators decide
 
-The **Gateways** tab shows a warning while anything waits for a decision. The
+The **Surface Export** entry in the sidebar shows a red count while anything waits
+for a decision, on every page of the web interface, and so does the **Gateways** tab. The
 **Quarantined Platforms** list has one row per waiting copy: the quarantined copy on
 the left, the copy the records call current on the right. Each side shows its server,
 trip number and platform name, and the side with more trips is green. The map

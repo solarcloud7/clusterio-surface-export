@@ -70,7 +70,8 @@ resolves them.
 
 ## Resolve a quarantined copy
 
-The Gateways tab shows a warning and a count while any copy is quarantined, and the
+The **Surface Export** entry in the sidebar and the Gateways tab show a red count
+while any copy is quarantined, on every page of the web interface. The
 **Quarantined Platforms** list above the map has one row per quarantined copy. The
 left side is the quarantined copy; the right side is the copy the controller records
 as current, on another server or on the same one. Each side shows the server, the

@@ -88,6 +88,21 @@ function LiveStatusBadge({ state }: { state: SurfaceExportState }) {
 	);
 }
 
+const QUARANTINE_POLL_MS = 30_000;
+
+function SidebarLabel({ plugin }: { plugin: Pick<SurfaceExportPlugin, "getState" | "watchQuarantine"> }) {
+	const read = () => plugin.getState().quarantine?.conflicts.length ?? 0;
+	const [count, setCount] = useState(read);
+	useEffect(() => plugin.watchQuarantine?.(() => setCount(read())) ?? undefined, [plugin]);
+	return (
+		<span data-testid="surface-export-sidebar">
+			Surface Export
+			{count > 0 && <Badge data-testid="surface-export-sidebar-alert" count={count} size="small" style={{ marginLeft: 8 }}
+				title={`${count} quarantined platform${count === 1 ? "" : "s"} waiting for a decision`} />}
+		</span>
+	);
+}
+
 function SurfaceExportPage() {
 	const control = useContext(ControlContext) as unknown as ControlLike;
 	const plugin = useSurfaceExportPlugin(control);
@@ -106,7 +121,7 @@ function SurfaceExportPage() {
 		window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 	}
 	const tabItems: Array<{ key: string; label: React.ReactNode; children: React.ReactNode }> = [];
-	const quarantined = quarantine.conflicts.length;
+	const quarantined = state.quarantine?.conflicts.length ?? 0;
 	if (state.canViewLogs !== false) {
 		tabItems.push({
 			key: "logs",
@@ -162,6 +177,9 @@ export class WebPlugin extends BaseWebPlugin {
 	private callbacks: Array<() => void>;
 	private state: SurfaceExportState;
 	private resubscribeTimer: number | null = null;
+	private quarantineTimer: number | null = null;
+	private quarantineDenied = false;
+	private watchers: Array<() => void> = [];
 	private lastConnectionEvent: ConnectionEvent | null = null;
 	private resubscribeGeneration = 0;
 
@@ -169,6 +187,7 @@ export class WebPlugin extends BaseWebPlugin {
 		super(container, packageData, info as any, control as any, logger as any);
 		this.callbacks = [];
 		this.state = {
+			quarantine: null,
 			tree: null,
 			loadingTree: false,
 			treeError: null,
@@ -187,7 +206,7 @@ export class WebPlugin extends BaseWebPlugin {
 		this.pages = [
 			{
 				path: "/surface-export",
-				sidebarName: "Surface Export",
+				sidebarName: (<SidebarLabel plugin={this} />) as unknown as string,
 				permission: PERMISSIONS.UI_VIEW,
 				content: <SurfaceExportPage />,
 			},
@@ -205,11 +224,46 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 		if (event === "connect" || event === "resume") {
 			this.resubscribeUntilLive();
+			this.startQuarantinePolling();
 			return;
 		}
 		this.resubscribeGeneration += 1;
 		this.clearResubscribeTimer();
+		this.stopQuarantinePolling();
 		this.applyLiveStatus(null, null);
+	}
+
+	private startQuarantinePolling() {
+		this.stopQuarantinePolling();
+		void this.refreshQuarantine();
+		this.quarantineTimer = setInterval(() => {
+			if (document.visibilityState === "visible") void this.refreshQuarantine();
+		}, QUARANTINE_POLL_MS) as unknown as number;
+	}
+
+	private stopQuarantinePolling() {
+		if (this.quarantineTimer !== null) {
+			clearInterval(this.quarantineTimer);
+			this.quarantineTimer = null;
+		}
+	}
+
+	async refreshQuarantine(): Promise<void> {
+		if (!this.link.connector.connected || this.quarantineDenied) return;
+		try {
+			const listing = await this.listLineageConflicts();
+			this.setState({ quarantine: { conflicts: listing.conflicts, unavailable: listing.unavailable, error: null } });
+		} catch (err: unknown) {
+			if (/permission denied/i.test(getErrorMessage(err))) {
+				this.quarantineDenied = true;
+				this.stopQuarantinePolling();
+				this.setState({ quarantine: null });
+				return;
+			}
+			console.warn("Platform conflicts are unavailable", err);
+			const previous = this.state.quarantine ?? { conflicts: [], unavailable: [] };
+			this.setState({ quarantine: { ...previous, error: getErrorMessage(err, "Platform conflicts are unavailable") } });
+		}
 	}
 
 	private clearResubscribeTimer() {
@@ -268,6 +322,19 @@ export class WebPlugin extends BaseWebPlugin {
 		for (const callback of this.callbacks) {
 			callback();
 		}
+		for (const watcher of this.watchers) {
+			watcher();
+		}
+	}
+
+	watchQuarantine(callback: () => void): () => void {
+		this.watchers.push(callback);
+		return () => {
+			const index = this.watchers.lastIndexOf(callback);
+			if (index !== -1) {
+				this.watchers.splice(index, 1);
+			}
+		};
 	}
 
 	onUpdate(callback: () => void) {

@@ -53,6 +53,7 @@ export async function recoveryBrowser(lab,report,{restartRequired=false,offlineI
       } else {
         await row.waitFor();
         await page.getByTestId("gateways-tab-warning").waitFor();
+        await page.getByTestId("surface-export-sidebar-alert").waitFor();
         await page.locator(".surface-export-platform-node-row.is-quarantined").filter({hasText:report.name}).first().waitFor();
         await page.screenshot({path:join(lab.directory,"quarantined-platforms.png"),fullPage:true});
         const transferUrl=await row.getByTestId("quarantine-left").getByRole("link").getAttribute("href");
