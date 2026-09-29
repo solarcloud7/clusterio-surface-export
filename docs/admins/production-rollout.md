@@ -1,6 +1,6 @@
-# Production rollout: create the four servers
+# Production rollout: bring up the four servers
 
-This page creates the public cluster's servers on an existing Clusterio
+This page names or creates the public cluster's servers on an existing Clusterio
 installation and brings them to the desired state. It assumes
 [installation](deployment.md) is done on the controller and both hosts, that the
 plugin version and the gateway mod version match, and that the desired-state file
@@ -23,9 +23,10 @@ the colours. The file also carries the mod pack (Space Age 2.1.20 with
 `surfexp_gateways` 0.7.9 and the other mods), each server's public settings,
 `debug_mode` off, and the controller's Discord invite and bridge channel.
 
-Not in the file, so decide them before step 1: which two servers share each host
-and the UDP game port of each server. The development cluster uses one server per
-host on ports 34100 and 34200; two servers on one host need two different ports.
+Host assignment and game ports are not in the file. The public cluster already
+runs two servers on each host and keeps them: ports 34100 and 34101 on
+`clusterio-host-1`, 34200 and 34201 on `clusterio-host-2`. Two servers on one
+host always need two different ports.
 
 ## 1. Plugins on the controller and hosts
 
@@ -41,10 +42,26 @@ controller and hosts and confirm both hosts show as connected:
 npx clusterioctl host list
 ```
 
-## 2. Create and assign the instances
+## 2. Name the instances
 
-Run these from the controller's Clusterio directory, once per server, using the
-exact names from the desired state:
+The reconcile tool finds servers by name, so each server must carry the exact name
+from the desired state before step 3. Run these from the controller's Clusterio
+directory.
+
+**Servers that already exist under another name** keep their id, host, port and
+saves; only the name changes. Stop the server, rename it, and leave it stopped
+until step 5:
+
+```text
+npx clusterioctl instance stop fact1
+npx clusterioctl instance config set fact1 instance.name Delta
+```
+
+The rename was checked on a stopped, unassigned instance of the pinned Clusterio
+version; renaming a running server was not tested. The server's directory on the
+host keeps its old name, which is harmless.
+
+**Servers that do not exist yet** are created, assigned and given a port:
 
 ```text
 npx clusterioctl instance create Delta
@@ -52,8 +69,8 @@ npx clusterioctl instance assign Delta clusterio-host-1
 npx clusterioctl instance config set Delta factorio.game_port 34100
 ```
 
-Repeat for Sigma, Theta and Omega with the host and port you chose. `instance
-create` accepts `--id <number>` if you want fixed ids. Check the result:
+`instance create` accepts `--id <number>` if you want fixed ids. Check the result
+either way; all four names must appear, each with a host and a port:
 
 ```text
 npx clusterioctl instance list
@@ -77,8 +94,9 @@ token as described under [Discord bridge](deployment.md#discord-bridge).
 
 ## 4. Create the worlds
 
-A server needs a save before it can start. Create one per server; the mod pack
-assigned in step 3 is used for map generation:
+A renamed server can keep its existing save; skip this step for it unless you want
+a fresh map. A server needs a save before it can start. Create one per server; the
+mod pack assigned in step 3 is used for map generation:
 
 ```text
 npx clusterioctl instance save create Delta world.zip
