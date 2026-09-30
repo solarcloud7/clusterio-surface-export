@@ -7,16 +7,41 @@ InventoryScanner.fluid_registry = nil
 
 local IDENTITY_FIELDS = { name = true, count = true, quality = true }
 
+local OPTIONAL_READS = { "health", "durability", "ammo", "spoil_percent", "custom_description", "grid" }
+local item_kinds = {}
+
+local function read_attribute(stack, key)
+  return stack[key]
+end
+
+local function item_kind(stack)
+  local kind = item_kinds[stack.name]
+  if kind then return kind end
+  kind = {
+    exportable = stack.is_blueprint or stack.is_blueprint_book or stack.is_upgrade_item
+      or stack.is_deconstruction_item or stack.is_item_with_tags,
+    labelled = stack.is_item_with_label,
+    with_inventory = stack.is_item_with_inventory,
+    with_entity_data = stack.prototype.type == "item-with-entity-data",
+    throws = {},
+  }
+  item_kinds[stack.name] = kind
+  return kind
+end
+
+function InventoryScanner.forget_item_kinds()
+  item_kinds = {}
+end
+
 local function extract_item_properties(stack)
   local item_entry = {
     name = stack.name,
     count = stack.count,
     quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
   }
+  local kind = item_kind(stack)
 
-  if stack.is_blueprint or stack.is_blueprint_book or 
-     stack.is_upgrade_item or stack.is_deconstruction_item or 
-     stack.is_item_with_tags then
+  if kind.exportable then
     local call_success, call_return = pcall(function() return stack.export_stack() end)
     if not call_success then log(string.format("[inventory-scanner] export_stack failed on %s: %s", stack.name, tostring(call_return))) end
     if call_success and call_return then
@@ -24,31 +49,23 @@ local function extract_item_properties(stack)
     end
   end
 
-  -- intentional probe; failure expected, no log
-  local health_success, health = pcall(function() return stack.health end)
-  if health_success and health then
-    item_entry.health = health
+  for _, key in ipairs(OPTIONAL_READS) do
+    if not kind.throws[key] then
+      -- intentional probe; failure expected once per item name, no log
+      local read_success, value = pcall(read_attribute, stack, key)
+      if not read_success then
+        kind.throws[key] = true
+      elseif key == "grid" then
+        if value and value.equipment then
+          item_entry.grid = InventoryScanner.extract_equipment_grid(value)
+        end
+      elseif value then
+        item_entry[key] = value
+      end
+    end
   end
 
-  -- intentional probe; failure expected, no log
-  local durability_success, durability = pcall(function() return stack.durability end)
-  if durability_success and durability then
-    item_entry.durability = durability
-  end
-
-  -- intentional probe; failure expected, no log
-  local ammo_success, ammo = pcall(function() return stack.ammo end)
-  if ammo_success and ammo then
-    item_entry.ammo = ammo
-  end
-
-  -- intentional probe; failure expected, no log
-  local spoil_success, spoil_percent = pcall(function() return stack.spoil_percent end)
-  if spoil_success and spoil_percent then
-    item_entry.spoil_percent = spoil_percent
-  end
-
-  if stack.is_item_with_label then
+  if kind.labelled then
     local label_success, label_data = pcall(function()
       return {
         text = stack.label,
@@ -62,26 +79,14 @@ local function extract_item_properties(stack)
     end
   end
 
-  -- intentional probe; failure expected, no log
-  local desc_success, custom_desc = pcall(function() return stack.custom_description end)
-  if desc_success and custom_desc then
-    item_entry.custom_description = custom_desc
-  end
-
-  -- intentional probe; failure expected, no log
-  local grid_success, grid = pcall(function() return stack.grid end)
-  if grid_success and grid and grid.equipment then
-    item_entry.grid = InventoryScanner.extract_equipment_grid(grid)
-  end
-
-  if stack.is_item_with_inventory then
+  if kind.with_inventory then
     local sub_inventory = stack.get_inventory(defines.inventory.item_main)
     if sub_inventory and sub_inventory.valid then
       item_entry.nested_inventory = InventoryScanner.extract_nested_inventory(sub_inventory)
     end
   end
 
-  if stack.prototype.type == "item-with-entity-data" then
+  if kind.with_entity_data then
     local entity_data_ok, entity_data_values = pcall(function()
       return {
         entity_color = stack.entity_color,
