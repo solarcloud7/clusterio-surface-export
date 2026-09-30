@@ -676,15 +676,23 @@ function ExportPipeline.complete(job, batch_size)
 	elseif job.completion_stage == "belt_capture" then
 		Timing.start(job.job_id, "belt_capture")
 		local ok, done = pcall(SourceBeltCargo.step, job, SourceBeltCargo.budget())
-		if ok and done then
-			ok, done = pcall(SourceBeltCargo.finish, job)
-		end
-		Timing.stop(job.job_id, "belt_capture")
 		if not ok then
+			Timing.stop(job.job_id, "belt_capture")
 			Timing.fail(job.job_id, "belt_capture")
 			error(done, 0)
 		end
-		if done then prepare_completion(job, done) end
+		local stats = nil
+		if done then
+			local finished, result = pcall(SourceBeltCargo.finish, job)
+			if not finished then
+				Timing.stop(job.job_id, "belt_capture")
+				Timing.fail(job.job_id, "belt_capture")
+				error(result, 0)
+			end
+			stats = result
+		end
+		Timing.stop(job.job_id, "belt_capture")
+		if stats then prepare_completion(job, stats) end
 	elseif job.completion_stage == "serialize" then
 		-- Opt-in transfer transport; file exports and clones retain the stored format.
 		if job.section_cursor or (job.section_transport == nil and job.destination_instance_id
