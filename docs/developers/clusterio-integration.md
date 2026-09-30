@@ -30,8 +30,9 @@ and the installed package source for upstream behavior.
 ## Example: follow a web transfer
 
 `StartPlatformTransferRequest` enters controller admission, then requests a source
-export through the instance plugin. Lua emits its completed payload through
-Clusterio's `send_json` channel. The instance forwards it for controller storage.
+export through the instance plugin. Lua announces completion through Clusterio's
+`send_json` channel (`surface_export_complete`, metadata only). The instance reads
+the payload over RCON (`get_export_json`) and forwards it for controller storage.
 The destination receives `ImportPlatformRequest`; its instance plugin sends the
 versioned [upload protocol](upload-protocol.md) over RCON and retains the accepted
 job identity. Lua completion supplies validation, then the controller follows the

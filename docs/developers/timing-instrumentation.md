@@ -49,7 +49,7 @@ the [batching guide](../technical/batching.md) for scheduling boundaries.
 | Controller | Clusterio request round trip; Rollback unlock round trip | Request send → response/error | Individual nested request intervals where a request context exists |
 | Controller | Destination verdict handling | Verdict handler entry → return | Inclusive, including cleanup/rollback awaits |
 | Controller | Audit persistence | Detail/audit write entry → return | Separate from terminal headline |
-| Instance | Export/Import request handling; completion handling; deletion/unlock handling | Handler entry → return | Local process clocks; asynchronous inclusive intervals |
+| Instance | Export request handling; Import request handling; handleExportComplete; handleImportCompleteValidation; handleDeleteSourcePlatform; Source unlock handling | Handler entry → return | Local process clocks; asynchronous inclusive intervals |
 | Instance | RCON request round trip; RCON payload upload | RCON call; entire chunk upload loop | Inclusive of Factorio work and scheduling |
 | Instance | Payload serialization; Artifact JSON decoding | JSON conversion call → return | Local synchronous execution |
 

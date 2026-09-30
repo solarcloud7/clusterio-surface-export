@@ -42,7 +42,7 @@ A persistent platform identifier distinguishes a platform across save/restart
 operations. Its current force, platform index and surface index locate the object;
 the display name does not authorize deletion. Transfer messages carry the
 operation and job identity as well. Canonical transfer IDs associate the source
-instance with its export job, and new jobs include a startup epoch to avoid reusing
+instance with its export job, and new export jobs include a startup epoch to avoid reusing
 IDs when an older save is loaded.
 
 Source locks and destination holds temporarily restrict access and disable

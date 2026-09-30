@@ -151,7 +151,8 @@ node tools/clusterio/reconcile.mjs apply --cluster vm --desired tools/clusterio/
 ```
 
 `plan` prints the exact `clusterioctl` commands it would run and the items it
-refuses. `apply --yes` runs them in order, stops at the first failure and re-plans.
+refuses. `apply --yes` runs them in order and stops at the first failure; after
+they all succeed it plans again to confirm nothing still differs.
 Exit code 0 means the configuration converged and nothing needs a restart; 4 means
 it converged but a restart is pending for an instance whose configuration changed,
 or an instance is not running after `--restart` (pass `--restart` or restart it

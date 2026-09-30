@@ -87,8 +87,8 @@ quarantined platforms stay listed under their server with a red highlight.
 
 Each side has a red **Delete** button that deletes that side's copy, and the centre
 has **Keep both** when both copies exist or **Keep** when only the quarantined copy
-does. The confirmation names the server whose copy is deleted and the platform;
-nothing else. Actions follow a live re-evaluation, so a copy quarantined while its
+does. The confirmation names the server whose copy is deleted and the platform
+with its trip count; nothing else. Actions follow a live re-evaluation, so a copy quarantined while its
 holder was offline becomes decidable once that server answers. The list refreshes
 every 30 seconds and when a server changes state; the refresh button repeats the
 evaluation. Platform names are never used to decide. Resolving needs the
