@@ -15,9 +15,9 @@ flowchart TD
     D --> E[Shared Lua scheduler]
     E --> F[Restore and validate cargo]
     F --> G{Validation accepted?}
-    G -->|Yes| H[Protect destination and confirm hold]
-    H --> I[Persist recovery intent and source retirement]
-    I --> J[Delete source and acknowledge]
+    G -->|Yes| H[Persist recovery intent]
+    H --> I[Confirm the destination hold]
+    I --> J[Source records retirement, deletes and acknowledges]
     J --> K[Release destination and acknowledge]
     K --> L[Complete operation and release reservation]
     G -->|No| M[Existing rollback and cleanup]

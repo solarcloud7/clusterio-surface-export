@@ -153,8 +153,9 @@ node tools/clusterio/reconcile.mjs apply --cluster vm --desired tools/clusterio/
 `plan` prints the exact `clusterioctl` commands it would run and the items it
 refuses. `apply --yes` runs them in order, stops at the first failure and re-plans.
 Exit code 0 means the configuration converged and nothing needs a restart; 4 means
-it converged but a running instance still uses its previous configuration (pass
-`--restart` or restart it yourself; stopped instances are never started); 1 means
+it converged but a restart is pending for an instance whose configuration changed,
+or an instance is not running after `--restart` (pass `--restart` or restart it
+yourself; stopped instances are never started); 1 means
 something is blocked or still differs. The tool never deletes mods, mod packs or
 instances, never replaces a stored mod version and never creates instances or
 hosts: see [production rollout](production-rollout.md) for creating servers.
