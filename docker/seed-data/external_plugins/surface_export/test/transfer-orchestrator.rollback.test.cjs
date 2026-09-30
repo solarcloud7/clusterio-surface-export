@@ -1668,7 +1668,7 @@ function failedPrior(overrides = {}) {
 		] };
 }
 
-const destructiveSends = h => h.sends.filter(s => s.startsWith("gate:") || s === "DeleteSourcePlatformRequest" || s === "UnlockSourcePlatformRequest");
+const destructiveSends = h => h.sends.filter(s => s === "gate:go_live" || s === "gate:discard" || s === "DeleteSourcePlatformRequest" || s === "UnlockSourcePlatformRequest");
 
 test("a refused source unlock keeps the intent as rollbackPending; recovery retries the unlock and never the destination gate", async t => {
 	const h = rollbackHarness();
@@ -1776,6 +1776,7 @@ for (const state of ["committed", "source_gone_matching_transfer"]) {
 		await h.orch.recoverPendingTransfers();
 		assert.equal(h.calls.events.filter(e => e === "cleanup_failed").length, 1, "repeated ticks do not re-log the same contradiction");
 		assert.equal(h.calls.pendingRemoved, undefined);
+		assert.deepEqual(h.sends.filter(s => s.startsWith("gate:")), [], "a contradiction never asks the destination");
 		assert.deepEqual(destructiveSends(h), []);
 	});
 }
@@ -1850,7 +1851,7 @@ test("release-rollback refuses everything it cannot verify and releases only a v
 	assert.deepEqual(h.sends.filter(s => s === "DeleteSourcePlatformRequest" || s === "UnlockSourcePlatformRequest"), []);
 	assert.ok(h.plugin.pendingTransfers.has(id));
 	const released = await h.orch.releaseRollback(id, "admin");
-	assert.deepEqual(released, { success: true, transferId: id, outcome: "released", status: "failed", sourceState: "identity_mismatch", operator: "admin" });
+	assert.deepEqual(released, { success: true, transferId: id, outcome: "released", status: "failed", sourceState: "identity_mismatch", operator: "admin", contradiction: null });
 	const transfer = h.activeTransfers.get(id);
 	assert.equal(transfer.sourceRollback, "released");
 	assert.equal(transfer.error, "TEST: forced validation failure");
@@ -1865,4 +1866,154 @@ test("release-rollback refuses everything it cannot verify and releases only a v
 	assert.equal(gone.sourceState, "instance_deleted");
 	assert.deepEqual(h.sends.filter(s => s === "GetSourceTransferLockStateRequest"), [], "a source deleted from the cluster is not queried");
 	assert.equal(h.plugin.pendingTransfers.has(id), false);
+});
+
+test("a stale awaiting_validation copy restored from the queue journal cannot override rollbackPending, even with a verifiable hold", async t => {
+	const h = rollbackHarness({ lockState: () => ({ state: "pre_commit" }), gate: () => ({ success: true }) });
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	h.plugin.persistedTransactionLogs = [failedPrior()];
+	const stale = { transferId: id, operationType: "transfer", status: "awaiting_validation", awaitingLateVerdict: true, timingPendingRecovery: true,
+		sourceInstanceId: 1, targetInstanceId: 2, platformIndex: 196, forceName: "player", platformName: "belt-roundtrip", startedAt: 1 };
+	h.activeTransfers.set(id, stale);
+	h.orch.tryUnlockSource = async (_id, current) => { h.calls.unlockRouteTaken++; current.sourceRollback = "succeeded"; return null; };
+	await h.orch.recoverPendingTransfers();
+	assert.deepEqual(h.sends, ["GetSourceTransferLockStateRequest"], "the durable marker wins over the stale status: no verify, no delete, no activation");
+	assert.equal(h.calls.unlockRouteTaken, 1);
+	assert.equal(stale.status, "failed");
+	assert.equal(stale.awaitingLateVerdict, false);
+	assert.equal(stale.timingPendingRecovery, false);
+	assert.equal(h.calls.pendingRemoved, id);
+	assert.deepEqual(h.plugin.transactionLogs.get(id).map(event => event.eventType),
+		["validation_failed", "rollback_attempt", "rollback_failed", "transfer_failed"], "prior events are seeded even when no record was recreated");
+});
+
+test("the queue interruption hook does not resurrect a rollback-pending record", async t => {
+	const h = rollbackHarness();
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	h.plugin.persistedTransactionLogs = [failedPrior({ transferInfo: { timingPendingRecovery: true } })];
+	const entry = () => ({ id: "request:stale", request: { sourceInstanceId: 1, sourcePlatformIndex: 196, targetInstanceId: 2 },
+		operation: { transferId: id, operationType: "transfer", status: "awaiting_validation", sourceInstanceId: 1, targetInstanceId: 2, platformIndex: 196, forceName: "player" } });
+	await h.orch.requestQueue.hooks.interrupted(entry());
+	assert.equal(h.activeTransfers.has(id), false, "the stale journal copy must not become the active record");
+	assert.equal(h.orch.requestQueue.entries.has("request:stale"), false);
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT });
+	await h.orch.requestQueue.hooks.interrupted(entry());
+	assert.equal(h.activeTransfers.has(id), true, "without the marker the hook keeps its retention behaviour");
+});
+
+test("a committed or deleted source is a sticky contradiction: a later source_missing never releases, and release-rollback keeps cleanup_failed", async t => {
+	let state = { state: "committed", error: null };
+	const h = rollbackHarness({ lockState: () => state });
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	h.plugin.persistedTransactionLogs = [failedPrior()];
+	await h.orch.recoverPendingTransfers();
+	const transfer = onlyTransfer(h.activeTransfers);
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.equal(h.plugin.pendingTransfers.get(id)?.rollbackContradiction?.state, "committed", "the contradiction is persisted on the intent");
+	state = { state: "source_missing", error: null };
+	h.sends.length = 0;
+	await h.orch.recoverPendingTransfers();
+	assert.deepEqual(h.sends, [], "a contradicted intent is not re-queried or released once the deletion receipt ages out");
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.equal(h.plugin.pendingTransfers.has(id), true);
+	assert.ok(!h.calls.events.includes("rollback_resolved"));
+	const released = await h.orch.releaseRollback(id, "admin");
+	assert.equal(released.success, true);
+	assert.equal(released.status, "cleanup_failed", "an administrator release keeps the contradiction visible");
+	assert.equal(released.contradiction, "committed");
+	assert.match(String(transfer.error), /inspect both servers/);
+	assert.equal(transfer.sourceRollback, "released");
+	assert.equal(h.plugin.pendingTransfers.has(id), false);
+	assert.deepEqual(destructiveSends(h), []);
+});
+
+test("a late SUCCESS verdict's cleanup_failed is not downgraded when the source is later released", async t => {
+	const h = rollbackHarness({ lockState: () => ({ state: "unlocked" }) });
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	h.plugin.persistedTransactionLogs = [failedPrior({
+		transferInfo: { status: "cleanup_failed", error: "TEST: forced validation failure; Unlock refused: x; late import SUCCESS after rollback: verify destination cleanup before retrying" },
+		events: [
+			{ eventType: "validation_failed", message: "Validation failed: TEST: forced validation failure", validation: { mismatchDetails: "TEST: forced validation failure" } },
+			{ eventType: "rollback_failed", message: "Unlock failed" },
+			{ eventType: "validation_after_settle", message: "Late validation SUCCESS arrived after this transfer settled", settledStatus: "failed", newStatus: "cleanup_failed" },
+		] })];
+	await h.orch.recoverPendingTransfers();
+	const transfer = onlyTransfer(h.activeTransfers);
+	assert.equal(h.calls.pendingRemoved, id, "the source side is released");
+	assert.equal(transfer.status, "cleanup_failed", "the destination may still hold a copy; the warning label stays");
+	assert.match(String(transfer.error), /late import SUCCESS/);
+	assert.equal(transfer.sourceRollback, "released");
+});
+
+for (const [label, intent, prior] of [
+	["the intent marker alone", { ...ROLLBACK_INTENT, rollbackPending: true }, failedPrior({ transferInfo: { sourceRollback: undefined }, summary: { validation: null }, events: [] })],
+	["rollback events alone", { ...ROLLBACK_INTENT }, failedPrior({ transferInfo: { sourceRollback: undefined }, summary: { validation: null }, events: [{ eventType: "validation_failed", message: "Validation failed: x" }] })],
+	["a recorded sourceRollback alone", { ...ROLLBACK_INTENT }, failedPrior({ summary: { validation: null }, events: [] })],
+	["a recorded validation failure alone", { ...ROLLBACK_INTENT }, failedPrior({ transferInfo: { sourceRollback: undefined }, events: [] })],
+]) {
+	test(`the rollback classifier accepts ${label}`, async t => {
+		const h = rollbackHarness({ lockState: () => ({ state: "unlocked" }) });
+		t.after(() => h.orch.stop());
+		h.plugin.pendingTransfers.set(ROLLBACK_INTENT.transferId, intent);
+		h.plugin.persistedTransactionLogs = [prior];
+		await h.orch.recoverPendingTransfers();
+		assert.deepEqual(h.sends, ["GetSourceTransferLockStateRequest"], label);
+		assert.equal(h.calls.pendingRemoved, ROLLBACK_INTENT.transferId, label);
+	});
+}
+
+test("the rollback classifier rejects a record with none of the evidence", async t => {
+	const h = rollbackHarness({ gate: () => ({ success: false, error: "hold unavailable" }) });
+	t.after(() => h.orch.stop());
+	h.plugin.pendingTransfers.set(ROLLBACK_INTENT.transferId, { ...ROLLBACK_INTENT });
+	h.plugin.persistedTransactionLogs = [failedPrior({ transferInfo: { sourceRollback: undefined, status: "cleanup_failed" }, summary: { validation: null }, events: [] })];
+	await h.orch.recoverPendingTransfers();
+	assert.deepEqual(h.sends, ["gate:verify"]);
+	assert.equal(h.calls.pendingRemoved, undefined);
+});
+
+test("handleValidationSuccess refuses a transfer whose intent records a rollback", async t => {
+	const h = rollbackHarness({ gate: () => ({ success: true }) });
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	const transfer = { transferId: id, operationType: "transfer", status: "awaiting_validation", sourceInstanceId: 1, targetInstanceId: 2, platformIndex: 196, forceName: "player", platformName: "p" };
+	h.activeTransfers.set(id, transfer);
+	assert.deepEqual(await h.orch.handleValidationSuccess(id, transfer), { sourceResolved: false });
+	assert.deepEqual(h.sends, [], "no verify, no delete, no activation");
+});
+
+test("a refused unlock clears the admission-recovery flag; a failed destination discard keeps it", async t => {
+	for (const discardFailed of [false, true]) {
+		const h = rollbackHarness();
+		t.after(() => h.orch.stop());
+		const res = await h.orch.transferPlatform("1:export_1", 2);
+		const transfer = onlyTransfer(h.activeTransfers);
+		if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+		transfer.timingPendingRecovery = true;
+		await h.orch.handleTransferValidation({ transferId: res.transferId, success: false,
+			validation: { mismatchDetails: "item mismatch", ...(discardFailed ? { cleanup_failed: true, cleanup_error: "delete refused" } : {}) } });
+		assert.equal(transfer.timingPendingRecovery, discardFailed, `discardFailed=${discardFailed}`);
+		assert.equal(transfer.status, discardFailed ? "cleanup_failed" : "failed");
+		assert.equal(h.plugin.pendingTransfers.get(res.transferId)?.rollbackPending, true);
+	}
+});
+
+test("concurrent release calls release once", async t => {
+	const h = rollbackHarness({ lockState: () => ({ state: "unlocked" }) });
+	t.after(() => h.orch.stop());
+	const id = ROLLBACK_INTENT.transferId;
+	h.plugin.pendingTransfers.set(id, { ...ROLLBACK_INTENT, rollbackPending: true });
+	h.plugin.persistedTransactionLogs = [failedPrior()];
+	const [first, second] = await Promise.all([h.orch.releaseRollback(id, "a"), h.orch.releaseRollback(id, "b")]);
+	assert.deepEqual([first.outcome, second.outcome].sort(), ["nothing_pending", "released"]);
+	assert.equal(h.calls.events.filter(e => e === "rollback_released").length, 1);
 });

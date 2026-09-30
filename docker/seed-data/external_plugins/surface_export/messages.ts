@@ -345,6 +345,7 @@ export class AbandonPlatformResolutionRequest {
 export type ReleaseTransferRollbackOutcome = "released" | "nothing_pending" | "refused";
 export type ReleaseTransferRollbackResponse = SimpleResponse & {
 	transferId?: string; outcome?: ReleaseTransferRollbackOutcome; status?: string; sourceState?: string; operator?: string | null;
+	contradiction?: string | null;
 };
 
 export class ReleaseTransferRollbackRequest {
@@ -364,7 +365,7 @@ export class ReleaseTransferRollbackRequest {
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" },
 			outcome: { enum: ["released", "nothing_pending", "refused"] }, status: { type: "string" }, sourceState: { type: "string" },
-			operator: { type: ["string", "null"] } }, required: ["success"] } as JsonSchema,
+			operator: { type: ["string", "null"] }, contradiction: { type: ["string", "null"] } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) { return json as ReleaseTransferRollbackResponse; },
 	};
 }
@@ -2012,6 +2013,7 @@ export interface PendingTransferIntent {
 	lineage?: string | null;
 	lineageGeneration?: number | null;
 	rollbackPending?: boolean;
+	rollbackContradiction?: { state: string; observedAt: number } | null;
 }
 
 export interface IControllerPlugin {

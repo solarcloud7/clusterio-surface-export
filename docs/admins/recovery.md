@@ -214,16 +214,21 @@ for example because it cannot put captured state back, the transfer is recorded 
 pending intent so both servers stay reserved. The controller then re-reads the source
 lock state on every recovery pass:
 
-- While the source still holds the transfer's lock, the unlock is retried, first after
-  30 seconds and then at growing intervals up to 10 minutes. Each attempt is recorded.
+- While the source still holds the transfer's lock, the unlock is retried on the next
+  recovery pass, then with a wait that grows from 30 seconds to 10 minutes between refused
+  attempts. Each attempt is recorded.
 - Once the source reports the platform live and unlocked, or the platform and lock gone
-  with no deletion recorded for this transfer, the intent is released and the history
-  shows **Source released after a refused rollback**. Clearing the lock in game, or
-  deleting a disposable platform, is therefore enough; nothing needs to be edited.
-- If the source reports the lock committed, or the platform deleted by this transfer,
-  the transfer is marked `cleanup_failed` with the contradiction and nothing is released.
-- A rejected transfer is never routed back through the destination check, so a controller
-  restart cannot turn it into a `cleanup_failed` "destination hold not confirmed" record.
+  while neither a deletion receipt nor the source's retirement journal names this transfer,
+  the intent is released and the history shows **Source released after a refused
+  rollback**. Clearing the lock in game, or deleting a disposable platform, is therefore
+  enough; nothing needs to be edited.
+- If the source reports the lock committed, the platform deleted by this transfer, or a
+  retirement record for it, the transfer is marked `cleanup_failed` with the contradiction
+  and nothing is released. The contradiction is kept on the intent until an administrator
+  releases it, and a release then keeps `cleanup_failed`.
+- A rejected transfer is never routed back through the destination check: recovery follows
+  the intent's recorded rollback even when a controller restart restores an older in-memory
+  copy of the record, and the record keeps its earlier events.
 
 For the remaining cases, an identity the source cannot match, a source instance deleted
 from the cluster, or an old plugin on the source that reports only a mismatch, use:
@@ -236,9 +241,10 @@ This asserts that you verified on the source server that the platform is no long
 protected by this transfer's lock, or was deliberately removed. It is refused while the
 source still reports the lock (the controller retries by itself), while the source is
 offline, while the source reports the lock committed or the platform deleted by this
-transfer, and while the destination still confirms a hold. It records who released the
-transfer and the observed source state, and it needs `surface_export.recovery.resolve`.
-It never unlocks or deletes anything.
+transfer (a committed lock is reported as such even when its platform can no longer be
+verified), and while the destination still confirms a hold. It records who released the
+transfer, the observed source state and any earlier contradiction, and it needs
+`surface_export.recovery.resolve`. It never unlocks or deletes anything.
 
 ## Back up a deployment
 

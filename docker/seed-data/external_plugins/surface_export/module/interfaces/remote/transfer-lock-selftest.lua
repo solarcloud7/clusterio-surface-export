@@ -177,9 +177,9 @@ local function transfer_lock_selftest()
 		"unverified synthetic platform cannot certify pre-commit ownership")
 	storage.locked_platforms[11] = { kind = "transfer", phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED, platform_name = "lock-time-name", platform_index = 11, force_name = "player", transfer_job_id = "rename-committed" }
 	local renamed_committed = SurfaceLock.get_source_transfer_lock_state("rename-committed", 11, "live-renamed", "player")
-	check("source_query_committed_requires_uid",
-		renamed_committed.state == "identity_mismatch",
-		"unverified synthetic platform cannot certify committed ownership")
+	check("source_query_committed_lock_reports_committed",
+		renamed_committed.state == "committed",
+		"a committed lock of this transfer is reported committed even when the platform cannot be verified; every consumer treats committed as do-not-touch")
 	storage.committed_source_transfer_tombstones = {
 		fresh = { committed_tick = game.tick },
 		stale = { committed_tick = game.tick - SurfaceLock.COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS - 1 },

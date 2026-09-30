@@ -47,7 +47,10 @@ assert(env.storage.locked_platforms[3] == dangling, "the state query must not cl
 
 dangling.phase = "committed"
 s = state()
-assert(s.state == "identity_mismatch", "a committed lock whose platform is gone stays identity_mismatch, got " .. tostring(s.state))
+assert(s.state == "committed", "a committed lock of this transfer is reported committed even when its platform is gone, got " .. tostring(s.state))
+force.platforms[3] = platform(99)
+assert(state().state == "committed", "a committed lock of this transfer is reported committed even when the index holds another platform")
+force.platforms[3] = nil
 
 dangling.phase = "pre_commit"
 force.platforms[3] = platform()
@@ -65,13 +68,26 @@ s = state()
 assert(s.state == "identity_mismatch" and s.error == "platform identity mismatch",
     "a reused index with another platform identity must stay identity_mismatch, not source_missing, got " .. tostring(s.state))
 
+env.storage.locked_platforms[3] = {kind = "export", transfer_job_id = "job", job_id = "job", platform_name = "fixture", force_name = "player",
+    platform_index = 3, surface_index = 8, platform_uid = "current:16"}
+force.platforms[3] = platform()
+s = state()
+assert(s.state == "identity_mismatch" and s.error == "lock phase unavailable",
+    "a lock of another kind at the index must never read as unlocked, got " .. tostring(s.state) .. "/" .. tostring(s.error))
+
 env.storage.locked_platforms[3] = nil
+env.storage.source_recovery_ready = false
+s = state()
+assert(s.state == "unknown/offline" and s.error == "startup recovery has not finished",
+    "no lock state may be certified before startup recovery finishes, got " .. tostring(s.state))
+env.storage.source_recovery_ready = true
+
 force.platforms[3] = nil
 env.storage.committed_source_transfer_tombstones = {job = {transfer_id = "job", committed_tick = 900, source_deleted_tick = 950,
     platform_index = 3, force_name = "player", surface_index = 8}}
 assert(state().state == "source_gone_matching_transfer", "a deletion receipt must still report source_gone_matching_transfer")
 env.storage.committed_source_transfer_tombstones = nil
-print("PASS lock-state vocabulary: unlocked, source_missing, retained dangling lock, unchanged pre_commit/committed/mismatch/tombstone")
+print("PASS lock-state vocabulary: unlocked, source_missing, retained dangling lock, committed without platform, no unlocked fall-through, startup guard, tombstone")
 
 env, lock, force = new_env()
 force.platforms[3] = platform()
@@ -113,4 +129,18 @@ assert(env.storage.surface_export_config.test_force_unlock_refusal == true, "the
 env.storage.locked_platforms[3].phase = "pre_commit"
 assert(lock.get_source_transfer_lock_state("job", 3, "fixture", "player").state == "pre_commit",
     "an armed unlock hook must not change the reported lock state")
-print("PASS fail-safe unlock refusal hook: debug-gated, refuses before any restore, one-shot or counted, behind the ownership guards")
+
+env.storage.surface_export_config = {debug_mode = true, test_force_unlock_refusal = true}
+assert(lock.unlock_platform(3), "an unlock without a job identity is outside the hook's scope and must proceed")
+assert(env.storage.surface_export_config.test_force_unlock_refusal == true, "an out-of-scope unlock must not consume the hook")
+env.storage.locked_platforms[3] = transfer_lock("job")
+assert(lock.unlock_platform(3, nil, true, "job", "job"), "a startup-recovery unlock is outside the hook's scope and must proceed")
+assert(env.storage.surface_export_config.test_force_unlock_refusal == true, "a startup-recovery unlock must not consume the hook")
+env.storage.locked_platforms[3] = {kind = "manual", platform_name = "fixture", force_name = "player", platform_index = 3, surface_index = 8,
+    platform_uid = "current:16", frozen_states = {}}
+assert(lock.unlock_platform(3), "a manual lock is outside the hook's scope and must unlock")
+assert(env.storage.surface_export_config.test_force_unlock_refusal == true, "a manual unlock must not consume the hook")
+env.storage.locked_platforms[3] = transfer_lock("job")
+assert(not lock.unlock_platform(3, nil, nil, nil, "job"), "the controller's transfer unlock is in scope and must be refused")
+assert(env.storage.surface_export_config.test_force_unlock_refusal == nil, "the in-scope refusal consumes the hook")
+print("PASS fail-safe unlock refusal hook: debug-gated, refuses before any restore, one-shot or counted, behind the ownership guards, scoped to controller transfer unlocks")

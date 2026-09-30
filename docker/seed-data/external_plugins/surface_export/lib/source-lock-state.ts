@@ -19,6 +19,14 @@ export function normalizeSourceTransferLockState(value: unknown): SourceTransfer
 	};
 }
 
+const RETIREMENT_OVERRIDES: readonly SourceTransferLockState[] = ["unlocked", "source_missing", "identity_mismatch"];
+
+export function applySourceRetirement(state: SourceTransferLockStateResponse, retired: boolean): SourceTransferLockStateResponse {
+	if (!retired || !RETIREMENT_OVERRIDES.includes(state.state)) return state;
+	return { state: "source_gone_matching_transfer", transferId: state.transferId,
+		error: `source retirement journal records this transfer (lock state ${state.state}${state.error ? `: ${state.error}` : ""})` };
+}
+
 export function parseSourceTransferLockStateJson(text: string): SourceTransferLockStateResponse {
 	try {
 		if (!text || !text.trim()) {

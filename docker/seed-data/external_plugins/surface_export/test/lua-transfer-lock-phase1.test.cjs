@@ -77,7 +77,7 @@ test("source transfer locks have fail-closed pre_commit/committed phases", () =>
 	assert.match(selftest, /committed_ttl_retained/, "live selftest must go red if TTL clears a committed lock");
 	assert.match(selftest, /legacy_phase_is_pre_commit/, "live selftest must prove old saves without phase fail closed as pre_commit");
 	assert.match(selftest, /source_query_pre_commit_requires_uid/, "live selftest must refuse unverified pre_commit ownership");
-	assert.match(selftest, /source_query_committed_requires_uid/, "live selftest must refuse unverified committed ownership");
+	assert.match(selftest, /source_query_committed_lock_reports_committed/, "live selftest must report a committed lock of the transfer as committed even when its platform cannot be verified");
 	assert.match(selftest, /committed_tombstone_pruned/, "live selftest must prove tombstone retention is bounded");
 });
 test("source deletion commits its lock only after matching the external retirement identity", () => {
