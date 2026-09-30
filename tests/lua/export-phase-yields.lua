@@ -5,7 +5,8 @@ local function size(t) local n = 0; for _ in pairs(t or {}) do n = n + 1 end; re
 local function scenario(standalone, error_at, sectioned, clone, purpose)
 local events, writes, modules, encodes, attempts = {}, {}, {}, 0, 0
 local env = setmetatable({game = {tick = 100, print = function() error("export phases must not broadcast chat") end, forces = {player = {valid = true, platforms = {}}}},
-    storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true}},
+    storage = {async_jobs = {}, async_job_results = {}, surface_export_config = {debug_mode = true},
+        locked_platforms = {[3] = {kind = "transfer", transfer_job_id = "test"}}},
     log = noop, table_size = size}, {__index = _G})
 local function mark(name)
     attempts = attempts + 1
@@ -24,7 +25,7 @@ modules["utils/game-utils"] = {FORCE_SYNC_PROPS = {}, pcall_warn = function(_, f
 modules["utils/surface-lock"] = {unlock_platform = function(index, _, _, _, job_id)
     assert(index == 3 and job_id == "test", "export cleanup omitted its job identity")
     mark("unlock"); return true
-end}
+end, destination_hold_owns_surface = function() return false end}
 modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap = function() mark("prune") end,
     record = function(_, data) mark("cache"); assert((data.payload or (data.sections and data.sections[1])) == "compressed"); assert(data.platform_uid == "fixture:copy" and data.force_name == "player")
         assert(data.purpose == purpose, "the cached export lost its resolution purpose") end}
@@ -32,7 +33,8 @@ modules["utils/platform-schedule"] = {summarize = function() return {} end}
 modules["export_scanners/entity-scanner"] = {scan_items_on_ground = function() return {} end}
 modules["export_scanners/inventory-scanner"] = {extract_belt_items = function() mark("belt_read"); return {} end}
 modules["core/source-belt-cargo"] = {budget = function() return 100 end,
-    begin = function(job, lock) assert(job.destination_instance_id, "a standalone export staggered its belts"); mark("belt_begin") end,
+    owning_lock = function(job) return env.storage.locked_platforms[job.platform_index] end,
+    begin = function(job) assert(job.destination_instance_id, "a standalone export staggered its belts"); mark("belt_begin") end,
     step = function() mark("belt_step"); return true end,
     finish = function() return {belts = 1, stacks = 0} end}
 modules["export_scanners/fluid-registry"] = {list = function() return {} end}

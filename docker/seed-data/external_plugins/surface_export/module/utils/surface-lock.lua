@@ -570,6 +570,10 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     end
 
     local destination_hold_active, destination_hold_transfer_id = SurfaceLock.destination_hold_owns_surface(surface, platform)
+    if destination_hold_active and lock_data.cleared_belts then
+        return false, string.format("Unlock refused: destination hold %s owns this surface while captured belt cargo is recorded (%s); inspect the platform first",
+            tostring(destination_hold_transfer_id), SourceBeltCargo.describe(lock_data.cleared_belts))
+    end
     if destination_hold_active then
         storage.locked_platforms[platform_index] = nil
         log(string.format("[SurfaceLock] unlock: destination hold %s owns platform '%s' (index %s, surface %s); not restoring hold-owned not-live state",
@@ -580,6 +584,10 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     end
 
     if lock_data.cleared_belts then
+        if SourceBeltCargo.capture_active(lock_data.cleared_belts) then
+            return false, string.format("Unlock refused: transfer %s is still capturing belt cargo on this platform; let it finish or interrupt it first",
+                tostring(lock_data.cleared_belts.job_id))
+        end
         local cargo_ok, cargo_err = SourceBeltCargo.restore(lock_data, platform_name, surface)
         if not cargo_ok then
             return false, "Unlock refused: captured belt cargo could not be put back (" .. tostring(cargo_err) .. "); protection retained"

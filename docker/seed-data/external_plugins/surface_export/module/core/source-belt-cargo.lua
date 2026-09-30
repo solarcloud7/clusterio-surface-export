@@ -8,12 +8,41 @@ local SourceBeltCargo = {}
 
 local QUALITY_NORMAL = Util.QUALITY_NORMAL
 local DEFAULT_BUDGET = 100
+local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1", "linked-belt", "lane-splitter" }
 
 function SourceBeltCargo.budget()
 	local cfg = storage.surface_export_config
 	local value = cfg and tonumber(cfg.belt_capture_budget)
 	if value and value >= 1 then return math.floor(value) end
 	return DEFAULT_BUDGET
+end
+
+function SourceBeltCargo.owning_lock(job)
+	local lock = storage.locked_platforms and storage.locked_platforms[job.platform_index] or nil
+	if type(lock) == "table" and lock.kind == "transfer" and lock.transfer_job_id == job.job_id then return lock end
+	return nil
+end
+
+function SourceBeltCargo.capture_active(record)
+	if type(record) ~= "table" or record.complete then return false end
+	local job = storage.async_jobs and storage.async_jobs[record.job_id] or nil
+	return type(job) == "table" and not job.completion_interrupted
+end
+
+local function owned_record(job, state)
+	local lock = SourceBeltCargo.owning_lock(job)
+	if not lock then
+		error(string.format("belt capture for %s stopped: the platform's transfer lock is no longer held by this job", tostring(job.job_id)), 0)
+	end
+	local record = lock.cleared_belts
+	if type(record) ~= "table" or record.job_id ~= job.job_id or (state and record.groups ~= state.groups) then
+		error(string.format("belt capture for %s stopped: the lock no longer carries this job's cleared-cargo record", tostring(job.job_id)), 0)
+	end
+	return lock, record
+end
+
+local function pin(record, reason)
+	if record and not record.pinned then record.pinned = { tick = game.tick, reason = reason } end
 end
 
 local function root_of(state, gi)
@@ -27,7 +56,14 @@ local function join_groups(state, a, b)
 	if a ~= b then state.group_parent[math.max(a, b)] = math.min(a, b) end
 end
 
-function SourceBeltCargo.begin(job, lock_data)
+function SourceBeltCargo.begin(job)
+	local lock = SourceBeltCargo.owning_lock(job)
+	if not lock then
+		error(string.format("belt capture for %s refused: the platform's transfer lock is not held by this job", tostring(job.job_id)), 0)
+	end
+	if lock.cleared_belts then
+		error(string.format("belt capture for %s refused: the lock already carries a cleared-cargo record for %s", tostring(job.job_id), tostring(lock.cleared_belts.job_id)), 0)
+	end
 	local units = {}
 	for serialized_index, entity in pairs(job.belt_entities or {}) do
 		local entity_data = job.export_data.entities[serialized_index]
@@ -46,10 +82,8 @@ function SourceBeltCargo.begin(job, lock_data)
 	for gi in ipairs(groups) do state.group_parent[gi] = gi end
 	for _, unit in ipairs(units) do state.unit_numbers[unit.id] = unit.unit_number end
 	job.belt_capture = state
-	if lock_data then
-		lock_data.cleared_belts = { job_id = job.job_id, platform_uid = job.platform_uid, groups = groups,
-			group_parent = state.group_parent, unit_numbers = state.unit_numbers }
-	end
+	lock.cleared_belts = { job_id = job.job_id, platform_uid = job.platform_uid, groups = groups,
+		group_parent = state.group_parent, unit_numbers = state.unit_numbers }
 	log(string.format("[Belt Scan] Staggered capture of %d belt(s) in %d side group(s) begins (budget %d belt(s) per callback)",
 		#units, #groups, SourceBeltCargo.budget()))
 	return state
@@ -75,25 +109,26 @@ local function append_line_items(entity_data, lines_out)
 	end
 end
 
-local function capture_unit(job, state, unit, cache, seen, sweeping)
+local function capture_unit(job, state, record, unit, cache, seen, sweeping)
 	local entity = unit.entity
 	if not (entity and entity.valid) then
 		error(string.format("belt %s became invalid during capture", tostring(unit.id)), 0)
 	end
 	local entity_data = job.export_data.entities[unit.serialized_index]
-	local lines, lines_out = {}, {}
+	local lines, lines_out, pending = {}, {}, {}
 	for li = 1, entity.get_max_transport_line_index() do
 		local line = entity.get_transport_line(li)
 		local gi = root_of(state, state.line_group[tostring(unit.id) .. "/" .. li])
-		local g = state.groups[gi]
 		local items = {}
 		for _, it in ipairs(line.get_detailed_contents()) do
 			local stack = it.stack
 			if stack and stack.valid_for_read then
 				local uid = tostring(it.unique_id)
 				if state.cleared[uid] then
-					error(string.format("belt cargo contract violated: item %s (%s) reappeared on %s line %d after it was cleared",
-						uid, tostring(stack.name), tostring(unit.id), li), 0)
+					local reason = string.format("belt cargo contract violated: item %s (%s) reappeared on %s line %d after it was cleared",
+						uid, tostring(stack.name), tostring(unit.id), li)
+					pin(record, reason)
+					error(reason, 0)
 				end
 				local name, count = stack.name, stack.count
 				local quality = (stack.quality and stack.quality.name) or QUALITY_NORMAL
@@ -106,14 +141,8 @@ local function capture_unit(job, state, unit, cache, seen, sweeping)
 					end
 				else
 					seen[uid] = gi
-					g.slots[#g.slots + 1] = { n = name, q = quality, ct = count,
-						st = BeltRestoration.belt_item_state(stack, cache) }
-					local s = g.item_source_positions
-					s[#s + 1] = unit.id
-					s[#s + 1] = li
-					s[#s + 1] = math.floor((it.position or 0) * 256 + 0.5)
-					state.stacks = state.stacks + 1
-					if sweeping then state.sweep_stacks = state.sweep_stacks + 1 end
+					pending[#pending + 1] = { gi = gi, li = li, position = math.floor((it.position or 0) * 256 + 0.5),
+						slot = { n = name, q = quality, ct = count, st = BeltRestoration.belt_item_state(stack, cache) } }
 				end
 			end
 		end
@@ -123,13 +152,31 @@ local function capture_unit(job, state, unit, cache, seen, sweeping)
 	if #lines_out > 0 or not sweeping then
 		SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })
 	end
-	for _, line in ipairs(lines) do line.clear() end
+	for _, entry in ipairs(pending) do
+		local g = state.groups[root_of(state, entry.gi)]
+		g.slots[#g.slots + 1] = entry.slot
+		local s = g.item_source_positions
+		s[#s + 1] = unit.id
+		s[#s + 1] = entry.li
+		s[#s + 1] = entry.position
+	end
+	state.stacks = state.stacks + #pending
+	if sweeping then state.sweep_stacks = state.sweep_stacks + #pending end
 	append_line_items(entity_data, lines_out)
+	local cleared_ok, clear_err = pcall(function()
+		for _, line in ipairs(lines) do line.clear() end
+	end)
+	if not cleared_ok then
+		local reason = string.format("clearing belt %s failed after its cargo was recorded: %s", tostring(unit.id), tostring(clear_err))
+		pin(record, reason)
+		error(reason, 0)
+	end
 end
 
 function SourceBeltCargo.step(job, budget)
 	local state = job.belt_capture
 	if not state or state.done then return true end
+	local _, record = owned_record(job, state)
 	state.callbacks = state.callbacks + 1
 	local cache_ok, cache = pcall(InventoryScanner.new_item_state_cache)
 	if not cache_ok then
@@ -141,14 +188,14 @@ function SourceBeltCargo.step(job, budget)
 		if not state.sweeping then
 			local processed = 0
 			while state.cursor <= #state.units and processed < budget do
-				capture_unit(job, state, state.units[state.cursor], cache, seen, false)
+				capture_unit(job, state, record, state.units[state.cursor], cache, seen, false)
 				state.cursor = state.cursor + 1
 				processed = processed + 1
 			end
 			if state.cursor > #state.units then state.sweeping = true end
 			return
 		end
-		for _, unit in ipairs(state.units) do capture_unit(job, state, unit, cache, seen, true) end
+		for _, unit in ipairs(state.units) do capture_unit(job, state, record, unit, cache, seen, true) end
 		state.done = true
 	end)
 	Util.pcall_warn("[BeltRestoration] item-state cache release", function()
@@ -176,32 +223,56 @@ local function coalesce(state)
 	return out
 end
 
-function SourceBeltCargo.finish(job, lock_data)
+function SourceBeltCargo.finish(job)
 	local state = job.belt_capture
+	local _, record = owned_record(job, state)
 	local groups = coalesce(state)
 	local stateful = 0
 	for _, g in ipairs(groups) do
 		for _, slot in ipairs(g.slots) do if slot.st then stateful = stateful + 1 end end
 	end
 	job.export_data.belt_side_groups = groups
-	if lock_data and lock_data.cleared_belts then
-		lock_data.cleared_belts.groups = groups
-		lock_data.cleared_belts.group_parent = nil
-		lock_data.cleared_belts.complete = true
-	end
+	record.groups = groups
+	record.group_parent = nil
+	record.complete = true
 	log(string.format("[Belt Scan] Staggered capture done for '%s': %d belt(s), %d stack(s) (%d picked up by the final sweep), %d side group(s) (%d merged at a straddling item), %d slot(s) carry non-default item state, %d callback(s) over %d tick(s)",
 		tostring(job.platform_name), #state.units, state.stacks, state.sweep_stacks, #groups, state.merged, stateful, state.callbacks, game.tick - state.started_tick))
 	return { belts = #state.units, stacks = state.stacks, sweep_stacks = state.sweep_stacks, groups = #groups, callbacks = state.callbacks }
 end
 
-local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1", "linked-belt", "lane-splitter" }
+local function record_summary(record)
+	local slots, items = 0, 0
+	local groups = record.groups or {}
+	if record.group_parent then groups = coalesce({ groups = groups, group_parent = record.group_parent }) end
+	for _, g in ipairs(groups) do
+		for _, slot in ipairs(g.slots) do slots = slots + 1; items = items + (slot.ct or 0) end
+	end
+	return slots, items
+end
 
-function SourceBeltCargo.restore(lock_data, label, surface)
+function SourceBeltCargo.describe(record)
+	if type(record) ~= "table" then return "no captured belt cargo is recorded" end
+	local slots, items = record_summary(record)
+	local parts = { string.format("job %s: %d stack(s) / %d item(s) cleared from the belts%s", tostring(record.job_id), slots, items,
+		record.complete and " (capture finished)" or " (capture was still in progress)") }
+	if record.pinned then parts[#parts + 1] = "pinned: " .. tostring(record.pinned.reason) end
+	if record.attempt then
+		parts[#parts + 1] = string.format("an earlier restore attempt placed %s item(s) and then failed: %s",
+			tostring(record.attempt.placed or "an unknown number of"), tostring(record.attempt.error))
+	end
+	return table.concat(parts, "; ")
+end
+
+function SourceBeltCargo.restore(lock_data, label, surface, options)
 	local record = lock_data and lock_data.cleared_belts
 	if not record then return true, nil end
+	options = options or {}
 	if not (surface and surface.valid) then return false, "the platform surface is unavailable" end
+	if record.pinned then
+		return false, string.format("the record is pinned (%s); inspect the platform, then /belt-cargo abandon or restore-present", tostring(record.pinned.reason))
+	end
 	if record.attempt then
-		return false, string.format("an earlier restore attempt placed %s item(s) and then failed (%s); inspect the platform before unlocking it",
+		return false, string.format("an earlier restore attempt placed %s item(s) and then failed (%s); inspect the platform, then /belt-cargo abandon",
 			tostring(record.attempt.placed or "an unknown number of"), tostring(record.attempt.error))
 	end
 	local groups = record.groups
@@ -219,21 +290,30 @@ function SourceBeltCargo.restore(lock_data, label, surface)
 	for _, entity in ipairs(surface.find_entities_filtered({ type = BELT_TYPES })) do
 		if entity.valid and entity.unit_number then by_unit[entity.unit_number] = entity end
 	end
-	local entity_map, missing = {}, 0
+	local entity_map, missing_belts, missing_ids = {}, 0, {}
 	for entity_id, unit_number in pairs(record.unit_numbers or {}) do
 		local entity = by_unit[unit_number]
-		if entity then entity_map[entity_id] = entity else missing = missing + 1 end
+		if entity then entity_map[entity_id] = entity else missing_belts = missing_belts + 1; missing_ids[entity_id] = true end
 	end
-	if missing > 0 then
-		return false, string.format("%d belt(s) whose cargo was captured are no longer on the platform", missing)
+	local missing_slots, missing_items = 0, 0
+	for _, g in ipairs(groups) do
+		local positions = g.item_source_positions or {}
+		for si, slot in ipairs(g.slots) do
+			if missing_ids[positions[(si - 1) * 3 + 1]] then missing_slots = missing_slots + 1; missing_items = missing_items + (slot.ct or 0) end
+		end
+	end
+	if missing_belts > 0 and not options.allow_missing then
+		return false, string.format("%d belt(s) whose cargo was captured are no longer on the platform (%d stack(s) / %d item(s) captured from them); /belt-cargo restore-present places the rest",
+			missing_belts, missing_slots, missing_items)
 	end
 	local ok, placed, unplaced, anomalies = pcall(BeltRestoration.restore_side_groups, groups, entity_map, label)
 	if not ok then
 		record.attempt = { tick = game.tick, error = tostring(placed) }
 		return false, tostring(placed)
 	end
-	if unplaced > 0 or anomalies > 0 then
-		local reason = string.format("%d item(s) unplaced, %d side group(s) mismatched after placing %d", unplaced, anomalies, placed)
+	if unplaced ~= missing_items or anomalies > 0 then
+		local reason = string.format("%d item(s) unplaced (%d expected from missing belts), %d side group(s) mismatched after placing %d",
+			unplaced, missing_items, anomalies, placed)
 		record.attempt = { tick = game.tick, placed = placed, error = reason }
 		return false, reason
 	end
@@ -241,9 +321,12 @@ function SourceBeltCargo.restore(lock_data, label, surface)
 	if record.complete then
 		local expected, actual = {}, {}
 		for _, g in ipairs(groups) do
-			for _, slot in ipairs(g.slots) do
-				local key = Util.make_quality_key(slot.n, slot.q or QUALITY_NORMAL)
-				expected[key] = (expected[key] or 0) + slot.ct
+			local positions = g.item_source_positions or {}
+			for si, slot in ipairs(g.slots) do
+				if not missing_ids[positions[(si - 1) * 3 + 1]] then
+					local key = Util.make_quality_key(slot.n, slot.q or QUALITY_NORMAL)
+					expected[key] = (expected[key] or 0) + slot.ct
+				end
 			end
 		end
 		local census_ok, census_err = pcall(function()
@@ -267,8 +350,35 @@ function SourceBeltCargo.restore(lock_data, label, surface)
 		census = "belt census after the restore matches the capture exactly"
 	end
 	lock_data.cleared_belts = nil
-	log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s' after the transfer did not complete; %s", placed, tostring(label), census))
+	if missing_belts > 0 then
+		log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s'; %d belt(s) were gone, so %d stack(s) / %d item(s) captured from them could not be placed and are lost; %s",
+			placed, tostring(label), missing_belts, missing_slots, missing_items, census))
+	else
+		log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s' after the transfer did not complete; %s", placed, tostring(label), census))
+	end
 	return true, placed
+end
+
+function SourceBeltCargo.override(lock_data, action, label, surface)
+	local record = lock_data and lock_data.cleared_belts
+	if not record then return false, "no captured belt cargo is recorded for this platform" end
+	if SourceBeltCargo.capture_active(record) then
+		return false, "the capture is still running; interrupt or finish the transfer first"
+	end
+	if action == "abandon" then
+		local summary = SourceBeltCargo.describe(record)
+		lock_data.cleared_belts = nil
+		log(string.format("[Belt Scan] Captured belt cargo record for '%s' abandoned by an operator; the belts keep whatever is on them now (%s)", tostring(label), summary))
+		return true, summary
+	elseif action == "restore-present" then
+		if record.attempt and record.attempt.placed then
+			return false, string.format("an earlier attempt already placed %s item(s); placing again would duplicate them, so abandon instead", tostring(record.attempt.placed))
+		end
+		record.attempt = nil
+		record.pinned = nil
+		return SourceBeltCargo.restore(lock_data, label, surface, { allow_missing = true })
+	end
+	return false, "unknown action; use abandon or restore-present"
 end
 
 return SourceBeltCargo

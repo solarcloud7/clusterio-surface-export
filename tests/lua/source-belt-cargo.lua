@@ -1,11 +1,12 @@
 -- Staggered source belt capture: every item is read and cleared in the same callback, drifted
--- items are swept once, a cleared item that reappears stops the export, and the captured
--- cargo goes back onto the same belts and lanes when the transfer does not complete.
+-- items are swept once, a cleared item that reappears stops the export, the capture only runs
+-- under its own transfer lock, and the captured cargo goes back onto the same belts and lanes
+-- when the transfer does not complete.
 local root = "docker/seed-data/external_plugins/surface_export/module/"
 local function noop() end
 local logs = {}
 local modules = {}
-local env = setmetatable({storage = {}, game = {tick = 500}, log = function(m) logs[#logs + 1] = m end,
+local env = setmetatable({storage = {locked_platforms = {}, async_jobs = {}}, game = {tick = 500}, log = function(m) logs[#logs + 1] = m end,
     prototypes = {item = {["iron-plate"] = {}, ["copper-plate"] = {}, pistol = {}}, quality = {normal = {}, rare = {}}}},
     {__index = _G})
 env.require = function(path)
@@ -107,13 +108,20 @@ local function drift(from, to, li)
     if moving then moving.pos = 0.05; table.insert(to.lines[li].items, 1, moving) end
     return moving
 end
-local function job_for(belts)
-    local job = {job_id = "job-1", platform_uid = "uid:1", census = {}, export_data = {entities = {}}, belt_entities = {}}
+local job_counter = 0
+-- Every job owns a transfer lock on its platform index, as ExportPipeline.queue arranges before any capture.
+local function job_for(belts, index)
+    job_counter = job_counter + 1
+    index = index or job_counter
+    local job = {job_id = "job-" .. job_counter, platform_index = index, platform_uid = "uid:" .. index, census = {},
+        export_data = {entities = {}}, belt_entities = {}}
     for i, b in ipairs(belts) do
         job.export_data.entities[i] = {entity_id = "e" .. b.unit_number, name = b.name}
         job.belt_entities[i] = b
     end
-    return job
+    env.storage.locked_platforms[index] = {kind = "transfer", transfer_job_id = job.job_id, platform_name = "Ship"}
+    env.storage.async_jobs[job.job_id] = job
+    return job, env.storage.locked_platforms[index]
 end
 local function totals(belts)
     local by_key, stacks = {}, 0
@@ -146,6 +154,10 @@ local function same(a, b)
     for k, v in pairs(b) do if a[k] ~= v then return false, k end end
     return true
 end
+local function run_to_end(job, budget)
+    while not cargo.step(job, budget or 10) do end
+    return cargo.finish(job)
+end
 
 do
     census_records = {}
@@ -156,11 +168,11 @@ do
         x.lines[2].seed("pistol", 1, "normal", 0.5)
     end
     local seeded = totals({a, b, c})
-    local job = job_for({a, b, c})
-    local lock = {}
-    local state = cargo.begin(job, lock)
-    assert(#state.units == 3 and #state.groups == 2 and lock.cleared_belts and lock.cleared_belts.groups == state.groups,
-        "begin must fix the partition and register the live groups on the lock before any clearing")
+    local job, lock = job_for({a, b, c})
+    local state = cargo.begin(job)
+    assert(#state.units == 3 and #state.groups == 2 and lock.cleared_belts and lock.cleared_belts.groups == state.groups
+        and lock.cleared_belts.job_id == job.job_id, "begin must fix the partition and register the live groups on the owning lock before any clearing")
+    assert(cargo.capture_active(lock.cleared_belts), "a running capture is active")
     assert(not cargo.step(job, 1), "one belt per callback: not done after the first")
     assert(#a.lines[1].items == 0 and #a.lines[2].items == 0 and #b.lines[1].items == 2, "the captured belt is cleared, the others untouched")
     assert(#census_records == 1 and census_records[1].physical == 3 and census_records[1].serialized == 3, "the census reads the belt before it is cleared")
@@ -169,7 +181,7 @@ do
     assert(state.sweeping and not state.done, "after the last belt the sweep is pending")
     drift(c, a, 2)
     assert(cargo.step(job, 1), "the sweep finishes the capture")
-    local stats = cargo.finish(job, lock)
+    local stats = cargo.finish(job)
     assert(stats.sweep_stacks == 1 and stats.stacks == 9 and stats.callbacks == 4, "9 stacks captured, 1 by the sweep, over 4 callbacks: " .. stats.stacks .. "/" .. stats.sweep_stacks .. "/" .. stats.callbacks)
     for _, x in ipairs({a, b, c}) do for li = 1, 2 do assert(#x.lines[li].items == 0, "every line is empty after the sweep") end end
     local by_key, slots = payload_totals(job)
@@ -181,6 +193,7 @@ do
     assert(job.census.physical == 9 and job.census.serialized == 9, "census totals match on both sides")
     assert(lock.cleared_belts.groups == job.export_data.belt_side_groups and lock.cleared_belts.group_parent == nil
         and lock.cleared_belts.complete, "the lock keeps the finished groups for a rollback")
+    assert(not cargo.capture_active(lock.cleared_belts), "a finished capture is no longer active")
     logs = {}
     local ok, placed = cargo.restore(lock, "Ship", ship_surface)
     assert(ok, "restore refused: " .. tostring(placed))
@@ -199,14 +212,38 @@ do
     feed(a, b)
     local uid = a.lines[1].seed("iron-plate")
     b.lines[1].seed("iron-plate")
-    local job = job_for({a, b})
-    cargo.begin(job, {})
+    local job, lock = job_for({a, b})
+    cargo.begin(job)
     assert(not cargo.step(job, 1))
     b.lines[1].items[#b.lines[1].items + 1] = {uid = uid, pos = 0.9, name = "iron-plate", count = 1, quality = "normal"}
     local ok, err = pcall(cargo.step, job, 1)
     assert(not ok and tostring(err):find("contract violated", 1, true) and tostring(err):find(tostring(uid), 1, true),
         "a cleared item that reappears must stop the capture: " .. tostring(err))
-    print("PASS a cleared item that turns up again stops the export instead of being captured twice")
+    assert(#b.lines[1].items == 2, "the belt with the reappeared item is left untouched")
+    assert(lock.cleared_belts.pinned and lock.cleared_belts.pinned.reason:find("contract violated", 1, true), "the record is pinned")
+    job.completion_interrupted = {error = tostring(err)}
+    local refused, why = cargo.restore(lock, "Ship", ship_surface)
+    assert(not refused and tostring(why):find("pinned", 1, true) and #a.lines[1].items == 0,
+        "a pinned record is never placed back on its own: " .. tostring(why))
+    assert(cargo.describe(lock.cleared_belts):find("pinned: belt cargo contract violated", 1, true), cargo.describe(lock.cleared_belts))
+    local abandoned, summary = cargo.override(lock, "abandon", "Ship", ship_surface)
+    assert(abandoned and lock.cleared_belts == nil and tostring(summary):find("1 stack(s) / 1 item(s)", 1, true),
+        "abandon drops the record and says what it held: " .. tostring(summary))
+    print("PASS a cleared item that turns up again stops the export, pins the record, and only an operator can abandon it")
+end
+
+do
+    census_records = {}
+    local a = belt(13, {"throw-1", "throw-2"})
+    a.lines[1].seed("iron-plate") a.lines[2].seed("copper-plate")
+    a.lines[2].clear = function() error("engine refused the clear") end
+    local job, lock = job_for({a})
+    cargo.begin(job)
+    local ok, err = pcall(cargo.step, job, 1)
+    assert(not ok and tostring(err):find("clearing belt", 1, true) and lock.cleared_belts.pinned, "a clear that throws pins the record: " .. tostring(err))
+    assert(#a.lines[1].items == 0 and #a.lines[2].items == 1 and #lock.cleared_belts.groups[1].slots + #lock.cleared_belts.groups[2].slots == 2,
+        "the record keeps what was read; the belt keeps what was not cleared")
+    print("PASS a belt that cannot be cleared after its cargo was recorded pins the record instead of guessing")
 end
 
 do
@@ -214,7 +251,7 @@ do
     local belts = {}
     for i = 1, 5 do belts[i] = belt(20 + i, {"b" .. i .. "-1", "b" .. i .. "-2"}); belts[i].lines[1].seed("iron-plate") end
     local job = job_for(belts)
-    local state = cargo.begin(job, {})
+    local state = cargo.begin(job)
     local steps = 0
     while not cargo.step(job, 2) do steps = steps + 1 end
     assert(steps == 3 and state.callbacks == 4, "five belts at two per callback take three callbacks plus the sweep")
@@ -229,12 +266,43 @@ do
     d.lines[1].items[1] = {uid = shared, pos = 0.01, name = "copper-plate", count = 1, quality = "rare"}
     d.lines[2].seed("iron-plate")
     local job = job_for({a, d})
-    local state = cargo.begin(job, {})
+    local state = cargo.begin(job)
     assert(#state.groups == 4, "belts without an adjacency start in separate groups")
-    assert(cargo.step(job, 10) or cargo.step(job, 10))
-    local stats = cargo.finish(job, {})
+    local stats = run_to_end(job)
     assert(stats.stacks == 2 and stats.groups == 3 and state.merged == 1, "an item seen on two groups' lines in one callback merges them and is captured once")
     print("PASS a straddling item merges its two groups instead of being captured twice")
+end
+
+do
+    local a, b = belt(33, {"own-1", "own-2"}), belt(34, {"own-1", "own-2"})
+    a.lines[1].seed("iron-plate") b.lines[1].seed("iron-plate")
+    local job, lock = job_for({a, b})
+    lock.transfer_job_id = "someone-else"
+    local ok, err = pcall(cargo.begin, job)
+    assert(not ok and tostring(err):find("not held by this job", 1, true), "begin refuses without the job's own transfer lock: " .. tostring(err))
+    lock.transfer_job_id = job.job_id
+    lock.cleared_belts = {job_id = "someone-else", groups = {}}
+    ok, err = pcall(cargo.begin, job)
+    assert(not ok and tostring(err):find("already carries", 1, true), "begin refuses to overwrite another job's record: " .. tostring(err))
+    lock.cleared_belts = nil
+    cargo.begin(job)
+    env.storage.locked_platforms[job.platform_index] = nil
+    ok, err = pcall(cargo.step, job, 1)
+    assert(not ok and tostring(err):find("no longer held", 1, true) and #a.lines[1].items == 1,
+        "a step after the lock went away stops before clearing anything: " .. tostring(err))
+    env.storage.locked_platforms[job.platform_index] = lock
+    lock.cleared_belts = {job_id = job.job_id, groups = {}}
+    ok, err = pcall(cargo.step, job, 1)
+    assert(not ok and tostring(err):find("no longer carries this job's cleared-cargo record", 1, true) and #a.lines[1].items == 1,
+        "a step after the record was replaced stops before clearing anything: " .. tostring(err))
+    lock.cleared_belts = nil
+    local job2, lock2 = job_for({a, b})
+    cargo.begin(job2)
+    assert(not cargo.step(job2, 1))
+    lock2.cleared_belts = nil
+    ok, err = pcall(cargo.finish, job2)
+    assert(not ok and tostring(err):find("no longer carries", 1, true), "finish refuses when the record is gone: " .. tostring(err))
+    print("PASS the capture only runs under its own transfer lock and its own record")
 end
 
 do
@@ -242,45 +310,74 @@ do
     local a, b = belt(41, {"r-1", "r-2"}), belt(42, {"r-1", "r-2"})
     feed(a, b)
     a.lines[1].seed("iron-plate", 2) b.lines[2].seed("pistol")
-    local job = job_for({a, b})
-    local lock = {}
-    cargo.begin(job, lock)
+    local job, lock = job_for({a, b})
+    cargo.begin(job)
     assert(not cargo.step(job, 1), "one belt captured, the lock now covers cleared cargo")
+    job.completion_interrupted = {error = "test"}
     logs = {}
     local ok, placed = cargo.restore(lock, "Ship", ship_surface)
     assert(ok and placed == 2 and #a.lines[1].items == 1 and a.lines[1].items[1].count == 2 and #b.lines[2].items == 1,
         "a rollback in the middle of the capture puts back what was cleared and leaves the rest alone")
     assert(logs[#logs]:find("still in progress", 1, true), "a mid-capture restore must not claim a whole-belt census")
-    cargo.begin(job_for({a, b}), lock)
+    local job2, lock2 = job_for({a, b})
+    cargo.begin(job2)
+    run_to_end(job2)
     entities_by_unit[42] = nil
-    local refused, why = cargo.restore(lock, "Ship", ship_surface)
-    assert(not refused and tostring(why):find("no longer on the platform", 1, true) and lock.cleared_belts, "a missing belt refuses the restore and keeps the record")
+    local refused, why = cargo.restore(lock2, "Ship", ship_surface)
+    assert(not refused and tostring(why):find("no longer on the platform", 1, true) and tostring(why):find("1 stack(s) / 1 item(s)", 1, true)
+        and lock2.cleared_belts and #a.lines[1].items == 0, "a missing belt refuses the restore, says what it carried and keeps the record")
+    local elsewhere, elsewhere_why = cargo.restore(lock2, "Ship", {valid = false})
+    assert(not elsewhere and tostring(elsewhere_why):find("surface is unavailable", 1, true) and lock2.cleared_belts, "no surface, no restore")
+    logs = {}
+    local present, placed_present = cargo.override(lock2, "restore-present", "Ship", ship_surface)
+    assert(present and placed_present == 2 and lock2.cleared_belts == nil and #a.lines[1].items == 1,
+        "restore-present places the cargo of the belts that still exist and clears the record: " .. tostring(placed_present))
+    assert(logs[#logs]:find("1 belt(s) were gone, so 1 stack(s) / 1 item(s)", 1, true) and logs[#logs]:find("matches the capture exactly", 1, true),
+        "the lost cargo is reported with the exact census of the rest: " .. tostring(logs[#logs]))
     entities_by_unit[42] = b
-    local elsewhere, elsewhere_why = cargo.restore(lock, "Ship", {valid = false})
-    assert(not elsewhere and tostring(elsewhere_why):find("surface is unavailable", 1, true) and lock.cleared_belts, "no surface, no restore")
-    local job2 = job_for({a, b})
-    local lock2 = {}
-    cargo.begin(job2, lock2)
-    while not cargo.step(job2, 10) do end
-    cargo.finish(job2, lock2)
+    b.lines[2].seed("pistol")
+    local job3, lock3 = job_for({a, b})
+    cargo.begin(job3)
+    run_to_end(job3)
     env.prototypes.item["pistol"] = nil
-    local rejected, reason = cargo.restore(lock2, "Ship", ship_surface)
-    assert(not rejected and tostring(reason):find("no prototype", 1, true) and lock2.cleared_belts and #a.lines[1].items == 0,
+    local rejected, reason = cargo.restore(lock3, "Ship", ship_surface)
+    assert(not rejected and tostring(reason):find("no prototype", 1, true) and lock3.cleared_belts and #a.lines[1].items == 0,
         "an item without a prototype refuses the restore before placing anything and keeps the record")
     env.prototypes.item["pistol"] = {}
     b.lines[2].force_insert_at = noop
-    local failed, why = cargo.restore(lock2, "Ship", ship_surface)
-    assert(not failed and tostring(why):find("mismatched", 1, true) and lock2.cleared_belts.attempt and lock2.cleared_belts.attempt.placed == 3,
-        "a placement the belt did not take is reported and remembered: " .. tostring(why))
-    local again, again_why = cargo.restore(lock2, "Ship", ship_surface)
+    local failed, why2 = cargo.restore(lock3, "Ship", ship_surface)
+    assert(not failed and tostring(why2):find("mismatched", 1, true) and lock3.cleared_belts.attempt and lock3.cleared_belts.attempt.placed == 3,
+        "a placement the belt did not take is reported and remembered: " .. tostring(why2))
+    local again, again_why = cargo.restore(lock3, "Ship", ship_surface)
     assert(not again and tostring(again_why):find("earlier restore attempt placed 3", 1, true) and #a.lines[1].items == 1,
         "a second attempt after a failed one is refused so nothing is placed twice: " .. tostring(again_why))
-    print("PASS a rollback mid-capture restores only the cleared cargo; a missing belt, an unknown item or a failed placement keeps the protection and is never retried blindly")
+    local retry, retry_why = cargo.override(lock3, "restore-present", "Ship", ship_surface)
+    assert(not retry and tostring(retry_why):find("already placed 3", 1, true) and lock3.cleared_belts, "restore-present after a partial placement is refused: " .. tostring(retry_why))
+    assert(cargo.override(lock3, "abandon", "Ship", ship_surface) and lock3.cleared_belts == nil, "abandon is the way out after a partial placement")
+    local bogus, bogus_why = cargo.override({cleared_belts = {groups = {}}}, "explode", "Ship", ship_surface)
+    assert(not bogus and tostring(bogus_why):find("unknown action", 1, true))
+    print("PASS a rollback mid-capture restores only the cleared cargo; missing belts, unknown items and failed placements keep the protection until an operator decides")
+end
+
+do
+    census_records = {}
+    local a = belt(51, {"c-1", "c-2"})
+    a.lines[1].seed("iron-plate", 2)
+    local job, lock = job_for({a})
+    cargo.begin(job)
+    run_to_end(job)
+    a.lines[2].seed("copper-plate", 1, "rare")
+    local ok, why = cargo.restore(lock, "Ship", ship_surface)
+    assert(not ok and tostring(why):find("differs from the capture", 1, true) and tostring(why):find("copper-plate/rare captured 0, on belts 1", 1, true)
+        and lock.cleared_belts.attempt and lock.cleared_belts.attempt.placed == 2,
+        "cargo that appeared on a captured belt after the sweep fails the whole-belt census and is remembered: " .. tostring(why))
+    print("PASS a finished capture's restore refuses when the belts hold more than was captured")
 end
 
 do
     local calls = {}
     local restore_result = true
+    local active = false
     local force = {name = "player", platforms = {}, set_surface_hidden = noop}
     local surface = {valid = true, index = 70, find_entities_filtered = function() calls[#calls + 1] = "unfreeze"; return {} end}
     force.platforms[7] = {valid = true, index = 7, name = "Ship", surface = surface, hub = {valid = true, unit_number = 1}, uid = "uid:7"}
@@ -298,7 +395,7 @@ do
                 calls[#calls + 1] = "restore:" .. tostring(label)
                 if restore_result then lock_data.cleared_belts = nil return true, 3 end
                 return false, "3 item(s) unplaced"
-            end}
+            end, capture_active = function() return active end, describe = function() return "described" end}
         end
         error(name)
     end
@@ -306,7 +403,7 @@ do
     local function lock(with_cargo)
         lock_env.storage.locked_platforms[7] = {kind = "transfer", transfer_job_id = "job-1", phase = "pre_commit",
             platform_name = "Ship", platform_index = 7, force_name = "player", surface_index = 70, platform_uid = "uid:7",
-            frozen_states = {[1] = true}, original_hidden = false, cleared_belts = with_cargo and {groups = {}} or nil}
+            frozen_states = {[1] = true}, original_hidden = false, cleared_belts = with_cargo and {job_id = "job-1", groups = {}} or nil}
     end
     lock(true)
     assert(surface_lock.unlock_platform(7, nil, nil, nil, "job-1"), "the transfer unlock must succeed after the cargo is back")
@@ -321,8 +418,23 @@ do
         "a refused restore keeps the lock, the record and the frozen machines: " .. tostring(err))
     calls = {}
     restore_result = true
+    active = true
+    lock(true)
+    ok, err = surface_lock.unlock_platform(7, nil, nil, nil, "job-1")
+    assert(not ok and tostring(err):find("still capturing belt cargo", 1, true) and #calls == 0 and lock_env.storage.locked_platforms[7].cleared_belts,
+        "an unlock while the capture is still running is refused before anything is restored or unfrozen: " .. tostring(err))
+    active = false
+    calls = {}
+    lock(true)
+    local owns = surface_lock.destination_hold_owns_surface
+    surface_lock.destination_hold_owns_surface = function() return true, "hold-1" end
+    ok, err = surface_lock.unlock_platform(7, nil, nil, nil, "job-1")
+    assert(not ok and tostring(err):find("destination hold hold-1 owns this surface while captured belt cargo is recorded", 1, true)
+        and lock_env.storage.locked_platforms[7] and #calls == 0, "a hold-owned surface with recorded cargo refuses the unlock: " .. tostring(err))
+    surface_lock.destination_hold_owns_surface = owns
+    calls = {}
     lock(false)
     assert(surface_lock.unlock_platform(7, nil, nil, nil, "job-1") and calls[1] == "unfreeze" and #calls == 1,
         "an unlock without cleared cargo does not call the restore")
-    print("PASS the source unlock puts captured belt cargo back before unfreezing and keeps the protection when it cannot")
+    print("PASS the source unlock puts captured belt cargo back before unfreezing, waits for a running capture, and keeps the protection when it cannot")
 end

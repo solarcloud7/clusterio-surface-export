@@ -28,6 +28,7 @@ local configure = require("modules/surface_export/interfaces/remote/configure")
 local get_validation_result = require("modules/surface_export/interfaces/remote/get-validation-result")
 local lock_platform_for_transfer = require("modules/surface_export/interfaces/remote/lock-platform-for-transfer")
 local unlock_platform = require("modules/surface_export/interfaces/remote/unlock-platform")
+local belt_cargo_override = require("modules/surface_export/interfaces/remote/belt-cargo-override")
 local reapply_gateway_locks = require("modules/surface_export/interfaces/remote/reapply-gateway-locks")
 local test_import_entity = Base.debug_wrap("test_import_entity", require("modules/surface_export/interfaces/remote/test-import-entity"))
 local test_runner = require("modules/surface_export/interfaces/remote/test-runner")
@@ -80,6 +81,7 @@ RemoteInterface.configure = configure
 RemoteInterface.get_validation_result = get_validation_result
 RemoteInterface.lock_platform_for_transfer = lock_platform_for_transfer
 RemoteInterface.unlock_platform = unlock_platform
+RemoteInterface.belt_cargo_override = belt_cargo_override
 RemoteInterface.reapply_gateway_locks = reapply_gateway_locks
 RemoteInterface.test_import_entity = test_import_entity
 RemoteInterface.test_runner = test_runner
@@ -170,6 +172,7 @@ function RemoteInterface.register()
     
     lock_platform_for_transfer = lock_platform_for_transfer,
     unlock_platform = unlock_platform,
+    belt_cargo_override = belt_cargo_override,
     reapply_gateway_locks = reapply_gateway_locks,
     
     test_import_entity = test_import_entity,
