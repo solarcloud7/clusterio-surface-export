@@ -1,0 +1,38 @@
+[
+	{
+		"name": "lines of connected belts are never joined",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if lines[li].line_equals(other) then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end",
+		"replace": "if false then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "two lanes of one belt on the same line are never joined",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if lines[li].line_equals(lines[lj]) then join(unit * LINE_KEY_STRIDE + li, unit * LINE_KEY_STRIDE + lj) end",
+		"replace": "if false then join(unit * LINE_KEY_STRIDE + li, unit * LINE_KEY_STRIDE + lj) end",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "a connected belt outside the list is not walked",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if not known[other_unit] then known[other_unit] = true; order[#order + 1] = neighbour end",
+		"replace": "if not known[other_unit] then known[other_unit] = true end",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "group order follows the partition, not the belt list",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "local key = root_of(bp.entity, li)",
+		"replace": "local key = root_of(bp.entity, li) if bp.entity.unit_number % 2 == 0 then key = -key end",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	}
+]
