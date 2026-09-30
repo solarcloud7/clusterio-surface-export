@@ -23,13 +23,14 @@ async function until(read,why) {
   throw Error(`Timed out: ${why}`);
 }
 // The source's own log lines for this clone: the staggered belt capture and, after a rejection, the restore.
-const sourceLog=(host,marker)=>docker(["exec",HOSTS[host].container,"sh","-c",
-  `grep -aF '${marker}' '${instancePath(host,"factorio-current.log")}' || true`]).trim().split(/\r?\n/).filter(Boolean);
+// Markers must not contain quotes: they are passed through a single-quoted shell argument.
+const sourceLog=(host,marker,needle)=>docker(["exec",HOSTS[host].container,"sh","-c",
+  `grep -aF '${marker}' '${instancePath(host,"factorio-current.log")}' || true`]).trim().split(/\r?\n/).filter(line=>line&&(!needle||line.includes(needle)));
 function sourceBeltCapture(host,records) {
   const phase=records.find(r=>r.owner==="source-lua"&&r.id==="belt_capture"&&r.kind==="execution");
   assert.ok(phase,"source belt_capture stage missing");
   assert.ok(phase.batchCount>1&&phase.workTicks===phase.batchCount,"a transfer must capture its belts over several callbacks, one per tick");
-  const done=sourceLog(host,`[Belt Scan] Staggered capture done for '${name}':`).at(-1);
+  const done=sourceLog(host,"[Belt Scan] Staggered capture done for ",`'${name}'`).at(-1);
   assert.ok(done,"the source must log the staggered capture summary for this clone");
   const m=done.match(/(\d+) belt\(s\), (\d+) stack\(s\) \((\d+) picked up by the final sweep\), (\d+) side group\(s\) \((\d+) merged[^)]*\), \d+ slot\(s\)[^,]*, (\d+) callback\(s\) over (\d+) tick\(s\)/);
   assert.ok(m,`unparsed capture summary: ${done}`);
@@ -40,7 +41,7 @@ function sourceBeltCapture(host,records) {
   return {...summary,executionMs:phase.executionMs,maxCallbackMs:batches.length?Math.max(...batches.map(b=>b.executionMs)):null};
 }
 function sourceRestored(host) {
-  const line=sourceLog(host,`captured belt item(s) onto '${name}'`).at(-1);
+  const line=sourceLog(host,"captured belt item(s) onto ",`'${name}'`).at(-1);
   assert.ok(line&&line.includes("belt census after the restore matches the capture exactly"),
     `after a rejection the source must put its belt cargo back and pass the whole-belt census: ${line}`);
   assert.ok(sourceLog(host,"could not be put back").length===0,"no restore may have been refused");
