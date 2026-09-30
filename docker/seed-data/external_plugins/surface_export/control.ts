@@ -8,7 +8,7 @@ type ControlLike = {
 	sendTo: <T = unknown>(target: string, message: unknown) => Promise<T>;
 };
 
-type YargsLike = { positional: (name: string, opts: unknown) => void };
+type YargsLike = { positional: (name: string, opts: unknown) => void; option: (name: string, opts: unknown) => void };
 
 const surfaceExportCommands = new CommandTree({
 	name: "surface-export",
@@ -85,13 +85,16 @@ surfaceExportCommands.add(new Command({
 		"Release the controller's pending source intent for a FAILED transfer whose source unlock kept being refused. "
 		+ "Asserts that an administrator verified on the source server that the platform is no longer protected by this transfer's lock, "
 		+ "or was deliberately removed. Refused while the source still reports this transfer's lock (the controller keeps retrying the unlock itself), "
-		+ "reports it committed or the platform deleted by this transfer, is offline, or while the destination still confirms a hold",
+		+ "is offline, or while the destination still confirms a hold; a source that reports the lock committed or the platform deleted by this "
+		+ "transfer is refused unless --acknowledge-contradiction is given, and the record then keeps cleanup_failed",
 		(yargs: YargsLike) => {
 			yargs.positional("transferId", { type: "string", describe: "Canonical transfer ID shown by list-transfers" });
+			yargs.option("acknowledge-contradiction", { type: "boolean", default: false,
+				describe: "Asserts both servers were inspected: also release when the source reports the lock committed or the platform deleted by this transfer, or such a contradiction was recorded; the record keeps cleanup_failed" });
 		}],
-	handler: async (args: { transferId: string }, control: ControlLike) => {
-		const response = await control.sendTo("controller", new messages.ReleaseTransferRollbackRequest({ transferId: args.transferId })) as
-			messages.ReleaseTransferRollbackResponse;
+	handler: async (args: { transferId: string; acknowledgeContradiction?: boolean }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.ReleaseTransferRollbackRequest({ transferId: args.transferId,
+			acknowledgeContradiction: args.acknowledgeContradiction === true })) as messages.ReleaseTransferRollbackResponse;
 		if (!response.success) throw new Error(response.error || "Rollback release refused");
 		console.log(JSON.stringify(response));
 	},

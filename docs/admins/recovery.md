@@ -225,7 +225,8 @@ lock state on every recovery pass:
 - If the source reports the lock committed, the platform deleted by this transfer, or a
   retirement record for it, the transfer is marked `cleanup_failed` with the contradiction
   and nothing is released. The contradiction is kept on the intent until an administrator
-  releases it, and a release then keeps `cleanup_failed`.
+  releases it with `--acknowledge-contradiction`; such a release keeps `cleanup_failed` and
+  records the acknowledgement.
 - A rejected transfer is never routed back through the destination check: recovery follows
   the intent's recorded rollback even when a controller restart restores an older in-memory
   copy of the record, and the record keeps its earlier events.
@@ -234,17 +235,19 @@ For the remaining cases, an identity the source cannot match, a source instance 
 from the cluster, or an old plugin on the source that reports only a mismatch, use:
 
 ```text
-clusterioctl surface-export release-rollback <transferId>
+clusterioctl surface-export release-rollback <transferId> [--acknowledge-contradiction]
 ```
 
 This asserts that you verified on the source server that the platform is no longer
 protected by this transfer's lock, or was deliberately removed. It is refused while the
 source still reports the lock (the controller retries by itself), while the source is
-offline, while the source reports the lock committed or the platform deleted by this
-transfer (a committed lock is reported as such even when its platform can no longer be
-verified), and while the destination still confirms a hold. It records who released the
-transfer, the observed source state and any earlier contradiction, and it needs
-`surface_export.recovery.resolve`. It never unlocks or deletes anything.
+offline, and while the destination still confirms a hold. A source that reports the lock
+committed or the platform deleted by this transfer (a committed lock is reported as such
+even when its platform can no longer be verified), or a contradiction recorded earlier, is
+refused unless you add `--acknowledge-contradiction`, which asserts that you inspected both
+servers; the record then keeps `cleanup_failed` with the contradiction. Every release
+records who released the transfer, the observed source state and any contradiction, and
+needs `surface_export.recovery.resolve`. It never unlocks or deletes anything.
 
 ## Back up a deployment
 

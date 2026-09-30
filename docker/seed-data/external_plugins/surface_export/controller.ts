@@ -390,7 +390,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async handleReleaseTransferRollbackRequest(request: messages.ReleaseTransferRollbackRequest, src?: { id: number }) {
 		const link = src ? this.c.wsServer.controlConnections.get(src.id) as { user?: { name?: unknown; id?: unknown } } | undefined : undefined;
 		const operator = [link?.user?.name, link?.user?.id].find(value => typeof value === "string" && value !== "");
-		const result = await this.orchestrator.releaseRollback(request.transferId, typeof operator === "string" ? operator : null);
+		const result = await this.orchestrator.releaseRollback(request.transferId, typeof operator === "string" ? operator : null,
+			request.acknowledgeContradiction === true);
 		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
 		return result;
 	}

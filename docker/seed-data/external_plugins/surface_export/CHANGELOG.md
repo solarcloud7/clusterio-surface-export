@@ -60,7 +60,9 @@ Requires Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
   **Source released after a refused rollback** for a source that was released outside
   the controller. `clusterioctl surface-export release-rollback <transferId>` releases
   the remaining cases after an administrator has verified the source; it is refused
-  while the source still holds the lock. Needs `surface_export.recovery.resolve`. (#394)
+  while the source still holds the lock, and a source deleted after the rejection needs
+  `--acknowledge-contradiction` and keeps `cleanup_failed`. Needs
+  `surface_export.recovery.resolve`. (#394)
 
 ## 0.11.0-beta.5
 

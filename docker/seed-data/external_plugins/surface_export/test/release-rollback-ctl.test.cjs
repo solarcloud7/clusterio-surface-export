@@ -50,8 +50,12 @@ test("release-rollback sends only the transfer ID under the recovery permission 
 	assert.equal(sent.length, 1);
 	assert.ok(sent[0].message instanceof messages.ReleaseTransferRollbackRequest);
 	assert.equal(sent[0].target, "controller");
-	assert.deepEqual(sent[0].message.toJSON(), { transferId }, "the ctl must send exactly the given transfer ID");
+	assert.deepEqual(sent[0].message.toJSON(), { transferId, acknowledgeContradiction: false }, "the ctl must send exactly the given transfer ID without acknowledging anything by default");
 	assert.equal(JSON.parse(printed[0]).outcome, "released");
+	const acknowledged = await invoke(command, { transferId, acknowledgeContradiction: true },
+		{ success: true, transferId, outcome: "released", status: "cleanup_failed", sourceState: "source_gone_matching_transfer", contradiction: "source_gone_matching_transfer", acknowledged: true });
+	assert.deepEqual(acknowledged.sent[0].message.toJSON(), { transferId, acknowledgeContradiction: true }, "the acknowledgement travels only when the operator gives it");
+	assert.equal(JSON.parse(acknowledged.printed[0]).acknowledged, true);
 	const idle = await invoke(command, { transferId }, { success: true, transferId, outcome: "nothing_pending", status: "failed" });
 	assert.equal(JSON.parse(idle.printed[0]).outcome, "nothing_pending", "a retry after a lost reply reports that nothing is pending");
 	await assert.rejects(invoke(command, { transferId },

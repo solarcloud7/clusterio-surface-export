@@ -42,7 +42,7 @@ clusterioctl surface-export restore-snapshot <exportId> <targetInstanceId> <requ
 clusterioctl surface-export conflicts [instanceId]
 clusterioctl surface-export resolve-platform <instanceId> <platformIndex> <platformUid> <action> <requestId>
 clusterioctl surface-export abandon-resolution <requestId>
-clusterioctl surface-export release-rollback <transferId>
+clusterioctl surface-export release-rollback <transferId> [--acknowledge-contradiction]
 clusterioctl surface-export gateways
 clusterioctl surface-export portal assign <instance> <portal>
 clusterioctl surface-export portal release <portal>
@@ -65,8 +65,10 @@ a copy or changed the registry. All three are described in [recovery](recovery.m
 
 `release-rollback` releases the controller's pending intent for a failed transfer whose
 source unlock kept being refused, after an administrator has verified the source. It is
-refused while the source still reports the transfer's lock, and it needs
-`surface_export.recovery.resolve`. See [recovery](recovery.md#release-a-rejected-transfers-source).
+refused while the source still reports the transfer's lock; a source that reports the lock
+committed or the platform deleted by this transfer needs `--acknowledge-contradiction`, and
+the record then keeps `cleanup_failed`. It needs `surface_export.recovery.resolve`. See
+[recovery](recovery.md#release-a-rejected-transfers-source).
 
 The plugin resolves live identity when starting a transfer; copying an index from
 another instance or an old save is not sufficient. Stored export transfer and
