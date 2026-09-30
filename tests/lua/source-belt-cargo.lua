@@ -373,8 +373,9 @@ do
     assert(not pcall(cargo.step, job4, 1) and lock4.cleared_belts.pinned, "the clear failure pins the record")
     job4.completion_interrupted = {error = "test"}
     local pinned_retry, pinned_why = cargo.override(lock4, "restore-present", "Ship", ship_surface)
-    assert(not pinned_retry and tostring(pinned_why):find("pinned", 1, true) and #x.lines[1].items == 0 and #x.lines[2].items == 1,
-        "restore-present never places a pinned record, whose items may still be on the belts: " .. tostring(pinned_why))
+    assert(not pinned_retry and tostring(pinned_why):find("some of its items may still be on the belts", 1, true)
+        and #x.lines[1].items == 0 and #x.lines[2].items == 1,
+        "restore-present never places a pinned record and says why: " .. tostring(pinned_why))
     assert(cargo.override(lock4, "abandon", "Ship", ship_surface) and lock4.cleared_belts == nil, "abandon releases a pinned record")
     print("PASS a rollback mid-capture restores only the cleared cargo; missing belts, unknown items and failed placements keep the protection until an operator decides")
 end
