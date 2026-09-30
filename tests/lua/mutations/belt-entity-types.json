@@ -1,0 +1,74 @@
+[
+	{
+		"name": "lane splitters are not belt entities",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/game-utils.lua",
+		"find": "  [\"lane-splitter\"] = true,\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "linked belts are not belt entities",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/game-utils.lua",
+		"find": "  [\"linked-belt\"] = true,\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "a linked belt's lanes are never read",
+		"file": "docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua",
+		"find": "items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity),\n    fluidboxes = InventoryScanner.extract_fluidboxes(entity)",
+		"replace": "items = {},\n    fluidboxes = InventoryScanner.extract_fluidboxes(entity)",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "the linked partner is not recorded",
+		"file": "docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua",
+		"find": "data.linked_partner_id = partner.unit_number",
+		"replace": "data.linked_partner_id = nil",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "a partner on another surface is recorded as if it were on the platform",
+		"file": "docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua",
+		"find": "and partner.surface_index == entity.surface_index then",
+		"replace": "then",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "the import never reconnects a linked pair",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/deserializer.lua",
+		"find": "entity.connect_linked_belts(partner)",
+		"replace": "local _ = partner",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "the import planner treats a lane splitter as unsupported",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_batches.lua",
+		"find": "and entity.type ~= \"lane-splitter\" and entity.type ~= \"linked-belt\" then",
+		"replace": "and entity.type ~= \"linked-belt\" then",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
+		"name": "the import planner ignores a linked partner outside the payload",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_batches.lua",
+		"find": "if entry.entity.type == \"linked-belt\"\n            and not connect(entry.group, entry.entity.linked_belt_neighbour) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	}
+]

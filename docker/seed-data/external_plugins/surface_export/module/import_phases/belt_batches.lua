@@ -23,7 +23,8 @@ function BeltBatches.plan(groups, entity_map, budget)
         for _, member in ipairs(g.members) do
             local entity = entity_map[member.id]
             if not entity or not entity.valid then return atomic("missing destination entity") end
-            if entity.type ~= "transport-belt" and entity.type ~= "underground-belt" and entity.type ~= "splitter" then
+            if entity.type ~= "transport-belt" and entity.type ~= "underground-belt" and entity.type ~= "splitter"
+                and entity.type ~= "lane-splitter" and entity.type ~= "linked-belt" then
                 return atomic("unsupported isolation boundary: " .. entity.type)
             end
             if owner[member.id] then join(i, owner[member.id])
@@ -51,6 +52,10 @@ function BeltBatches.plan(groups, entity_map, budget)
         if entry.entity.type == "underground-belt"
             and not connect(entry.group, entry.entity.underground_belt_neighbour) then
             return atomic("external underground connection")
+        end
+        if entry.entity.type == "linked-belt"
+            and not connect(entry.group, entry.entity.linked_belt_neighbour) then
+            return atomic("external linked-belt connection")
         end
     end
     local roots, networks = {}, 0
