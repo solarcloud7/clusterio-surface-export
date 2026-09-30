@@ -2,6 +2,7 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 local PassengerTransit = require("modules/surface_export/core/passenger-transit")
+local SourceBeltCargo = require("modules/surface_export/core/source-belt-cargo")
 
 local platform_identity = require("modules/surface_export/utils/platform-identity")
 
@@ -578,6 +579,12 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         return true, nil
     end
 
+    if lock_data.cleared_belts then
+        local cargo_ok, cargo_err = SourceBeltCargo.restore(lock_data, platform_name)
+        if not cargo_ok then
+            return false, "Unlock refused: captured belt cargo could not be put back (" .. tostring(cargo_err) .. "); protection retained"
+        end
+    end
     if lock_data.original_schedule then
         local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
         if not schedule_restore_ok then

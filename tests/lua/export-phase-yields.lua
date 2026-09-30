@@ -31,6 +31,10 @@ modules["utils/export-cache"] = {set_concurrency = noop, prune_to_configured_cap
 modules["utils/platform-schedule"] = {summarize = function() return {} end}
 modules["export_scanners/entity-scanner"] = {scan_items_on_ground = function() return {} end}
 modules["export_scanners/inventory-scanner"] = {extract_belt_items = function() mark("belt_read"); return {} end}
+modules["core/source-belt-cargo"] = {budget = function() return 100 end,
+    begin = function(job, lock) assert(job.destination_instance_id, "a standalone export staggered its belts"); mark("belt_begin") end,
+    step = function() mark("belt_step"); return true end,
+    finish = function() return {belts = 1, stacks = 0} end}
 modules["export_scanners/fluid-registry"] = {list = function() return {} end}
 modules["export_scanners/source-cargo-integrity"] = {record = noop, verdict = function() return {ok = true} end}
 modules["validators/verification"] = {count_all_items = function() mark("verify"); return {} end,
@@ -75,9 +79,11 @@ env.storage.async_jobs.test = job
 if standalone then job.destination_instance_id = nil end
 if clone then job.clone_dest_name = "clone-fixture" end
 job.purpose = purpose
-for tick = 100, 103 do
+-- A transfer spends one callback beginning the staggered belt capture and one on its steps.
+local shift = standalone and 0 or 1
+for tick = 100, 103 + shift do
     env.game.tick = tick
-    if sectioned and tick == 103 then job.compressed_sections={"compressed"} end
+    if sectioned and tick == 103 + shift then job.compressed_sections={"compressed"} end
     pcall(scheduler.process_tick)
     if error_at and events[error_at] then
         local count = size(events)
@@ -102,10 +108,16 @@ for tick = 100, 103 do
         assert(not events.unlock, "interrupted export unlocked its source")
         return
     end
-    if tick < 103 then assert(env.storage.async_jobs.test, "publication finished too early") end
+    if tick < 103 + shift then assert(env.storage.async_jobs.test, "publication finished too early") end
 end
-assert(events.entities == 100 and events.belt_read == 101 and events.verify == 101)
-assert(events.serialization == 102 and (sectioned or events.compression == 103) and events.surface_export_complete == 103)
+assert(events.entities == 100)
+if standalone then
+    assert(events.belt_read == 101 and events.verify == 101 and not events.belt_begin, "a standalone export must capture its belts in one callback")
+else
+    assert(events.belt_begin == 101 and events.belt_step == 102 and events.verify == 102 and not events.belt_read,
+        "a transfer must begin the staggered belt capture, step it, then verify in the step's callback")
+end
+assert(events.serialization == 102 + shift and (sectioned or events.compression == 103 + shift) and events.surface_export_complete == 103 + shift)
 assert(encodes == 1, "diagnostic output serialized the payload again")
 if standalone and purpose ~= "resolution" then
     assert(events.unlock == 103, "standalone export unlocked before publication")
@@ -113,7 +125,7 @@ elseif purpose == "resolution" then
     assert(not events.unlock, "a resolution snapshot released the copy it is about to delete")
 else
     assert(not events.unlock, "transfer export released its source")
-    assert(writes["debug_source_platform_fixture_103.json"] == '{"captured":true}', "diagnostic bytes differ from transport JSON")
+    assert(writes["debug_source_platform_fixture_104.json"] == '{"captured":true}', "diagnostic bytes differ from transport JSON")
 end
 assert(not env.storage.async_jobs.test and env.storage.async_job_results.test.complete)
 if clone then
@@ -131,7 +143,8 @@ scenario(false, nil, true)
 scenario(true, nil, false, nil, "resolution")
 scenario(true, nil, true, nil, "resolution")
 scenario(false, "surface_export_complete")
-for _, phase in ipairs({"entities", "belt_read", "verify", "serialization", "compression", "cache", "prune"}) do
+for _, phase in ipairs({"entities", "belt_begin", "belt_step", "verify", "serialization", "compression", "cache", "prune"}) do
     scenario(false, phase)
 end
-print("PASS transfer/standalone export yields, atomic capture/checks, serialization reuse and failed-encode gate")
+scenario(true, "belt_read")
+print("PASS transfer/standalone export yields, staggered transfer belt capture, atomic standalone capture/checks, serialization reuse and failed-encode gate")

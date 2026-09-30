@@ -26,6 +26,7 @@ local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
+local SourceBeltCargo = require("modules/surface_export/core/source-belt-cargo")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -333,11 +334,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	return job.current_index >= job.total_entities
 end
 
-local function prepare_completion(job)
-	PhaseProfiler.start(job.job_id, "completion")
-
-	storage.platform_exports = storage.platform_exports or {}
-
+local function capture_belts_atomically(job)
 	Timing.start(job.job_id, "belt_capture")
 	local belt_scan_count = 0
 	local belt_item_total = 0
@@ -375,8 +372,25 @@ local function prepare_completion(job)
 				.. " — payload carries NO side partition; a belt-bearing import will REFUSE it (no legacy fallback exists)")
 		end
 	end
-
 	Timing.stop(job.job_id, "belt_capture")
+	return belt_scan_count, belt_item_total
+end
+
+local function source_lock_data(job)
+	return storage.locked_platforms and storage.locked_platforms[job.platform_index] or nil
+end
+
+local function prepare_completion(job, staged_belts)
+	PhaseProfiler.start(job.job_id, "completion")
+
+	storage.platform_exports = storage.platform_exports or {}
+
+	local belt_scan_count, belt_item_total
+	if staged_belts then
+		belt_scan_count, belt_item_total = staged_belts.belts, staged_belts.stacks
+	else
+		belt_scan_count, belt_item_total = capture_belts_atomically(job)
+	end
 	local ground_items = Timing.scope(job.job_id, "ground_items", EntityScanner.scan_items_on_ground, job.surface)
 	Timing.start(job.job_id, "verification_census")
 	for _, ground_item in ipairs(ground_items) do
@@ -637,11 +651,30 @@ function ExportPipeline.interrupt(job, err)
 	Timing.finish(job.job_id, "interrupted")
 end
 
+local function belts_staggered(job)
+	return job.destination_instance_id ~= nil and next(job.belt_entities or {}) ~= nil
+end
+
 function ExportPipeline.complete(job, batch_size)
-	-- Each call is one scheduler tick. Capture and its cargo checks remain atomic;
-	-- serialization and publication operate on that captured payload on later ticks.
+	-- Each call is one scheduler tick. A transfer captures and clears its belts a budget at a
+	-- time and sweeps the rest in one callback; every other capture and its cargo checks remain
+	-- atomic. Serialization and publication operate on that captured payload on later ticks.
 	if job.completion_stage == nil then
-		prepare_completion(job)
+		if belts_staggered(job) then
+			SourceBeltCargo.begin(job, source_lock_data(job))
+			job.completion_stage = "belt_capture"
+		else
+			prepare_completion(job)
+		end
+	elseif job.completion_stage == "belt_capture" then
+		Timing.start(job.job_id, "belt_capture")
+		local ok, done = pcall(SourceBeltCargo.step, job, SourceBeltCargo.budget())
+		Timing.stop(job.job_id, "belt_capture")
+		if not ok then
+			Timing.fail(job.job_id, "belt_capture")
+			error(done, 0)
+		end
+		if done then prepare_completion(job, SourceBeltCargo.finish(job, source_lock_data(job))) end
 	elseif job.completion_stage == "serialize" then
 		-- Opt-in transfer transport; file exports and clones retain the stored format.
 		if job.section_cursor or (job.section_transport == nil and job.destination_instance_id

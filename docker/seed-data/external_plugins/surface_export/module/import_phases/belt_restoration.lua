@@ -129,6 +129,8 @@ local function belt_item_state(stack, cache)
     return state
 end
 
+BeltRestoration.belt_item_state = belt_item_state
+
 local LINE_KEY_STRIDE = 16
 
 local BELT_CONNECTABLE_TYPES = {
@@ -303,6 +305,36 @@ local function collect_side_groups(belt_pairs, cache)
     log(string.format("[BeltRestoration] Captured %d side group(s) from %d belt(s) (%s); %d slot(s) carry non-default item state",
         #out, #belt_pairs, how, stateful))
     return out
+end
+
+function BeltRestoration.partition_side_groups(belt_pairs)
+    local partition_ok, root_of, walked, compared = pcall(partition_lines, belt_pairs)
+    local how
+    if partition_ok then
+        how = string.format("%d walked, %d line comparisons", walked, compared)
+    else
+        log(string.format("[BeltRestoration] connected-belt line partition failed (%s); using the pairwise search",
+            tostring(root_of)))
+        root_of = pairwise_partition(belt_pairs)
+        how = "pairwise search"
+    end
+    local groups, index_of, line_group = {}, {}, {}
+    for _, bp in ipairs(belt_pairs) do
+        for li = 1, bp.entity.get_max_transport_line_index() do
+            local key = root_of(bp.entity, li)
+            local gi = index_of[key]
+            if not gi then
+                gi = #groups + 1
+                index_of[key] = gi
+                groups[gi] = { members = {}, slots = {}, item_source_positions = {} }
+            end
+            local g = groups[gi]
+            g.members[#g.members + 1] = { id = bp.id, li = li }
+            line_group[tostring(bp.id) .. "/" .. li] = gi
+        end
+    end
+    log(string.format("[BeltRestoration] Partitioned %d belt(s) into %d side group(s) (%s)", #belt_pairs, #groups, how))
+    return groups, line_group
 end
 
 function BeltRestoration.capture_side_groups(belt_pairs)

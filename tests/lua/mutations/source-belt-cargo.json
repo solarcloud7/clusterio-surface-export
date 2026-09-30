@@ -1,0 +1,110 @@
+[
+	{
+		"name": "captured belt lines are not cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for _, line in ipairs(lines) do line.clear() end",
+		"replace": "for _, line in ipairs({}) do line.clear() end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the final sweep captures nothing",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for _, unit in ipairs(state.units) do capture_unit(job, state, unit, cache, seen, true) end",
+		"replace": "for _, unit in ipairs({}) do capture_unit(job, state, unit, cache, seen, true) end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a cleared item that reappears is captured again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if state.cleared[uid] then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a straddling item does not merge its groups",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if owner ~= gi then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
+		"replace": "if false then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the census is not recorded for captured belts",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if #lines_out > 0 or not sweeping then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the census is read after the lines are cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tif #lines_out > 0 or not sweeping then\n\t\tSourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })\n\tend\n\tfor _, line in ipairs(lines) do line.clear() end",
+		"replace": "\tfor _, line in ipairs(lines) do line.clear() end\n\tif #lines_out > 0 or not sweeping then\n\t\tSourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })\n\tend",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a failed restore is retried blindly",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if record.attempt then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a restore with unplaced items still clears the record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if unplaced > 0 or anomalies > 0 then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the unlock does not put cleared cargo back",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if lock_data.cleared_belts then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the unlock proceeds when the cargo could not be put back",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if not cargo_ok then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a transfer captures its belts in one callback",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "return job.destination_instance_id ~= nil and next(job.belt_entities or {}) ~= nil",
+		"replace": "return false",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "a standalone export staggers its belts",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "return job.destination_instance_id ~= nil and next(job.belt_entities or {}) ~= nil",
+		"replace": "return next(job.belt_entities or {}) ~= nil",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	}
+]
