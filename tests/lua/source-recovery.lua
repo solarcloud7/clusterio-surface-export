@@ -108,6 +108,7 @@ for _, pending in ipairs({false, true}) do
             if name:find("latch_rearm", 1, true) then return {pending_on_surface = function() return pending end} end
             if name:find("platform-identity", 1, true) then return function() return nil end end
             if name:find("passenger-transit", 1, true) then return {transfer_released = function() end} end
+            if name:find("source-belt-cargo", 1, true) then return {restore = function() return true end} end
             error(name)
         end}, {__index = _G})
     local lock = assert(loadfile(root .. "utils/surface-lock.lua", "t", e))()
