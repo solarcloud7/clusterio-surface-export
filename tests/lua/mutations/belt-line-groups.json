@@ -2,8 +2,8 @@
 	{
 		"name": "lines of connected belts are never joined",
 		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
-		"find": "if lines[li].line_equals(other) then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end",
-		"replace": "if false then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end",
+		"find": "if lines[li].line_equals(other) then\n                        join(unit * LINE_KEY_STRIDE + li, other_key)",
+		"replace": "if lines[li].line_equals(other) then\n                        shared = shared",
 		"tests": [
 			"tests/lua/belt-line-groups.lua"
 		]
@@ -20,8 +20,53 @@
 	{
 		"name": "a connected belt outside the list is not walked",
 		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
-		"find": "if not known[other_unit] then known[other_unit] = true; order[#order + 1] = neighbour end",
-		"replace": "if not known[other_unit] then known[other_unit] = true end",
+		"find": "if shared and not queued[other_unit] then queued[other_unit] = true; order[#order + 1] = neighbour end",
+		"replace": "if shared and not queued[other_unit] then queued[other_unit] = true end",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "input neighbours are ignored",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "for _, neighbour in pairs(neighbours.inputs or {}) do add(neighbour) end",
+		"replace": "",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "output neighbours are ignored",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "for _, neighbour in pairs(neighbours.outputs or {}) do add(neighbour) end",
+		"replace": "",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "the underground partner is ignored",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "add(entity.underground_belt_neighbour)",
+		"replace": "add(nil)",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "an item on two groups' lines is not detected",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if check_disagreement then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "a failing neighbour walk fails the capture instead of falling back",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "local partition_ok, root_of, walked, compared = pcall(partition_lines, belt_pairs)",
+		"replace": "local partition_ok, root_of, walked, compared = true, partition_lines(belt_pairs)",
 		"tests": [
 			"tests/lua/belt-line-groups.lua"
 		]

@@ -31,15 +31,15 @@ local function line(internal, items)
     return self
 end
 local function belt(unit, lines, kind)
-    local self = {valid = true, unit_number = unit, type = kind or "transport-belt",
+    local self = {valid = true, unit_number = unit, type = kind or "transport-belt", surface_index = 1,
         belt_neighbours = {inputs = {}, outputs = {}}, lines = lines}
     self.get_max_transport_line_index = function() return #lines end
     self.get_transport_line = function(li) return lines[li] end
     return self
 end
-local function feed(from, to)
-    from.belt_neighbours.outputs[#from.belt_neighbours.outputs + 1] = to
-    to.belt_neighbours.inputs[#to.belt_neighbours.inputs + 1] = from
+local function feed(from, to, one_sided)
+    if one_sided ~= "inputs" then from.belt_neighbours.outputs[#from.belt_neighbours.outputs + 1] = to end
+    if one_sided ~= "outputs" then to.belt_neighbours.inputs[#to.belt_neighbours.inputs + 1] = from end
 end
 local function pairs_of(belts)
     local out = {}
@@ -87,11 +87,15 @@ local function check(label, belts, expect_groups)
     local belt_pairs = pairs_of(belts)
     local expected = oracle(belt_pairs)
     compared = 0
+    logs = {}
     local actual = restorer.capture_side_groups(belt_pairs)
     assert(dump(actual) == dump(expected), label .. ": side groups differ\n expected " .. dump(expected) .. "\n actual   " .. dump(actual))
     if expect_groups then assert(#actual == expect_groups, label .. ": " .. #actual .. " groups, expected " .. expect_groups) end
-    return actual, compared
+    local capture_line = logs[#logs] or ""
+    assert(capture_line:find("Captured %d+ side group%(s%) from %d+ belt%(s%)"), label .. ": capture log line missing")
+    return actual, compared, capture_line, table.concat(logs, "\n")
 end
+local function walked(capture_line) return tonumber(capture_line:match("%((%d+) walked")) end
 
 do
     local L1, L2 = "run-lane-1", "run-lane-2"
@@ -100,12 +104,25 @@ do
     for i = 1, 3 do feed(run[i], run[i + 1]) end
     local side = belt(20, {line("side-1", {{uid = 300, pos = 0.25, name = "pistol"}}), line("side-2")})
     feed(side, run[2])
-    local groups, comparisons = check("straight run with a side load", {run[1], run[2], run[3], run[4], side}, 4)
+    local groups, comparisons, capture_line = check("straight run with a side load", {run[1], run[2], run[3], run[4], side}, 4)
     assert(#groups[1].members == 4 and groups[1].members[4].id == "e14", "the run's lane shares one group in belt order")
     assert(#groups[1].slots == 4 and groups[1].item_source_positions[1] == "e11", "slots follow belt order")
     assert(groups[3].slots[1].st.health == 0.5, "item state travels with the slot")
-    assert(comparisons < 40, "connected belts should need few comparisons, got " .. comparisons)
+    assert(comparisons < 60, "connected belts should need few comparisons, got " .. comparisons)
+    assert(walked(capture_line) == 5, "every listed belt is walked once: " .. capture_line)
     print("PASS a straight run shares lanes; a side-loading belt keeps its own")
+end
+
+do
+    for _, side in ipairs({"inputs", "outputs"}) do
+        local L1, L2 = "half-" .. side .. "-1", "half-" .. side .. "-2"
+        local a = belt(70, {line(L1, {{uid = 700, pos = 0.9, name = "iron-plate"}}), line(L2)})
+        local b = belt(71, {line(L1, {{uid = 701, pos = 0.1, name = "iron-plate"}}), line(L2)})
+        feed(a, b, side)
+        local groups = check("neighbour listed on the " .. side .. " side only", {a, b}, 2)
+        assert(#groups[1].members == 2, "an adjacency reported by one side only still joins the lane")
+    end
+    print("PASS an adjacency reported by only one of the two belts still joins their lanes")
 end
 
 do
@@ -134,9 +151,50 @@ do
     local x = belt(52, {line("bridge-1"), line("bridge-2")})
     local c = belt(53, {line("bridge-1"), line("bridge-2")})
     feed(a, x) feed(x, c)
-    local groups = check("bridging belt outside the list", {a, c}, 2)
+    local stranger = belt(54, {line("stranger-1"), line("stranger-2")})
+    local far = belt(55, {line("far-1"), line("far-2")})
+    feed(stranger, a) feed(far, stranger)
+    local groups, _, capture_line = check("bridging belt outside the list", {a, c}, 2)
     assert(#groups[1].members == 2, "lines joined through a belt that is not in the list still share a group")
-    print("PASS a shared lane through a belt outside the list is still one group")
+    assert(walked(capture_line) == 3, "only unlisted belts that share a lane are walked: " .. capture_line)
+    print("PASS a shared lane through a belt outside the list is still one group; unrelated belts are not walked")
+end
+
+do
+    local ghost = {valid = true, unit_number = 81, type = "entity-ghost", surface_index = 1}
+    local entrance = belt(82, {line("g-1"), line("g-2"), line("g-3"), line("g-4")}, "underground-belt")
+    entrance.underground_belt_neighbour = ghost
+    local elsewhere = belt(83, {line("g-1"), line("g-2")})
+    elsewhere.surface_index = 2
+    local linked = belt(84, {line("l-1"), line("l-2")}, "linked-belt")
+    linked.linked_belt_neighbour = elsewhere
+    feed(linked, entrance)
+    local _, _, capture_line = check("ghost and off-surface partners", {entrance, linked}, 6)
+    assert(walked(capture_line) == 2, "a ghost or an entity on another surface is never walked: " .. capture_line)
+    print("PASS ghost partners and partners on another surface are skipped without failing the capture")
+end
+
+do
+    local a = belt(91, {line("apart-1", {{uid = 910, pos = 0.99, name = "iron-plate"}}), line("apart-2")})
+    local c = belt(92, {line("apart-1", {{uid = 910, pos = 0.01, name = "iron-plate"}}), line("apart-2")})
+    local groups, _, capture_line, trace = check("equal lines without an adjacency", {a, c}, 2)
+    assert(#groups[1].members == 2 and #groups[1].slots == 1, "the pairwise search restores the engine's grouping")
+    assert(trace:find("disagreed with the engine", 1, true) and capture_line:find("pairwise search", 1, true),
+        "the disagreement and the fallback were not logged: " .. trace)
+    print("PASS an item seen on two groups' lines falls back to the pairwise search")
+end
+
+do
+    local broken = belt(93, {line("broken-1"), line("broken-2")})
+    broken.belt_neighbours = nil
+    setmetatable(broken, {__index = function(_, key) if key == "belt_neighbours" then error("belt_neighbours is not available") end end})
+    local partner = belt(94, {line("broken-1"), line("broken-2")})
+    feed(partner, broken, "outputs")
+    local groups, _, capture_line, trace = check("neighbour read failure", {broken, partner}, 2)
+    assert(#groups[1].members == 2, "the pairwise search still groups the shared lane")
+    assert(trace:find("partition failed", 1, true) and capture_line:find("pairwise search", 1, true),
+        "the failure and the fallback were not logged: " .. trace)
+    print("PASS a failing neighbour read falls back to the pairwise search")
 end
 
 do

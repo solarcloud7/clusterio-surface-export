@@ -131,19 +131,28 @@ end
 
 local LINE_KEY_STRIDE = 16
 
+local BELT_CONNECTABLE_TYPES = {
+    ["transport-belt"] = true, ["underground-belt"] = true, ["splitter"] = true, ["lane-splitter"] = true,
+    ["loader"] = true, ["loader-1x1"] = true, ["linked-belt"] = true,
+}
+
 local function connected_belts(entity)
     local candidates = {}
+    local surface_index = entity.surface_index
+    local function add(neighbour)
+        if neighbour and neighbour.valid and BELT_CONNECTABLE_TYPES[neighbour.type]
+            and neighbour.surface_index == surface_index then
+            candidates[#candidates + 1] = neighbour
+        end
+    end
     local neighbours = entity.belt_neighbours
-    for _, list in ipairs({ neighbours.inputs, neighbours.outputs }) do
-        for _, neighbour in pairs(list or {}) do candidates[#candidates + 1] = neighbour end
-    end
-    local partner = nil
+    for _, neighbour in pairs(neighbours.inputs or {}) do add(neighbour) end
+    for _, neighbour in pairs(neighbours.outputs or {}) do add(neighbour) end
     if entity.type == "underground-belt" then
-        partner = entity.underground_belt_neighbour
+        add(entity.underground_belt_neighbour)
     elseif entity.type == "linked-belt" then
-        partner = entity.linked_belt_neighbour
+        add(entity.linked_belt_neighbour)
     end
-    if partner then candidates[#candidates + 1] = partner end
     return candidates
 end
 
@@ -157,10 +166,10 @@ local function partition_lines(belt_pairs)
         a, b = root(a), root(b)
         if a ~= b then parent[a] = b end
     end
-    local order, known, visited = {}, {}, {}
+    local order, queued = {}, {}
     for _, bp in ipairs(belt_pairs) do
         local unit = bp.entity.unit_number
-        if not known[unit] then known[unit] = true; order[#order + 1] = bp.entity end
+        if not queued[unit] then queued[unit] = true; order[#order + 1] = bp.entity end
     end
     local compared = 0
     local i = 1
@@ -168,11 +177,10 @@ local function partition_lines(belt_pairs)
         local entity = order[i]
         i = i + 1
         local unit = entity.unit_number
-        visited[unit] = true
         local lines = {}
         for li = 1, entity.get_max_transport_line_index() do
             local key = unit * LINE_KEY_STRIDE + li
-            parent[key] = key
+            parent[key] = parent[key] or key
             lines[li] = entity.get_transport_line(li)
         end
         for li = 1, #lines do
@@ -182,27 +190,47 @@ local function partition_lines(belt_pairs)
             end
         end
         for _, neighbour in ipairs(connected_belts(entity)) do
-            if neighbour.valid then
-                local other_unit = neighbour.unit_number
-                if not known[other_unit] then known[other_unit] = true; order[#order + 1] = neighbour end
-                if visited[other_unit] then
-                    for lj = 1, neighbour.get_max_transport_line_index() do
-                        local other = neighbour.get_transport_line(lj)
-                        for li = 1, #lines do
-                            compared = compared + 1
-                            if lines[li].line_equals(other) then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end
-                        end
+            local other_unit = neighbour.unit_number
+            local shared = false
+            for lj = 1, neighbour.get_max_transport_line_index() do
+                local other_key = other_unit * LINE_KEY_STRIDE + lj
+                parent[other_key] = parent[other_key] or other_key
+                local other = neighbour.get_transport_line(lj)
+                for li = 1, #lines do
+                    compared = compared + 1
+                    if lines[li].line_equals(other) then
+                        join(unit * LINE_KEY_STRIDE + li, other_key)
+                        shared = true
                     end
                 end
             end
+            if shared and not queued[other_unit] then queued[other_unit] = true; order[#order + 1] = neighbour end
         end
     end
     return function(entity, li) return root(entity.unit_number * LINE_KEY_STRIDE + li) end, #order, compared
 end
 
-local function collect_side_groups(belt_pairs, cache)
-    local groups, index_of = {}, {}
-    local root_of, walked, compared = partition_lines(belt_pairs)
+local function pairwise_partition(belt_pairs)
+    local representatives, keys = {}, {}
+    for _, bp in ipairs(belt_pairs) do
+        for li = 1, bp.entity.get_max_transport_line_index() do
+            local line = bp.entity.get_transport_line(li)
+            local key
+            for j, representative in ipairs(representatives) do
+                if line.line_equals(representative) then key = j break end
+            end
+            if not key then
+                key = #representatives + 1
+                representatives[key] = line
+            end
+            keys[bp.entity.unit_number * LINE_KEY_STRIDE + li] = key
+        end
+    end
+    return function(entity, li) return keys[entity.unit_number * LINE_KEY_STRIDE + li] end
+end
+
+local function collect_groups(belt_pairs, cache, root_of, check_disagreement)
+    local groups, index_of, group_of_item = {}, {}, {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
             local line = bp.entity.get_transport_line(li)
@@ -218,6 +246,14 @@ local function collect_side_groups(belt_pairs, cache)
             for _, it in ipairs(line.get_detailed_contents()) do
                 local uid = tostring(it.unique_id)
                 if not g.seen[uid] then
+                    if check_disagreement then
+                        local owner = group_of_item[uid]
+                        if owner then
+                            return nil, string.format("item %s (%s) is on the line of group %d and of group %d",
+                                uid, tostring(it.stack.name), owner, gi)
+                        end
+                        group_of_item[uid] = gi
+                    end
                     g.seen[uid] = true
                     g.slots[#g.slots + 1] = {
                         n = it.stack.name,
@@ -233,6 +269,29 @@ local function collect_side_groups(belt_pairs, cache)
             end
         end
     end
+    return groups
+end
+
+local function collect_side_groups(belt_pairs, cache)
+    local groups, how
+    local partition_ok, root_of, walked, compared = pcall(partition_lines, belt_pairs)
+    if partition_ok then
+        local disagreement
+        groups, disagreement = collect_groups(belt_pairs, cache, root_of, true)
+        if groups then
+            how = string.format("%d walked, %d line comparisons", walked, compared)
+        else
+            log(string.format("[BeltRestoration] connected-belt line partition disagreed with the engine (%s); using the pairwise search",
+                tostring(disagreement)))
+        end
+    else
+        log(string.format("[BeltRestoration] connected-belt line partition failed (%s); using the pairwise search",
+            tostring(root_of)))
+    end
+    if not groups then
+        groups = collect_groups(belt_pairs, cache, pairwise_partition(belt_pairs), false)
+        how = "pairwise search"
+    end
     local out = {}
     local stateful = 0
     for _, g in ipairs(groups) do
@@ -241,8 +300,8 @@ local function collect_side_groups(belt_pairs, cache)
         end
         out[#out + 1] = { members = g.members, slots = g.slots, item_source_positions = g.item_source_positions }
     end
-    log(string.format("[BeltRestoration] Captured %d side group(s) from %d belt(s) (%d walked, %d line comparisons); %d slot(s) carry non-default item state",
-        #out, #belt_pairs, walked, compared, stateful))
+    log(string.format("[BeltRestoration] Captured %d side group(s) from %d belt(s) (%s); %d slot(s) carry non-default item state",
+        #out, #belt_pairs, how, stateful))
     return out
 end
 
