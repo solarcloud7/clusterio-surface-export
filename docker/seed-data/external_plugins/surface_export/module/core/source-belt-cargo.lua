@@ -269,7 +269,7 @@ function SourceBeltCargo.restore(lock_data, label, surface, options)
 	options = options or {}
 	if not (surface and surface.valid) then return false, "the platform surface is unavailable" end
 	if record.pinned then
-		return false, string.format("the record is pinned (%s); inspect the platform, then /belt-cargo abandon or restore-present", tostring(record.pinned.reason))
+		return false, string.format("the record is pinned (%s); inspect the platform, then /belt-cargo abandon", tostring(record.pinned.reason))
 	end
 	if record.attempt then
 		return false, string.format("an earlier restore attempt placed %s item(s) and then failed (%s); inspect the platform, then /belt-cargo abandon",
@@ -362,6 +362,9 @@ end
 function SourceBeltCargo.override(lock_data, action, label, surface)
 	local record = lock_data and lock_data.cleared_belts
 	if not record then return false, "no captured belt cargo is recorded for this platform" end
+	if lock_data.phase == "committed" then
+		return false, "the source deletion for this transfer is already committed; the destination owns the cargo now"
+	end
 	if SourceBeltCargo.capture_active(record) then
 		return false, "the capture is still running; interrupt or finish the transfer first"
 	end
@@ -371,11 +374,14 @@ function SourceBeltCargo.override(lock_data, action, label, surface)
 		log(string.format("[Belt Scan] Captured belt cargo record for '%s' abandoned by an operator; the belts keep whatever is on them now (%s)", tostring(label), summary))
 		return true, summary
 	elseif action == "restore-present" then
-		if record.attempt and record.attempt.placed then
-			return false, string.format("an earlier attempt already placed %s item(s); placing again would duplicate them, so abandon instead", tostring(record.attempt.placed))
+		if record.pinned then
+			return false, string.format("the record is pinned (%s): some of its items may still be on the belts, so placing it would duplicate them; abandon instead",
+				tostring(record.pinned.reason))
 		end
-		record.attempt = nil
-		record.pinned = nil
+		if record.attempt then
+			return false, string.format("an earlier restore attempt already ran (%s) and may have placed items; placing again would duplicate them, so abandon instead",
+				tostring(record.attempt.error))
+		end
 		return SourceBeltCargo.restore(lock_data, label, surface, { allow_missing = true })
 	end
 	return false, "unknown action; use abandon or restore-present"

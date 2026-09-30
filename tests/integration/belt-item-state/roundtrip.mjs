@@ -35,7 +35,6 @@ function sourceBeltCapture(host,records) {
   const m=done.match(/(\d+) belt\(s\), (\d+) stack\(s\) \((\d+) picked up by the final sweep\), (\d+) side group\(s\) \((\d+) merged[^)]*\), \d+ slot\(s\)[^,]*, (\d+) callback\(s\) over (\d+) tick\(s\)/);
   assert.ok(m,`unparsed capture summary: ${done}`);
   const summary={belts:+m[1],stacks:+m[2],sweptStacks:+m[3],groups:+m[4],merged:+m[5],callbacks:+m[6],ticks:+m[7]};
-  // The timing stage also covers the partition callback that begins the capture.
   assert.equal(summary.callbacks+1,phase.batchCount,"the timing stage must cover the begin callback plus every capture callback");
   assert.ok(sourceLog(host,"contract violated").length===0,"no cleared item may reappear");
   const batches=records.filter(r=>r.owner==="source-lua"&&r.parent==="belt_capture");

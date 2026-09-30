@@ -135,9 +135,27 @@
 		]
 	},
 	{
-		"name": "restore-present places again after a partial placement",
+		"name": "restore-present places again after an earlier attempt",
 		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
-		"find": "if record.attempt and record.attempt.placed then",
+		"find": "\t\tif record.attempt then\n\t\t\treturn false, string.format(\"an earlier restore attempt already ran",
+		"replace": "\t\tif false then\n\t\t\treturn false, string.format(\"an earlier restore attempt already ran",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "restore-present places a pinned record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\t\tif record.pinned then\n\t\t\treturn false, string.format(\"the record is pinned (%s): some of its items",
+		"replace": "\t\tif false then\n\t\t\treturn false, string.format(\"the record is pinned (%s): some of its items",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the override runs on a committed source",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if lock_data.phase == \"committed\" then",
 		"replace": "if false then",
 		"tests": [
 			"tests/lua/source-belt-cargo.lua"

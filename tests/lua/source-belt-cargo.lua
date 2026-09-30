@@ -352,10 +352,30 @@ do
     assert(not again and tostring(again_why):find("earlier restore attempt placed 3", 1, true) and #a.lines[1].items == 1,
         "a second attempt after a failed one is refused so nothing is placed twice: " .. tostring(again_why))
     local retry, retry_why = cargo.override(lock3, "restore-present", "Ship", ship_surface)
-    assert(not retry and tostring(retry_why):find("already placed 3", 1, true) and lock3.cleared_belts, "restore-present after a partial placement is refused: " .. tostring(retry_why))
+    assert(not retry and tostring(retry_why):find("already ran", 1, true) and lock3.cleared_belts and #a.lines[1].items == 1,
+        "restore-present after any earlier attempt is refused, nothing is placed twice: " .. tostring(retry_why))
+    lock3.cleared_belts.attempt = {tick = 1, error = "threw partway"}
+    retry, retry_why = cargo.override(lock3, "restore-present", "Ship", ship_surface)
+    assert(not retry and tostring(retry_why):find("already ran", 1, true) and #a.lines[1].items == 1,
+        "an attempt that threw before it could count placements is refused too: " .. tostring(retry_why))
+    lock3.phase = "committed"
+    local committed, committed_why = cargo.override(lock3, "abandon", "Ship", ship_surface)
+    assert(not committed and tostring(committed_why):find("already committed", 1, true) and lock3.cleared_belts, "a committed source keeps its record untouched: " .. tostring(committed_why))
+    lock3.phase = nil
     assert(cargo.override(lock3, "abandon", "Ship", ship_surface) and lock3.cleared_belts == nil, "abandon is the way out after a partial placement")
     local bogus, bogus_why = cargo.override({cleared_belts = {groups = {}}}, "explode", "Ship", ship_surface)
     assert(not bogus and tostring(bogus_why):find("unknown action", 1, true))
+    local x = belt(43, {"pin-1", "pin-2"})
+    x.lines[1].seed("iron-plate") x.lines[2].seed("iron-plate")
+    x.lines[2].clear = function() error("engine refused the clear") end
+    local job4, lock4 = job_for({x})
+    cargo.begin(job4)
+    assert(not pcall(cargo.step, job4, 1) and lock4.cleared_belts.pinned, "the clear failure pins the record")
+    job4.completion_interrupted = {error = "test"}
+    local pinned_retry, pinned_why = cargo.override(lock4, "restore-present", "Ship", ship_surface)
+    assert(not pinned_retry and tostring(pinned_why):find("pinned", 1, true) and #x.lines[1].items == 0 and #x.lines[2].items == 1,
+        "restore-present never places a pinned record, whose items may still be on the belts: " .. tostring(pinned_why))
+    assert(cargo.override(lock4, "abandon", "Ship", ship_surface) and lock4.cleared_belts == nil, "abandon releases a pinned record")
     print("PASS a rollback mid-capture restores only the cleared cargo; missing belts, unknown items and failed placements keep the protection until an operator decides")
 end
 
