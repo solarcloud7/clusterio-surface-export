@@ -21,6 +21,17 @@ modules["utils/util"] = {QUALITY_NORMAL = "normal", pcall_warn = function(_, fn)
 modules["utils/version-compat"] = {belt_force_insert_at = function(line, position, stack, count)
     line.force_insert_at(position, stack, count)
 end}
+modules["validators/cargo-counter"] = {count_entity_items = function(entity, subject)
+    assert(subject == "belts", "the restore census must read belt lines only")
+    local totals = {}
+    for li = 1, entity.get_max_transport_line_index() do
+        for _, it in ipairs(entity.get_transport_line(li).get_detailed_contents()) do
+            local key = it.stack.name .. "/" .. it.stack.quality.name
+            totals[key] = (totals[key] or 0) + it.stack.count
+        end
+    end
+    return totals
+end}
 modules["export_scanners/inventory-scanner"] = {
     new_item_state_cache = function() return {} end,
     release_item_state_cache = noop,
@@ -160,11 +171,13 @@ do
     for _, v in pairs(seeded) do seeded_total = seeded_total + v end
     assert(captured_total == seeded_total, "captured quantity equals seeded quantity")
     assert(job.census.physical == 9 and job.census.serialized == 9, "census totals match on both sides")
-    assert(lock.cleared_belts.groups == job.export_data.belt_side_groups and lock.cleared_belts.group_parent == nil,
-        "the lock keeps the finished groups for a rollback")
+    assert(lock.cleared_belts.groups == job.export_data.belt_side_groups and lock.cleared_belts.group_parent == nil
+        and lock.cleared_belts.complete, "the lock keeps the finished groups for a rollback")
+    logs = {}
     local ok, placed = cargo.restore(lock, "Ship")
     assert(ok, "restore refused: " .. tostring(placed))
     assert(placed == 9 and lock.cleared_belts == nil, "restore puts every captured item back and clears the record")
+    assert(logs[#logs]:find("matches the capture exactly", 1, true), "a finished capture's restore reports its whole-belt census")
     local restored = totals({a, b, c})
     local equal, key = same(seeded, restored)
     assert(equal, "restored cargo differs from the seeded cargo per lane, item and quality at " .. tostring(key))
@@ -225,9 +238,11 @@ do
     local lock = {}
     cargo.begin(job, lock)
     assert(not cargo.step(job, 1), "one belt captured, the lock now covers cleared cargo")
+    logs = {}
     local ok, placed = cargo.restore(lock, "Ship")
     assert(ok and placed == 2 and #a.lines[1].items == 1 and a.lines[1].items[1].count == 2 and #b.lines[2].items == 1,
         "a rollback in the middle of the capture puts back what was cleared and leaves the rest alone")
+    assert(logs[#logs]:find("still in progress", 1, true), "a mid-capture restore must not claim a whole-belt census")
     cargo.begin(job_for({a, b}), lock)
     entities_by_unit[42] = nil
     local refused, why = cargo.restore(lock, "Ship")

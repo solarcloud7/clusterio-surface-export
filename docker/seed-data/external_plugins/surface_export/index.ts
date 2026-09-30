@@ -87,6 +87,10 @@ export const plugin = {
 			description: "Target stacks or belt lines restored per batch. Each captured lane group is restored and checked together, so a large group may exceed this target.",
 			type: "number", initialValue: 500,
 		},
+		[`${PLUGIN_NAME}.belt_capture_budget`]: {
+			description: "Belts whose cargo a transfer reads and clears per callback on the source. The remaining drifted items are swept in one callback afterwards. Clones and file exports capture every belt in one callback regardless.",
+			type: "number", initialValue: 100,
+		},
 		[`${PLUGIN_NAME}.belt_trace`]: {
 			description: "Record belt item positions after successful restoration. Failed restores retain this evidence even when tracing is off.",
 			type: "boolean", initialValue: false,

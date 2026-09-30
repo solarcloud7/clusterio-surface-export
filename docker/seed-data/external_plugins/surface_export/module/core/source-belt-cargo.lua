@@ -1,6 +1,7 @@
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local SourceCargoIntegrity = require("modules/surface_export/export_scanners/source-cargo-integrity")
+local CargoCounter = require("modules/surface_export/validators/cargo-counter")
 local Util = require("modules/surface_export/utils/util")
 
 local SourceBeltCargo = {}
@@ -186,6 +187,7 @@ function SourceBeltCargo.finish(job, lock_data)
 	if lock_data and lock_data.cleared_belts then
 		lock_data.cleared_belts.groups = groups
 		lock_data.cleared_belts.group_parent = nil
+		lock_data.cleared_belts.complete = true
 	end
 	log(string.format("[Belt Scan] Staggered capture done: %d belt(s), %d stack(s) (%d picked up by the final sweep), %d side group(s) (%d merged at a straddling item), %d slot(s) carry non-default item state, %d callback(s) over %d tick(s)",
 		#state.units, state.stacks, state.sweep_stacks, #groups, state.merged, stateful, state.callbacks, game.tick - state.started_tick))
@@ -228,8 +230,37 @@ function SourceBeltCargo.restore(lock_data, label)
 		record.attempt = { tick = game.tick, placed = placed, error = reason }
 		return false, reason
 	end
+	local census = "capture was still in progress, so only the per-group check applies"
+	if record.complete then
+		local expected, actual = {}, {}
+		for _, g in ipairs(groups) do
+			for _, slot in ipairs(g.slots) do
+				local key = Util.make_quality_key(slot.n, slot.q or QUALITY_NORMAL)
+				expected[key] = (expected[key] or 0) + slot.ct
+			end
+		end
+		local census_ok, census_err = pcall(function()
+			for _, entity in pairs(entity_map) do
+				for key, count in pairs(CargoCounter.count_entity_items(entity, "belts")) do actual[key] = (actual[key] or 0) + count end
+			end
+		end)
+		if not census_ok then
+			record.attempt = { tick = game.tick, placed = placed, error = "belt census after the restore failed: " .. tostring(census_err) }
+			return false, record.attempt.error
+		end
+		local mismatched = {}
+		for key, count in pairs(expected) do if actual[key] ~= count then mismatched[#mismatched + 1] = string.format("%s captured %d, on belts %d", key, count, actual[key] or 0) end end
+		for key, count in pairs(actual) do if not expected[key] then mismatched[#mismatched + 1] = string.format("%s captured 0, on belts %d", key, count) end end
+		if #mismatched > 0 then
+			table.sort(mismatched)
+			local reason = string.format("belt census after the restore differs from the capture in %d item key(s): %s", #mismatched, table.concat(mismatched, "; ", 1, math.min(#mismatched, 5)))
+			record.attempt = { tick = game.tick, placed = placed, error = reason }
+			return false, reason
+		end
+		census = "belt census after the restore matches the capture exactly"
+	end
 	lock_data.cleared_belts = nil
-	log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s' after the transfer did not complete", placed, tostring(label)))
+	log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s' after the transfer did not complete; %s", placed, tostring(label), census))
 	return true, placed
 end
 

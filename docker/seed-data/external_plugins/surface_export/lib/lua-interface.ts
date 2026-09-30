@@ -26,6 +26,7 @@ export interface LuaConfigure {
 	profileBatches?: boolean;
 	sectionedCodec?: boolean;
 	beltBatchSize?: number;
+	beltCaptureBudget?: number;
 	beltTrace?: boolean;
 	maxExportCacheSize: number;
 }
@@ -48,11 +49,15 @@ export class LuaInterface {
 		if (!Number.isInteger(beltBudget) || beltBudget < 1 || beltBudget > 1_000_000) {
 			throw new Error("belt_batch_size must be an integer from 1 to 1000000");
 		}
+		const captureBudget = cfg.beltCaptureBudget ?? 100;
+		if (!Number.isInteger(captureBudget) || captureBudget < 1 || captureBudget > 1_000_000) {
+			throw new Error("belt_capture_budget must be an integer from 1 to 1000000");
+		}
 		const script = `/sc ` +
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
 			`remote.call("surface_export", "configure", {` +
 			`batch_size=${cfg.batchSize}, ` +
-			`belt_batch_size=${beltBudget}, belt_trace=${cfg.beltTrace === true}, ` +
+			`belt_batch_size=${beltBudget}, belt_capture_budget=${captureBudget}, belt_trace=${cfg.beltTrace === true}, ` +
 			`max_concurrent_jobs=${cfg.maxConcurrentJobs}, ` +
 			`show_progress=${cfg.showProgress}, ` +
 			`debug_mode=${cfg.debugMode}, ` +
