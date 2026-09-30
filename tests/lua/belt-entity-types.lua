@@ -95,16 +95,23 @@ do
     end
     local a, b = linked(1), linked(2)
     local map = {[1] = a, [2] = b}
-    assert(Deserializer.restore_linked_belts(a, {entity_id = 1, specific_data = {linked_partner_id = 2}}, map) == 1
-        and #connected == 1 and connected[1][2] == b, "the input end reconnects to its partner")
-    assert(Deserializer.restore_linked_belts(b, {entity_id = 2, specific_data = {linked_partner_id = 1}}, map) == 0
-        and #connected == 1, "the partner is already linked back, so the output end does nothing")
+    local linked_count, dropped = Deserializer.restore_linked_belts(a, {entity_id = 1, specific_data = {linked_partner_id = 2}}, map)
+    assert(linked_count == 1 and dropped == 0 and #connected == 1 and connected[1][2] == b, "the input end reconnects to its partner")
+    linked_count, dropped = Deserializer.restore_linked_belts(b, {entity_id = 2, specific_data = {linked_partner_id = 1}}, map)
+    assert(linked_count == 0 and dropped == 0 and #connected == 1, "the partner is already linked back, so the output end does nothing")
     logs = {}
-    assert(Deserializer.restore_linked_belts(linked(3), {entity_id = 3, specific_data = {linked_partner_id = 99}}, map) == 0
-        and #connected == 1 and logs[#logs]:find("link dropped", 1, true), "a partner outside the payload drops the link and says so")
-    assert(Deserializer.restore_linked_belts(linked(4), {entity_id = 4, specific_data = {}}, map) == 0, "no partner recorded, nothing to do")
+    linked_count, dropped = Deserializer.restore_linked_belts(linked(3), {entity_id = 3, specific_data = {linked_partner_id = 99}}, map)
+    assert(linked_count == 0 and dropped == 1 and #connected == 1 and logs[#logs]:find("link dropped", 1, true),
+        "a partner outside the payload drops the link, counts it and says so")
+    local failing = linked(6)
+    failing.connect_linked_belts = function() error("neighbours have to be of different type") end
+    logs = {}
+    linked_count, dropped = Deserializer.restore_linked_belts(failing, {entity_id = 6, specific_data = {linked_partner_id = 2}}, map)
+    assert(linked_count == 0 and dropped == 1 and logs[#logs]:find("linked-belt connection", 1, true), "a connection the engine refuses counts as dropped")
+    linked_count, dropped = Deserializer.restore_linked_belts(linked(4), {entity_id = 4, specific_data = {}}, map)
+    assert(linked_count == 0 and dropped == 0, "no partner recorded, nothing to do")
     assert(Deserializer.restore_linked_belts({valid = true, type = "transport-belt"}, {entity_id = 5, specific_data = {linked_partner_id = 1}}, map) == 0)
-    print("PASS a linked pair captured on one platform is reconnected on import")
+    print("PASS a linked pair captured on one platform is reconnected on import and a dropped link is counted")
 end
 
 do
@@ -117,13 +124,31 @@ do
     belt(1, "transport-belt") belt(2, "lane-splitter") belt(3, "transport-belt")
     map[1].belt_neighbours.outputs = {map[2]} map[2].belt_neighbours.inputs = {map[1]}
     map[2].belt_neighbours.outputs = {map[3]} map[3].belt_neighbours.inputs = {map[2]}
+    -- Linked belts are still unlinked when the belts phase plans its batches (the pair is reconnected
+    -- in the later state phase), so each end is a plain belt end and no item can cross between them.
     belt(4, "linked-belt") belt(5, "linked-belt")
-    map[4].linked_belt_neighbour, map[5].linked_belt_neighbour = map[5], map[4]
     map[3].belt_neighbours.outputs = {map[4]} map[4].belt_neighbours.inputs = {map[3]}
     local plan = planner.plan(groups, map, 2)
-    assert(not plan.atomic_reason, "a lane splitter and a linked pair on the platform must not force the atomic fallback: " .. tostring(plan.atomic_reason))
-    assert(plan.networks == 1, "the lane splitter and the linked pair join their belts into one network, got " .. tostring(plan.networks))
-    map[5].linked_belt_neighbour = {valid = true, unit_number = 999}
-    assert(planner.plan(groups, map, 2).atomic_reason == "external linked-belt connection", "a linked partner outside the payload keeps the conservative fallback")
-    print("PASS the import planner batches through lane splitters and same-platform linked pairs")
+    assert(not plan.atomic_reason, "a lane splitter and unlinked linked belts must not force the atomic fallback: " .. tostring(plan.atomic_reason))
+    assert(plan.networks == 2, "the lane splitter joins its belts into one network and the other linked end stands alone, got " .. tostring(plan.networks))
+    print("PASS the import planner batches through lane splitters and treats an unlinked linked belt as a belt end")
+end
+
+do
+    local function linked_on(surface_index, partner)
+        return {valid = true, type = "linked-belt", linked_belt_neighbour = partner, surface_index = surface_index}
+    end
+    local belts = {}
+    local surface = {valid = true, index = 5, find_entities_filtered = function(filter)
+        assert(filter.type == "linked-belt", "only linked belts need the cross-surface check")
+        return belts
+    end}
+    assert(GameUtils.cross_surface_linked_belts(surface) == 0, "no linked belts, nothing crosses")
+    belts[1] = linked_on(5, nil)
+    belts[2] = linked_on(5, linked_on(5))
+    assert(GameUtils.cross_surface_linked_belts(surface) == 0, "an unlinked belt and a same-surface pair do not cross the platform boundary")
+    belts[3] = linked_on(5, linked_on(1))
+    belts[4] = linked_on(5, {valid = false, surface_index = 1})
+    assert(GameUtils.cross_surface_linked_belts(surface) == 1, "only a valid partner on another surface counts as a crossing")
+    print("PASS a linked belt whose partner lives on another surface is detected before a transfer starts")
 end

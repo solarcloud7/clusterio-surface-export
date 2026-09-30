@@ -67,15 +67,17 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
 
-    local linked_belts_connected = 0
+    local linked_belts_connected, linked_belts_dropped = 0, 0
     for _, entity_data in ipairs(entities_to_create) do
       local entity = entity_map[entity_data.entity_id]
       if entity and entity.valid then
-        linked_belts_connected = linked_belts_connected + Deserializer.restore_linked_belts(entity, entity_data, entity_map)
+        local connected, dropped = Deserializer.restore_linked_belts(entity, entity_data, entity_map)
+        linked_belts_connected = linked_belts_connected + connected
+        linked_belts_dropped = linked_belts_dropped + dropped
       end
     end
-    if linked_belts_connected > 0 then
-      log(string.format("[Import] Linked belts reconnected within the platform: %d", linked_belts_connected))
+    if linked_belts_connected > 0 or linked_belts_dropped > 0 then
+      log(string.format("[Import] Linked belts reconnected within the platform: %d; links dropped: %d", linked_belts_connected, linked_belts_dropped))
     end
 
     return {
@@ -83,6 +85,7 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       copper_pruned = copper_pruned,
       proxies_linked = proxies_linked,
       linked_belts_connected = linked_belts_connected,
+      linked_belts_dropped = linked_belts_dropped,
       created_logistic_groups = created_logistic_groups,
     }
 end

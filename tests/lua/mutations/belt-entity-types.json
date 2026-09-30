@@ -54,6 +54,15 @@
 		]
 	},
 	{
+		"name": "a dropped link is counted as connected",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/deserializer.lua",
+		"find": "  if linked then return 1, 0 end\n  return 0, 1",
+		"replace": "  return 1, 0",
+		"tests": [
+			"tests/lua/belt-entity-types.lua"
+		]
+	},
+	{
 		"name": "the import planner treats a lane splitter as unsupported",
 		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_batches.lua",
 		"find": "and entity.type ~= \"lane-splitter\" and entity.type ~= \"linked-belt\" then",
@@ -63,9 +72,9 @@
 		]
 	},
 	{
-		"name": "the import planner ignores a linked partner outside the payload",
-		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_batches.lua",
-		"find": "if entry.entity.type == \"linked-belt\"\n            and not connect(entry.group, entry.entity.linked_belt_neighbour) then",
+		"name": "a linked belt whose partner is on another surface is not detected",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/game-utils.lua",
+		"find": "if partner and partner.valid and partner.surface_index ~= surface.index then",
 		"replace": "if false then",
 		"tests": [
 			"tests/lua/belt-entity-types.lua"

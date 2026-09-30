@@ -1379,25 +1379,26 @@ end
 
 function Deserializer.restore_linked_belts(entity, entity_data, entity_map)
   if not entity.valid or entity.type ~= "linked-belt" then
-    return 0
+    return 0, 0
   end
   local data = entity_data.specific_data
   if not data or data.linked_partner_id == nil then
-    return 0
+    return 0, 0
   end
   local partner = entity_map[data.linked_partner_id]
   if not (partner and partner.valid and partner.type == "linked-belt") then
     log(string.format("[Deserializer] linked-belt at (%.1f, %.1f): partner %s absent from entity_map — link dropped; the mod that owns the link must re-establish it",
       entity.position.x, entity.position.y, tostring(data.linked_partner_id)))
-    return 0
+    return 0, 1
   end
   if Util.safe_get(entity, "linked_belt_neighbour") == partner then
-    return 0
+    return 0, 0
   end
   local linked = safe_call(string.format("linked-belt connection for %s", entity.name), function()
     entity.connect_linked_belts(partner)
   end)
-  return linked and 1 or 0
+  if linked then return 1, 0 end
+  return 0, 1
 end
 
 Deserializer.prune_pole_copper = ConnectionRestoration.prune_pole_copper

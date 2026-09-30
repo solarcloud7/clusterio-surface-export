@@ -53,10 +53,6 @@ function BeltBatches.plan(groups, entity_map, budget)
             and not connect(entry.group, entry.entity.underground_belt_neighbour) then
             return atomic("external underground connection")
         end
-        if entry.entity.type == "linked-belt"
-            and not connect(entry.group, entry.entity.linked_belt_neighbour) then
-            return atomic("external linked-belt connection")
-        end
     end
     local roots, networks = {}, 0
     for i in ipairs(groups) do

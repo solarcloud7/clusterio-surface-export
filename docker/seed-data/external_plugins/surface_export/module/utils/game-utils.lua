@@ -119,6 +119,17 @@ GameUtils.BELT_ENTITY_TYPES = {
   ["linked-belt"] = true,
 }
 
+function GameUtils.cross_surface_linked_belts(surface)
+  local crossing = 0
+  for _, belt in ipairs(surface.find_entities_filtered({ type = "linked-belt" })) do
+    local partner = GameUtils.safe_get(belt, "linked_belt_neighbour")
+    if partner and partner.valid and partner.surface_index ~= surface.index then
+      crossing = crossing + 1
+    end
+  end
+  return crossing
+end
+
 
 function GameUtils.make_stable_id(entity)
   local position = entity.position or {x = 0, y = 0}
