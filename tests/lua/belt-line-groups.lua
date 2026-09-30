@@ -119,8 +119,9 @@ do
         local a = belt(70, {line(L1, {{uid = 700, pos = 0.9, name = "iron-plate"}}), line(L2)})
         local b = belt(71, {line(L1, {{uid = 701, pos = 0.1, name = "iron-plate"}}), line(L2)})
         feed(a, b, side)
-        local groups = check("neighbour listed on the " .. side .. " side only", {a, b}, 2)
+        local groups, _, capture_line = check("neighbour listed on the " .. side .. " side only", {a, b}, 2)
         assert(#groups[1].members == 2, "an adjacency reported by one side only still joins the lane")
+        assert(walked(capture_line) == 2, "the one-sided adjacency must be joined by the walk itself: " .. capture_line)
     end
     print("PASS an adjacency reported by only one of the two belts still joins their lanes")
 end
@@ -138,8 +139,9 @@ do
     local entrance = belt(41, {line("u-tunnel-1"), line("u-top-2"), line("u-tunnel-1", {{uid = 500, pos = 0.1, name = "coal"}}), line("u-tunnel-2")}, "underground-belt")
     local exit = belt(42, {line("u-tunnel-1", {{uid = 500, pos = 0.1, name = "coal"}}), line("u-tunnel-2"), line("u-out-1"), line("u-out-2")}, "underground-belt")
     entrance.underground_belt_neighbour, exit.underground_belt_neighbour = exit, entrance
-    local groups = check("underground pair", {entrance, exit}, 5)
+    local groups, _, capture_line = check("underground pair", {entrance, exit}, 5)
     assert(#groups[1].members == 3 and #groups[1].slots == 1, "the tunnel lane is one group across both ends, item seen once")
+    assert(walked(capture_line) == 2, "the ends must be joined by the walk itself, not by the fallback: " .. capture_line)
     local lone = belt(43, {line("lone-1"), line("lone-2"), line("lone-1"), line("lone-4")}, "underground-belt")
     groups = check("lone underground end", {lone}, 3)
     assert(#groups[1].members == 2, "two lanes of one belt that are the same line share a group")
