@@ -46,6 +46,7 @@ export async function rollbackUnlockRefusedCase(lab, report, save) {
     report.transferId = start(lab, report.name); save();
     report.outcome = await terminal(lab, report.transferId, "failed");
     assert.equal(report.outcome.status, "failed", "the forced validation failure must record a failed transfer");
+    await lab.until(() => eventTypes(readLogEntry(lab, report.transferId)).includes("transfer_failed"), "failed transfer persisted", 60);
     report.afterFailure = observe(lab, report, report.transferId); save();
     const failed = report.afterFailure;
     assert.equal(failed.pending.length, 1, "the pending intent must survive a refused unlock");
@@ -80,10 +81,11 @@ export async function rollbackUnlockRefusedCase(lab, report, save) {
     assert.equal(report.afterRestart.destination.present, false);
     configure(lab, 1, "{test_force_unlock_refusal=false}");
     report.disarmedAt = new Date().toISOString(); save();
-    report.resolved = await lab.until(() => {
+    await lab.until(() => {
       const state = observe(lab, report, report.transferId);
-      return state.pending.length === 0 && state.history?.sourceRollback === "succeeded" ? state : false;
-    }, "the retried unlock released the source and the intent", 300); save();
+      return state.pending.length === 0 && state.events.includes("rollback_success") && state.history?.sourceRollback === "succeeded";
+    }, "the retried unlock released the source and the intent", 300);
+    report.resolved = observe(lab, report, report.transferId); save();
     const done = report.resolved;
     assert.equal(done.history.status, "failed", "the transfer stays failed after its source is released");
     assert.ok(!done.history.timingPendingRecovery, "no recovery stays pending after the release");
