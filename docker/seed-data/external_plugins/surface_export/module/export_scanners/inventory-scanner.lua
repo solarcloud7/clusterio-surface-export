@@ -55,6 +55,8 @@ local function extract_item_properties(stack)
       local read_success, value = pcall(read_attribute, stack, key)
       if not read_success then
         kind.throws[key] = true
+        log(string.format("[inventory-scanner] %s does not support %s (%s); later stacks of it skip this read",
+          stack.name, key, tostring(value)))
       elseif key == "grid" then
         if value and value.equipment then
           item_entry.grid = InventoryScanner.extract_equipment_grid(value)
