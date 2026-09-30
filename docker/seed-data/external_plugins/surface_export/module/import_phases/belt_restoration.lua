@@ -129,18 +129,89 @@ local function belt_item_state(stack, cache)
     return state
 end
 
+local LINE_KEY_STRIDE = 16
+
+local function connected_belts(entity)
+    local candidates = {}
+    local neighbours = entity.belt_neighbours
+    for _, list in ipairs({ neighbours.inputs, neighbours.outputs }) do
+        for _, neighbour in pairs(list or {}) do candidates[#candidates + 1] = neighbour end
+    end
+    local partner = nil
+    if entity.type == "underground-belt" then
+        partner = entity.underground_belt_neighbour
+    elseif entity.type == "linked-belt" then
+        partner = entity.linked_belt_neighbour
+    end
+    if partner then candidates[#candidates + 1] = partner end
+    return candidates
+end
+
+local function partition_lines(belt_pairs)
+    local parent = {}
+    local function root(key)
+        while parent[key] ~= key do parent[key] = parent[parent[key]]; key = parent[key] end
+        return key
+    end
+    local function join(a, b)
+        a, b = root(a), root(b)
+        if a ~= b then parent[a] = b end
+    end
+    local order, known, visited = {}, {}, {}
+    for _, bp in ipairs(belt_pairs) do
+        local unit = bp.entity.unit_number
+        if not known[unit] then known[unit] = true; order[#order + 1] = bp.entity end
+    end
+    local compared = 0
+    local i = 1
+    while i <= #order do
+        local entity = order[i]
+        i = i + 1
+        local unit = entity.unit_number
+        visited[unit] = true
+        local lines = {}
+        for li = 1, entity.get_max_transport_line_index() do
+            local key = unit * LINE_KEY_STRIDE + li
+            parent[key] = key
+            lines[li] = entity.get_transport_line(li)
+        end
+        for li = 1, #lines do
+            for lj = li + 1, #lines do
+                compared = compared + 1
+                if lines[li].line_equals(lines[lj]) then join(unit * LINE_KEY_STRIDE + li, unit * LINE_KEY_STRIDE + lj) end
+            end
+        end
+        for _, neighbour in ipairs(connected_belts(entity)) do
+            if neighbour.valid then
+                local other_unit = neighbour.unit_number
+                if not known[other_unit] then known[other_unit] = true; order[#order + 1] = neighbour end
+                if visited[other_unit] then
+                    for lj = 1, neighbour.get_max_transport_line_index() do
+                        local other = neighbour.get_transport_line(lj)
+                        for li = 1, #lines do
+                            compared = compared + 1
+                            if lines[li].line_equals(other) then join(unit * LINE_KEY_STRIDE + li, other_unit * LINE_KEY_STRIDE + lj) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return function(entity, li) return root(entity.unit_number * LINE_KEY_STRIDE + li) end, #order, compared
+end
+
 local function collect_side_groups(belt_pairs, cache)
-    local groups = {}
+    local groups, index_of = {}, {}
+    local root_of, walked, compared = partition_lines(belt_pairs)
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
             local line = bp.entity.get_transport_line(li)
-            local gi
-            for j, g in ipairs(groups) do
-                if line.line_equals(g.rep) then gi = j break end
-            end
+            local key = root_of(bp.entity, li)
+            local gi = index_of[key]
             if not gi then
                 gi = #groups + 1
-                groups[gi] = { rep = line, seen = {}, members = {}, slots = {}, item_source_positions = {} }
+                index_of[key] = gi
+                groups[gi] = { seen = {}, members = {}, slots = {}, item_source_positions = {} }
             end
             local g = groups[gi]
             g.members[#g.members + 1] = { id = bp.id, li = li }
@@ -170,8 +241,8 @@ local function collect_side_groups(belt_pairs, cache)
         end
         out[#out + 1] = { members = g.members, slots = g.slots, item_source_positions = g.item_source_positions }
     end
-    log(string.format("[BeltRestoration] Captured %d side group(s); %d slot(s) carry non-default item state",
-        #out, stateful))
+    log(string.format("[BeltRestoration] Captured %d side group(s) from %d belt(s) (%d walked, %d line comparisons); %d slot(s) carry non-default item state",
+        #out, #belt_pairs, walked, compared, stateful))
     return out
 end
 
