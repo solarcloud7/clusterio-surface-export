@@ -35,6 +35,13 @@ Destructive export batching still needs durable recovery/journaling; its small-f
 success is not permission to delete live source belts during production capture.
 Historical results below retain the contracts that applied when they were recorded.
 
+Production update (2026-09-30): transfers now stagger the source belt capture by reading
+and **clearing** each belt's lines in the same callback (`core/source-belt-cargo.lua`),
+not by destroying belts. The geometry stays, so a rollback is the production lane restore
+onto the same belts; the lock record carries the captured groups until the source is
+deleted or unlocked. The counterexamples and passes below still describe the destroy
+candidate they tested.
+
 
 
 ### Deployed acceptance (2026-09-08)

@@ -156,14 +156,26 @@ test("process_batch records paired reads in the SAME loop as serialize_entity, b
 test("the atomic belt scan pairs each belt AFTER its serialized items are patched (same tick)", () => {
 	const body = functionBody(
 		exportPipelineSource(),
-		"local function prepare_completion(",
-		"local function publish_completion(",
+		"local function capture_belts_atomically(",
+		"local function source_lock_data(",
 	);
 	assert.match(
 		body,
 		/entity_data\.specific_data\.items\s*=\s*belt_items[\s\S]*?SourceCargoIntegrity\.record\s*\(\s*job\.census\s*,\s*live_entity\s*,\s*entity_data/,
 		"the atomic belt scan must record each belt's paired reads AFTER patching its serialized items (single-tick execution)",
 	);
+});
+
+test("the staggered belt capture records each belt's census from the same read, BEFORE clearing its lines", () => {
+	const src = fs.readFileSync(path.join(moduleRoot, "core", "source-belt-cargo.lua"), "utf8");
+	const body = functionBody(src, "local function capture_unit(", "function SourceBeltCargo.step(");
+	const record = body.indexOf("SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })");
+	const clear = body.indexOf("line.clear()");
+	assert.notEqual(record, -1, "each captured belt must be recorded against the census with the items it just read");
+	assert.notEqual(clear, -1, "each captured belt must be cleared in the same callback it was read");
+	assert.ok(record < clear, "the census must read the belt's physical contents before the lines are cleared");
+	assert.match(body, /get_detailed_contents\(\)[\s\S]*?items\[#items \+ 1\] = \{ name = name, count = count, quality = quality \}[\s\S]*?g\.slots\[#g\.slots \+ 1\]/,
+		"one read of each line feeds both the serialized items and the lane slots");
 });
 
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
