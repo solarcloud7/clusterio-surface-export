@@ -24,6 +24,8 @@ test("source transfer lock state normalizer preserves every protocol state", () 
 		"source_gone_matching_transfer",
 		"unknown/offline",
 		"identity_mismatch",
+		"unlocked",
+		"source_missing",
 	];
 
 	assert.deepEqual(SOURCE_TRANSFER_LOCK_STATES, expected);

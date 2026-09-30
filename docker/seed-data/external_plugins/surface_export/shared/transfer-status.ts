@@ -53,6 +53,7 @@ const RETURNED: ShipPhase = {
 	distance: 0, holding: false, opening: false, terminal: true,
 	tone: "failure", label: "failed — returned",
 };
+const RELEASED: ShipPhase = { ...RETURNED, label: "failed — source released" };
 
 export function shipPhaseFor(transfer: string | PositionedTransfer | null | undefined): ShipPhase | null {
 	const status = typeof transfer === "object" ? transfer?.status : transfer;
@@ -64,6 +65,7 @@ export function shipPhaseFor(transfer: string | PositionedTransfer | null | unde
 		if (status === "failed" || status === "error") {
 			if (unresolved) return RECOVERY_PENDING;
 			if (transfer.sourceRollback === "succeeded" || transfer.sourceRestored) return RETURNED;
+			if (transfer.sourceRollback === "released") return RELEASED;
 		}
 	}
 	return (status && PHASES[status]) || null;

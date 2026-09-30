@@ -348,6 +348,9 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
         local force = game.forces[lock.force_name]
         local platform = force and force.platforms[platform_index]
         if not SurfaceLock.matches_platform(lock, platform) then
+            if not (platform and platform.valid) and not SurfaceLock.source_lock_is_committed(lock) then
+                return { state = "source_missing", transferId = transfer_id, error = "uncommitted transfer lock retained for a missing platform" }
+            end
             return { state = "identity_mismatch", transferId = transfer_id, error = "platform identity mismatch" }
         end
         if SurfaceLock.source_lock_is_committed(lock) then
@@ -361,9 +364,9 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     local force = force_name and game.forces[force_name] or nil
     local platform = force and force.platforms and force.platforms[platform_index] or nil
     if platform and platform.valid then
-        return { state = "identity_mismatch", transferId = transfer_id, error = "source platform is live or not locked" }
+        return { state = "unlocked", transferId = transfer_id, error = nil }
     end
-    return { state = "identity_mismatch", transferId = transfer_id, error = "no matching source lock or tombstone" }
+    return { state = "source_missing", transferId = transfer_id, error = nil }
 end
 function SurfaceLock.matches_platform(lock, platform)
     return type(lock) == "table" and platform and platform.valid and platform.surface and platform.surface.valid
@@ -576,6 +579,19 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         log(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)))
         release_passengers(released_job_id)
         return true, nil
+    end
+
+    local test_cfg = storage.surface_export_config
+    if test_cfg and test_cfg.debug_mode and test_cfg.test_force_unlock_refusal then
+        local remaining = tonumber(test_cfg.test_force_unlock_refusal)
+        if remaining and remaining > 1 then
+            test_cfg.test_force_unlock_refusal = remaining - 1
+        else
+            test_cfg.test_force_unlock_refusal = nil
+        end
+        log(string.format("[TEST HOOK] Refusing source unlock of platform '%s' (index %s) before any restore (test_force_unlock_refusal)",
+            tostring(platform_name), tostring(platform_index)))
+        return false, "Unlock refused: TEST: forced unlock refusal (test_force_unlock_refusal); protection retained"
     end
 
     if lock_data.original_schedule then

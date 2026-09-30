@@ -9,9 +9,15 @@ import { hasRecordedOutcome, isAdmissionSettled, isSourceJobPending, isDestinati
 import { JobObserver } from "./job-observer";
 import { isInstanceRouteRejection } from "./request-errors";
 import { isGeneration, isLineage, lineageCommitPlan } from "./lineage-registry";
+import { normalizeSourceTransferLockState } from "./source-lock-state";
 import type { JobStatusBatch } from "../shared/job-status";
 import type { TimingRecord } from "../shared/timing";
-import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport, PassengerManifestEntry } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport, PassengerManifestEntry,
+	PendingTransferIntent, PersistedTransactionLog, SourceTransferLockStateResponse, ReleaseTransferRollbackResponse } from "../messages";
+
+const ROLLBACK_EVENT_TYPES = new Set(["validation_failed", "lineage_rollback", "rollback_attempt", "rollback_failed", "rollback_success", "rollback_resolved", "rollback_released"]);
+const ROLLBACK_RETRY_INITIAL_MS = 30_000;
+const ROLLBACK_RETRY_MAX_MS = 10 * 60_000;
 
 type TransferStartResult = {
 	success: boolean; error?: string; transferId?: string; message?: string;
@@ -42,6 +48,7 @@ export class TransferOrchestrator {
 	private restoredExports = new Set<string>();
 	private interruptedSources = new Set<string>();
 	private exportReads = new Map<string, {epoch: string; error?: string}>();
+	private rollbackRetries = new Map<string, { dueAt: number; delayMs: number }>();
 	private stopped = false;
 
 	stop() {
@@ -181,32 +188,17 @@ export class TransferOrchestrator {
 				const id = parseCanonicalTransferId(intent.transferId);
 				if (!id || id.sourceInstanceId !== intent.sourceInstanceId
 					|| !this.plugin.isInstanceOnline(intent.sourceInstanceId)
-					|| !this.plugin.isInstanceOnline(intent.targetInstanceId)
 					|| this.settlingTransfers.has(intent.transferId)) continue;
 				let transfer = this.plugin.activeTransfers.get(intent.transferId);
-				if (transfer && !transfer.awaitingLateVerdict && !transfer.timingPendingRecovery
+				const prior = this.plugin.persistedTransactionLogs?.find(entry => entry.transferId === intent.transferId);
+				const rollback = !(transfer && isJobObservationPending(transfer.status)) && this.isRollbackOutcome(intent, transfer, prior);
+				if (!rollback && !this.plugin.isInstanceOnline(intent.targetInstanceId)) continue;
+				if (transfer && !rollback && !transfer.awaitingLateVerdict && !transfer.timingPendingRecovery
 					&& !["cleanup_failed", "error"].includes(transfer.status)) continue;
 				// Never re-import. Only a validated hold or a saved release receipt can pass verify.
 				if (!transfer) {
-					const prior = this.plugin.persistedTransactionLogs?.find(entry => entry.transferId === intent.transferId);
-					if (prior && (prior.transferInfo.sourceInstanceId !== intent.sourceInstanceId
-						|| prior.transferInfo.targetInstanceId !== intent.targetInstanceId
-						|| prior.transferInfo.platformIndex !== intent.sourcePlatformIndex)) continue;
-					transfer = createOperationRecord("transfer", {
-						operationId: intent.transferId, sourceInstanceId: intent.sourceInstanceId,
-						targetInstanceId: intent.targetInstanceId, platformIndex: intent.sourcePlatformIndex,
-						platformName: intent.sourcePlatformName, forceName: intent.forceName,
-						exportId: intent.exportId, sourceExportId: intent.sourceExportId || id.sourceJobId,
-						startedAt: intent.startedAt, status: prior?.transferInfo.status === "cleanup_failed" ? "cleanup_failed" : "awaiting_validation",
-					});
-					transfer.awaitingLateVerdict = !prior?.summary?.validation;
-					if (prior?.summary) Object.assign(transfer, {
-						validationResult: prior.summary.validation, sourceVerification: prior.summary.sourceVerification,
-						exportMetrics: prior.summary.export, importMetrics: prior.summary.import,
-						payloadMetrics: prior.summary.payload, timing: prior.summary.timing,
-					});
-					this.plugin.activeTransfers.set(intent.transferId, transfer);
-					this.observationDue.set(intent.transferId, performance.now() + this.getValidationTimeoutMs());
+					transfer = this.materializeIntent(intent, prior, rollback) ?? undefined;
+					if (!transfer) continue;
 				}
 				transfer.lineage = intent.lineage ?? null;
 				transfer.lineageGeneration = intent.lineageGeneration ?? null;
@@ -215,7 +207,9 @@ export class TransferOrchestrator {
 				delete transfer.observedDurationMs;
 				const current = transfer;
 				const recovery = (async () => {
-					const { sourceResolved } = await this.handleValidationSuccess(intent.transferId, current);
+					const { sourceResolved } = rollback
+						? await this.recoverRollback(intent, current)
+						: await this.handleValidationSuccess(intent.transferId, current);
 					if (sourceResolved) this.plugin.removePendingTransfer(intent.transferId);
 				})();
 				this.settlingTransfers.set(intent.transferId, recovery);
@@ -1007,6 +1001,7 @@ export class TransferOrchestrator {
 
 		const rollbackError = await this.tryUnlockSource(transferId, transfer);
 		if (!rollbackError && !destinationCleanupError) transfer.timingPendingRecovery = false;
+		if (rollbackError) this.markRollbackPending(transferId);
 
 		transfer.status = destinationCleanupError ? "cleanup_failed" : "failed";
 		transfer.error = [errorMsg, rollbackError, destinationCleanupError].filter(Boolean).join("; ");
@@ -1021,6 +1016,213 @@ export class TransferOrchestrator {
 		this.updateTransfer(transfer);
 		await this.txLogger.persistTransactionLog(transferId);
 		return { sourceResolved: !rollbackError };
+	}
+
+	private markRollbackPending(transferId: string) {
+		const intent = this.plugin.pendingTransfers?.get(transferId);
+		if (intent && !intent.rollbackPending) this.plugin.persistPendingTransfer({ ...intent, rollbackPending: true });
+	}
+
+	private isRollbackOutcome(intent: PendingTransferIntent, transfer: ActiveTransfer | undefined, prior: PersistedTransactionLog | undefined): boolean {
+		if (intent.rollbackPending) return true;
+		const events = [...(this.plugin.transactionLogs?.get(intent.transferId) ?? []), ...(prior?.events ?? [])];
+		if (events.some(event => ROLLBACK_EVENT_TYPES.has(String(event.eventType)))) return true;
+		const rollback = transfer?.sourceRollback ?? prior?.transferInfo.sourceRollback;
+		if (rollback === "attempted" || rollback === "failed" || rollback === "released") return true;
+		const validation = (transfer?.validationResult ?? prior?.summary?.validation) as { success?: unknown } | null | undefined;
+		return validation?.success === false;
+	}
+
+	private materializeIntent(intent: PendingTransferIntent, prior: PersistedTransactionLog | undefined, rollback: boolean): ActiveTransfer | null {
+		if (prior && (prior.transferInfo.sourceInstanceId !== intent.sourceInstanceId
+			|| prior.transferInfo.targetInstanceId !== intent.targetInstanceId
+			|| prior.transferInfo.platformIndex !== intent.sourcePlatformIndex)) return null;
+		const validation = prior?.summary?.validation as ValidationResult | undefined;
+		const status = rollback
+			? (validation?.cleanup_failed ? "cleanup_failed" : "failed")
+			: prior?.transferInfo.status === "cleanup_failed" ? "cleanup_failed" : "awaiting_validation";
+		const transfer = createOperationRecord("transfer", {
+			operationId: intent.transferId, sourceInstanceId: intent.sourceInstanceId,
+			targetInstanceId: intent.targetInstanceId, platformIndex: intent.sourcePlatformIndex,
+			platformName: intent.sourcePlatformName, forceName: intent.forceName,
+			exportId: intent.exportId, sourceExportId: intent.sourceExportId || parseCanonicalTransferId(intent.transferId)?.sourceJobId,
+			startedAt: intent.startedAt, status,
+		});
+		transfer.awaitingLateVerdict = !rollback && !validation;
+		if (prior?.summary) Object.assign(transfer, {
+			validationResult: validation, sourceVerification: prior.summary.sourceVerification,
+			exportMetrics: prior.summary.export, importMetrics: prior.summary.import,
+			payloadMetrics: prior.summary.payload, timing: prior.summary.timing,
+		});
+		if (rollback) {
+			transfer.sourceRollback = prior?.transferInfo.sourceRollback ?? "failed";
+			transfer.error = prior?.transferInfo.error ?? null;
+			transfer.completedAt = prior?.transferInfo.completedAt ?? null;
+			transfer.failedAt = prior?.transferInfo.failedAt ?? null;
+			if (prior?.events?.length && this.plugin.transactionLogs && !this.plugin.transactionLogs.has(intent.transferId)) {
+				this.plugin.transactionLogs.set(intent.transferId, [...prior.events]);
+			}
+		}
+		this.plugin.activeTransfers.set(intent.transferId, transfer);
+		if (!rollback) this.observationDue.set(intent.transferId, performance.now() + this.getValidationTimeoutMs());
+		return transfer;
+	}
+
+	private async querySourceLockState(transfer: ActiveTransfer, sourceJobId: string): Promise<SourceTransferLockStateResponse> {
+		try {
+			const reply = await timed("Clusterio request round trip", "round-trip", () => this.plugin.controller.sendTo(
+				{ instanceId: transfer.sourceInstanceId },
+				new this.messages.GetSourceTransferLockStateRequest({ transferId: sourceJobId, platformIndex: transfer.platformIndex,
+					platformName: transfer.platformName, forceName: transfer.forceName || "player" }),
+			)) as unknown;
+			return normalizeSourceTransferLockState(reply);
+		} catch (error) {
+			return { state: "unknown/offline", transferId: sourceJobId, error: getErrorMessage(error) };
+		}
+	}
+
+	private async recoverRollback(intent: PendingTransferIntent, transfer: ActiveTransfer): Promise<{ sourceResolved: boolean }> {
+		const transferId = intent.transferId;
+		const sourceJobId = transfer.sourceExportId || intent.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId;
+		if (!sourceJobId) return this.rollbackNeedsAttention(transferId, transfer, "The source job identity is unavailable, so the source lock cannot be queried");
+		const source = await this.querySourceLockState(transfer, sourceJobId);
+		switch (source.state) {
+			case "pre_commit": {
+				const retry = this.rollbackRetries.get(transferId);
+				if (retry && performance.now() < retry.dueAt) return { sourceResolved: false };
+				const error = await this.tryUnlockSource(transferId, transfer);
+				if (error) {
+					const delayMs = Math.min(retry ? retry.delayMs * 2 : ROLLBACK_RETRY_INITIAL_MS, ROLLBACK_RETRY_MAX_MS);
+					this.rollbackRetries.set(transferId, { dueAt: performance.now() + delayMs, delayMs });
+					return this.rollbackNeedsAttention(transferId, transfer, `Source unlock refused: ${error}`);
+				}
+				return this.settleRollback(transferId, transfer);
+			}
+			case "unlocked":
+			case "source_missing": {
+				let lockCleared: string | null | undefined;
+				if (source.state === "source_missing" && source.error) {
+					lockCleared = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", undefined, sourceJobId)
+						?? "acknowledged";
+				}
+				this.txLogger.logTransactionEvent(transferId, "rollback_resolved", source.state === "unlocked"
+					? "Source platform is live and no longer locked for this transfer; the failed transfer's source is released"
+					: "Source platform and its lock are gone and no committed deletion is recorded for this transfer; nothing remains to release",
+				{ sourceState: source.state, sourceError: source.error, priorStatus: transfer.status, ...(lockCleared !== undefined ? { lockCleared } : {}) });
+				transfer.sourceRollback = "released";
+				return this.settleRollback(transferId, transfer);
+			}
+			case "committed":
+			case "source_gone_matching_transfer":
+				this.rollbackRetries.delete(transferId);
+				return this.rollbackNeedsAttention(transferId, transfer,
+					`Source reports its lock as ${source.state} although this transfer's validation failed and its destination copy was discarded; inspect both servers before any release`,
+					"cleanup_failed");
+			case "identity_mismatch":
+				this.rollbackRetries.delete(transferId);
+				return this.rollbackNeedsAttention(transferId, transfer,
+					`Source lock state does not match this transfer (${source.error || "identity mismatch"}); verify the source platform, then use release-rollback`);
+			default:
+				return this.rollbackNeedsAttention(transferId, transfer, `Source lock state unavailable (${source.error || source.state})`, undefined, false);
+		}
+	}
+
+	private async rollbackNeedsAttention(transferId: string, transfer: ActiveTransfer, reason: string, status?: "cleanup_failed", persist = true) {
+		const observation = { state: "unavailable" as const, message: "Source rollback needs attention", reason };
+		const changed = JSON.stringify(transfer.jobObservation) !== JSON.stringify(observation) || (status !== undefined && transfer.status !== status);
+		transfer.jobObservation = observation;
+		if (status !== undefined && transfer.status !== status) {
+			transfer.status = status;
+			transfer.error = [transfer.error, reason].filter(Boolean).join("; ");
+			this.txLogger.logTransactionEvent(transferId, "cleanup_failed", reason);
+		}
+		if (changed) {
+			this.updateTransfer(transfer);
+			if (persist) await this.txLogger.persistTransactionLog(transferId);
+		}
+		return { sourceResolved: false };
+	}
+
+	private async settleRollback(transferId: string, transfer: ActiveTransfer): Promise<{ sourceResolved: true }> {
+		const validation = transfer.validationResult;
+		const destinationCleanupError = validation?.cleanup_failed ? String(validation.cleanup_error || "destination discard failed") : null;
+		const failure = (this.plugin.transactionLogs?.get(transferId) ?? []).filter(event => event.eventType === "validation_failed").at(-1) as
+			{ validation?: { mismatchDetails?: unknown } } | undefined;
+		const mismatch = failure?.validation?.mismatchDetails ?? validation?.mismatchDetails ?? "Validation failed";
+		transfer.status = destinationCleanupError ? "cleanup_failed" : "failed";
+		transfer.error = [String(mismatch), destinationCleanupError].filter(Boolean).join("; ");
+		transfer.timingPendingRecovery = false;
+		transfer.awaitingLateVerdict = false;
+		delete transfer.jobObservation;
+		this.rollbackRetries.delete(transferId);
+		this.updateTransfer(transfer);
+		await this.txLogger.persistTransactionLog(transferId);
+		this.pruneOldTransfers();
+		return { sourceResolved: true };
+	}
+
+	async releaseRollback(transferId: string, operator: string | null): Promise<ReleaseTransferRollbackResponse> {
+		const inFlight = this.settlingTransfers.get(transferId);
+		if (inFlight) await inFlight;
+		let result: ReleaseTransferRollbackResponse = { success: false, transferId, outcome: "refused", error: "Release did not run" };
+		const work = (async () => { result = await this.releaseRollbackMeasured(transferId, operator); })();
+		this.settlingTransfers.set(transferId, work);
+		try { await work; } finally { this.settlingTransfers.delete(transferId); }
+		return result;
+	}
+
+	private async releaseRollbackMeasured(transferId: string, operator: string | null): Promise<ReleaseTransferRollbackResponse> {
+		const refuse = (error: string): ReleaseTransferRollbackResponse => ({ success: false, transferId, outcome: "refused", error });
+		const intent = this.plugin.pendingTransfers?.get(transferId);
+		const prior = this.plugin.persistedTransactionLogs?.find(entry => entry.transferId === transferId);
+		let transfer = this.plugin.activeTransfers.get(transferId);
+		if (!intent) {
+			if (!transfer && !prior) return refuse(`Unknown transfer ${transferId}`);
+			return { success: true, transferId, outcome: "nothing_pending", status: transfer?.status ?? prior?.transferInfo.status };
+		}
+		if (transfer && isJobObservationPending(transfer.status)) {
+			return refuse("This transfer is still being observed; it has no recorded validation failure or rollback to release");
+		}
+		if (!this.isRollbackOutcome(intent, transfer, prior)) {
+			return refuse("This transfer has no recorded validation failure or rollback; its recovery follows the normal cleanup path and cannot be released");
+		}
+		transfer ??= this.materializeIntent(intent, prior, true) ?? undefined;
+		if (!transfer) return refuse("The transfer's saved history does not match its pending intent; inspect both records before any release");
+		const sourceJobId = transfer.sourceExportId || intent.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId;
+		if (!sourceJobId) return refuse("The source job identity is unavailable");
+		const sourceInstance = this.plugin.controller.instances.get(intent.sourceInstanceId);
+		let source: { state: string; error: string | null };
+		if (!sourceInstance || sourceInstance.isDeleted) source = { state: "instance_deleted", error: null };
+		else if (!this.plugin.isInstanceOnline(intent.sourceInstanceId)) {
+			return refuse("The source instance is offline, so its lock state cannot be verified; bring it online, or delete it from the cluster if it is gone");
+		} else source = await this.querySourceLockState(transfer, sourceJobId);
+		switch (source.state) {
+			case "pre_commit":
+				return refuse("The source still holds this transfer's lock; the controller retries the unlock itself. Fix the refusal on the source server or clear the lock in game, then retry");
+			case "committed":
+			case "source_gone_matching_transfer":
+				return refuse(`The source reports its lock as ${source.state} although this transfer's validation failed; inspect both servers before any release`);
+			case "unknown/offline":
+				return refuse(`The source lock state is unavailable (${source.error || "no state"})`);
+		}
+		let destination = "not verified: destination offline";
+		if (this.plugin.isInstanceOnline(intent.targetInstanceId)) {
+			try {
+				const held = await timed("Destination transfer gate round trip", "round-trip", () => this.plugin.controller.sendTo(
+					{ instanceId: intent.targetInstanceId }, new this.messages.DestinationTransferGateRequest({ transferId, action: "verify" })));
+				if (held?.success) return refuse("The destination still confirms a hold for this transfer; discard it through the normal recovery path first");
+				destination = `no hold: ${String(held?.error || "not confirmed")}`;
+			} catch (error) {
+				destination = `not verified: ${getErrorMessage(error)}`;
+			}
+		}
+		this.txLogger.logTransactionEvent(transferId, "rollback_released",
+			`An administrator released this failed transfer's pending source intent after verifying the source (${source.state}${source.error ? `: ${source.error}` : ""})`,
+			{ operator, sourceState: source.state, sourceError: source.error, destination, priorStatus: transfer.status });
+		transfer.sourceRollback = "released";
+		await this.settleRollback(transferId, transfer);
+		this.plugin.removePendingTransfer(transferId);
+		return { success: true, transferId, outcome: "released", status: transfer.status, sourceState: source.state, operator };
 	}
 
 	pruneOldTransfers() {

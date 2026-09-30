@@ -81,6 +81,23 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
+	definition: ["release-rollback <transferId>",
+		"Release the controller's pending source intent for a FAILED transfer whose source unlock kept being refused. "
+		+ "Asserts that an administrator verified on the source server that the platform is no longer protected by this transfer's lock, "
+		+ "or was deliberately removed. Refused while the source still reports this transfer's lock (the controller keeps retrying the unlock itself), "
+		+ "reports it committed or the platform deleted by this transfer, is offline, or while the destination still confirms a hold",
+		(yargs: YargsLike) => {
+			yargs.positional("transferId", { type: "string", describe: "Canonical transfer ID shown by list-transfers" });
+		}],
+	handler: async (args: { transferId: string }, control: ControlLike) => {
+		const response = await control.sendTo("controller", new messages.ReleaseTransferRollbackRequest({ transferId: args.transferId })) as
+			messages.ReleaseTransferRollbackResponse;
+		if (!response.success) throw new Error(response.error || "Rollback release refused");
+		console.log(JSON.stringify(response));
+	},
+}));
+
+surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
 		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];

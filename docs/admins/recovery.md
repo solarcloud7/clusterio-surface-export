@@ -205,6 +205,41 @@ Only eligible orphan standalone-export locks use the expiry scan. A delayed job
 status check does not cancel Lua work. See [records and repair](../technical/records.md)
 for the responsibilities of each store.
 
+## Release a rejected transfer's source
+
+When a destination rejects a transfer, the destination copy is discarded and the
+controller asks the source to unlock the platform. If the source refuses that unlock,
+for example because it cannot put captured state back, the transfer is recorded as
+**failed** with **Rollback failed — attention required**, and the controller keeps its
+pending intent so both servers stay reserved. The controller then re-reads the source
+lock state on every recovery pass:
+
+- While the source still holds the transfer's lock, the unlock is retried, first after
+  30 seconds and then at growing intervals up to 10 minutes. Each attempt is recorded.
+- Once the source reports the platform live and unlocked, or the platform and lock gone
+  with no deletion recorded for this transfer, the intent is released and the history
+  shows **Source released after a refused rollback**. Clearing the lock in game, or
+  deleting a disposable platform, is therefore enough; nothing needs to be edited.
+- If the source reports the lock committed, or the platform deleted by this transfer,
+  the transfer is marked `cleanup_failed` with the contradiction and nothing is released.
+- A rejected transfer is never routed back through the destination check, so a controller
+  restart cannot turn it into a `cleanup_failed` "destination hold not confirmed" record.
+
+For the remaining cases, an identity the source cannot match, a source instance deleted
+from the cluster, or an old plugin on the source that reports only a mismatch, use:
+
+```text
+clusterioctl surface-export release-rollback <transferId>
+```
+
+This asserts that you verified on the source server that the platform is no longer
+protected by this transfer's lock, or was deliberately removed. It is refused while the
+source still reports the lock (the controller retries by itself), while the source is
+offline, while the source reports the lock committed or the platform deleted by this
+transfer, and while the destination still confirms a hold. It records who released the
+transfer and the observed source state, and it needs `surface_export.recovery.resolve`.
+It never unlocks or deletes anything.
+
 ## Back up a deployment
 
 Use the backup procedure for your Clusterio or clusterio-docker deployment. Retain

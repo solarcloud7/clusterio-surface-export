@@ -62,6 +62,9 @@ local function configure(config)
   if config.test_force_census_omission ~= nil then
     storage.surface_export_config.test_force_census_omission = config.test_force_census_omission
   end
+  if config.test_force_unlock_refusal ~= nil then
+    storage.surface_export_config.test_force_unlock_refusal = config.test_force_unlock_refusal
+  end
   if config.passenger_carry_armor ~= nil then
     storage.surface_export_config.passenger_carry_armor = config.passenger_carry_armor == true
   end

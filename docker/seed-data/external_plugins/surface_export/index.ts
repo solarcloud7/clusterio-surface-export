@@ -205,6 +205,7 @@ export const plugin = {
 		messages.ListLineageConflictsRequest,
 		messages.ResolvePlatformLineageRequest,
 		messages.AbandonPlatformResolutionRequest,
+		messages.ReleaseTransferRollbackRequest,
 		messages.LineageCandidatesRequest,
 		messages.ApplyLineageResolutionRequest,
 		messages.GetInstanceRosterRequest,

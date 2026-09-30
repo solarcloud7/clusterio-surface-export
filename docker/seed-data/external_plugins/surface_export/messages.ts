@@ -76,6 +76,8 @@ export const SOURCE_TRANSFER_LOCK_STATES = [
 	"source_gone_matching_transfer",
 	"unknown/offline",
 	"identity_mismatch",
+	"unlocked",
+	"source_missing",
 ] as const;
 export type SourceTransferLockState = typeof SOURCE_TRANSFER_LOCK_STATES[number];
 export interface SourceTransferLockStateResponse {
@@ -338,6 +340,33 @@ export class AbandonPlatformResolutionRequest {
 	static fromJSON(json: { requestId: string }) { return new AbandonPlatformResolutionRequest(json); }
 	toJSON() { return { requestId: this.requestId }; }
 	static Response = ResolvePlatformLineageRequest.Response;
+}
+
+export type ReleaseTransferRollbackOutcome = "released" | "nothing_pending" | "refused";
+export type ReleaseTransferRollbackResponse = SimpleResponse & {
+	transferId?: string; outcome?: ReleaseTransferRollbackOutcome; status?: string; sourceState?: string; operator?: string | null;
+};
+
+export class ReleaseTransferRollbackRequest {
+	declare ["constructor"]: typeof ReleaseTransferRollbackRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.RECOVERY_RESOLVE;
+	static jsonSchema: JsonSchema = {
+		type: "object", properties: { transferId: { type: "string", minLength: 1 } }, required: ["transferId"], additionalProperties: false,
+	};
+	transferId: string;
+	constructor(json: { transferId: string }) { this.transferId = json.transferId; }
+	static fromJSON(json: { transferId: string }) { return new ReleaseTransferRollbackRequest(json); }
+	toJSON() { return { transferId: this.transferId }; }
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" },
+			outcome: { enum: ["released", "nothing_pending", "refused"] }, status: { type: "string" }, sourceState: { type: "string" },
+			operator: { type: ["string", "null"] } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as ReleaseTransferRollbackResponse; },
+	};
 }
 
 export class ApplyLineageResolutionRequest {
@@ -1982,6 +2011,7 @@ export interface PendingTransferIntent {
 	exportId: string | null;
 	lineage?: string | null;
 	lineageGeneration?: number | null;
+	rollbackPending?: boolean;
 }
 
 export interface IControllerPlugin {

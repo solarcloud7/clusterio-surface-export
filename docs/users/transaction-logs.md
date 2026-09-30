@@ -10,7 +10,11 @@ that scope.
 
 The outcome describes the attempted operation. Recovery describes what happened
 after a failure. **Failed; rollback succeeded** remains a failed transfer: recovery
-does not turn the rejected destination into a successful one.
+does not turn the rejected destination into a successful one. **Rollback failed —
+attention required** means the source refused to unlock the platform; the controller
+keeps retrying and both servers stay reserved. **Source released after a refused
+rollback** means the source was later found unlocked or removed, or an administrator
+released it; the transfer stays failed.
 
 The overview separates entity, item and fluid evidence. Matching cargo totals do
 not prove that every entity was placed or configured correctly. An entity or belt

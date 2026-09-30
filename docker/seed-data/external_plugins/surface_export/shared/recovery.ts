@@ -2,7 +2,7 @@ import { hasUnresolvedPlatformOwnership } from "./operation-lifecycle";
 
 export type PlatformSourceOfTruth = "plugin_history" | "save_game";
 
-export type SourceRollback = "attempted" | "succeeded" | "failed";
+export type SourceRollback = "attempted" | "succeeded" | "failed" | "released";
 
 export function lateDestinationCleanupFromEvents(
 	events: readonly { eventType?: unknown; settledStatus?: unknown; newStatus?: unknown }[],
@@ -17,6 +17,7 @@ export function sourceRollbackFromEvents(events: readonly { eventType?: unknown 
 			case "rollback_attempt": return "attempted";
 			case "rollback_success": return "succeeded";
 			case "rollback_failed": return "failed";
+			case "rollback_resolved": case "rollback_released": return "released";
 		}
 	}
 	return undefined;
