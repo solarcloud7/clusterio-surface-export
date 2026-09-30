@@ -11,7 +11,7 @@ import { UploadUncertain } from "./lib/upload-session";
 import * as messages from "./messages";
 import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
-import { applySourceRetirement, parseSourceTransferLockStateJson } from "./lib/source-lock-state";
+import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 import { SourceRetirementJournal, journalHubMatch, type SourceRetirement } from "./lib/source-retirement-journal";
 import type { LineageVerdict, PlatformFacts } from "./lib/lineage-classifier";
 import { isGeneration, isLineage } from "./lib/lineage-registry";
@@ -1110,11 +1110,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				String(request.platformName || ""),
 				String(request.forceName || "player"),
 			);
-			const state = parseSourceTransferLockStateJson(result.trim());
-			const forceName = String(request.forceName || "player");
-			const retired = this.retirementJournal.snapshot().retirements.some(record => record.exportId === request.transferId
-				&& record.platformIndex === platformIndex && record.forceName === forceName);
-			return applySourceRetirement(state, retired);
+			return parseSourceTransferLockStateJson(result.trim());
 		} catch (err: unknown) {
 			return { state: "unknown/offline", transferId: request.transferId, error: getErrorMessage(err) };
 		}

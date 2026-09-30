@@ -319,9 +319,6 @@ function SurfaceLock.clear_committed_source_lock_after_delete(platform_index, tr
 end
 
 function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index, platform_name, force_name)
-    if storage.source_recovery_ready == false then
-        return { state = "unknown/offline", transferId = transfer_id, error = "startup recovery has not finished" }
-    end
     SurfaceLock.prune_committed_source_tombstones(game.tick)
     local tombstones = storage.committed_source_transfer_tombstones
     local tombstone = type(tombstones) == "table" and transfer_id and tombstones[transfer_id] or nil
@@ -345,32 +342,31 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
         if type(transfer_id) ~= "string" or transfer_id == "" or lock.transfer_job_id ~= transfer_id then
             return { state = "identity_mismatch", transferId = transfer_id, error = "transfer id mismatch" }
         end
-        if SurfaceLock.source_lock_is_committed(lock) then
-            return { state = "committed", transferId = transfer_id, error = nil }
-        end
         if not has_location(lock) then
             return { state = "identity_mismatch", transferId = transfer_id, error = "platform location unavailable" }
         end
         local force = game.forces[lock.force_name]
         local platform = force and force.platforms[platform_index]
         if not SurfaceLock.matches_platform(lock, platform) then
-            if not (platform and platform.valid) then
-                return { state = "source_missing", transferId = transfer_id, error = "uncommitted transfer lock retained for a missing platform" }
-            end
             return { state = "identity_mismatch", transferId = transfer_id, error = "platform identity mismatch" }
+        end
+        if SurfaceLock.source_lock_is_committed(lock) then
+            return { state = "committed", transferId = transfer_id, error = nil }
         end
         if SurfaceLock.source_lock_phase(lock) == SOURCE_TRANSFER_PHASE_PRE_COMMIT then
             return { state = "pre_commit", transferId = transfer_id, error = nil }
         end
-        return { state = "identity_mismatch", transferId = transfer_id, error = "lock phase unavailable" }
     end
 
     local force = force_name and game.forces[force_name] or nil
     local platform = force and force.platforms and force.platforms[platform_index] or nil
     if platform and platform.valid then
-        return { state = "unlocked", transferId = transfer_id, error = nil }
+        if lock == nil then
+            return { state = "unlocked", transferId = transfer_id, error = nil }
+        end
+        return { state = "identity_mismatch", transferId = transfer_id, error = "source platform is live or not locked" }
     end
-    return { state = "source_missing", transferId = transfer_id, error = nil }
+    return { state = "identity_mismatch", transferId = transfer_id, error = "no matching source lock or tombstone" }
 end
 function SurfaceLock.matches_platform(lock, platform)
     return type(lock) == "table" and platform and platform.valid and platform.surface and platform.surface.valid

@@ -31,18 +31,6 @@ inconvenient, but deleting the record to free the queue discards the information
 needed to distinguish a missing reply from an unperformed action. An accepted late
 verdict can settle the original operation without relabeling earlier failure evidence.
 
-A rejected transfer whose source unlock was refused is the case the controller resolves
-by itself. The intent carries `rollbackPending`, so recovery re-reads the source lock
-state instead of the destination hold: it retries the unlock while the source reports
-the transfer's lock, releases the intent once the source reports the lock gone or the
-platform removed with neither a deletion receipt nor a retirement record for this
-transfer, and flags a committed, deleted or retired source as a contradiction that stays
-on the intent until an administrator releases it. The marker on the intent decides the
-route, so an older in-memory copy restored from the admission journal cannot send the
-transfer back through the destination cleanup path, and the record keeps its earlier
-events. `release-rollback` covers what the source cannot classify, after an
-administrator has verified it.
-
 Startup reconciliation compares the source journal with the loaded world and
 controller policy before releasing startup protections. An unavailable controller,
 corrupt journal, identity conflict or oversized reconciliation roster can leave

@@ -302,8 +302,6 @@ export function analyzeRollbackRecovery(report) {
   }
   assert.equal(failed.pending[0].rollbackPending,true,"the intent was not marked rollbackPending");
   assert.ok(Array.isArray(report.retried)&&report.retried.filter(type=>type==="rollback_failed").length>=2,"recovery did not retry the refused unlock");
-  assert.match(String(report.releaseRefused?.message),/still holds this transfer's lock/,"release-rollback was not refused while the lock stood");
-  assert.equal(report.releaseRefused.pending,1);assert.equal(report.releaseRefused.sourceLocks,1);
   assert.equal(done?.pending?.length,0,"the intent was not released");assert.equal(done.sourceLocks,0,"the source lock was not released");
   assert.equal(done.history?.status,"failed");assert.equal(done.history.sourceRollback,"succeeded");assert.ok(!done.history.timingPendingRecovery);
   assert.ok(done.events.includes("rollback_success")&&done.events.includes("validation_failed"),"resolution evidence incomplete");
@@ -315,7 +313,7 @@ export function analyzeRollbackRecovery(report) {
   if(report.final?.source.present||report.final?.destination.usable!==true) violations.push("the fresh transfer did not leave one usable destination");
   if(!isDeepStrictEqual(report.final?.destination.cargo,expectedCargo)) violations.push("fresh transfer cargo differs from the fixture");
   return {verdict:violations.length?"STOP":"PASS",violations,
-    reason:"Refused source unlock retried until it succeeded across a controller restart; release-rollback refused while the lock stood; a fresh queue-admitted transfer completed with exact cargo"};
+    reason:"Refused source unlock retried until it succeeded across a controller restart; a fresh queue-admitted transfer completed with exact cargo"};
 }
 
 export function analyzeBackup(report) {

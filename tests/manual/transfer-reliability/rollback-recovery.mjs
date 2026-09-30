@@ -3,7 +3,7 @@ import { sample, start, summary, terminal } from "./cases.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 
 export const contract = { requires: ["owned disposable Docker lab", "debug_mode on both disposable instances for the fail-safe hooks"],
-  produces: ["refused-unlock rollback observations before and after a controller restart", "release-rollback refusal evidence",
+  produces: ["refused-unlock rollback observations before and after a controller restart",
     "source release and fresh queue-admitted transfer with physical cargo samples"],
   "does not": ["restore saves", "repair cargo", "unlock or delete a copy by hand", "exercise a feature branch's belt-cargo restore"] };
 
@@ -62,13 +62,6 @@ export async function rollbackUnlockRefusedCase(lab, report, save) {
       const events = eventTypes(readLogEntry(lab, report.transferId));
       return events.filter(type => type === "rollback_failed").length >= 2 ? events : false;
     }, "recovery retried the refused unlock", 120); save();
-    let refusal = null;
-    try { lab.ctl("surface-export", "release-rollback", report.transferId); }
-    catch (error) { refusal = error.message; }
-    report.releaseRefused = { message: refusal, pending: readPending(lab).length, sourceLocks: sourceLocks(lab) }; save();
-    assert.ok(refusal, "release-rollback must be refused while the source still holds the lock");
-    assert.match(refusal, /still holds this transfer's lock/, refusal);
-    assert.equal(report.releaseRefused.pending, 1); assert.equal(report.releaseRefused.sourceLocks, 1);
     report.interruption = { kind: "controller SIGKILL while the rollback is pending" }; save();
     lab.mutateContainer("kill", lab.controller, ["--signal", "KILL"]);
     lab.mutateContainer("start", lab.controller);
@@ -113,8 +106,7 @@ export async function rollbackUnlockRefusedCase(lab, report, save) {
     assert.equal(report.final.source.present, false); assert.equal(report.final.destination.usable, true);
     assert.deepEqual(report.final.destination.cargo, expectedCargo);
     assert.equal(readPending(lab).length, 0);
-    report.notTested = ["The belt-cargo restore refusal of the staggered-capture branch; the lab refuses through the fail-safe hook",
-      "release-rollback acceptance on a live cluster; its acceptance paths are covered by the plugin unit tests"];
+    report.notTested = ["The belt-cargo restore of the staggered-capture branch; the lab refuses through the fail-safe hook"];
   } finally {
     report.restoreErrors = [];
     for (const host of [1, 2]) {

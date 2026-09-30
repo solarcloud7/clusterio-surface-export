@@ -25,7 +25,6 @@ test("source transfer lock state normalizer preserves every protocol state", () 
 		"unknown/offline",
 		"identity_mismatch",
 		"unlocked",
-		"source_missing",
 	];
 
 	assert.deepEqual(SOURCE_TRANSFER_LOCK_STATES, expected);
@@ -45,21 +44,6 @@ test("source transfer lock state parser handles Lua JSON and failures", () => {
 	assert.equal(parseSourceTransferLockStateJson('{"state":"identity_mismatch","error":"surface changed"}').state, "identity_mismatch");
 	assert.equal(parseSourceTransferLockStateJson("not json").state, "unknown/offline");
 	assert.equal(parseSourceTransferLockStateJson("").state, "unknown/offline");
-});
-
-test("a source retirement record turns an absent or unmatched lock into a deletion receipt", () => {
-	const { applySourceRetirement } = require(path.join(distNode, "lib", "source-lock-state.js"));
-	for (const state of ["unlocked", "source_missing", "identity_mismatch"]) {
-		const result = applySourceRetirement({ state, transferId: "t1", error: null }, true);
-		assert.equal(result.state, "source_gone_matching_transfer", state);
-		assert.match(String(result.error), new RegExp(`retirement journal.*${state}`));
-	}
-	for (const state of ["pre_commit", "committed", "source_gone_matching_transfer", "unknown/offline"]) {
-		assert.equal(applySourceRetirement({ state, transferId: "t1", error: null }, true).state, state, `${state} stands on its own`);
-	}
-	assert.equal(applySourceRetirement({ state: "source_missing", transferId: "t1", error: null }, false).state, "source_missing", "no retirement, no override");
-	const instance = read("instance.ts");
-	assert.match(instance, /applySourceRetirement\(state, retired\)/, "the instance must reconcile the Lua answer with its retirement journal");
 });
 
 test("GetSourceTransferLockStateRequest is wired through the message and instance layers", () => {

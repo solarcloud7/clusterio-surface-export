@@ -17,7 +17,7 @@ export function sourceRollbackFromEvents(events: readonly { eventType?: unknown 
 			case "rollback_attempt": return "attempted";
 			case "rollback_success": return "succeeded";
 			case "rollback_failed": return "failed";
-			case "rollback_resolved": case "rollback_released": return "released";
+			case "rollback_resolved": return "released";
 		}
 	}
 	return undefined;

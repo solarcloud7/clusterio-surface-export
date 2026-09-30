@@ -53,16 +53,6 @@ Requires Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
 - Startup recovery that is blocked fails boot checks explicitly; seed resets archive
   recovery history instead of discarding it. (#377, #379)
 - Scripted instance starts are bounded, a hung start is diagnosed and retried once. (#380)
-- A rejected transfer whose source unlock was refused no longer reserves both servers
-  until someone edits controller files. The controller retries the unlock, releases the
-  transfer once the source reports the lock gone or the platform removed, and never
-  re-runs the destination check for a rejected transfer. Transfer history shows
-  **Source released after a refused rollback** for a source that was released outside
-  the controller. `clusterioctl surface-export release-rollback <transferId>` releases
-  the remaining cases after an administrator has verified the source; it is refused
-  while the source still holds the lock, and a source deleted after the rejection needs
-  `--acknowledge-contradiction` and keeps `cleanup_failed`. Needs
-  `surface_export.recovery.resolve`. (#394)
 
 ## 0.11.0-beta.5
 

@@ -250,7 +250,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.ListLineageConflictsRequest, this.handleListLineageConflictsRequest.bind(this));
 		this.c.handle(messages.ResolvePlatformLineageRequest, this.handleResolvePlatformLineageRequest.bind(this));
 		this.c.handle(messages.AbandonPlatformResolutionRequest, this.handleAbandonPlatformResolutionRequest.bind(this));
-		this.c.handle(messages.ReleaseTransferRollbackRequest, this.handleReleaseTransferRollbackRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -383,15 +382,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	async handleAbandonPlatformResolutionRequest(request: messages.AbandonPlatformResolutionRequest) {
 		const result = await this.resolver.abandon(request.requestId);
-		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
-		return result;
-	}
-
-	async handleReleaseTransferRollbackRequest(request: messages.ReleaseTransferRollbackRequest, src?: { id: number }) {
-		const link = src ? this.c.wsServer.controlConnections.get(src.id) as { user?: { name?: unknown; id?: unknown } } | undefined : undefined;
-		const operator = [link?.user?.name, link?.user?.id].find(value => typeof value === "string" && value !== "");
-		const result = await this.orchestrator.releaseRollback(request.transferId, typeof operator === "string" ? operator : null,
-			request.acknowledgeContradiction === true);
 		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
 		return result;
 	}
