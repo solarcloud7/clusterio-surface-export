@@ -4,9 +4,9 @@ local TransactionDashboard = require("modules/surface_export/interfaces/gui/tran
 Base.admin_command("transaction-dashboard",
   "Open the transaction history dashboard (shows import/export/transfer history with timing)",
   function(cmd, ctx)
-    local player = game.players[ctx.player_index]
+    local player = ctx.player
     if not player then
-      ctx.print("This command can only be run by a player (not console)")
+      ctx.print("/transaction-dashboard must be run by a player (it opens an in-game window); the server console and RCON cannot open it.")
       return
     end
     
