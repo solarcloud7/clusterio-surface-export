@@ -77,8 +77,16 @@ local function line(internal)
     end
     return self
 end
+-- Belts have no get-by-unit-number flag, so game.get_entity_by_unit_number returns nil for them;
+-- the restore must find them on the platform surface.
 local entities_by_unit = {}
-env.game.get_entity_by_unit_number = function(unit) return entities_by_unit[unit] end
+env.game.get_entity_by_unit_number = function() return nil end
+local ship_surface = {valid = true, index = 70, find_entities_filtered = function(filter)
+    assert(type(filter.type) == "table", "the restore must scan belt types on the platform surface")
+    local out = {}
+    for _, e in pairs(entities_by_unit) do if e.valid then out[#out + 1] = e end end
+    return out
+end}
 local function belt(unit, lanes, kind)
     local lines = {}
     for li, internal in ipairs(lanes) do lines[li] = line(internal) end
@@ -174,7 +182,7 @@ do
     assert(lock.cleared_belts.groups == job.export_data.belt_side_groups and lock.cleared_belts.group_parent == nil
         and lock.cleared_belts.complete, "the lock keeps the finished groups for a rollback")
     logs = {}
-    local ok, placed = cargo.restore(lock, "Ship")
+    local ok, placed = cargo.restore(lock, "Ship", ship_surface)
     assert(ok, "restore refused: " .. tostring(placed))
     assert(placed == 9 and lock.cleared_belts == nil, "restore puts every captured item back and clears the record")
     assert(logs[#logs]:find("matches the capture exactly", 1, true), "a finished capture's restore reports its whole-belt census")
@@ -239,30 +247,32 @@ do
     cargo.begin(job, lock)
     assert(not cargo.step(job, 1), "one belt captured, the lock now covers cleared cargo")
     logs = {}
-    local ok, placed = cargo.restore(lock, "Ship")
+    local ok, placed = cargo.restore(lock, "Ship", ship_surface)
     assert(ok and placed == 2 and #a.lines[1].items == 1 and a.lines[1].items[1].count == 2 and #b.lines[2].items == 1,
         "a rollback in the middle of the capture puts back what was cleared and leaves the rest alone")
     assert(logs[#logs]:find("still in progress", 1, true), "a mid-capture restore must not claim a whole-belt census")
     cargo.begin(job_for({a, b}), lock)
     entities_by_unit[42] = nil
-    local refused, why = cargo.restore(lock, "Ship")
-    assert(not refused and tostring(why):find("no longer exist", 1, true) and lock.cleared_belts, "a missing belt refuses the restore and keeps the record")
+    local refused, why = cargo.restore(lock, "Ship", ship_surface)
+    assert(not refused and tostring(why):find("no longer on the platform", 1, true) and lock.cleared_belts, "a missing belt refuses the restore and keeps the record")
     entities_by_unit[42] = b
+    local elsewhere, elsewhere_why = cargo.restore(lock, "Ship", {valid = false})
+    assert(not elsewhere and tostring(elsewhere_why):find("surface is unavailable", 1, true) and lock.cleared_belts, "no surface, no restore")
     local job2 = job_for({a, b})
     local lock2 = {}
     cargo.begin(job2, lock2)
     while not cargo.step(job2, 10) do end
     cargo.finish(job2, lock2)
     env.prototypes.item["pistol"] = nil
-    local rejected, reason = cargo.restore(lock2, "Ship")
+    local rejected, reason = cargo.restore(lock2, "Ship", ship_surface)
     assert(not rejected and tostring(reason):find("no prototype", 1, true) and lock2.cleared_belts and #a.lines[1].items == 0,
         "an item without a prototype refuses the restore before placing anything and keeps the record")
     env.prototypes.item["pistol"] = {}
     b.lines[2].force_insert_at = noop
-    local failed, why = cargo.restore(lock2, "Ship")
+    local failed, why = cargo.restore(lock2, "Ship", ship_surface)
     assert(not failed and tostring(why):find("mismatched", 1, true) and lock2.cleared_belts.attempt and lock2.cleared_belts.attempt.placed == 3,
         "a placement the belt did not take is reported and remembered: " .. tostring(why))
-    local again, again_why = cargo.restore(lock2, "Ship")
+    local again, again_why = cargo.restore(lock2, "Ship", ship_surface)
     assert(not again and tostring(again_why):find("earlier restore attempt placed 3", 1, true) and #a.lines[1].items == 1,
         "a second attempt after a failed one is refused so nothing is placed twice: " .. tostring(again_why))
     print("PASS a rollback mid-capture restores only the cleared cargo; a missing belt, an unknown item or a failed placement keeps the protection and is never retried blindly")
@@ -283,7 +293,8 @@ do
         if name:find("platform-identity", 1, true) then return function(p) return p.uid end end
         if name:find("passenger-transit", 1, true) then return {transfer_released = noop} end
         if name:find("source-belt-cargo", 1, true) then
-            return {restore = function(lock_data, label)
+            return {restore = function(lock_data, label, restore_surface)
+                assert(restore_surface == surface, "the unlock must hand the restore the verified platform surface")
                 calls[#calls + 1] = "restore:" .. tostring(label)
                 if restore_result then lock_data.cleared_belts = nil return true, 3 end
                 return false, "3 item(s) unplaced"

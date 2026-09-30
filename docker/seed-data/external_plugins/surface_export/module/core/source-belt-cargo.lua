@@ -194,9 +194,12 @@ function SourceBeltCargo.finish(job, lock_data)
 	return { belts = #state.units, stacks = state.stacks, sweep_stacks = state.sweep_stacks, groups = #groups, callbacks = state.callbacks }
 end
 
-function SourceBeltCargo.restore(lock_data, label)
+local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1", "linked-belt", "lane-splitter" }
+
+function SourceBeltCargo.restore(lock_data, label, surface)
 	local record = lock_data and lock_data.cleared_belts
 	if not record then return true, nil end
+	if not (surface and surface.valid) then return false, "the platform surface is unavailable" end
 	if record.attempt then
 		return false, string.format("an earlier restore attempt placed %s item(s) and then failed (%s); inspect the platform before unlocking it",
 			tostring(record.attempt.placed or "an unknown number of"), tostring(record.attempt.error))
@@ -212,13 +215,17 @@ function SourceBeltCargo.restore(lock_data, label)
 			end
 		end
 	end
+	local by_unit = {}
+	for _, entity in ipairs(surface.find_entities_filtered({ type = BELT_TYPES })) do
+		if entity.valid and entity.unit_number then by_unit[entity.unit_number] = entity end
+	end
 	local entity_map, missing = {}, 0
 	for entity_id, unit_number in pairs(record.unit_numbers or {}) do
-		local entity = game.get_entity_by_unit_number(unit_number)
-		if entity and entity.valid then entity_map[entity_id] = entity else missing = missing + 1 end
+		local entity = by_unit[unit_number]
+		if entity then entity_map[entity_id] = entity else missing = missing + 1 end
 	end
 	if missing > 0 then
-		return false, string.format("%d belt(s) whose cargo was captured no longer exist", missing)
+		return false, string.format("%d belt(s) whose cargo was captured are no longer on the platform", missing)
 	end
 	local ok, placed, unplaced, anomalies = pcall(BeltRestoration.restore_side_groups, groups, entity_map, label)
 	if not ok then

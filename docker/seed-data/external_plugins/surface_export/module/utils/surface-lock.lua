@@ -580,7 +580,7 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
     end
 
     if lock_data.cleared_belts then
-        local cargo_ok, cargo_err = SourceBeltCargo.restore(lock_data, platform_name)
+        local cargo_ok, cargo_err = SourceBeltCargo.restore(lock_data, platform_name, surface)
         if not cargo_ok then
             return false, "Unlock refused: captured belt cargo could not be put back (" .. tostring(cargo_err) .. "); protection retained"
         end

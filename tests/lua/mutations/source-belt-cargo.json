@@ -54,6 +54,15 @@
 		]
 	},
 	{
+		"name": "the restore looks belts up by the global unit-number lookup, which belts do not support",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "local entity = by_unit[unit_number]",
+		"replace": "local entity = game.get_entity_by_unit_number(unit_number)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
 		"name": "a failed restore is retried blindly",
 		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
 		"find": "if record.attempt then",
