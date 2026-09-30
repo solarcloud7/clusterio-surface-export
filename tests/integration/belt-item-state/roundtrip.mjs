@@ -6,7 +6,9 @@ import { readTransactionLogStore } from "../../../tools/tests/testkit/log-query.
 import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 
 // Two sequential production transfers of one disposable clone; optional profiled rejection.
-const profiled=process.argv.includes("--profile-batches"), rejectLast=process.argv.includes("--reject-last");
+// --reject-only runs just the rejected leg (a deleted source's surface index can be reused by the
+// next clone, which makes its retained deletion receipt look unresolved to the lab preflight).
+const profiled=process.argv.includes("--profile-batches"), rejectLast=process.argv.includes("--reject-last"), rejectOnly=process.argv.includes("--reject-only");
 const name=`belt-roundtrip-${Date.now()}`, ids={1:836570928,2:902099405};
 const artifactArg=process.argv.indexOf("--artifact");
 const artifact=artifactArg<0?(profiled?"ci-artifacts/belt-batching-roundtrip.json":"ci-artifacts/force-insert-roundtrip.json"):process.argv[artifactArg+1];
@@ -56,7 +58,8 @@ await withWorkflowLock(async()=>{
     result.clone=cloned;assert.ok(cloned.job_id,JSON.stringify(cloned));
     await until(()=>getIndex(1),"clone creation");
     await until(()=>preflightState(1).jobs===0,"clone completion");
-    for(const [source,destination,reject]of [[1,2,false],[2,1,false],...(rejectLast?[[1,2,true]]:[])]) {
+    const legs=rejectOnly?[[1,2,true]]:[[1,2,false],[2,1,false],...(rejectLast?[[1,2,true]]:[])];
+    for(const [source,destination,reject]of legs) {
       assertLeaseClean(source,preflightState(source),"before roundtrip leg");
       const prior=new Set(readTransactionLogStore().map(e=>e.transferInfo.transferId));
       if(reject)lua(destination,`remote.call('surface_export','configure',{debug_mode=true,test_force_validation_failure=true}) return {ok=true}`);
