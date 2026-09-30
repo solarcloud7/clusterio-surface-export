@@ -189,8 +189,8 @@ function SourceBeltCargo.finish(job, lock_data)
 		lock_data.cleared_belts.group_parent = nil
 		lock_data.cleared_belts.complete = true
 	end
-	log(string.format("[Belt Scan] Staggered capture done: %d belt(s), %d stack(s) (%d picked up by the final sweep), %d side group(s) (%d merged at a straddling item), %d slot(s) carry non-default item state, %d callback(s) over %d tick(s)",
-		#state.units, state.stacks, state.sweep_stacks, #groups, state.merged, stateful, state.callbacks, game.tick - state.started_tick))
+	log(string.format("[Belt Scan] Staggered capture done for '%s': %d belt(s), %d stack(s) (%d picked up by the final sweep), %d side group(s) (%d merged at a straddling item), %d slot(s) carry non-default item state, %d callback(s) over %d tick(s)",
+		tostring(job.platform_name), #state.units, state.stacks, state.sweep_stacks, #groups, state.merged, stateful, state.callbacks, game.tick - state.started_tick))
 	return { belts = #state.units, stacks = state.stacks, sweep_stacks = state.sweep_stacks, groups = #groups, callbacks = state.callbacks }
 end
 
