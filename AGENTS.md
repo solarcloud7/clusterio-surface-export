@@ -6,6 +6,10 @@
   is ignored local configuration and state, not a second source of skill instructions.
 - Work on branches in the canonical checkout. Do not create worktrees, secondary
   clones or repositories, or replace mounted directories with junctions/symlinks.
+- When another session owns the canonical checkout (a live `ci-artifacts/workflow.lock`
+  owner, recent reflog activity or a running session there), do not switch its
+  branch. Claude Code may then use its own worktree isolation based on `origin/main`
+  and prove the change with disposable Docker fixtures, not the development cluster.
 - This checkout is a live development bind-mount source. Check `git status` and
   coordinate ownership before branch changes, runtime builds, deployment or restarts.
   Subagents must not switch the shared branch.
