@@ -8,8 +8,8 @@
   clones or repositories, or replace mounted directories with junctions/symlinks.
 - When another session owns the canonical checkout (a live `ci-artifacts/workflow.lock`
   owner, recent reflog activity or a running session there), do not switch its
-  branch. Claude Code may then use its own worktree isolation based on `origin/main`
-  and prove the change with disposable Docker fixtures, not the development cluster.
+  branch. Claude Code may then use its own worktree isolation based on `origin/main`;
+  any runtime proof uses disposable Docker fixtures, not the development cluster.
 - This checkout is a live development bind-mount source. Check `git status` and
   coordinate ownership before branch changes, runtime builds, deployment or restarts.
   Subagents must not switch the shared branch.
@@ -39,8 +39,8 @@ and [setup](docs/developers/setup.md). Human readers do not need this file.
 - Respect `ci-artifacts/workflow.lock`. After a crash, verify the owner process
   has stopped before removing that specific lock.
 - Use `tools/clusterio/rcon.ps1`; personal shell aliases are not prerequisites.
-- Start a new PowerShell process with `pwsh -NoProfile -File`. A personal profile
-  can stall a non-interactive `pwsh -File` before the script runs.
+- Start a new PowerShell process with `pwsh -NoProfile -File` so no personal
+  profile runs before the script.
 - The development containers are `surface-export-*`; `atlas-*` is an unrelated
   cluster (controller port 8090, game port 34300). Resolve container names and
   volume ownership before acting. Hostnames are not Docker container names.
