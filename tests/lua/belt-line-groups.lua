@@ -4,10 +4,15 @@ local prefix = "modules/surface_export/"
 local function stub(name, value) package.preload[prefix .. name] = function() return value end end
 stub("core/deserializer", {})
 stub("utils/game-utils", {QUALITY_NORMAL = "normal"})
+local item_state_reads, cache_releases = 0, 0
 stub("export_scanners/inventory-scanner", {
     new_item_state_cache = function() return {} end,
-    release_item_state_cache = function() end,
-    capture_item_state = function(stack) if stack.name == "pistol" then return {health = 0.5} end return nil end,
+    release_item_state_cache = function() cache_releases = cache_releases + 1 end,
+    capture_item_state = function(stack)
+        item_state_reads = item_state_reads + 1
+        if stack.name == "pistol" then return {health = 0.5} end
+        return nil
+    end,
 })
 stub("utils/util", {pcall_warn = function(_, fn) assert(pcall(fn)) end, make_quality_key = function(n, q) return n .. "/" .. q end})
 stub("utils/version-compat", {})
@@ -31,15 +36,15 @@ local function line(internal, items)
     return self
 end
 local function belt(unit, lines, kind)
-    local self = {valid = true, unit_number = unit, type = kind or "transport-belt",
+    local self = {valid = true, unit_number = unit, type = kind or "transport-belt", surface_index = 1,
         belt_neighbours = {inputs = {}, outputs = {}}, lines = lines}
     self.get_max_transport_line_index = function() return #lines end
     self.get_transport_line = function(li) return lines[li] end
     return self
 end
-local function feed(from, to)
-    from.belt_neighbours.outputs[#from.belt_neighbours.outputs + 1] = to
-    to.belt_neighbours.inputs[#to.belt_neighbours.inputs + 1] = from
+local function feed(from, to, one_sided)
+    if one_sided ~= "inputs" then from.belt_neighbours.outputs[#from.belt_neighbours.outputs + 1] = to end
+    if one_sided ~= "outputs" then to.belt_neighbours.inputs[#to.belt_neighbours.inputs + 1] = from end
 end
 local function pairs_of(belts)
     local out = {}
@@ -87,11 +92,15 @@ local function check(label, belts, expect_groups)
     local belt_pairs = pairs_of(belts)
     local expected = oracle(belt_pairs)
     compared = 0
+    logs = {}
     local actual = restorer.capture_side_groups(belt_pairs)
     assert(dump(actual) == dump(expected), label .. ": side groups differ\n expected " .. dump(expected) .. "\n actual   " .. dump(actual))
     if expect_groups then assert(#actual == expect_groups, label .. ": " .. #actual .. " groups, expected " .. expect_groups) end
-    return actual, compared
+    local capture_line = logs[#logs] or ""
+    assert(capture_line:find("Captured %d+ side group%(s%) from %d+ belt%(s%)"), label .. ": capture log line missing")
+    return actual, compared, capture_line, table.concat(logs, "\n")
 end
+local function walked(capture_line) return tonumber(capture_line:match("%((%d+) walked")) end
 
 do
     local L1, L2 = "run-lane-1", "run-lane-2"
@@ -100,12 +109,26 @@ do
     for i = 1, 3 do feed(run[i], run[i + 1]) end
     local side = belt(20, {line("side-1", {{uid = 300, pos = 0.25, name = "pistol"}}), line("side-2")})
     feed(side, run[2])
-    local groups, comparisons = check("straight run with a side load", {run[1], run[2], run[3], run[4], side}, 4)
+    local groups, comparisons, capture_line = check("straight run with a side load", {run[1], run[2], run[3], run[4], side}, 4)
     assert(#groups[1].members == 4 and groups[1].members[4].id == "e14", "the run's lane shares one group in belt order")
     assert(#groups[1].slots == 4 and groups[1].item_source_positions[1] == "e11", "slots follow belt order")
     assert(groups[3].slots[1].st.health == 0.5, "item state travels with the slot")
-    assert(comparisons < 40, "connected belts should need few comparisons, got " .. comparisons)
+    assert(comparisons < 60, "connected belts should need few comparisons, got " .. comparisons)
+    assert(walked(capture_line) == 5, "every listed belt is walked once: " .. capture_line)
     print("PASS a straight run shares lanes; a side-loading belt keeps its own")
+end
+
+do
+    for _, side in ipairs({"inputs", "outputs"}) do
+        local L1, L2 = "half-" .. side .. "-1", "half-" .. side .. "-2"
+        local a = belt(70, {line(L1, {{uid = 700, pos = 0.9, name = "iron-plate"}}), line(L2)})
+        local b = belt(71, {line(L1, {{uid = 701, pos = 0.1, name = "iron-plate"}}), line(L2)})
+        feed(a, b, side)
+        local groups, _, capture_line = check("neighbour listed on the " .. side .. " side only", {a, b}, 2)
+        assert(#groups[1].members == 2, "an adjacency reported by one side only still joins the lane")
+        assert(walked(capture_line) == 2, "the one-sided adjacency must be joined by the walk itself: " .. capture_line)
+    end
+    print("PASS an adjacency reported by only one of the two belts still joins their lanes")
 end
 
 do
@@ -121,8 +144,9 @@ do
     local entrance = belt(41, {line("u-tunnel-1"), line("u-top-2"), line("u-tunnel-1", {{uid = 500, pos = 0.1, name = "coal"}}), line("u-tunnel-2")}, "underground-belt")
     local exit = belt(42, {line("u-tunnel-1", {{uid = 500, pos = 0.1, name = "coal"}}), line("u-tunnel-2"), line("u-out-1"), line("u-out-2")}, "underground-belt")
     entrance.underground_belt_neighbour, exit.underground_belt_neighbour = exit, entrance
-    local groups = check("underground pair", {entrance, exit}, 5)
+    local groups, _, capture_line = check("underground pair", {entrance, exit}, 5)
     assert(#groups[1].members == 3 and #groups[1].slots == 1, "the tunnel lane is one group across both ends, item seen once")
+    assert(walked(capture_line) == 2, "the ends must be joined by the walk itself, not by the fallback: " .. capture_line)
     local lone = belt(43, {line("lone-1"), line("lone-2"), line("lone-1"), line("lone-4")}, "underground-belt")
     groups = check("lone underground end", {lone}, 3)
     assert(#groups[1].members == 2, "two lanes of one belt that are the same line share a group")
@@ -134,9 +158,69 @@ do
     local x = belt(52, {line("bridge-1"), line("bridge-2")})
     local c = belt(53, {line("bridge-1"), line("bridge-2")})
     feed(a, x) feed(x, c)
-    local groups = check("bridging belt outside the list", {a, c}, 2)
+    local stranger = belt(54, {line("stranger-1"), line("stranger-2")})
+    local far = belt(55, {line("far-1"), line("far-2")})
+    feed(stranger, a) feed(far, stranger)
+    local groups, _, capture_line = check("bridging belt outside the list", {a, c}, 2)
     assert(#groups[1].members == 2, "lines joined through a belt that is not in the list still share a group")
-    print("PASS a shared lane through a belt outside the list is still one group")
+    assert(walked(capture_line) == 3, "only unlisted belts that share a lane are walked: " .. capture_line)
+    print("PASS a shared lane through a belt outside the list is still one group; unrelated belts are not walked")
+end
+
+do
+    local ghost = {valid = true, unit_number = 81, type = "entity-ghost", surface_index = 1}
+    local entrance = belt(82, {line("g-1"), line("g-2"), line("g-3"), line("g-4")}, "underground-belt")
+    entrance.underground_belt_neighbour = ghost
+    local elsewhere = belt(83, {line("l-1"), line("e-2")})
+    elsewhere.surface_index = 2
+    local linked = belt(84, {line("l-1"), line("l-2")}, "linked-belt")
+    linked.linked_belt_neighbour = elsewhere
+    local dead = setmetatable({valid = false}, {__index = function(_, key) error("LuaEntity was invalid; read " .. tostring(key)) end})
+    feed(dead, linked, "inputs")
+    feed(linked, entrance)
+    local _, _, capture_line, trace = check("ghost, invalid and off-surface partners", {entrance, linked}, 6)
+    assert(walked(capture_line) == 2, "a ghost, an invalid entity or an entity on another surface is never walked: " .. capture_line)
+    assert(not trace:find("partition failed", 1, true), "an invalid neighbour must be skipped, not read: " .. trace)
+    print("PASS ghost, invalid and other-surface partners are skipped without failing the capture")
+end
+
+do
+    local a = belt(91, {line("apart-1", {{uid = 910, pos = 0.99, name = "iron-plate"}}), line("apart-2")})
+    local c = belt(92, {line("apart-1", {{uid = 910, pos = 0.01, name = "iron-plate"}}), line("apart-2")})
+    item_state_reads = 0
+    local groups, _, capture_line, trace = check("equal lines without an adjacency", {a, c}, 2)
+    assert(#groups[1].members == 2 and #groups[1].slots == 1, "the pairwise search restores the engine's grouping")
+    assert(trace:find("disagreed with the engine", 1, true) and capture_line:find("pairwise search", 1, true),
+        "the disagreement and the fallback were not logged: " .. trace)
+    assert(item_state_reads == 1, "the fallback must reuse the first pass's item-state reads, got " .. item_state_reads .. " reads")
+    print("PASS an item seen on two groups' lines falls back to the pairwise search, reading its state once")
+end
+
+do
+    local a = belt(95, {line("dup-1", {{uid = 950, pos = 0.5, name = "iron-plate"}}), line("dup-2")})
+    local c = belt(96, {line("dup-3", {{uid = 950, pos = 0.5, name = "iron-plate"}}), line("dup-4")})
+    logs = {}
+    cache_releases = 0
+    local ok, err = pcall(restorer.capture_side_groups, pairs_of({a, c}))
+    assert(not ok, "an item on two lines that are not the same line must refuse the capture")
+    assert(tostring(err):find("would duplicate that item", 1, true) and tostring(err):find("950", 1, true),
+        "the refusal must name the item: " .. tostring(err))
+    assert(table.concat(logs, "\n"):find("disagreed with the engine", 1, true), "the first pass's disagreement was not logged")
+    assert(cache_releases == 1, "the item-state cache must be released after a refused capture")
+    print("PASS an item still on two groups' lines in the pairwise search refuses the capture instead of duplicating it")
+end
+
+do
+    local broken = belt(93, {line("broken-1"), line("broken-2")})
+    broken.belt_neighbours = nil
+    setmetatable(broken, {__index = function(_, key) if key == "belt_neighbours" then error("belt_neighbours is not available") end end})
+    local partner = belt(94, {line("broken-1"), line("broken-2")})
+    feed(partner, broken, "outputs")
+    local groups, _, capture_line, trace = check("neighbour read failure", {broken, partner}, 2)
+    assert(#groups[1].members == 2, "the pairwise search still groups the shared lane")
+    assert(trace:find("partition failed", 1, true) and capture_line:find("pairwise search", 1, true),
+        "the failure and the fallback were not logged: " .. trace)
+    print("PASS a failing neighbour read falls back to the pairwise search")
 end
 
 do

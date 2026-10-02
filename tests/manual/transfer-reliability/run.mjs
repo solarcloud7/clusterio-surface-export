@@ -11,6 +11,7 @@ import { backupRestoreCase } from "./backup-restore.mjs";
 import { destinationRollbackCase } from "./destination-rollback.mjs";
 import { savePolicyCase, snapshotRecoveryCase, pendingSavePolicyCase, sourceAdmissionCase } from "./save-policy.mjs";
 import { lineageReturnTripCase, lineageStaleCopyCase, lineageKeepThisCase } from "./lineage-resolution.mjs";
+import { rollbackUnlockRefusedCase } from "./rollback-recovery.mjs";
 import { analyze } from "./oracle.mjs";
 import { checkpointCheck, contract as checkpointContract } from "./checkpoint-check.mjs";
 
@@ -74,7 +75,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
     const directory=join(ROOT,"ci-artifacts",run);mkdirSync(directory,{recursive:true});
     const report={schemaVersion:1,case:chosen.id,run,contract:checkpoint?checkpointContract:contract,sectionedCodec,startedAt:new Date().toISOString(),
       head:execFileSync("git",["rev-parse","HEAD"],{cwd:ROOT,encoding:"utf8"}).trim(),hashes:{},cleanup:{success:false}};
-    for(const file of checkpoint?["run.mjs","docker-lab.mjs","lifecycle.mjs","checkpoint-check.mjs"]:["run.mjs","docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs","destination-rollback.mjs","save-policy.mjs","recovery-browser.mjs","lineage-resolution.mjs"])
+    for(const file of checkpoint?["run.mjs","docker-lab.mjs","lifecycle.mjs","checkpoint-check.mjs"]:["run.mjs","docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs","destination-rollback.mjs","save-policy.mjs","recovery-browser.mjs","lineage-resolution.mjs","rollback-recovery.mjs"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
     if(checkpoint) report.hashes[".env.example"]=hash(join(ROOT,".env.example"));
     report.hashes["runtime-profile"]=hash(join(ROOT,"tools/shared/runtime-profile.mjs"));
@@ -102,6 +103,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
       else if(chosen.id==="lineage-return-trip") await lineageReturnTripCase(lab,report,save);
       else if(chosen.id==="lineage-stale-copy") await lineageStaleCopyCase(lab,report,save);
       else if(chosen.id==="lineage-keep-this") await lineageKeepThisCase(lab,report,save);
+      else if(chosen.id==="rollback-unlock-refused") await rollbackUnlockRefusedCase(lab,report,save);
       else if(chosen.id==="coordinated-restore") await backupRestoreCase(lab,report,save,{failAfterBackup});
       else if(chosen.id==="restore-old-destination") await destinationRollbackCase(lab,report,save,{failAfterControl});
       else await recoveryCase(lab,report,save);

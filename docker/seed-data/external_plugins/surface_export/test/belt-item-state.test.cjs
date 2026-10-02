@@ -35,7 +35,7 @@ test("belt slots carry item state sparsely, and every captured field has a belt 
 	assert.match(restoration, /local function belt_item_state\(stack, cache\)[\s\S]{0,600}?\n    return state\nend/,
 		"capture returns the shared serializer's sparse record whole — a second field list here is how a "
 		+ "captured field goes silently unshipped");
-	assert.match(restoration, /st = belt_item_state\(it\.stack, cache\)/,
+	assert.match(restoration, /state = belt_item_state\(it\.stack, cache\) or false[\s\S]{0,600}?st = state or nil,/,
 		"the slot's state field must come from the shared capture, so a plain stack keeps the compact form");
 	assert.match(restoration, /Util\.pcall_warn\("\[BeltRestoration\] item-state cache release"[\s\S]{0,200}?InventoryScanner\.release_item_state_cache\(cache\)[\s\S]{0,200}?if not ok then error\(result, 0\) end/,
 		"capture_side_groups owns the scratch inventory's lifetime, including when the scan throws: the release "

@@ -76,6 +76,7 @@ export const SOURCE_TRANSFER_LOCK_STATES = [
 	"source_gone_matching_transfer",
 	"unknown/offline",
 	"identity_mismatch",
+	"unlocked",
 ] as const;
 export type SourceTransferLockState = typeof SOURCE_TRANSFER_LOCK_STATES[number];
 export interface SourceTransferLockStateResponse {
@@ -1982,6 +1983,7 @@ export interface PendingTransferIntent {
 	exportId: string | null;
 	lineage?: string | null;
 	lineageGeneration?: number | null;
+	rollbackPending?: boolean;
 }
 
 export interface IControllerPlugin {
