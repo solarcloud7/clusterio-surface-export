@@ -56,8 +56,44 @@
 	{
 		"name": "an item on two groups' lines is not detected",
 		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
-		"find": "if check_disagreement then",
+		"find": "if owner then",
 		"replace": "if false then",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "the pairwise search ships an item it found on two groups' lines",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "        if not groups then\n            error(",
+		"replace": "        if false then\n            error(",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "the fallback reads every item state again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if state == nil then",
+		"replace": "if true then",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "a partner on another surface is walked",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "BELT_CONNECTABLE_TYPES[neighbour.type]\n            and neighbour.surface_index == surface_index then",
+		"replace": "BELT_CONNECTABLE_TYPES[neighbour.type] then",
+		"tests": [
+			"tests/lua/belt-line-groups.lua"
+		]
+	},
+	{
+		"name": "an invalid neighbour is read",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/belt_restoration.lua",
+		"find": "if neighbour and neighbour.valid and BELT_CONNECTABLE_TYPES",
+		"replace": "if neighbour and BELT_CONNECTABLE_TYPES",
 		"tests": [
 			"tests/lua/belt-line-groups.lua"
 		]
