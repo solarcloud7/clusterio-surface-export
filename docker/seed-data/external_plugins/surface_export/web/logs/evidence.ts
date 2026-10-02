@@ -84,7 +84,8 @@ export function evidence(row: TransferSummary, detail?: LogDetail) {
 	const recovery = row.sourceRollback ?? detail?.transferInfo?.sourceRollback ?? sourceRollbackFromEvents(events);
 	const recoveryText = recovery === "succeeded" ? "Rollback succeeded"
 		: recovery === "failed" ? "Rollback failed — attention required"
-			: recovery === "attempted" ? "Rollback attempted; outcome not recorded" : null;
+			: recovery === "released" ? "Source released after a refused rollback"
+				: recovery === "attempted" ? "Rollback attempted; outcome not recorded" : null;
 	const verified = validation.success === true && items.state === "passed" && fluids.state === "passed";
 	const verb = operation === "import" ? "Imported" : "Arrived";
 	const outcome = status === "cleanup_failed" ? "Cleanup needs attention"

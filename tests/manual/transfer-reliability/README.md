@@ -20,6 +20,7 @@ node tests/manual/transfer-reliability/run.mjs --case save-policy-history
 node tests/manual/transfer-reliability/run.mjs --case save-policy-pending
 node tests/manual/transfer-reliability/run.mjs --case snapshot-recovery
 node tests/manual/transfer-reliability/run.mjs --case performance
+node tests/manual/transfer-reliability/run.mjs --case rollback-unlock-refused
 node tests/manual/transfer-reliability/setup-cleanup.mjs
 ```
 
@@ -495,6 +496,11 @@ validation code. Item position within a belt segment is not compared.
 | `crash-source-before-save` | Save before transfer; after deletion succeeds, kill the source host and load that earlier checkpoint | Sampled cargo and single-usable-copy safety; outcome records whether recovery progressed or remained protected |
 | `restore-old-source` | Complete normally, then restore only the source from an earlier save | Detect whether an independently restored source creates two usable copies |
 | `performance` | Transfer six-entity and 518-entity fixtures in three profiling modes, three repetitions each | Independent cargo parity plus real scheduler/setup callback profiler readings |
+| `rollback-unlock-refused` | Arm the destination's validation-failure hook and the source's fail-safe unlock refusal (1000 refusals), transfer, kill/restart the controller while the rollback is pending, then disarm the refusal | The intent stays `rollbackPending` with the source locked and its exact cargo; the controller retries the unlock before and after the restart without relabelling the rollback or asking the destination again; the retried unlock releases the source and the intent; a fresh queue-admitted transfer completes with exact cargo |
+
+The unlock refusal hook refuses before any restore step, keeps the lock unchanged, and
+disarms by count. It stands in for a source that refuses or cannot answer the unlock; it
+does not exercise a belt-cargo restore.
 
 Lost-reply interception does not fabricate successful Lua results, edit validation, accelerate
 recovery timers, or unlock anything. The real handler completes its mutation before the hook

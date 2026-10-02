@@ -86,6 +86,7 @@ jobs:
           lua5.2 tests/lua/sync-mode-gate.lua
           lua5.2 tests/lua/command-player-context.lua
           lua5.2 tests/lua/source-recovery.lua
+          lua5.2 tests/lua/source-lock-state.lua
           lua5.2 tests/lua/platform-lineage.lua
           lua5.2 tests/lua/lineage-resolution.lua
           lua5.2 tests/lua/export-phase-yields.lua
