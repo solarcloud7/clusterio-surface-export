@@ -6,7 +6,7 @@ installation and brings them to the desired state. It assumes
 plugin version and the gateway mod version match, and that the desired-state file
 `tools/clusterio/desired/vm.json` describes the cluster. The
 [reconcile tool](deployment.md#apply-a-desired-state-with-the-reconcile-tool)
-configures instances that exist; it does not create them, so steps 1–3 are manual.
+configures instances that exist; it does not create them, so steps 1, 2 and 4 are manual.
 
 ## What the desired state already defines
 
@@ -103,15 +103,15 @@ npx clusterioctl instance save create Delta world.zip
 ```
 
 A new save always starts on Nauvis. Delta is a normal Nauvis start. Sigma, Theta
-and Omega start their players on Vulcanus, Fulgora and Gleba, so each of those
-worlds must have that planet's surface generated with a safe arrival area near
-0,0 before players join; the plugin does not generate it (see
-[planets on each instance](configuration.md#planets-on-each-instance)). Prepare
-the world with the game's own tools: start the server, use an administrator
-account and the map editor or console to generate and clear the planet, then
-save and stop. Note what you did so it can be repeated. A misspelt planet name
-blocks startup recovery and shows in the web interface; an unprepared planet does
-not, so check the arrival area yourself before opening the server. There is no
+and Omega start their players on Vulcanus, Fulgora and Gleba. At startup the
+plugin creates that planet's surface if it is missing and generates the area
+around 0,0 (see [planets on each instance](configuration.md#planets-on-each-instance)).
+It does not clear hazards there. Prepare the world with the game's own tools:
+start the server, use an administrator account and the map editor or console to
+clear the planet around 0,0, then save and stop. Note what you did so it can be
+repeated. A misspelt planet name, or no free character position within 64 tiles
+of 0,0, blocks startup recovery and shows in the web interface; hazards near the
+arrival area do not, so check it yourself before opening the server. There is no
 tool for this step yet.
 
 ## 5. Start and verify

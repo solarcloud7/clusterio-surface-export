@@ -100,7 +100,8 @@ Safeguards apply to every choice:
 - **A lost reply is safe to retry.** Retrying continues where the action stopped and
   never repeats a deletion.
 - **A stuck action can be abandoned** before it deletes anything or changes the
-  record. The platform then stays protected exactly as it was before.
+  record. The platform then stays protected. An abandoned **Keep both** may
+  already have given the quarantined copy a new platform history.
 
 ## Choose how restored saves are treated
 

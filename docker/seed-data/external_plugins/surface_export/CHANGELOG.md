@@ -39,7 +39,7 @@ Requires Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
   transfers to that server automatically and continues its schedule there. Manual
   gateway links and the four-gateway layout mode are gone. (#372, #373, #375)
 - Portal colours are kept while a server's plugin is off. (#382)
-- Server destinations orbit closer to the Gateway on straight routes. (#369)
+- Portals orbit close to the Gateway on straight routes. (#369, #375)
 
 ### Servers and players
 

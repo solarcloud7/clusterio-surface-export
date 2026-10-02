@@ -41,7 +41,7 @@ export const CHECK_LEFTOVERS = "leftover-platforms";
 
 export const RECOVERY_REFUSED = "Source recovery startup refused";
 export const RECOVERY_STARTING = "Surface Export plugin initializing...";
-export const CLEANUP_AUDIT = "pwsh -File tools/tests/cleanup-test-surfaces.ps1 -DryRun";
+export const CLEANUP_AUDIT = "pwsh -NoProfile -File tools/tests/cleanup-test-surfaces.ps1 -DryRun";
 const HOST_LOG_SCAN = "for f in $(ls /clusterio/logs/host/host-*.log 2>/dev/null | tail -n 2); do "
 	+ `grep -aF -e '${RECOVERY_STARTING}' -e '${RECOVERY_REFUSED}' "$f"; done | tail -n 400`;
 

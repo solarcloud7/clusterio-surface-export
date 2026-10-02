@@ -1,7 +1,13 @@
+# requires: Docker; the running surface-export-controller container for the instance list
+# produces: this deployment's running containers (surface-export-controller, surface-export-host-N) with status and
+#           ports, the plugin and module versions in the checkout the script runs from, and the controller's
+#           clusterioctl instance list
+# does not: list stopped containers or another cluster's containers (atlas-*), report the module version a running
+#           save has loaded, or change cluster state
 Write-Host "=== Cluster Status ===" -ForegroundColor Cyan
 Write-Host ""
 
-docker ps --filter "name=clusterio" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
+docker ps --filter 'name=^surface-export-(controller|host-[0-9]+)$' --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
 
 Write-Host ""
 Write-Host "=== Plugin Version ===" -ForegroundColor Cyan

@@ -87,8 +87,8 @@ quarantined platforms stay listed under their server with a red highlight.
 
 Each side has a red **Delete** button that deletes that side's copy, and the centre
 has **Keep both** when both copies exist or **Keep** when only the quarantined copy
-does. The confirmation names the server whose copy is deleted and the platform;
-nothing else. Actions follow a live re-evaluation, so a copy quarantined while its
+does. The confirmation names the server whose copy is deleted and the platform
+with its trip count; nothing else. Actions follow a live re-evaluation, so a copy quarantined while its
 holder was offline becomes decidable once that server answers. The list refreshes
 every 30 seconds and when a server changes state; the refresh button repeats the
 evaluation. Platform names are never used to decide. Resolving needs the
@@ -97,7 +97,7 @@ evaluation. Platform names are never used to decide. Resolving needs the
 | Live result | Left **Delete** | Right **Delete** | Centre |
 |---|---|---|---|
 | `duplicate` | The quarantined copy is saved as a snapshot and deleted. | The other server's copy is saved as a snapshot and deleted; the quarantined copy becomes current and is released. | **Keep both**: the quarantined copy gets a new platform history and identity and is released; the other server's copy and its record are untouched. Everything aboard then exists twice. Refused when the copy's history was minted in this server session; restart the server first. |
-| `rollback_other`, `unregistered`, `ahead_of_registry` | Snapshot, then delete. The right side shows whether the recorded copy was found. | None. | **Keep**: the controller record moves to this copy and it is released. |
+| `rollback_other`, `unregistered`, `ahead_of_registry` | Snapshot, then delete. The right side shows whether the recorded copy was found. | None. | **Keep**: the controller record moves to this copy and it is released. The button reads **Keep both** while the recorded holder still has its copy, and is then refused until that copy is resolved. |
 | `stale_self` | Snapshot, then delete the older copy. | None. | **Keep both**: the controller record moves to this copy; both stay. |
 | `legacy_unclassified` | Snapshot, then delete. | None. | **Keep**: the copy gets a new platform history. Not offered when the copy is a retired transfer source or transfer history names it. |
 | `duplicate_local` | Snapshot, then delete. | None. | None. |
@@ -106,8 +106,9 @@ evaluation. Platform names are never used to decide. Resolving needs the
 
 Every action re-checks the registry, the other server's answer and in-flight
 transfers when it is submitted, and is refused if anything changed or is uncertain.
-Moving the controller record to a quarantined copy is also refused unless every other server of the cluster answers
-that it has no copy, whatever the registry records. A server that is offline,
+Moving the controller record with a **Keep** action is also refused unless every other server of the cluster answers
+that it has no copy, whatever the registry records. The right **Delete** on a
+`duplicate` row asks only the server holding the other copy. A server that is offline,
 reconciling or has the plugin disabled cannot answer, so adoption is refused until
 it is online with the plugin enabled or is deleted from the cluster.
 

@@ -125,7 +125,7 @@ local function transfer_lock_selftest()
 		"a saved display name cannot replace missing copy and job identity")
 	check("delete_identity_refuses_released",
 		SurfaceLock.transfer_delete_identity_ok(nil, fake_surface(7)) == false,
-		"a released/absent lock (TTL/admin unlocked) must REFUSE the delete — the source is live")
+		"a lock released by an administrator, or absent, must REFUSE the delete — the source is live")
 	check("delete_identity_refuses_non_transfer_lock",
 		SurfaceLock.transfer_delete_identity_ok({ surface_index = 7 }, fake_surface(7)) == false,
 		"a non-transfer (kind-less) lock must REFUSE the transfer delete")
