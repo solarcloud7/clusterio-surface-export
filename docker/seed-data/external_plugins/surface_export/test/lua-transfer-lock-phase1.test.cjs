@@ -12,14 +12,14 @@ function readModule(rel) {
 	return fs.readFileSync(path.join(moduleDir, rel), "utf8");
 }
 
-test("surface-lock exposes expiring transfer/export scanner with nil-safe TTL fallback", () => {
+test("surface-lock exposes an orphan-export expiry scanner that retains transfer locks, with nil-safe TTL fallback", () => {
 	const src = readModule(path.join("utils", "surface-lock.lua"));
 
 	assert.match(src, /DEFAULT_TRANSFER_LOCK_TTL_TICKS\s*=\s*36000/, "named 10-minute transfer TTL constant is required");
 	assert.match(src, /MIN_WORST_CASE_TRANSFER_TTL_TICKS\s*=\s*[\s\S]*?VALIDATION_TIMEOUT_TICKS\s*\+\s*WORST_CASE_RCON_TICKS/, "TTL floor must be DERIVED from named worst-case components (not a duplicate of DEFAULT), so DEFAULT>=MIN is a real check");
 	assert.match(src, /function\s+SurfaceLock\.scan_transfer_expiries\s*\(/, "scan_transfer_expiries must exist");
 	assert.doesNotMatch(src, /function\s+SurfaceLock\.cleanup_stale_locks\s*\(/, "destructive stale cleanup should be retired");
-	assert.match(src, /EXPIRABLE_LOCK_KINDS\s*=[\s\S]*transfer\s*=\s*true[\s\S]*export\s*=\s*true/, "scanner must expire transfer and export locks");
+	assert.match(src, /EXPIRABLE_LOCK_KINDS\s*=[\s\S]*transfer\s*=\s*true[\s\S]*export\s*=\s*true/, "scanner must check transfer and export locks; only orphan export locks expire");
 	assert.match(src, /EXPIRABLE_LOCK_KINDS\s*\[\s*lock_data\.kind\s*\]/, "scanner must key expiry off the expirable-kind set");
 	assert.match(src, /expires_tick\s+or\s+\(\s*locked_tick\s*\+\s*DEFAULT_TRANSFER_LOCK_TTL_TICKS\s*\)/, "scanner must fall back from expires_tick to locked_tick + TTL");
 	assert.match(src, /if\s+not\s+locked_tick\s+then[\s\S]*skip/, "scanner must skip old locks without locked_tick");
@@ -38,7 +38,7 @@ test("transfer exports stamp transfer lock metadata and refuse manual locks", ()
 	assert.match(surfaceLock, /already locked by a different transfer lock/, "mismatched stale transfer locks must be refused");
 	assert.match(surfaceLock, /existing_lock\.expires_tick = lock_opts\.expires_tick or existing_lock\.expires_tick\s*\n\s*return true, nil/, "same-transfer backfill must let the universal export path continue");
 
-	assert.match(exportPipeline, /local\s+lock_opts\s*=\s*\{[\s\S]*kind\s*=\s*\(destination_instance_id\s+or\s+resolution\)\s+and\s+["\']transfer["\']\s+or\s+["\']export["\'][\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "all async exports must get an expiring transfer/export lock");
+	assert.match(exportPipeline, /local\s+lock_opts\s*=\s*\{[\s\S]*kind\s*=\s*\(destination_instance_id\s+or\s+resolution\)\s+and\s+["\']transfer["\']\s+or\s+["\']export["\'][\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "all async exports must get a transfer/export lock stamped with expires_tick");
 	assert.match(exportPipeline, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*lock_opts\s*\)/, "universal lock path must pass lock_opts");
 	assert.match(surfaceLock, /return false, "Platform already locked by a non-transfer lock"/,
 		"a transfer lock over a manual lock must be refused with its own distinct error");
@@ -46,7 +46,7 @@ test("transfer exports stamp transfer lock metadata and refuse manual locks", ()
 		"the export path must abort on any lock error other than the benign already-locked one");
 
 	assert.match(transferTrigger, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "in-game transfer pre-lock must carry transfer metadata");
-	assert.match(remoteLock, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "documented lock_platform_for_transfer remote must create an expiring transfer lock");
+	assert.match(remoteLock, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "lock_platform_for_transfer remote must stamp expires_tick on its transfer lock");
 });
 
 test("source transfer locks have fail-closed pre_commit/committed phases", () => {
@@ -99,7 +99,7 @@ test("export-platform-to-file reports queued success and leaves async writing to
 	assert.doesNotMatch(remote, /export_id/, "dead synchronous tail must not reference undefined export_id");
 });
 
-test("control and remote interface expose transfer lock self-healing hooks", () => {
+test("control and remote interface expose the lock expiry scan and transfer-lock selftests", () => {
 	const control = readModule("control.lua");
 	const remoteInterface = readModule(path.join("interfaces", "remote-interface.lua"));
 

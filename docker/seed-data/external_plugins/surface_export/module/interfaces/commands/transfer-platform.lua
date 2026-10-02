@@ -11,7 +11,7 @@ Base.admin_command("transfer-platform",
     local dest_instance_id = tonumber(raw_param2)
 
     log(string.format("[Transfer Command] /transfer-platform invoked by %s: raw_params=['%s', '%s'] -> platform_index=%s, dest_instance_id=%s",
-      tostring(ctx.player_index or "RCON"),
+      ctx.player and ctx.player.name or "RCON",
       tostring(raw_param1), tostring(raw_param2),
       tostring(platform_index), tostring(dest_instance_id)))
 

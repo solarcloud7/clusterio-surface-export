@@ -29,7 +29,7 @@ Neither setting is a millisecond budget or a limit on every callback.
 | Import setup | Optional section decoding; platform preparation follows on a later callback for that format | The default document decode and platform preparation run synchronously. Section decoding still performs an indivisible decode per section; platform creation, starter-pack application and schedule setup are not batched. |
 | Tiles and beacons | Tile passes and beacon creation batches | Individual engine operations. |
 | Belt restoration | Captured lane groups packed into batches | Each group's insertion and physical delta check run together. A group can exceed the soft target. |
-| State and inventories | Phase yields and inventory work batches | A single entity's restoration work; deferred circuit readiness has its own state. |
+| State and inventories | Phase yields and inventory work batches | Hub inventories, the whole-platform state pass and held items each run in one callback; one entity's inventory writes are not split; deferred circuit readiness has its own state. |
 | Completion | Earlier phases yield before completion | Fluid restoration, cargo validation, activation and hold preparation share a callback. |
 | Diagnostics and recovery | Separate from ordinary entity batching | Optional full snapshots and whole-platform cleanup can still be expensive. |
 
