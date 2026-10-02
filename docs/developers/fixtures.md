@@ -34,7 +34,7 @@ For an existing heat-pipe fixture, the workflow is:
 ```powershell
 node tools/tests/testkit/cli.mjs probe lab-omnibus-state-v1 'heat-pipe@43,-13:temperature'
 # Edit that fixture's lifecycle.verify entry using the measured property.
-node tests/lab-gallery/push-roster.mjs --instance clusterio-host-1-instance-1
+node tests/lab-gallery/push-roster.mjs --instance "Dev One"
 ./tools/clusterio/rcon.ps1 11 '/test-run <name-filter>'
 ```
 
@@ -61,8 +61,8 @@ Update both the gallery artifact and its matching seed copy, then update the
 manifest hash and remeasure any recorded observations. The seed destinations are:
 
 ```text
-docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/lab-gallery-source.zip
-docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip
+docker/seed-data/hosts/clusterio-host-1/Dev One/lab-gallery-source.zip
+docker/seed-data/hosts/clusterio-host-2/Dev Two/lab-gallery-destination.zip
 ```
 
 Run `node --test tests/lab-gallery/manifest.test.mjs` and the relevant real gallery

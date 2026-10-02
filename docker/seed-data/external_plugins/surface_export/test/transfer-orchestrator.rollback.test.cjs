@@ -939,7 +939,7 @@ test("#106: validation fails AND source unlock fails → status is plain 'failed
 	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: { mismatchDetails: "item mismatch" } });
 
 	assert.equal(transfer.status, "failed",
-		"a failed unlock is TTL-self-healing and leaves no platform behind — it must not wear the "
+		"a failed unlock leaves the source locked until it is released (transfer locks never expire) but leaves no platform behind — it must not wear the "
 		+ "leftover-platform status");
 	assert.match(String(transfer.error), /unlock failed: source offline/,
 		"the unlock failure still rides in the error text");
@@ -983,7 +983,7 @@ test("preflight: an offline destination is refused BEFORE any record exists", as
 		"the refusal must carry the unlock authority: nothing was sent, so the CALLERS — the "
 		+ "instance's refusal path AND handleStartPlatformTransferRequest, whichever holds the "
 		+ "source lock — may release it. (Review finding: without this flag the web/ctl path "
-		+ "stranded its export-time lock for the full TTL.)");
+		+ "stranded its export-time lock until an operator released it.)");
 	assert.equal(activeTransfers.size, 0,
 		"NO record: a refused preflight must not burn the canonical ID or feed the retry guard");
 	assert.equal(calls.importSends, 0, "nothing was sent anywhere");
@@ -1163,11 +1163,11 @@ test("W1 guard: a late genuine FAILURE carrying destinationPreserved is ADOPTED 
 	assert.equal(calls.importSends, importSendsBefore);
 });
 
-test("validation timeout ceiling: 120s cap protects the source-lock TTL budget (and setTimeout)", async () => {
+test("validation timeout ceiling: 120s cap on the delayed status check (and setTimeout)", async () => {
 	const { orch, plugin } = makeHarness(() => ({ success: true }));
 	plugin.controller.config = { get: () => 900 };
 	assert.equal(orch.getValidationTimeoutMs(), 120_000,
-		"above the Lua validation budget the lock could TTL-expire mid-wait - clamp to 120s");
+		"above 120s the delayed job-status check waits too long - clamp to 120s");
 	plugin.controller.config = { get: () => 1e12 };
 	assert.equal(orch.getValidationTimeoutMs(), 120_000,
 		"a huge value must clamp, never overflow setTimeout into a 1ms insta-timeout");
