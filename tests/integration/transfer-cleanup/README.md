@@ -38,7 +38,7 @@ The normal transfer must preserve these physical readings and delete the source.
 must reach its intended deletion boundary; failure to inject is a harness error. Two usable copies
 with the original cargo is a reproducible invariant failure, even if the UI says `cleanup_failed`.
 
-Bounds: Factorio 2.1.17; at most two transfers per invocation, 90 seconds/60 polls per transfer,
+Bounds: Factorio 2.1.20, checked by `delete-failure.mjs`; at most two transfers per invocation, 90 seconds/60 polls per transfer,
 20 seconds per fixture RCON process, 32 KiB per fixture command and 64 KiB per fixture result.
 Shared preflight and instance-ID helpers retain their existing 180-second command timeout;
 registry reads retain the shared helper's timeout. A poll deadline does not interrupt an in-flight command.

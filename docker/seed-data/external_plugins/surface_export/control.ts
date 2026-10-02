@@ -231,7 +231,7 @@ surfaceExportCommands.add(new Command({
 			targetInstanceId,
 		})) as ReturnType<typeof messages.TransferPlatformRequest.Response.fromJSON>;
 		if (response.success) {
-			console.log(`Transfer of ${args.exportId} to instance ${targetInstanceId} succeeded`);
+			console.log(`Transfer of ${args.exportId} to instance ${targetInstanceId} started: ${response.message || response.transferId || "accepted"}`);
 			return;
 		}
 		throw new Error(response.error || "Unknown transfer failure");

@@ -2,7 +2,7 @@
 
 Contract: pack the explicitly built candidate once, install that tarball through normal
 npm dependency resolution in a disposable pinned Clusterio image, then boot both
-Factorio 2.1.17 instances using only the installed package. No checkout files may fill
+instances on the seed engine pin, currently Factorio 2.1.20, using only the installed package. No checkout files may fill
 holes in the installed runtime. Preserve the tarball hash, file list and installed tree
 hash, and require matching hashes in the lab. Verify entrypoint loading, peer identity,
 web manifest files and Lua version. The existing lost-source-reply fixture must retain

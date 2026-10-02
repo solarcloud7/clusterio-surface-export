@@ -9,8 +9,9 @@ that scope.
 ## Outcome and recovery
 
 The outcome describes the attempted operation. Recovery describes what happened
-after a failure. **Failed; rollback succeeded** remains a failed transfer: recovery
-does not turn the rejected destination into a successful one.
+after a failure. A **Transfer failed** outcome whose Recovery reads **Rollback
+succeeded** remains a failed transfer: recovery does not turn the rejected
+destination into a successful one.
 
 The overview separates entity, item and fluid evidence. Matching cargo totals do
 not prove that every entity was placed or configured correctly. An entity or belt
