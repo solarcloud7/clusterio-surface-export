@@ -6,6 +6,10 @@
   is ignored local configuration and state, not a second source of skill instructions.
 - Work on branches in the canonical checkout. Do not create worktrees, secondary
   clones or repositories, or replace mounted directories with junctions/symlinks.
+- When another session owns the canonical checkout (a live `ci-artifacts/workflow.lock`
+  owner, recent reflog activity or a running session there), do not switch its
+  branch. Claude Code may then use its own worktree isolation based on `origin/main`;
+  any runtime proof uses disposable Docker fixtures, not the development cluster.
 - This checkout is a live development bind-mount source. Check `git status` and
   coordinate ownership before branch changes, runtime builds, deployment or restarts.
   Subagents must not switch the shared branch.
@@ -35,6 +39,8 @@ and [setup](docs/developers/setup.md). Human readers do not need this file.
 - Respect `ci-artifacts/workflow.lock`. After a crash, verify the owner process
   has stopped before removing that specific lock.
 - Use `tools/clusterio/rcon.ps1`; personal shell aliases are not prerequisites.
+- Start a new PowerShell process with `pwsh -NoProfile -File` so no personal
+  profile runs before the script.
 - The development containers are `surface-export-*`; `atlas-*` is an unrelated
   cluster (controller port 8090, game port 34300). Resolve container names and
   volume ownership before acting. Hostnames are not Docker container names.
@@ -66,10 +72,10 @@ into the login form, not an agent's captured shell output.
 | `node tools/surface-export/player-state.mjs --player <name> [--cluster dev\|<name>] [--out <file>]` and `--diff <before> <after>` | Reachable cluster with running instances | One player's body, gear, grids, platform and passenger/arrival records per instance; item totals and conservation verdict | Read an offline player's body, change state, or prove where unreadable items went |
 | `node tools/tests/testkit/cli.mjs mutation --file <path> --find "<text>" --replace "<text>" [--baseline]` | Committed clean canonical source; eligible non-Lua file | Test verdict and restored source | Authorize mutating a live guard; use isolated execution or test doubles for those |
 | `node tools/tests/testkit/cli.mjs mutation --lua --cases <file.json>` (or `--file --find --replace --test`) | Docker; committed exported paths (module/, gateway mod source, tests/) | KILLED/SURVIVED/INVALID/NOT APPLIED per case after a green baseline, from a read-only `git archive` copy | Modify the working tree or live mount, test uncommitted edits, or prove engine behaviour |
-| `pwsh -File tools/tests/measure-rig.ps1 -Action run -PluginPath <isolated-package>` | Built package outside the live plugin mount, Docker | Disposable `sx-measure-*` observations and teardown | Measure the deployed development cluster |
+| `pwsh -NoProfile -File tools/tests/measure-rig.ps1 -Action run -PluginPath <isolated-package>` | Built package outside the live plugin mount, Docker | Disposable `sx-measure-*` observations and teardown | Measure the deployed development cluster |
 | `node tools/clusterio/tick-liveness.mjs` | Reachable configured cluster | External tick samples and liveness classification | Measure client FPS or isolate a stall's cause |
-| `pwsh -File tools/tests/cleanup-test-surfaces.ps1 -DryRun` | Resolved test-cluster scope | Planned test-surface cleanup | Authorize bypassing transfer protections; inspect before a mutating run |
-| `pwsh -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha> [-Push]` | Clean canonical branch and known former base tip | Rebased stack and optional push | Resolve conflicts or authorize a merge |
+| `pwsh -NoProfile -File tools/tests/cleanup-test-surfaces.ps1 -DryRun` | Resolved test-cluster scope | Planned test-surface cleanup | Authorize bypassing transfer protections; inspect before a mutating run |
+| `pwsh -NoProfile -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha> [-Push]` | Clean canonical branch and known former base tip | Rebased stack and optional push | Resolve conflicts or authorize a merge |
 | `node tools/tests/testkit/cli.mjs inspect`, `log`, `check --live` | Arguments shown by the selected subcommand; cluster for live queries | Payload/query-path evidence | Prove restoration from a field's presence; an invalid query is not an absent field. Live checks can export fixtures |
 
 Use `git config core.hooksPath .githooks` when setting up this checkout's hooks.
