@@ -6,7 +6,8 @@ Base.admin_command("belt-cargo",
   "Inspect or resolve belt cargo a transfer cleared from a locked platform (usage: /belt-cargo <platform_name_or_index> [describe|abandon|restore-present])",
   function(cmd, ctx)
     local target, action = SourceBeltCargo.parse_command(ctx.param, function(name)
-      local key = Base.resolve_lock_key(ctx.force, name)
+      local key, lookup_err = Base.resolve_lock_key(ctx.force, name)
+      if lookup_err then return true end
       return key ~= nil and SurfaceLock.get_lock_data(key) ~= nil
     end)
     if target == "" then
