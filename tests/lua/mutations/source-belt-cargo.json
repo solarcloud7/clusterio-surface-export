@@ -259,5 +259,41 @@
 		"tests": [
 			"tests/lua/source-belt-cargo.lua"
 		]
+	},
+	{
+		"name": "the census after a restore counts an item once per belt that reports it",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if stack and stack.valid_for_read and not counted[uid] then",
+		"replace": "if stack and stack.valid_for_read then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "abandon and restore-present run before the automatic restore was refused",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if not (record.pinned or record.attempt or record.refused) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a refused restore is not recorded",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if not ok and record then record.refused = { tick = game.tick, reason = tostring(detail) } end",
+		"replace": "",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a locked platform's whole name is split into a name and an action",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if is_target and text ~= \"\" and is_target(text) then return text, \"describe\" end",
+		"replace": "",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
 	}
 ]

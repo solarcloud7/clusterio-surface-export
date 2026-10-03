@@ -23,17 +23,6 @@ modules["utils/util"] = {QUALITY_NORMAL = "normal", pcall_warn = function(_, fn)
 modules["utils/version-compat"] = {belt_force_insert_at = function(line, position, stack, count)
     line.force_insert_at(position, stack, count)
 end}
-modules["validators/cargo-counter"] = {count_entity_items = function(entity, subject)
-    assert(subject == "belts", "the restore census must read belt lines only")
-    local totals = {}
-    for li = 1, entity.get_max_transport_line_index() do
-        for _, it in ipairs(entity.get_transport_line(li).get_detailed_contents()) do
-            local key = it.stack.name .. "/" .. it.stack.quality.name
-            totals[key] = (totals[key] or 0) + it.stack.count
-        end
-    end
-    return totals
-end}
 modules["export_scanners/inventory-scanner"] = {
     new_item_state_cache = function() return {} end,
     release_item_state_cache = noop,
@@ -61,9 +50,11 @@ local function line(internal)
     self.line_equals = function(other) return other.internal == internal end
     self.get_detailed_contents = function()
         local rows = {}
-        for _, it in ipairs(self.items) do
-            rows[#rows + 1] = {unique_id = it.uid, position = it.pos,
-                stack = {valid_for_read = true, name = it.name, count = it.count, quality = {name = it.quality}}}
+        for _, source in ipairs({self, self.mirror}) do
+            for _, it in ipairs(source.items) do
+                rows[#rows + 1] = {unique_id = it.uid, position = it.pos,
+                    stack = {valid_for_read = true, name = it.name, count = it.count, quality = {name = it.quality}}}
+            end
         end
         return rows
     end
@@ -310,7 +301,57 @@ do
         assert(target == case[2] and action == case[3],
             string.format("/belt-cargo %q parsed as %q / %q", tostring(case[1]), tostring(target), tostring(action)))
     end
-    print("PASS /belt-cargo reads the last word as the action only when it is one, so platform names may contain spaces")
+    local locked = {["Cargo abandon"] = true, ["Iron Hauler"] = true}
+    local function is_locked(name) return locked[name] == true end
+    for _, case in ipairs({
+        {"Cargo abandon", "Cargo abandon", "describe"},
+        {"Cargo abandon abandon", "Cargo abandon", "abandon"},
+        {"Iron Hauler restore-present", "Iron Hauler", "restore-present"},
+    }) do
+        local target, action = cargo.parse_command(case[1], is_locked)
+        assert(target == case[2] and action == case[3],
+            string.format("/belt-cargo %q parsed as %q / %q", tostring(case[1]), tostring(target), tostring(action)))
+    end
+    print("PASS /belt-cargo reads the last word as the action only when it is one and the whole text is not a locked platform's name")
+end
+
+do
+    census_records = {}
+    local a, b = belt(61, {"mirror-1", "mirror-2"}), belt(62, {"mirror-1", "mirror-2"})
+    feed(a, b)
+    a.lines[1].seed("iron-plate", 2) b.lines[1].seed("copper-plate", 1, "rare")
+    local job, lock = job_for({a, b})
+    cargo.begin(job)
+    run_to_end(job)
+    b.lines[1].mirror = a.lines[1]
+    logs = {}
+    local ok, placed = cargo.restore(lock, "Ship", ship_surface)
+    b.lines[1].mirror = nil
+    assert(ok and lock.cleared_belts == nil and #a.lines[1].items == 1 and a.lines[1].items[1].count == 2 and #b.lines[1].items == 1,
+        "an item reported by two belts' lines must be counted once by the census after the restore: " .. tostring(placed))
+    assert(logs[#logs]:find("matches the capture exactly", 1, true), tostring(logs[#logs]))
+    print("PASS the census after a restore counts an item reported by two belts once, as the capture does")
+end
+
+do
+    census_records = {}
+    local a = belt(63, {"gate-1", "gate-2"})
+    a.lines[1].seed("iron-plate")
+    local job, lock = job_for({a})
+    cargo.begin(job)
+    run_to_end(job)
+    for _, action in ipairs({"abandon", "restore-present"}) do
+        local ok, why = cargo.override(lock, action, "Ship", ship_surface)
+        assert(not ok and tostring(why):find("can still put this cargo back", 1, true) and lock.cleared_belts and #a.lines[1].items == 0,
+            action .. " before any refused restore must leave the record for the rollback: " .. tostring(why))
+    end
+    assert(not cargo.describe(lock.cleared_belts):find("refused", 1, true), cargo.describe(lock.cleared_belts))
+    local restored, reason = cargo.restore(lock, "Ship", {valid = false})
+    assert(not restored and lock.cleared_belts.refused
+        and cargo.describe(lock.cleared_belts):find("the last restore was refused: the platform surface is unavailable", 1, true),
+        "a refused restore is recorded and described: " .. tostring(reason))
+    assert(cargo.override(lock, "abandon", "Ship", ship_surface) and lock.cleared_belts == nil, "after a refused restore an operator may abandon")
+    print("PASS abandon and restore-present wait until the automatic restore was refused, pinned or attempted")
 end
 
 do

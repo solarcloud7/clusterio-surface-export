@@ -1,7 +1,6 @@
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local SourceCargoIntegrity = require("modules/surface_export/export_scanners/source-cargo-integrity")
-local CargoCounter = require("modules/surface_export/validators/cargo-counter")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
 
@@ -270,10 +269,11 @@ function SourceBeltCargo.describe(record)
 		parts[#parts + 1] = string.format("an earlier restore attempt placed %s item(s) and then failed: %s",
 			tostring(record.attempt.placed or "an unknown number of"), tostring(record.attempt.error))
 	end
+	if record.refused then parts[#parts + 1] = "the last restore was refused: " .. tostring(record.refused.reason) end
 	return table.concat(parts, "; ")
 end
 
-function SourceBeltCargo.restore(lock_data, label, surface, options)
+local function restore_record(lock_data, label, surface, options)
 	local record = lock_data and lock_data.cleared_belts
 	if not record then return true, nil end
 	options = options or {}
@@ -340,8 +340,19 @@ function SourceBeltCargo.restore(lock_data, label, surface, options)
 			end
 		end
 		local census_ok, census_err = pcall(function()
+			local counted = {}
 			for _, entity in pairs(entity_map) do
-				for key, count in pairs(CargoCounter.count_entity_items(entity, "belts")) do actual[key] = (actual[key] or 0) + count end
+				for li = 1, entity.get_max_transport_line_index() do
+					for _, it in ipairs(entity.get_transport_line(li).get_detailed_contents()) do
+						local stack = it.stack
+						local uid = tostring(it.unique_id)
+						if stack and stack.valid_for_read and not counted[uid] then
+							counted[uid] = true
+							local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or QUALITY_NORMAL)
+							actual[key] = (actual[key] or 0) + stack.count
+						end
+					end
+				end
 			end
 		end)
 		if not census_ok then
@@ -369,8 +380,16 @@ function SourceBeltCargo.restore(lock_data, label, surface, options)
 	return true, placed
 end
 
-function SourceBeltCargo.parse_command(param)
+function SourceBeltCargo.restore(lock_data, label, surface, options)
+	local ok, detail = restore_record(lock_data, label, surface, options)
+	local record = lock_data and lock_data.cleared_belts
+	if not ok and record then record.refused = { tick = game.tick, reason = tostring(detail) } end
+	return ok, detail
+end
+
+function SourceBeltCargo.parse_command(param, is_target)
 	local text = tostring(param or ""):match("^%s*(.-)%s*$")
+	if is_target and text ~= "" and is_target(text) then return text, "describe" end
 	local target, action = text:match("^(.-)%s+(%S+)$")
 	if target and ACTIONS[action] then return target, action end
 	return text, "describe"
@@ -384,6 +403,12 @@ function SourceBeltCargo.override(lock_data, action, label, surface)
 	end
 	if SourceBeltCargo.capture_active(record) then
 		return false, "the capture is still running; interrupt or finish the transfer first"
+	end
+	if action ~= "abandon" and action ~= "restore-present" then
+		return false, "unknown action; use abandon or restore-present"
+	end
+	if not (record.pinned or record.attempt or record.refused) then
+		return false, "the transfer can still put this cargo back by itself: its rollback or /unlock-platform restores it; abandon and restore-present are for after that restore was refused"
 	end
 	if action == "abandon" then
 		local summary = SourceBeltCargo.describe(record)
@@ -401,7 +426,6 @@ function SourceBeltCargo.override(lock_data, action, label, surface)
 		end
 		return SourceBeltCargo.restore(lock_data, label, surface, { allow_missing = true })
 	end
-	return false, "unknown action; use abandon or restore-present"
 end
 
 return SourceBeltCargo

@@ -5,7 +5,10 @@ local SourceBeltCargo = require("modules/surface_export/core/source-belt-cargo")
 Base.admin_command("belt-cargo",
   "Inspect or resolve belt cargo a transfer cleared from a locked platform (usage: /belt-cargo <platform_name_or_index> [describe|abandon|restore-present])",
   function(cmd, ctx)
-    local target, action = SourceBeltCargo.parse_command(ctx.param)
+    local target, action = SourceBeltCargo.parse_command(ctx.param, function(name)
+      local key = Base.resolve_lock_key(ctx.force, name)
+      return key ~= nil and SurfaceLock.get_lock_data(key) ~= nil
+    end)
     if target == "" then
       ctx.print("Usage: /belt-cargo <platform_name_or_index> [describe|abandon|restore-present]")
       ctx.print("Tip: Use /lock-status to see locked platforms")
