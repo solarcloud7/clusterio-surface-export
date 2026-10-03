@@ -378,7 +378,7 @@ jobs:
             INSTALLED=true
           else
             INSTALLED=false
-            echo "::warning::Playwright browser install failed ($CMD) — the canvas suites will report a loud SKIP and every other integration suite still runs"
+            echo "::warning::Playwright browser install failed ($CMD) — the browser suites will SKIP, which fails this job; every other integration suite still runs"
             {
               grep -m1 -E "Error|error:" "$LOG" || echo "$CMD failed, with no Error line in its output"
               echo "command: $CMD"

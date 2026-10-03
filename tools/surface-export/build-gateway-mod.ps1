@@ -106,8 +106,10 @@ if ($LASTEXITCODE -ne 0) { throw "Uploading $zipName to the controller failed (e
 docker exec surface-export-controller sh -c "$ctl mod-pack edit `"$ModPack`" --add-mods ${modName}:${version}" 2>&1 | Where-Object { $_ -notmatch 'clusterio-atlas' }
 if ($LASTEXITCODE -ne 0) { throw "Adding ${modName}:${version} to mod pack '$ModPack' failed (exit $LASTEXITCODE); hosts were not restarted." }
 
+Stop-HostInstances -HostNumber '1', '2'
 Write-Host "Restarting hosts to reload the mod pack..." -ForegroundColor Cyan
 docker restart surface-export-host-1 surface-export-host-2 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Host restart failed (exit $LASTEXITCODE); ${modName}:${version} is in mod pack '$ModPack' but the hosts have not reloaded it." }
 
 Write-Host "Done. Verify with:" -ForegroundColor Green
 Write-Host "  ./tools/clusterio/rcon.ps1 11 `"/sc rcon.print(script.active_mods['$modName'])`"" -ForegroundColor Gray

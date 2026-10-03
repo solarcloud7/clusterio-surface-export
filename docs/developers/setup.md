@@ -1,7 +1,10 @@
 # Set up the development environment
 
-Use the canonical checkout on a local branch. Do not create another checkout or
-git worktree for this workflow: the development containers mount this directory.
+Use the canonical checkout on a local branch. Do not create another clone or an
+ad-hoc git worktree for this workflow: the development containers mount this
+directory. When another session owns the canonical checkout, Claude Code may use
+its own worktree isolation based on `origin/main`; runtime proof from there uses
+disposable Docker fixtures, not the development cluster.
 Do not replace mounted directories with junctions or symlinks.
 
 ## Prerequisites

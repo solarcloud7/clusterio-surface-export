@@ -1,4 +1,5 @@
-# requires: development compose stack and explicit ResetData for a disposable rebuild
+# requires: development compose stack; a running controller whenever a host container is up, so its
+#           instances can be stopped before compose down; explicit ResetData for a disposable rebuild
 # produces: rebuilt containers with existing volumes retained by default
 # does not: accept stale Lua builds, deploy a production installation, or move an existing world to
 #           another Factorio version without -MigrateEngine
@@ -109,6 +110,14 @@ $exportHostNumber = if ($envValues['EXPORT_HOST']) { $envValues['EXPORT_HOST'] }
 $clientContainer = "surface-export-host-$exportHostNumber"
 
 Write-Host "Stopping existing cluster..." -ForegroundColor Cyan
+$runningContainers = @(docker ps --format '{{.Names}}')
+if ($LASTEXITCODE -ne 0) { throw "docker ps failed (exit $LASTEXITCODE); cannot tell whether instances are running. The cluster was not touched." }
+$runningHosts = @($expectedHostContainers | Where-Object { $_ -in $runningContainers })
+if ('surface-export-controller' -in $runningContainers) {
+    Stop-HostInstances -HostNumber $expectedHosts
+} elseif ($runningHosts.Count) {
+    throw "$($runningHosts -join ', ') running without surface-export-controller, so their instances cannot be stopped and docker compose down would end Factorio without a save. Start the controller (docker compose up -d surface-export-controller) and rerun. The cluster was not touched."
+}
 Set-Location $WorkspaceRoot
 docker compose down
 if ($LASTEXITCODE -ne 0) { throw 'docker compose down failed; deployment stopped.' }

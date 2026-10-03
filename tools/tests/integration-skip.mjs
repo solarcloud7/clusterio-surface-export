@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // requires: nothing at import time; playwright is imported only when launchChromiumOrSkip() runs
 // produces: the integration-suite SKIP protocol — a loud banner on the suite's stdout, a one-line
-//           reason written to $SE_INTEGRATION_SKIP_FILE, and exit code 77 for run-integration-tests.mjs
+//           reason written to $SE_INTEGRATION_SKIP_FILE, and exit code 77 for run-integration-tests.mjs;
+//           with the CI environment variable set, the run failure that names every skipped suite
 // does not: decide to skip on any signal other than chromium reporting itself absent, convert a
 //           browser failure into a skip (every other launch error rethrows), or make a skip count
-//           as a pass — run-integration-tests.mjs fails any suite that exits 77 with no reason
+//           as a pass — run-integration-tests.mjs fails any suite that exits 77 with no reason, and
+//           under CI fails the run when any suite skipped
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { acquireWorkflowLock } from "../shared/workflow-lock.mjs";
@@ -40,6 +42,12 @@ export function skipSuite(suite, reason, detail = "") {
 		writeFileSync(reasonFile, firstMeaningfulLine(reason).slice(0, REASON_MAX_CHARS), "utf8");
 	}
 	process.exit(SKIP_EXIT_CODE);
+}
+
+export function ciSkipFailure(skippedNames, env = process.env) {
+	if (!skippedNames.length || !env.CI || env.CI === "false") { return null; }
+	return `${skippedNames.length} integration suite(s) SKIPPED under CI, which fails the run: ${skippedNames.join(", ")}. `
+		+ "A skipped suite did not run; fix the cause its SKIP line names instead of accepting the skip.";
 }
 
 function recordedInstallError() {

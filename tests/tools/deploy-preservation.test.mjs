@@ -19,6 +19,8 @@ function Update-PackageLockVersion { $global:calls.Add('lock-version') }
 function Update-ModuleVersionStamp { $global:calls.Add('module-version') }
 function Update-ModuleBuildStamp { $global:calls.Add('build-stamp'); 'fixture' }
 function Get-SeededInstances { @(@{Host='one';Instance='world';Container='fixture-host'}) }
+function Stop-HostInstances { param([string[]]$HostNumber) $global:calls.Add('stop-instances ' + ($HostNumber -join ',')); if ($global:refuseStop) { throw 'STOP_FAILED' } }
+function Sync-ControllerWebBundle { $global:calls.Add('sync-web') }
 `);
 	put("tools/shared/workflow-lock.ps1", "function Invoke-WorkflowLock { param([scriptblock]$Action) & $Action }");
 	put("tools/shared/version-utils.ps1", "function Get-NextPluginVersion { param($Version) $Version }");
@@ -83,6 +85,21 @@ test("cluster deployment forwards reset only on explicit request", { skip }, t =
 	assert.ok(migrate.calls.some(c => c.startsWith("deploy-cluster") && c.includes("MigrateEngine")), JSON.stringify(migrate));
 	const wrongScope = run(dir, "deploy", ["-Scope", "lua", "-MigrateEngine"]);
 	assert.match(wrongScope.error || "", /does not accept: MigrateEngine/);
+});
+
+test("an artifacts deployment stops the instances before any controller or host restart", { skip }, t => {
+	const { dir } = fixture(t, "deploy");
+	const hostRestart = "docker restart surface-export-host-1 surface-export-host-2";
+	const restarted = run(dir, "deploy", ["-Scope", "artifacts", "-RestartHosts"]);
+	assert.equal(restarted.error, null, JSON.stringify(restarted));
+	const stop = restarted.calls.indexOf("stop-instances 1,2");
+	assert.ok(stop >= 0 && stop < restarted.calls.indexOf("sync-web") && stop < restarted.calls.indexOf(hostRestart), JSON.stringify(restarted.calls));
+	const refused = run(dir, "deploy", ["-Scope", "artifacts", "-RestartHosts"], "$global:refuseStop = $true");
+	assert.equal(refused.error, "STOP_FAILED");
+	assert.equal(refused.calls.some(c => c === "sync-web" || c.startsWith("docker restart")), false, JSON.stringify(refused.calls));
+	const kept = run(dir, "deploy", ["-Scope", "artifacts"]);
+	assert.equal(kept.error, null);
+	assert.equal(kept.calls.some(c => c.startsWith("stop-instances") || c.startsWith("docker restart")), false, JSON.stringify(kept.calls));
 });
 
 test("every deployment entry point refuses from the wrong checkout before any work", { skip }, t => {
@@ -150,7 +167,7 @@ test("preserving cluster volumes also preserves the selected version", { skip },
 const psQuote = s => `'${s.replace(/'/g, "''")}'`;
 const NEGATIVE_RCON = "-140462620.552 Info RemoteCommandProcessor.cpp:119: Starting RCON interface at IP ADDR:({0.0.0.0:64865})";
 
-function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [], stoppedLog = null, recovers = true, startHangs = 0 } = {}) {
+function retainedCluster(t, { configured = "2.1.17", stale = false, flags = [], stoppedLog = null, recovers = true, startHangs = 0, running = [], listExit = 0 } = {}) {
 	const { dir, put } = fixture(t, "deploy-cluster");
 	copyFileSync(new URL("../../tools/shared/version-utils.ps1", import.meta.url), join(dir, "tools/shared/version-utils.ps1"));
 	copyFileSync(new URL("../../tools/shared/instance-identity.ps1", import.meta.url), join(dir, "tools/shared/instance-identity.ps1"));
@@ -176,6 +193,8 @@ $global:started = ${stoppedLog === null ? "$true" : "$false"}
 $global:hangs = ${startHangs}
 function docker {
  $global:calls.Add('docker ' + ($args -join ' ')); $global:LASTEXITCODE=0
+ if ($args[0] -eq 'ps') { return @(${running.map(psQuote).join(", ")}) }
+ if (($args -join ' ') -eq 'compose up -d' -and ${running.length ? "$true" : "$false"}) { $global:started = $true }
  if ($args[0] -eq 'inspect') { return 'healthy' }
  if ($args[0] -eq 'logs') { return ${psQuote(stoppedLog ?? "")} }
  if ($args[2] -eq 'sh' -and ($args -join ' ') -match 'instance\\.json') { return ('/clusterio/data/instances/clusterio-host-1-instance-1/instance.json' + [char]9 + '{"instance.id": 836570928}') }
@@ -184,7 +203,7 @@ function docker {
  if (($args -join ' ') -match 'instance stop') { $global:started = $false; return }
  if (($args -join ' ') -match 'instance start') { if ($global:hangs -gt 0) { $global:hangs--; $global:LASTEXITCODE = 124; return } $global:started = ${recovers ? "$true" : "$false"}; return }
  if (($args -join ' ') -match 'instance config list') { return 'factorio.version "${configured}"' }
- if (($args -join ' ') -match 'instance list') { return @('name | id | assignedHost | gamePort | status', '---', ('Dev One | 836570928 | 1 | 34100 | ' + $(if ($global:started) { 'running' } else { 'stopped' }))) }
+ if (($args -join ' ') -match 'instance list') { $global:LASTEXITCODE = ${listExit}; return @('name | id | assignedHost | gamePort | status', '---', ('Dev One | 836570928 | 1 | 34100 | ' + $(if ($global:started) { 'running' } else { 'stopped' }))) }
  if (($args -join ' ') -match 'send-rcon') { return '{"version":"1.0.0","buildId":"${(stale ? "b" : "a").repeat(32)}"}' }
 }
 `);
@@ -203,6 +222,24 @@ for (const stale of [false, true]) {
 		assert.equal(result.calls.includes("docker compose down -v"), false);
 	});
 }
+
+test("a running cluster's instances are stopped and reported stopped before compose down", { skip }, t => {
+	const result = retainedCluster(t, { running: ["surface-export-controller", "fixture-host"] });
+	assert.equal(result.error, null, JSON.stringify(result));
+	const stop = result.calls.findIndex(c => /^docker exec surface-export-controller timeout -k 10 420 .* instance stop 836570928$/.test(c));
+	const down = result.calls.indexOf("docker compose down");
+	assert.ok(stop >= 0 && down > stop, JSON.stringify(result.calls));
+	assert.ok(result.calls.slice(stop, down).some(c => c.startsWith("docker exec surface-export-host-1 sh -c ") && c.includes("/proc/")), JSON.stringify(result.calls));
+});
+
+test("a cluster whose instances cannot be stopped is not brought down", { skip }, t => {
+	const unreadable = retainedCluster(t, { running: ["surface-export-controller", "fixture-host"], listExit: 1 });
+	assert.match(unreadable.error || "", /clusterioctl instance list failed \(exit 1\)/);
+	assert.equal(unreadable.calls.some(c => c.startsWith("docker compose")), false, JSON.stringify(unreadable.calls));
+	const headless = retainedCluster(t, { running: ["fixture-host"] });
+	assert.match(headless.error || "", /fixture-host running without surface-export-controller, so their instances cannot be stopped/);
+	assert.equal(headless.calls.some(c => c.startsWith("docker compose") || c.includes("instance stop")), false, JSON.stringify(headless.calls));
+});
 
 test("a seed mod set that disagrees with the pin is refused before the cluster stops", { skip }, t => {
 	const { dir } = fixture(t, "deploy-cluster");

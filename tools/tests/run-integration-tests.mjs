@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runReadinessGate } from "./cluster-readiness.mjs";
-import { SKIP_EXIT_CODE, SKIP_REASON_ENV } from "./integration-skip.mjs";
+import { SKIP_EXIT_CODE, SKIP_REASON_ENV, ciSkipFailure } from "./integration-skip.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const integrationDir = join(repoRoot, "tests", "integration");
@@ -140,6 +140,7 @@ const failed = results.filter((r) => r.status === "fail");
 const interrupted = results.filter((r) => r.status === "interrupted");
 const skippedRuns = results.filter((r) => r.status === "skip");
 const passed = results.filter((r) => r.status === "pass");
+const skipFailure = ciSkipFailure(skippedRuns.map((s) => s.name));
 const LABEL = { pass: "PASS", fail: "FAIL", skip: "SKIP", interrupted: "INTR" };
 console.log(`\n${"=".repeat(60)}\n  Integration suite summary\n${"=".repeat(60)}`);
 for (const r of results) console.log(`  ${LABEL[r.status]}  ${r.name}  (${r.durationS}s)${r.reason ? `  —  ${r.reason}` : ""}`);
@@ -150,8 +151,10 @@ console.log(`  ${passed.length}/${results.length} passed`
 	+ (interrupted.length ? `  —  INTERRUPTED: ${interrupted.map((f) => f.name).join(", ")}` : ""));
 if (abortReason) console.log(`  ABORTED: ${abortReason}`);
 if (notRun.length) console.log(`  NOT RUN (${notRun.length}): ${notRun.join(", ")}`);
+if (skipFailure) console.log(`  ${skipFailure}`);
 console.log("=".repeat(60));
 if (isCI) {
 	for (const s of skippedRuns) console.log(`::warning::integration suite SKIPPED — ${s.name}: ${s.reason}`);
+	if (skipFailure) console.log(`::error::${skipFailure}`);
 }
-process.exit(failed.length || interrupted.length || notRun.length ? 1 : 0);
+process.exit(failed.length || interrupted.length || notRun.length || skipFailure ? 1 : 0);
