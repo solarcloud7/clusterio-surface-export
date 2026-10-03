@@ -504,7 +504,9 @@
 			"category": "linked-belt",
 			"fields": [
 				"fluidboxes",
-				"linked_belt_type"
+				"items",
+				"linked_belt_type",
+				"linked_partner_id"
 			]
 		},
 		{
@@ -1207,7 +1209,7 @@
 			{
 				"field": "specific_data",
 				"sites": [
-					"core/export-pipeline.lua:prepare_completion",
+					"core/export-pipeline.lua:capture_belts_atomically",
 					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
 				]
 			},
@@ -1425,6 +1427,7 @@
 					"core/deserializer.lua:Deserializer.restore_control_behavior",
 					"core/deserializer.lua:Deserializer.restore_entity_state",
 					"core/deserializer.lua:Deserializer.restore_inventories",
+					"core/deserializer.lua:Deserializer.restore_linked_belts",
 					"core/deserializer.lua:Deserializer.restore_proxy_targets",
 					"core/deserializer.lua:restore_slot_filters",
 					"core/import-completion.lua:restore_belt_batch",
@@ -1694,6 +1697,13 @@
 			},
 			{
 				"plane": "specific_data",
+				"field": "linked_partner_id",
+				"sites": [
+					"core/deserializer.lua:Deserializer.restore_linked_belts"
+				]
+			},
+			{
+				"plane": "specific_data",
 				"field": "loader_type",
 				"sites": [
 					"core/deserializer.lua:Deserializer.create_entity"
@@ -1903,9 +1913,9 @@
 			"scoped_roots": 1,
 			"alias_params": 2,
 			"entity_captures": 25,
-			"specific_data_captures": 91,
+			"specific_data_captures": 92,
 			"entity_reads": 27,
-			"specific_data_reads": 58,
+			"specific_data_reads": 59,
 			"captured_without_consumer": 0,
 			"consumed_without_producer": 3
 		}
@@ -2490,7 +2500,7 @@
 		"restore_rules": 37,
 		"types_gated_rules": 22,
 		"handler_categories": 40,
-		"handler_fields": 91,
+		"handler_fields": 92,
 		"direct_writes": 40,
 		"receiver_writes": 6,
 		"we_set": 75,
@@ -2499,7 +2509,7 @@
 		"return_dominated_writes": 0,
 		"entity_captures": 25,
 		"entity_reads": 27,
-		"specific_data_reads": 58,
+		"specific_data_reads": 59,
 		"captured_without_consumer": 0,
 		"consumed_without_producer": 3
 	}

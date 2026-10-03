@@ -53,7 +53,7 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 	return {
 		transferId: getString(transferInfo, "transferId", null) || getString(transferInfo, "id", null) || "",
 		queuedRequestId: getString(transferInfo, "queuedRequestId", null) || undefined,
-		...(["attempted", "succeeded", "failed"].includes(String(transferInfo.sourceRollback))
+		...(["attempted", "succeeded", "failed", "released"].includes(String(transferInfo.sourceRollback))
 			? { sourceRollback: transferInfo.sourceRollback as TransferSummary["sourceRollback"] } : {}),
 		...(typeof transferInfo.sourceRestored === "boolean" ? { sourceRestored: transferInfo.sourceRestored } : {}),
 		...(typeof transferInfo.lateDestinationCleanup === "boolean"

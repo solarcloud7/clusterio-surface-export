@@ -241,6 +241,8 @@ function ImportCompletion.run_phase1(job)
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
 	job.metrics.copper_pruned = state_result and state_result.copper_pruned or 0
 	job.metrics.proxies_linked = state_result and state_result.proxies_linked or 0
+	job.metrics.linked_belts_connected = state_result and state_result.linked_belts_connected or 0
+	job.metrics.linked_belts_dropped = state_result and state_result.linked_belts_dropped or 0
 	job.created_logistic_groups = state_result and state_result.created_logistic_groups or nil
 
 	Timing.start(job.job_id, "deferred_beacon_wait", "wait")

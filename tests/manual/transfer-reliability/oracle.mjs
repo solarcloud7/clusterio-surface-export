@@ -66,6 +66,7 @@ export function analyze(report) {
   }
   if(["save-policy-game","save-policy-history","snapshot-recovery"].includes(report.case)) return analyzeSavePolicy(report);
   if(report.case.startsWith("lineage-")) return analyzeLineage(report);
+  if(report.case==="rollback-unlock-refused") return analyzeRollbackRecovery(report);
   assert.ok(["coordinated-restore","performance","lost-source-reply","lost-destination-reply","aged-recovery-intent","crash-source-before-save","restore-old-source","restore-old-destination"].includes(report.case),"unknown acceptance case");
   assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
   if(report.case==="coordinated-restore") return analyzeBackup(report);
@@ -281,6 +282,38 @@ export function analyzeDestinationRollback(report) {
       finalDestinationUsable:last.destination.usable===true,
       finalHistoryStatus:last.outcome.status,importRequests:imports.length,observationMs:report.rollback.observedMs},
     reason:"Physical world observations and historical operation status are separate; backup and cached-payload recovery was not attempted"};
+}
+
+export function analyzeRollbackRecovery(report) {
+  assert.equal(report.cleanup?.success,true,"Docker cleanup unproven");
+  assert.deepEqual(report.before?.cargo,expectedCargo,"invalid rollback fixture");
+  assert.equal(report.armed?.[1]?.test_force_unlock_refusal,1000,"the unlock refusal hook was not armed on the source");
+  assert.equal(report.armed?.[2]?.test_force_validation_failure,true,"the validation failure hook was not armed on the destination");
+  assert.equal(report.outcome?.status,"failed","the forced validation failure did not record a failed transfer");
+  const failed=report.afterFailure, restarted=report.afterRestart, done=report.resolved;
+  for(const [label,state] of [["after the failure",failed],["after the restart",restarted]]) {
+    assert.equal(state?.pending?.length,1,`${label}: pending intent missing`);
+    assert.equal(state.pending[0].transferId,report.transferId,`${label}: foreign pending intent`);
+    assert.equal(state.sourceLocks,1,`${label}: source lock count`);
+    assert.equal(state.source?.present,true,`${label}: source missing`);
+    assert.equal(state.source.usable,false,`${label}: a locked source became usable`);
+    assert.equal(state.destination?.present,false,`${label}: rejected destination still present`);
+    assert.equal(state.history?.status,"failed",`${label}: history status`);
+  }
+  assert.equal(failed.pending[0].rollbackPending,true,"the intent was not marked rollbackPending");
+  assert.ok(Array.isArray(report.retried)&&report.retried.filter(type=>type==="rollback_failed").length>=2,"recovery did not retry the refused unlock");
+  assert.equal(done?.pending?.length,0,"the intent was not released");assert.equal(done.sourceLocks,0,"the source lock was not released");
+  assert.equal(done.history?.status,"failed");assert.equal(done.history.sourceRollback,"succeeded");assert.ok(!done.history.timingPendingRecovery);
+  assert.ok(done.events.includes("rollback_success")&&done.events.includes("validation_failed"),"resolution evidence incomplete");
+  assert.ok(!done.events.includes("cleanup_failed"),"a misrouted destination verify ran");
+  assert.notEqual(report.retryId,report.transferId);assert.equal(report.retryOutcome?.status,"completed","the queue-admitted retry did not complete");
+  const physical=evaluateCopies(report.before,[report.initial,failed,restarted,done,report.final]);
+  const violations=[...physical.violations];
+  if(done.source.usable!==true||done.destination.present) violations.push("the released source is not the single usable copy after the rollback");
+  if(report.final?.source.present||report.final?.destination.usable!==true) violations.push("the fresh transfer did not leave one usable destination");
+  if(!isDeepStrictEqual(report.final?.destination.cargo,expectedCargo)) violations.push("fresh transfer cargo differs from the fixture");
+  return {verdict:violations.length?"STOP":"PASS",violations,
+    reason:"Refused source unlock retried until it succeeded across a controller restart; a fresh queue-admitted transfer completed with exact cargo"};
 }
 
 export function analyzeBackup(report) {

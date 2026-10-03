@@ -170,6 +170,15 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
 	end
+	if destination_instance_id then
+		local crossing = GameUtils.cross_surface_linked_belts(surface)
+		if crossing > 0 then
+			Timing.finish(job_id, "failed")
+			return nil, string.format(
+				"Platform '%s' has %d linked belt(s) connected to another surface; items would keep crossing while it transfers, so disconnect them first",
+				platform.name, crossing)
+		end
+	end
 	local resolution = purpose == "resolution"
 	local lineage, lineage_generation, lineage_err
 	if resolution then

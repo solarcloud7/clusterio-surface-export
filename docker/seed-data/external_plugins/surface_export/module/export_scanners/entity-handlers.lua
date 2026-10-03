@@ -215,12 +215,19 @@ EntityHandlers["loader-1x1"] = EntityHandlers["loader"]
 
 EntityHandlers["linked-belt"] = function(entity)
   local data = {
+    items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity),
     fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
 
   local linked_belt_type = GameUtils.safe_get(entity, "linked_belt_type")
   if linked_belt_type ~= nil then
     data.linked_belt_type = linked_belt_type
+  end
+
+  local partner = GameUtils.safe_get(entity, "linked_belt_neighbour")
+  if partner and partner.valid and partner.type == "linked-belt" and partner.unit_number
+      and partner.surface_index == entity.surface_index then
+    data.linked_partner_id = partner.unit_number
   end
 
   return data

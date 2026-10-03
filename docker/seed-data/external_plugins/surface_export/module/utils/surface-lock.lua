@@ -362,6 +362,9 @@ function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index,
     local force = force_name and game.forces[force_name] or nil
     local platform = force and force.platforms and force.platforms[platform_index] or nil
     if platform and platform.valid then
+        if lock == nil then
+            return { state = "unlocked", transferId = transfer_id, error = nil }
+        end
         return { state = "identity_mismatch", transferId = transfer_id, error = "source platform is live or not locked" }
     end
     return { state = "identity_mismatch", transferId = transfer_id, error = "no matching source lock or tombstone" }
@@ -581,6 +584,20 @@ local function unlock_platform(platform_index, expected_name, recovery_bootstrap
         log(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)))
         release_passengers(released_job_id)
         return true, nil
+    end
+
+    local test_cfg = storage.surface_export_config
+    if test_cfg and test_cfg.debug_mode and test_cfg.test_force_unlock_refusal
+        and lock_data.kind == "transfer" and not recovery_bootstrap and authority == nil and expected_job_id ~= nil then
+        local remaining = tonumber(test_cfg.test_force_unlock_refusal)
+        if remaining and remaining > 1 then
+            test_cfg.test_force_unlock_refusal = remaining - 1
+        else
+            test_cfg.test_force_unlock_refusal = nil
+        end
+        log(string.format("[TEST HOOK] Refusing source unlock of platform '%s' (index %s) before any restore (test_force_unlock_refusal)",
+            tostring(platform_name), tostring(platform_index)))
+        return false, "Unlock refused: TEST: forced unlock refusal (test_force_unlock_refusal); protection retained"
     end
 
     if lock_data.cleared_belts then

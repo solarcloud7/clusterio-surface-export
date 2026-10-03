@@ -65,6 +65,7 @@ jobs:
           lua5.2 tests/lua/cargo-integrity.lua
           lua5.2 tests/lua/inventory-scanner-kinds.lua
           lua5.2 tests/lua/belt-batches.lua
+          lua5.2 tests/lua/belt-entity-types.lua
           lua5.2 tests/lua/belt-line-groups.lua
           lua5.2 tests/lua/source-belt-cargo.lua
           lua5.2 tests/lua/belt-position.lua
@@ -87,6 +88,7 @@ jobs:
           lua5.2 tests/lua/sync-mode-gate.lua
           lua5.2 tests/lua/command-player-context.lua
           lua5.2 tests/lua/source-recovery.lua
+          lua5.2 tests/lua/source-lock-state.lua
           lua5.2 tests/lua/platform-lineage.lua
           lua5.2 tests/lua/lineage-resolution.lua
           lua5.2 tests/lua/export-phase-yields.lua
