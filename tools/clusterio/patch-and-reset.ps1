@@ -229,9 +229,9 @@ if ($pendingSaves.Count -eq 0) {
 
 Write-Host ""
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-Invoke-InstanceLifecycle "stop host-1 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop $hostInstances[1].Id }
-Invoke-InstanceLifecycle "stop host-2 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop $hostInstances[2].Id }
-Start-Sleep -Seconds 2
+foreach ($h in 1, 2) {
+    Stop-InstanceWithDeadline -InstanceId $hostInstances[$h].Id -HostNumber "$h" -DataDir $hostInstances[$h].Dir | Out-Null
+}
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
 Write-Host ""
