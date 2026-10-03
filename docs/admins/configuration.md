@@ -43,6 +43,7 @@ requires restarting the instance before its Lua behavior changes.
 | `batch_size` | 50 | Entities processed per batch; not a time limit on a callback. |
 | `max_concurrent_jobs` | 1 | Combined import/export job steps advanced per tick. |
 | `belt_batch_size` | 500 | Target stacks or belt lines per restoration batch. A lane group remains indivisible and can exceed the target. |
+| `belt_capture_budget` | 100 | Belts whose cargo a transfer reads and clears per callback on the source; the items that drifted onto cleared belts meanwhile are swept in one more callback. Clones and file exports still capture every belt in one callback. |
 | `max_export_cache_size` | 10 | Positive integer count of completed exports retained in the instance save, raised to at least `max_concurrent_jobs + 1`. Transfer-owned exports are protected from eviction. Invalid persisted limits fall back to 10. |
 | `show_progress` | `true` | In-game batch progress notifications. |
 | `belt_trace` | `false` | Additional belt positions after successful restoration; failures retain evidence independently. |

@@ -320,6 +320,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode, maxExportCacheSize,
 				beltBatchSize: this.cfg<number>("surface_export.belt_batch_size"),
+				beltCaptureBudget: this.cfg<number>("surface_export.belt_capture_budget"),
 				beltTrace: this.cfg<boolean>("surface_export.belt_trace"),
 				debugDestinationSnapshot: this.cfg<boolean>("surface_export.debug_destination_snapshot"),
 				sectionedCodec: this.cfg<boolean>("surface_export.sectioned_codec"),

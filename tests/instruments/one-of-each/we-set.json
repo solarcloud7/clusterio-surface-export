@@ -1209,7 +1209,7 @@
 			{
 				"field": "specific_data",
 				"sites": [
-					"core/export-pipeline.lua:prepare_completion",
+					"core/export-pipeline.lua:capture_belts_atomically",
 					"export_scanners/entity-scanner.lua:EntityScanner.serialize_entity"
 				]
 			},

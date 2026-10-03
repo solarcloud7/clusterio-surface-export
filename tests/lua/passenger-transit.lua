@@ -732,6 +732,7 @@ lock_env.require = function(name)
 	if name:find("platform-schedule", 1, true) then return {apply = function() return true end} end
 	if name:find("latch_rearm", 1, true) then return {pending_on_surface = function() return false end} end
 	if name:find("platform-identity", 1, true) then return function(p) return p.uid end end
+	if name:find("source-belt-cargo", 1, true) then return {restore = function() return true end} end
 	if name:find("passenger-transit", 1, true) then
 		return {transfer_released = function(job)
 			assert(lock_env.storage.locked_platforms[7] == nil, "passengers returned before the lock was released")

@@ -18,6 +18,12 @@ local function configure(config)
       "belt_batch_size must be an integer from 1 to 1000000")
     storage.surface_export_config.belt_batch_size = value
   end
+  if config.belt_capture_budget ~= nil then
+    local value = config.belt_capture_budget
+    assert(type(value) == "number" and value >= 1 and value <= 1000000 and value % 1 == 0,
+      "belt_capture_budget must be an integer from 1 to 1000000")
+    storage.surface_export_config.belt_capture_budget = value
+  end
   if config.belt_trace ~= nil then
     storage.surface_export_config.belt_trace = config.belt_trace == true
   end

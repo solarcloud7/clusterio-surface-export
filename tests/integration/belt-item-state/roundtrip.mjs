@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import { lua, ctl, sleep, preflightState, assertLeaseClean } from "../../lab-gallery/batch-lifecycle.mjs";
+import { lua, ctl, sleep, preflightState, assertLeaseClean, docker, instancePath, HOSTS } from "../../lab-gallery/batch-lifecycle.mjs";
 import { readTransactionLogStore } from "../../../tools/tests/testkit/log-query.mjs";
 import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 
 // Two sequential production transfers of one disposable clone; optional profiled rejection.
-const profiled=process.argv.includes("--profile-batches"), rejectLast=process.argv.includes("--reject-last");
+// --reject-only runs just the rejected leg (a deleted source's surface index can be reused by the
+// next clone, which makes its retained deletion receipt look unresolved to the lab preflight).
+const profiled=process.argv.includes("--profile-batches"), rejectLast=process.argv.includes("--reject-last"), rejectOnly=process.argv.includes("--reject-only");
 const name=`belt-roundtrip-${Date.now()}`, ids={1:836570928,2:902099405};
 const artifactArg=process.argv.indexOf("--artifact");
 const artifact=artifactArg<0?(profiled?"ci-artifacts/belt-batching-roundtrip.json":"ci-artifacts/force-insert-roundtrip.json"):process.argv[artifactArg+1];
@@ -20,6 +22,31 @@ async function until(read,why) {
   while(Date.now()<deadline) {const r=read();if(r)return r;await sleep(1000);}
   throw Error(`Timed out: ${why}`);
 }
+// The source's own log lines for this clone: the staggered belt capture and, after a rejection, the restore.
+// Markers must not contain quotes: they are passed through a single-quoted shell argument.
+const sourceLog=(host,marker,needle)=>docker(["exec",HOSTS[host].container,"sh","-c",
+  `grep -aF '${marker}' '${instancePath(host,"factorio-current.log")}' || true`]).trim().split(/\r?\n/).filter(line=>line&&(!needle||line.includes(needle)));
+function sourceBeltCapture(host,records) {
+  const phase=records.find(r=>r.owner==="source-lua"&&r.id==="belt_capture"&&r.kind==="execution");
+  assert.ok(phase,"source belt_capture stage missing");
+  assert.ok(phase.batchCount>1&&phase.workTicks===phase.batchCount,"a transfer must capture its belts over several callbacks, one per tick");
+  const done=sourceLog(host,"[Belt Scan] Staggered capture done for ",`'${name}'`).at(-1);
+  assert.ok(done,"the source must log the staggered capture summary for this clone");
+  const m=done.match(/(\d+) belt\(s\), (\d+) stack\(s\) \((\d+) picked up by the final sweep\), (\d+) side group\(s\) \((\d+) merged[^)]*\), \d+ slot\(s\)[^,]*, (\d+) callback\(s\) over (\d+) tick\(s\)/);
+  assert.ok(m,`unparsed capture summary: ${done}`);
+  const summary={belts:+m[1],stacks:+m[2],sweptStacks:+m[3],groups:+m[4],merged:+m[5],callbacks:+m[6],ticks:+m[7]};
+  assert.equal(summary.callbacks+1,phase.batchCount,"the timing stage must cover the begin callback plus every capture callback");
+  assert.ok(sourceLog(host,"contract violated").length===0,"no cleared item may reappear");
+  const batches=records.filter(r=>r.owner==="source-lua"&&r.parent==="belt_capture");
+  return {...summary,executionMs:phase.executionMs,maxCallbackMs:batches.length?Math.max(...batches.map(b=>b.executionMs)):null};
+}
+function sourceRestored(host) {
+  const line=sourceLog(host,"captured belt item(s) onto ",`'${name}'`).at(-1);
+  assert.ok(line&&line.includes("belt census after the restore matches the capture exactly"),
+    `after a rejection the source must put its belt cargo back and pass the whole-belt census: ${line}`);
+  assert.ok(sourceLog(host,"could not be put back").length===0,"no restore may have been refused");
+  return +line.match(/Restored (\d+) captured belt item/)[1];
+}
 await withWorkflowLock(async()=>{
   for(const host of [1,2])assertLeaseClean(host,preflightState(host),"before belt roundtrip");
   try {
@@ -32,7 +59,8 @@ await withWorkflowLock(async()=>{
     result.clone=cloned;assert.ok(cloned.job_id,JSON.stringify(cloned));
     await until(()=>getIndex(1),"clone creation");
     await until(()=>preflightState(1).jobs===0,"clone completion");
-    for(const [source,destination,reject]of [[1,2,false],[2,1,false],...(rejectLast?[[1,2,true]]:[])]) {
+    const legs=rejectOnly?[[1,2,true]]:[[1,2,false],[2,1,false],...(rejectLast?[[1,2,true]]:[])];
+    for(const [source,destination,reject]of legs) {
       assertLeaseClean(source,preflightState(source),"before roundtrip leg");
       const prior=new Set(readTransactionLogStore().map(e=>e.transferInfo.transferId));
       if(reject)lua(destination,`remote.call('surface_export','configure',{debug_mode=true,test_force_validation_failure=true}) return {ok=true}`);
@@ -41,10 +69,17 @@ await withWorkflowLock(async()=>{
         &&!prior.has(e.transferInfo.transferId)&&["completed","failed","error","cleanup_failed"].includes(e.transferInfo.status)),"terminal transfer verdict");
       result.legs.push({source,destination,reject,reply,entry});writeFileSync(artifact,JSON.stringify(result,null,2));
       assert.equal(entry.transferInfo.status,reject?"failed":"completed",JSON.stringify(entry.summary));
+      const capture=sourceBeltCapture(source,entry.summary.timing.records);
+      result.legs.at(-1).sourceBeltCapture=capture;
       if(reject) {
         assert.ok(entry.events.some(e=>e.eventType==="rollback_success"),"rollback acknowledgement required");
         assert.equal(typeof getIndex(source),"number","rejection must preserve source");
         assert.equal(getIndex(destination),undefined,"rejection must remove destination");
+        const restored=sourceRestored(source);
+        result.legs.at(-1).sourceRestoredItems=restored;
+        const onBelts=lua(source,`local total=0 for _,p in pairs(game.forces.player.platforms) do if p.name=='${name}' then for _,e in ipairs(p.surface.find_entities_filtered{type={'transport-belt','underground-belt','splitter','loader','loader-1x1'}}) do for li=1,e.get_max_transport_line_index() do for _,c in ipairs(e.get_transport_line(li).get_contents()) do total=total+c.count end end end end end return {total=total}`).total;
+        assert.equal(lua(source,`local n=0 for _ in pairs(storage.locked_platforms or {}) do n=n+1 end return {locks=n}`).locks,0,"the source must be unlocked after the rollback");
+        console.log(JSON.stringify({rollback:{restoredItems:restored,onSourceBeltsNow:onBelts}}));
       } else {
         assert.equal(getIndex(source),undefined,"source must be deleted after completion");
         assert.equal(typeof getIndex(destination),"number","destination must exist");
@@ -81,6 +116,7 @@ await withWorkflowLock(async()=>{
           elapsedTicks:phase.ticksElapsed,executionMs:phase.executionMs,
           maxCallbackMs:Math.max(...batches.map(b=>b.executionMs))}));
       }
+      console.log(JSON.stringify({sourceBeltCapture:capture}));
       console.log(JSON.stringify({source,destination,id:entry.transferInfo.transferId,status:entry.transferInfo.status,import:entry.summary.import}));
     }
   } finally {

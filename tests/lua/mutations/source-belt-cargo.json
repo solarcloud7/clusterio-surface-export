@@ -1,0 +1,290 @@
+[
+	{
+		"name": "captured belt lines are not cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for _, line in ipairs(lines) do line.clear() end",
+		"replace": "for _, line in ipairs({}) do line.clear() end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the final sweep captures nothing",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for _, unit in ipairs(state.units) do capture_unit(job, state, record, unit, cache, seen, true) end",
+		"replace": "for _, unit in ipairs({}) do capture_unit(job, state, record, unit, cache, seen, true) end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a cleared item that reappears is captured again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if state.cleared[uid] then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a reappeared item does not pin the record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\t\t\t\t\tpin(record, reason)\n\t\t\t\t\terror(reason, 0)",
+		"replace": "\t\t\t\t\terror(reason, 0)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a clear that throws does not pin the record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\t\tpin(record, reason)\n\t\terror(reason, 0)",
+		"replace": "\t\terror(reason, 0)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a straddling item does not merge its groups",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if owner ~= gi then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
+		"replace": "if false then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the census is not recorded for captured belts",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if #lines_out > 0 or not sweeping then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the census is read after the lines are cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tif #lines_out > 0 or not sweeping then\n\t\tSourceCargoIntegrity.record(",
+		"replace": "\tfor _, line in ipairs(lines) do line.clear() end\n\tif #lines_out > 0 or not sweeping then\n\t\tSourceCargoIntegrity.record(",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the capture keeps stepping after its lock is gone",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tlocal lock = SourceBeltCargo.owning_lock(job)\n\tif not lock then\n\t\terror(string.format(\"belt capture for %s stopped",
+		"replace": "\tlocal lock = SourceBeltCargo.owning_lock(job) or storage.locked_platforms[job.platform_index] or { cleared_belts = state and { job_id = job.job_id, groups = state.groups } }\n\tif false then\n\t\terror(string.format(\"belt capture for %s stopped",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the capture keeps stepping after its record was replaced",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if type(record) ~= \"table\" or record.job_id ~= job.job_id or (state and record.groups ~= state.groups) then",
+		"replace": "if type(record) ~= \"table\" then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "begin runs without the job's own lock",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tlocal lock = SourceBeltCargo.owning_lock(job)\n\tif not lock then\n\t\terror(string.format(\"belt capture for %s refused: the platform's transfer lock is not held",
+		"replace": "\tlocal lock = SourceBeltCargo.owning_lock(job) or storage.locked_platforms[job.platform_index]\n\tif false then\n\t\terror(string.format(\"belt capture for %s refused: the platform's transfer lock is not held",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a failed restore is retried blindly",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tif record.attempt then\n\t\treturn false, string.format(\"an earlier restore attempt placed",
+		"replace": "\tif false then\n\t\treturn false, string.format(\"an earlier restore attempt placed",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a pinned record is placed back anyway",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\tif record.pinned then\n\t\treturn false",
+		"replace": "\tif false then\n\t\treturn false",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a restore with unplaced items still clears the record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if unplaced ~= missing_items or anomalies > 0 then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a whole-belt census mismatch after the restore is ignored",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if #mismatched > 0 then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "restore-present places again after an earlier attempt",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\t\tif record.attempt then\n\t\t\treturn false, string.format(\"an earlier restore attempt already ran",
+		"replace": "\t\tif false then\n\t\t\treturn false, string.format(\"an earlier restore attempt already ran",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "restore-present places a pinned record",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "\t\tif record.pinned then\n\t\t\treturn false, string.format(\"the record is pinned (%s): some of its items",
+		"replace": "\t\tif false then\n\t\t\treturn false, string.format(\"the record is pinned (%s): some of its items",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the override runs on a committed source",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if lock_data.phase == \"committed\" then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the restore looks belts up by the global unit-number lookup, which belts do not support",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "local entity = by_unit[unit_number]",
+		"replace": "local entity = game.get_entity_by_unit_number(unit_number)",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the unlock does not put cleared cargo back",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if lock_data.cleared_belts then\n        if SourceBeltCargo.capture_active",
+		"replace": "if false then\n        if SourceBeltCargo.capture_active",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the unlock proceeds while the capture is still running",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if SourceBeltCargo.capture_active(lock_data.cleared_belts) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the unlock proceeds when the cargo could not be put back",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if not cargo_ok then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a hold-owned surface drops recorded cargo",
+		"file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+		"find": "if destination_hold_active and lock_data.cleared_belts then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a transfer captures its belts in one callback",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "if job.destination_instance_id == nil or next(job.belt_entities or {}) == nil then return false end",
+		"replace": "do return false end",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "a standalone export staggers its belts",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua",
+		"find": "if job.destination_instance_id == nil or next(job.belt_entities or {}) == nil then return false end",
+		"replace": "if next(job.belt_entities or {}) == nil then return false end",
+		"tests": [
+			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "/belt-cargo takes any last word as the action",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if target and ACTIONS[action] then return target, action end",
+		"replace": "if target then return target, action end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the sweep's census read counts the belt again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "{ items = lines_out } }, nil, sweeping)",
+		"replace": "{ items = lines_out } })",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the restore scans a hand-written belt type list",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for belt_type in pairs(GameUtils.BELT_ENTITY_TYPES) do BELT_TYPES[#BELT_TYPES + 1] = belt_type end",
+		"replace": "for _, belt_type in ipairs({ \"transport-belt\", \"underground-belt\", \"splitter\", \"loader\", \"loader-1x1\", \"linked-belt\", \"lane-splitter\" }) do BELT_TYPES[#BELT_TYPES + 1] = belt_type end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the census after a restore counts an item once per belt that reports it",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if stack and stack.valid_for_read and not counted[uid] then",
+		"replace": "if stack and stack.valid_for_read then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "abandon and restore-present run before the automatic restore was refused",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if not (record.pinned or record.attempt or record.refused) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a refused restore is not recorded",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if not ok and record then record.refused = { tick = game.tick, reason = tostring(detail) } end",
+		"replace": "",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "a locked platform's whole name is split into a name and an action",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if is_target and text ~= \"\" and is_target(text) then return text, \"describe\" end",
+		"replace": "",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	}
+]

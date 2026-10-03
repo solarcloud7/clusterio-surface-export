@@ -83,9 +83,9 @@ function SourceCargoIntegrity.new(fluid_registry)
     }
 end
 
-function SourceCargoIntegrity.record(acc, entity, entity_data, fluid_state)
+function SourceCargoIntegrity.record(acc, entity, entity_data, fluid_state, repeat_read)
     fluid_state = fluid_state or acc.fluid_state
-    acc.entity_count = acc.entity_count + 1
+    if not repeat_read then acc.entity_count = acc.entity_count + 1 end
 
     -- Old saved jobs may not have this field. Once a read fails the job cannot pass.
     acc.measurement_errors = acc.measurement_errors or {}

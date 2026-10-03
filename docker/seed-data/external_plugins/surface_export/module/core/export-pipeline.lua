@@ -26,6 +26,7 @@ local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local SourceRecovery = require("modules/surface_export/core/source-recovery")
 local PlatformLineage = require("modules/surface_export/utils/platform-lineage")
+local SourceBeltCargo = require("modules/surface_export/core/source-belt-cargo")
 local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
@@ -179,6 +180,13 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		end
 	end
 	local resolution = purpose == "resolution"
+	local held_lock = SurfaceLock.get_lock_data(platform_index)
+	if not resolution and type(held_lock) == "table" and held_lock.cleared_belts then
+		Timing.finish(job_id, "failed")
+		return nil, string.format(
+			"Platform '%s' has belt cargo held by another transfer (%s); its belts are empty until that transfer finishes or /belt-cargo resolves it",
+			platform.name, SourceBeltCargo.describe(held_lock.cleared_belts))
+	end
 	local lineage, lineage_generation, lineage_err
 	if resolution then
 		lineage, lineage_generation = PlatformLineage.get(platform)
@@ -342,11 +350,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	return job.current_index >= job.total_entities
 end
 
-local function prepare_completion(job)
-	PhaseProfiler.start(job.job_id, "completion")
-
-	storage.platform_exports = storage.platform_exports or {}
-
+local function capture_belts_atomically(job)
 	Timing.start(job.job_id, "belt_capture")
 	local belt_scan_count = 0
 	local belt_item_total = 0
@@ -384,8 +388,21 @@ local function prepare_completion(job)
 				.. " — payload carries NO side partition; a belt-bearing import will REFUSE it (no legacy fallback exists)")
 		end
 	end
-
 	Timing.stop(job.job_id, "belt_capture")
+	return belt_scan_count, belt_item_total
+end
+
+local function prepare_completion(job, staged_belts)
+	PhaseProfiler.start(job.job_id, "completion")
+
+	storage.platform_exports = storage.platform_exports or {}
+
+	local belt_scan_count, belt_item_total
+	if staged_belts then
+		belt_scan_count, belt_item_total = staged_belts.belts, staged_belts.stacks
+	else
+		belt_scan_count, belt_item_total = capture_belts_atomically(job)
+	end
 	local ground_items = Timing.scope(job.job_id, "ground_items", EntityScanner.scan_items_on_ground, job.surface)
 	Timing.start(job.job_id, "verification_census")
 	for _, ground_item in ipairs(ground_items) do
@@ -646,11 +663,49 @@ function ExportPipeline.interrupt(job, err)
 	Timing.finish(job.job_id, "interrupted")
 end
 
+local function belts_staggered(job)
+	if job.destination_instance_id == nil or next(job.belt_entities or {}) == nil then return false end
+	if not SourceBeltCargo.owning_lock(job) then return false end
+	local force = game.forces[job.force_name]
+	local platform = force and force.platforms[job.platform_index]
+	if SurfaceLock.destination_hold_owns_surface(job.surface, platform) then return false end
+	return true
+end
+
 function ExportPipeline.complete(job, batch_size)
-	-- Each call is one scheduler tick. Capture and its cargo checks remain atomic;
-	-- serialization and publication operate on that captured payload on later ticks.
 	if job.completion_stage == nil then
-		prepare_completion(job)
+		if belts_staggered(job) then
+			Timing.start(job.job_id, "belt_capture")
+			local ok, err = pcall(SourceBeltCargo.begin, job)
+			Timing.stop(job.job_id, "belt_capture")
+			if not ok then
+				Timing.fail(job.job_id, "belt_capture")
+				error(err, 0)
+			end
+			job.completion_stage = "belt_capture"
+		else
+			prepare_completion(job)
+		end
+	elseif job.completion_stage == "belt_capture" then
+		Timing.start(job.job_id, "belt_capture")
+		local ok, done = pcall(SourceBeltCargo.step, job, SourceBeltCargo.budget())
+		if not ok then
+			Timing.stop(job.job_id, "belt_capture")
+			Timing.fail(job.job_id, "belt_capture")
+			error(done, 0)
+		end
+		local stats = nil
+		if done then
+			local finished, result = pcall(SourceBeltCargo.finish, job)
+			if not finished then
+				Timing.stop(job.job_id, "belt_capture")
+				Timing.fail(job.job_id, "belt_capture")
+				error(result, 0)
+			end
+			stats = result
+		end
+		Timing.stop(job.job_id, "belt_capture")
+		if stats then prepare_completion(job, stats) end
 	elseif job.completion_stage == "serialize" then
 		-- Opt-in transfer transport; file exports and clones retain the stored format.
 		if job.section_cursor or (job.section_transport == nil and job.destination_instance_id
@@ -783,17 +838,19 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	local written = DebugExport.write_failure_black_box(filename, bundle)
 	Timing.stop(job.job_id, "failure_diagnostics")
 
-	log(string.format(
-		"[Cargo integrity][ABORT] Transfer export '%s' ABORTED — source cargo integrity failure: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
-		job.platform_name, mismatch_count, tostring(written)))
 	GameUtils.pcall_warn("[Transfer] Abort notice failed", function()
 		game.print(string.format("Platform '%s' aborted transfer: source cargo mismatched or could not be measured.",
 			job.platform_name), {1, 0.3, 0})
 	end)
 
 	Timing.start(job.job_id, "source_unlock")
-	local unlock_success = SurfaceLock.unlock_platform(job.platform_index, nil, nil, nil, job.job_id)
+	local unlock_success, unlock_err = SurfaceLock.unlock_platform(job.platform_index, nil, nil, nil, job.job_id)
 	Timing.stop(job.job_id, "source_unlock")
+	log(string.format(
+		"[Cargo integrity][ABORT] Transfer export '%s' ABORTED — source cargo integrity failure: %d row(s); destination NOT contacted; %s. Bundle=%s",
+		job.platform_name, mismatch_count,
+		unlock_success and "source unlocked and preserved" or ("source remains protected: " .. tostring(unlock_err)),
+		tostring(written)))
 	if unlock_success and clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
 			clusterio_api.send_json("surface_platform_state_changed", {
