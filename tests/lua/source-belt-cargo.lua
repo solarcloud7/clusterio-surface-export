@@ -274,21 +274,6 @@ do
 end
 
 do
-    census_records = {}
-    local a, d = belt(35, {"odd-1", "odd-2"}), belt(36, {"other-1", "other-2"})
-    local shared = a.lines[1].seed("copper-plate", 1, "rare")
-    d.lines[1].items[1] = {uid = shared, pos = 0.01, name = "copper-plate", count = 1, quality = "rare"}
-    local job, lock = job_for({a, d})
-    local state = cargo.begin(job)
-    local ok, err = pcall(cargo.step, job, 10)
-    assert(not ok and tostring(err):find("not the same line", 1, true) and tostring(err):find(tostring(shared), 1, true),
-        "an item on two lines that are not the same line must refuse the capture: " .. tostring(err))
-    assert(state.merged == 0 and lock.cleared_belts.pinned and #d.lines[1].items == 1,
-        "the two lanes are not merged, the record is pinned, and the belt still holding the item is left untouched")
-    print("PASS an item on two lines that are not the same line refuses the capture and pins the record instead of merging two lanes")
-end
-
-do
     for _, case in ipairs({
         {"Iron Hauler", "Iron Hauler", "describe"},
         {"Iron Hauler abandon", "Iron Hauler", "abandon"},

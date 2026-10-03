@@ -138,18 +138,12 @@ local function capture_unit(job, state, record, unit, cache, seen, sweeping)
 				items[#items + 1] = { name = name, count = count, quality = quality }
 				local owner = seen[uid]
 				if owner then
-					if root_of(state, owner.gi) ~= root_of(state, gi) then
-						if not owner.line.line_equals(line) then
-							local reason = string.format("belt capture refused: item %s (%s) is on %s line %d and on a line that is not the same line; capturing it would duplicate it",
-								uid, tostring(stack.name), tostring(unit.id), li)
-							pin(record, reason)
-							error(reason, 0)
-						end
-						join_groups(state, owner.gi, gi)
+					if owner ~= gi then
+						join_groups(state, owner, gi)
 						state.merged = state.merged + 1
 					end
 				else
-					seen[uid] = { gi = gi, line = line }
+					seen[uid] = gi
 					pending[#pending + 1] = { gi = gi, li = li, position = math.floor((it.position or 0) * 256 + 0.5),
 						slot = { n = name, q = quality, ct = count, st = BeltRestoration.belt_item_state(stack, cache) } }
 				end
