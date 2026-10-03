@@ -236,6 +236,20 @@ arrival.process(dana)
 assert(dana.boarded == 1 and contents(hub_inventory) == "power-armorx1", "boarding and overflow resume once the platform is free")
 print("PASS a locked or held platform is not boarded or filled until it is released")
 
+local sky = new_player(20, "sky", character_entity({{name = "a", count = 1}, {name = "b", count = 1}, {name = "c", count = 1}}))
+env.storage.surface_export_arrivals.sky = {["tx-20"] = {transfer_id = "tx-20", force_name = "player", platform_index = 3,
+	surface_index = 80, created_tick = 1, boarding_expires_tick = 99999,
+	items = {{name = "iron-plate", count = 1, quality = "normal", inventory = "main"}}}}
+local known_uid = uid
+uid = nil
+hub_inventory = inventory(1)
+arrival.process(sky)
+uid = known_uid
+assert(sky.boarded == 0 and contents(hub_inventory) == "",
+	"a record without a platform identity must not resolve to a platform whose identity is also unavailable")
+env.storage.surface_export_arrivals.sky = nil
+print("PASS an arrival record without a platform identity never matches a platform by its index alone")
+
 local eve_body = character_entity()
 local eve = new_player(5, "eve", nil)
 eve.controller_type = controllers.editor

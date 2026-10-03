@@ -31,7 +31,7 @@ local ExportPipeline = {}
 
 local function maybe_inject_census_omission(entity_data)
 	local cfg = storage.surface_export_config
-	if not (cfg and cfg.test_force_census_omission) then return end
+	if not (cfg and cfg.debug_mode and cfg.test_force_census_omission) then return end
 	local invs = entity_data and entity_data.specific_data and entity_data.specific_data.inventories
 	if not invs then return end
 	for _, inv in ipairs(invs) do

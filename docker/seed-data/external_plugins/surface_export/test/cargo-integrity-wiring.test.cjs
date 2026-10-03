@@ -266,6 +266,8 @@ test("test_force_census_omission is registered in the configure allowlist and co
 		"the hook value must be persisted into surface_export_config");
 	assert.match(exportPipelineSource(), /test_force_census_omission/,
 		"the export walk must consume the one-shot census-omission hook at the post-serialization point");
+	assert.match(exportPipelineSource(), /cfg\.debug_mode and cfg\.test_force_census_omission/,
+		"like every other fault-injection hook, the census omission must only fire while debug_mode is on");
 });
 
 test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS", () => {
