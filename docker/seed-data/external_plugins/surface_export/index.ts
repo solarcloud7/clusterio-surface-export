@@ -65,9 +65,8 @@ export const plugin = {
 				"unlocked as soon as the export completes, so a download waiting to be fetched is " +
 				"subject to this limit like any other. Set it generously if you export large platforms " +
 				"for download while transfers are running. " +
-				"Each retained export costs roughly the compressed size of that platform — exports made " +
-				"by the clone path cost more, being stored uncompressed — so a high value grows the save " +
-				"file. Values below max_concurrent_jobs + 1 are raised to it as a sanity floor.",
+				"Each retained export costs roughly the compressed size of that platform, so a high value " +
+				"grows the save file. Values below max_concurrent_jobs + 1 are raised to it as a sanity floor.",
 			type: "number",
 			initialValue: 10,
 		},

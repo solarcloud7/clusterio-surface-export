@@ -7,8 +7,10 @@ permissions. Start with a disposable platform before transferring a valuable one
 ## Use the web map
 
 1. Open **Surface Export → Gateways** in the Clusterio web interface.
-2. Select a platform on its source instance and choose **Transfer**.
-3. Choose the destination instance and, if needed, its arrival location. Confirm once.
+2. Click the arrow at the right of a platform's row, or drag the arrow onto another
+   instance's portal.
+3. Choose the destination instance and, if needed, its arrival location. Press
+   **Start Transfer** once.
 4. Follow the platform on the route. A queued platform waits near the source;
    movement and status labels show the operation's progress.
 5. Open **Transaction Logs** and select the operation to inspect its result.
@@ -68,7 +70,7 @@ appears beneath the platform sidebar listing the other platforms stopped at the
 same space location. Press **Board** on a row. Both platforms must be enabled,
 at the same space location, and free of transfer or recovery protections. Loading,
 unloading and waiting states do not otherwise prevent boarding. Paused thrust counts
-as disabled. With no eligible platform the panel shows `None`.
+as disabled. The Boarding panel appears only when at least one platform is eligible.
 
 The destination is checked again when you press Board. Boarding uses Factorio's
 player movement operation; it does not export or reconstruct your inventory. This

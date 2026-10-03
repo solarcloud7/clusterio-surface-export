@@ -525,7 +525,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.logger.info(`Source platform ${platformIndex} was already unlocked (${unlockResult})`);
 				} else {
 					this.logger.error(`Unlock after refused transfer did NOT succeed (${unlockResult}); `
-						+ "the source-side TTL remains the backstop");
+						+ "the source stays locked until an administrator releases it");
 				}
 			} else {
 				this.logger.warn("Cannot unlock after failed transfer — no valid platform_index available");

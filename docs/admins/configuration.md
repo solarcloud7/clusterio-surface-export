@@ -31,9 +31,10 @@ See [save recovery](../technical/transfers.md).
 ## Instance settings
 
 [InstancePlugin.sendConfigurationToLua](../../docker/seed-data/external_plugins/surface_export/instance.ts)
-sends these settings at instance startup. [configure.lua](../../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/configure.lua)
-applies them to Lua storage. Changing the configuration requires restarting the
-instance before its Lua behavior changes.
+sends these settings, except `disabled_planets` and `default_planet`, at instance startup. [configure.lua](../../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/configure.lua)
+applies them to Lua storage. The two planet settings are applied as described in
+[planets on each instance](#planets-on-each-instance). Changing the configuration
+requires restarting the instance before its Lua behavior changes.
 
 | Field | Default | Behavior |
 |---|---|---|

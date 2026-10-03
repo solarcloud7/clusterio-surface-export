@@ -4,10 +4,15 @@ local prefix = "modules/surface_export/"
 local function stub(name, value) package.preload[prefix .. name] = function() return value end end
 stub("core/deserializer", {})
 stub("utils/game-utils", {QUALITY_NORMAL = "normal"})
+local item_state_reads, cache_releases = 0, 0
 stub("export_scanners/inventory-scanner", {
     new_item_state_cache = function() return {} end,
-    release_item_state_cache = function() end,
-    capture_item_state = function(stack) if stack.name == "pistol" then return {health = 0.5} end return nil end,
+    release_item_state_cache = function() cache_releases = cache_releases + 1 end,
+    capture_item_state = function(stack)
+        item_state_reads = item_state_reads + 1
+        if stack.name == "pistol" then return {health = 0.5} end
+        return nil
+    end,
 })
 stub("utils/util", {pcall_warn = function(_, fn) assert(pcall(fn)) end, make_quality_key = function(n, q) return n .. "/" .. q end})
 stub("utils/version-compat", {})
@@ -166,24 +171,43 @@ do
     local ghost = {valid = true, unit_number = 81, type = "entity-ghost", surface_index = 1}
     local entrance = belt(82, {line("g-1"), line("g-2"), line("g-3"), line("g-4")}, "underground-belt")
     entrance.underground_belt_neighbour = ghost
-    local elsewhere = belt(83, {line("g-1"), line("g-2")})
+    local elsewhere = belt(83, {line("l-1"), line("e-2")})
     elsewhere.surface_index = 2
     local linked = belt(84, {line("l-1"), line("l-2")}, "linked-belt")
     linked.linked_belt_neighbour = elsewhere
+    local dead = setmetatable({valid = false}, {__index = function(_, key) error("LuaEntity was invalid; read " .. tostring(key)) end})
+    feed(dead, linked, "inputs")
     feed(linked, entrance)
-    local _, _, capture_line = check("ghost and off-surface partners", {entrance, linked}, 6)
-    assert(walked(capture_line) == 2, "a ghost or an entity on another surface is never walked: " .. capture_line)
-    print("PASS ghost partners and partners on another surface are skipped without failing the capture")
+    local _, _, capture_line, trace = check("ghost, invalid and off-surface partners", {entrance, linked}, 6)
+    assert(walked(capture_line) == 2, "a ghost, an invalid entity or an entity on another surface is never walked: " .. capture_line)
+    assert(not trace:find("partition failed", 1, true), "an invalid neighbour must be skipped, not read: " .. trace)
+    print("PASS ghost, invalid and other-surface partners are skipped without failing the capture")
 end
 
 do
     local a = belt(91, {line("apart-1", {{uid = 910, pos = 0.99, name = "iron-plate"}}), line("apart-2")})
     local c = belt(92, {line("apart-1", {{uid = 910, pos = 0.01, name = "iron-plate"}}), line("apart-2")})
+    item_state_reads = 0
     local groups, _, capture_line, trace = check("equal lines without an adjacency", {a, c}, 2)
     assert(#groups[1].members == 2 and #groups[1].slots == 1, "the pairwise search restores the engine's grouping")
     assert(trace:find("disagreed with the engine", 1, true) and capture_line:find("pairwise search", 1, true),
         "the disagreement and the fallback were not logged: " .. trace)
-    print("PASS an item seen on two groups' lines falls back to the pairwise search")
+    assert(item_state_reads == 1, "the fallback must reuse the first pass's item-state reads, got " .. item_state_reads .. " reads")
+    print("PASS an item seen on two groups' lines falls back to the pairwise search, reading its state once")
+end
+
+do
+    local a = belt(95, {line("dup-1", {{uid = 950, pos = 0.5, name = "iron-plate"}}), line("dup-2")})
+    local c = belt(96, {line("dup-3", {{uid = 950, pos = 0.5, name = "iron-plate"}}), line("dup-4")})
+    logs = {}
+    cache_releases = 0
+    local ok, err = pcall(restorer.capture_side_groups, pairs_of({a, c}))
+    assert(not ok, "an item on two lines that are not the same line must refuse the capture")
+    assert(tostring(err):find("would duplicate that item", 1, true) and tostring(err):find("950", 1, true),
+        "the refusal must name the item: " .. tostring(err))
+    assert(table.concat(logs, "\n"):find("disagreed with the engine", 1, true), "the first pass's disagreement was not logged")
+    assert(cache_releases == 1, "the item-state cache must be released after a refused capture")
+    print("PASS an item still on two groups' lines in the pairwise search refuses the capture instead of duplicating it")
 end
 
 do

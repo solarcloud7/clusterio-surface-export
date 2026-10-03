@@ -231,7 +231,7 @@ local function pairwise_partition(belt_pairs)
     return function(entity, li) return keys[entity.unit_number * LINE_KEY_STRIDE + li] end
 end
 
-local function collect_groups(belt_pairs, cache, root_of, check_disagreement)
+local function collect_groups(belt_pairs, cache, root_of, states)
     local groups, index_of, group_of_item = {}, {}, {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
@@ -248,20 +248,23 @@ local function collect_groups(belt_pairs, cache, root_of, check_disagreement)
             for _, it in ipairs(line.get_detailed_contents()) do
                 local uid = tostring(it.unique_id)
                 if not g.seen[uid] then
-                    if check_disagreement then
-                        local owner = group_of_item[uid]
-                        if owner then
-                            return nil, string.format("item %s (%s) is on the line of group %d and of group %d",
-                                uid, tostring(it.stack.name), owner, gi)
-                        end
-                        group_of_item[uid] = gi
+                    local owner = group_of_item[uid]
+                    if owner then
+                        return nil, string.format("item %s (%s) is on the line of group %d and of group %d",
+                            uid, tostring(it.stack.name), owner, gi)
                     end
+                    group_of_item[uid] = gi
                     g.seen[uid] = true
+                    local state = states[uid]
+                    if state == nil then
+                        state = belt_item_state(it.stack, cache) or false
+                        states[uid] = state
+                    end
                     g.slots[#g.slots + 1] = {
                         n = it.stack.name,
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
-                        st = belt_item_state(it.stack, cache),
+                        st = state or nil,
                     }
                     local s = g.item_source_positions
                     s[#s + 1] = bp.id
@@ -275,11 +278,11 @@ local function collect_groups(belt_pairs, cache, root_of, check_disagreement)
 end
 
 local function collect_side_groups(belt_pairs, cache)
-    local groups, how
+    local groups, how, disagreement
+    local states = {}
     local partition_ok, root_of, walked, compared = pcall(partition_lines, belt_pairs)
     if partition_ok then
-        local disagreement
-        groups, disagreement = collect_groups(belt_pairs, cache, root_of, true)
+        groups, disagreement = collect_groups(belt_pairs, cache, root_of, states)
         if groups then
             how = string.format("%d walked, %d line comparisons", walked, compared)
         else
@@ -291,7 +294,11 @@ local function collect_side_groups(belt_pairs, cache)
             tostring(root_of)))
     end
     if not groups then
-        groups = collect_groups(belt_pairs, cache, pairwise_partition(belt_pairs), false)
+        groups, disagreement = collect_groups(belt_pairs, cache, pairwise_partition(belt_pairs), states)
+        if not groups then
+            error(string.format("[BeltRestoration] belt side partition refused: %s in the pairwise search too; capturing it would duplicate that item",
+                tostring(disagreement)), 0)
+        end
         how = "pairwise search"
     end
     local out = {}

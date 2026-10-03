@@ -7,7 +7,7 @@ define their actual scan boundaries.
 
 | Check family | Detects |
 |---|---|
-| TypeScript/ESLint | Type and usage errors, including selected unbound-method and empty-catch patterns. |
+| ESLint | Extracted or cast Clusterio Link methods, empty blocks and catches, and empty `.catch(() => {})` handlers. TypeScript type errors are reported by the build, which `lint` does not run. |
 | Lua invariants and syntax | Prohibited persistence/import/identity patterns, parse errors and unexpected globals. |
 | Factorio API names | Selected receiver/member names absent from the vendored API index. |
 | Web cache | Asset output that would bypass the expected content-hashed publication scheme. |
@@ -16,15 +16,17 @@ define their actual scan boundaries.
 | Test hooks | State-mutating fault hooks without recognized cleanup or a reviewed fail-safe declaration. |
 | Tick portability | Selected absolute tick fields crossing instances without relative tick arithmetic. |
 | Derived art | Bundled derived images that differ from the configured regeneration output. |
-| Allow manifest | Unregistered exceptions to the checks above. |
+| Allow manifest | `lint-lua:allow`, `pcall:allow`, `lint-webpack-cache:allow` and `lint-test-grounding:allow` markers without a matching manifest entry. |
 
 These are static checks. API scanning infers selected receivers by name; it does
 not prove the object's subtype or that a sequence of valid API calls preserves
 state. Test-grounding patterns do not replace review of whether two measurements
 are independent and comparable. A parse or lint pass is not a Factorio runtime pass.
 
-Exceptions use the existing machine-readable marker and
-`scripts/lint-allow-manifest.json` entry, with a reason and approver. Fix the cause
+Exceptions for those four markers need both the marker and a
+`scripts/lint-allow-manifest.json` entry, with a reason and approver. The JS catch
+(`catch:allow`), tick portability (`tick:allow`), test hook (`lint-test-hooks:allow`)
+and PowerShell (`Deliberately quiet`) exceptions are accepted by their own checks. Fix the cause
 where possible; an exception is a reviewed change, not a way to silence a failure.
 The repository's style policy keeps explanatory prose in requested documentation
 and leaves code comments to enforced markers/directives.

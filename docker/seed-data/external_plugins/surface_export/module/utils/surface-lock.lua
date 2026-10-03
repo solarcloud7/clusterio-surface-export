@@ -715,7 +715,7 @@ end
 function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected_job_id)
     local owned_quarantine = SurfaceLock.transfer_owns_quarantine(lock, expected_job_id)
     if not lock or (lock.kind ~= "transfer" and not owned_quarantine) then
-        return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
+        return false, "source is not locked-for-transfer (released by an administrator, or never locked)"
     end
     if type(expected_job_id) ~= "string" or expected_job_id == "" or (lock.transfer_job_id ~= expected_job_id and not owned_quarantine) then
         return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
@@ -773,7 +773,7 @@ function SurfaceLock.scan_transfer_expiries()
                 else
                     local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
                     if game.tick >= expires_tick then
-                        log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
+                        log(string.format("[SurfaceLock] Export lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
                             tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
                         local ok, err = SurfaceLock.unlock_current_lock(platform_index, lock_data)
                         if ok then
