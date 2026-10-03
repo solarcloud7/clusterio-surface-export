@@ -2,7 +2,7 @@ local BeltRestoration = require("modules/surface_export/import_phases/belt_resto
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local BeltBatches = require("modules/surface_export/import_phases/belt_batches")
 
-local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
+local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "lane-splitter", "loader", "loader-1x1", "linked-belt" }
 
 local function rebuild_on(surface, live, dx, dy)
   local emap, cfails = {}, 0

@@ -166,6 +166,17 @@ test("the atomic belt scan pairs each belt AFTER its serialized items are patche
 	);
 });
 
+test("a transfer is refused before locking when a linked belt is connected to another surface", () => {
+	const body = functionBody(exportPipelineSource(), "function ExportPipeline.queue(", "function ExportPipeline.process_batch(");
+	const refusal = body.indexOf("GameUtils.cross_surface_linked_belts(surface)");
+	const lock = body.indexOf("SurfaceLock.lock_platform(platform, force, lock_opts)");
+	assert.notEqual(refusal, -1, "queue must count linked belts whose partner is on another surface");
+	assert.notEqual(lock, -1, "queue must lock the platform");
+	assert.ok(refusal < lock, "the cross-surface refusal must come before the platform is locked and frozen");
+	assert.match(body.slice(refusal - 80, refusal), /if destination_instance_id then\s+local crossing = $/, "only transfers (source deletion) are refused; clones and file exports keep their source");
+	assert.match(body.slice(refusal, refusal + 400), /if crossing > 0 then[\s\S]*?return nil,/, "a crossing must return the refusal, not log and continue");
+});
+
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
 	const src = exportPipelineSource();
 	const verdictIdx = src.indexOf("SourceCargoIntegrity.verdict(job.census)");

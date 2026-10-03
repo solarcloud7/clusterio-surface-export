@@ -33,7 +33,7 @@ local function scenario(side, fault)
     local modules = {
         ["utils/operation-timing"] = timing,
 		["core/source-recovery"] = {platform_uid = function() return "fixture:3" end, export_job_id = function(counter, name) return string.format("%03d_%s_test-epoch", counter, name) end},
-        ["utils/game-utils"] = {platform_has_hub = function() return true end,
+        ["utils/game-utils"] = {platform_has_hub = function() return true end, cross_surface_linked_belts = function() return 0 end,
             delete_platform = function() called("delete"); deleted = true; return true end},
         ["utils/surface-lock"] = {get_lock_data = function() return nil end,DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000,
             lock_platform = function() called("lock"); return true end,

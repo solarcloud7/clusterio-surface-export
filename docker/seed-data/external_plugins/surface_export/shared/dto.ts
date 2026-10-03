@@ -225,6 +225,8 @@ export interface ImportMetrics {
 	circuits_connected: number;
 	copper_pruned?: number;
 	proxies_linked?: number;
+	linked_belts_connected?: number;
+	linked_belts_dropped?: number;
 	total_items: number;
 	total_fluids: number;
 	phaseSpans?: PhaseSpan[];
