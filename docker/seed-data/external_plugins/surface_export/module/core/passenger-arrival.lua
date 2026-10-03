@@ -67,7 +67,8 @@ end
 local function resolve_platform(record)
 	local force = game.forces[record.force_name]
 	local platform = force and force.platforms[record.platform_index]
-	if not (platform and platform.valid) or platform_identity(platform) ~= record.platform_uid then return nil end
+	if not (platform and platform.valid) or not record.platform_uid
+		or platform_identity(platform) ~= record.platform_uid then return nil end
 	return platform
 end
 

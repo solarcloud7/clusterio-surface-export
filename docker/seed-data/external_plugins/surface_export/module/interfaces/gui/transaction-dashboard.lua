@@ -2,7 +2,13 @@ local TransactionHistory = require("modules/surface_export/utils/transaction-his
 
 local TransactionDashboard = {}
 
-local open_dashboards = {}
+local DEFAULT_LIMIT = 25
+
+local function open_limit(player)
+	local frame = player.gui.screen["transaction_dashboard_frame"]
+	local limit = frame and frame.valid and frame.tags and tonumber(frame.tags.limit)
+	return limit or DEFAULT_LIMIT
+end
 
 local OP_COLORS = {
 	import = {r = 0.4, g = 0.8, b = 1.0},
@@ -145,17 +151,18 @@ function TransactionDashboard.open_details(player, seq)
 end
 
 function TransactionDashboard.open(player, limit)
-	limit = limit or 25
-	
+	limit = limit or DEFAULT_LIMIT
+
 	if player.gui.screen["transaction_dashboard_frame"] then
 		player.gui.screen["transaction_dashboard_frame"].destroy()
 	end
-	
+
 	local frame = player.gui.screen.add{
 		type = "frame",
 		direction = "vertical",
 		caption = "Transaction Dashboard",
-		name = "transaction_dashboard_frame"
+		name = "transaction_dashboard_frame",
+		tags = {limit = limit}
 	}
 	frame.auto_center = true
 	frame.style.maximal_width = 1000
@@ -217,24 +224,18 @@ function TransactionDashboard.open(player, limit)
 	status_flow.style.top_margin = 8
 	local count = TransactionHistory.count()
 	status_flow.add{type = "label", caption = {"", "Total: ", count, " transactions"}}
-	
-	open_dashboards[player.index] = {
-		frame = frame,
-		limit = limit
-	}
 end
 
 function TransactionDashboard.close(player)
 	if player.gui.screen["transaction_dashboard_frame"] then
 		player.gui.screen["transaction_dashboard_frame"].destroy()
 	end
-	open_dashboards[player.index] = nil
 end
 
 function TransactionDashboard.refresh(player)
-	local state = open_dashboards[player.index]
-	if state and state.frame and state.frame.valid then
-		TransactionDashboard.open(player, state.limit)
+	local frame = player.gui.screen["transaction_dashboard_frame"]
+	if frame and frame.valid then
+		TransactionDashboard.open(player, open_limit(player))
 	end
 end
 
@@ -253,7 +254,7 @@ function TransactionDashboard.on_gui_click(event)
 	elseif element.name == "transaction_dashboard_clear" then
 		if player.admin then
 			TransactionHistory.clear()
-			TransactionDashboard.open(player, open_dashboards[player.index].limit)
+			TransactionDashboard.open(player, open_limit(player))
 			player.print("[Transaction Dashboard] History cleared")
 		end
 		
