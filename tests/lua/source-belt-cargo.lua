@@ -16,7 +16,8 @@ env.require = function(path)
     return modules[name]
 end
 modules["core/deserializer"] = {restore_item_properties = noop}
-modules["utils/game-utils"] = {QUALITY_NORMAL = "normal"}
+modules["utils/game-utils"] = {QUALITY_NORMAL = "normal", BELT_ENTITY_TYPES = {["transport-belt"] = true,
+    ["underground-belt"] = true, ["linked-belt"] = true, ["test-modded-belt"] = true}}
 modules["utils/util"] = {QUALITY_NORMAL = "normal", pcall_warn = function(_, fn) assert(pcall(fn)) end,
     make_quality_key = function(n, q) return n .. "/" .. q end}
 modules["utils/version-compat"] = {belt_force_insert_at = function(line, position, stack, count)
@@ -39,7 +40,7 @@ modules["export_scanners/inventory-scanner"] = {
     capture_item_state = function(stack) if stack.name == "pistol" then return {health = 0.5} end return nil end,
 }
 local census_records = {}
-modules["export_scanners/source-cargo-integrity"] = {record = function(acc, entity, entity_data)
+modules["export_scanners/source-cargo-integrity"] = {record = function(acc, entity, entity_data, _, repeat_read)
     local physical = 0
     for li = 1, entity.get_max_transport_line_index() do
         for _, it in ipairs(entity.get_transport_line(li).get_detailed_contents()) do physical = physical + it.stack.count end
@@ -48,7 +49,7 @@ modules["export_scanners/source-cargo-integrity"] = {record = function(acc, enti
     for _, line_data in ipairs(entity_data.specific_data.items) do
         for _, item in ipairs(line_data.items) do serialized = serialized + item.count end
     end
-    census_records[#census_records + 1] = {id = entity_data.entity_id, physical = physical, serialized = serialized}
+    census_records[#census_records + 1] = {id = entity_data.entity_id, physical = physical, serialized = serialized, repeat_read = repeat_read}
     acc.physical = (acc.physical or 0) + physical
     acc.serialized = (acc.serialized or 0) + serialized
 end}
@@ -84,6 +85,10 @@ local entities_by_unit = {}
 env.game.get_entity_by_unit_number = function() return nil end
 local ship_surface = {valid = true, index = 70, find_entities_filtered = function(filter)
     assert(type(filter.type) == "table", "the restore must scan belt types on the platform surface")
+    local scanned = {}
+    for _, t in ipairs(filter.type) do scanned[t] = true end
+    assert(scanned["test-modded-belt"] and scanned["linked-belt"] and #filter.type == 4,
+        "the restore must scan exactly the belt types the export treats as belts (GameUtils.BELT_ENTITY_TYPES)")
     local out = {}
     for _, e in pairs(entities_by_unit) do if e.valid then out[#out + 1] = e end end
     return out
@@ -191,6 +196,10 @@ do
     for _, v in pairs(seeded) do seeded_total = seeded_total + v end
     assert(captured_total == seeded_total, "captured quantity equals seeded quantity")
     assert(job.census.physical == 9 and job.census.serialized == 9, "census totals match on both sides")
+    local repeats = 0
+    for _, r in ipairs(census_records) do if r.repeat_read then repeats = repeats + 1 end end
+    assert(#census_records == 4 and repeats == 1 and not census_records[1].repeat_read,
+        "the sweep's census read of a belt is a repeat read, so the census counts that belt once")
     assert(lock.cleared_belts.groups == job.export_data.belt_side_groups and lock.cleared_belts.group_parent == nil
         and lock.cleared_belts.complete, "the lock keeps the finished groups for a rollback")
     assert(not cargo.capture_active(lock.cleared_belts), "a finished capture is no longer active")
@@ -271,6 +280,37 @@ do
     local stats = run_to_end(job)
     assert(stats.stacks == 2 and stats.groups == 3 and state.merged == 1, "an item seen on two groups' lines in one callback merges them and is captured once")
     print("PASS a straddling item merges its two groups instead of being captured twice")
+end
+
+do
+    census_records = {}
+    local a, d = belt(35, {"odd-1", "odd-2"}), belt(36, {"other-1", "other-2"})
+    local shared = a.lines[1].seed("copper-plate", 1, "rare")
+    d.lines[1].items[1] = {uid = shared, pos = 0.01, name = "copper-plate", count = 1, quality = "rare"}
+    local job, lock = job_for({a, d})
+    local state = cargo.begin(job)
+    local ok, err = pcall(cargo.step, job, 10)
+    assert(not ok and tostring(err):find("not the same line", 1, true) and tostring(err):find(tostring(shared), 1, true),
+        "an item on two lines that are not the same line must refuse the capture: " .. tostring(err))
+    assert(state.merged == 0 and lock.cleared_belts.pinned and #d.lines[1].items == 1,
+        "the two lanes are not merged, the record is pinned, and the belt still holding the item is left untouched")
+    print("PASS an item on two lines that are not the same line refuses the capture and pins the record instead of merging two lanes")
+end
+
+do
+    for _, case in ipairs({
+        {"Iron Hauler", "Iron Hauler", "describe"},
+        {"Iron Hauler abandon", "Iron Hauler", "abandon"},
+        {"  7   restore-present ", "7", "restore-present"},
+        {"Ship describe", "Ship", "describe"},
+        {"Ship explode", "Ship explode", "describe"},
+        {nil, "", "describe"},
+    }) do
+        local target, action = cargo.parse_command(case[1])
+        assert(target == case[2] and action == case[3],
+            string.format("/belt-cargo %q parsed as %q / %q", tostring(case[1]), tostring(target), tostring(action)))
+    end
+    print("PASS /belt-cargo reads the last word as the action only when it is one, so platform names may contain spaces")
 end
 
 do

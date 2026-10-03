@@ -179,6 +179,13 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				platform.name, crossing)
 		end
 	end
+	local held_lock = SurfaceLock.get_lock_data(platform_index)
+	if type(held_lock) == "table" and held_lock.cleared_belts then
+		Timing.finish(job_id, "failed")
+		return nil, string.format(
+			"Platform '%s' has belt cargo held by another transfer (%s); its belts are empty until that transfer finishes or /belt-cargo resolves it",
+			platform.name, SourceBeltCargo.describe(held_lock.cleared_belts))
+	end
 	local resolution = purpose == "resolution"
 	local lineage, lineage_generation, lineage_err
 	if resolution then
@@ -666,9 +673,6 @@ local function belts_staggered(job)
 end
 
 function ExportPipeline.complete(job, batch_size)
-	-- Each call is one scheduler tick. A transfer captures and clears its belts a budget at a
-	-- time and sweeps the rest in one callback; every other capture and its cargo checks remain
-	-- atomic. Serialization and publication operate on that captured payload on later ticks.
 	if job.completion_stage == nil then
 		if belts_staggered(job) then
 			Timing.start(job.job_id, "belt_capture")

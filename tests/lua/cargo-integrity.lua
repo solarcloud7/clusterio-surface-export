@@ -89,6 +89,11 @@ entity.get_max_inventory_index=function()error('injected engine read failure')en
 acc=accumulator.new({segments={}});accumulator.record(acc,entity,data);assert(not accumulator.verdict(acc).ok)
 print('PASS source read error + empty serialized quantity: cargo integrity rejects')
 entity.get_max_inventory_index=function()return 1 end
+acc=accumulator.new({segments={}});accumulator.record(acc,entity,data);accumulator.record(acc,entity,data,nil,true)
+local repeat_totals=accumulator.verdict(acc).totals
+assert(repeat_totals.entity_count==1,'a repeat read of one entity counted it twice: '..tostring(repeat_totals.entity_count))
+assert(repeat_totals.physical_items['iron-plate']==20,'a repeat read must still add the cargo it read')
+print('PASS a repeat read of the same entity adds its cargo but counts the entity once')
 -- Drive actual run_phase2 through expected-count adjustments and actual validator.
 -- Stop immediately at store_validation_result to exclude activation and other mocked boundaries.
 local stub=setmetatable({},{__index=function()return noop end})

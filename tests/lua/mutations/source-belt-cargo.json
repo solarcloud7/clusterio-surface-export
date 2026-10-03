@@ -47,8 +47,8 @@
 	{
 		"name": "a straddling item does not merge its groups",
 		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
-		"find": "if owner ~= gi then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
-		"replace": "if false then\n\t\t\t\t\t\tjoin_groups(state, owner, gi)",
+		"find": "join_groups(state, owner.gi, gi)",
+		"replace": "local skipped_join = owner.gi",
 		"tests": [
 			"tests/lua/source-belt-cargo.lua"
 		]
@@ -222,6 +222,42 @@
 		"replace": "if next(job.belt_entities or {}) == nil then return false end",
 		"tests": [
 			"tests/lua/export-phase-yields.lua"
+		]
+	},
+	{
+		"name": "an item on two lines that are not the same line merges them",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if not owner.line.line_equals(line) then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "/belt-cargo takes any last word as the action",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "if target and ACTIONS[action] then return target, action end",
+		"replace": "if target then return target, action end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the sweep's census read counts the belt again",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "{ items = lines_out } }, nil, sweeping)",
+		"replace": "{ items = lines_out } })",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
+		]
+	},
+	{
+		"name": "the restore scans a hand-written belt type list",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/source-belt-cargo.lua",
+		"find": "for belt_type in pairs(GameUtils.BELT_ENTITY_TYPES) do BELT_TYPES[#BELT_TYPES + 1] = belt_type end",
+		"replace": "for _, belt_type in ipairs({ \"transport-belt\", \"underground-belt\", \"splitter\", \"loader\", \"loader-1x1\", \"linked-belt\", \"lane-splitter\" }) do BELT_TYPES[#BELT_TYPES + 1] = belt_type end",
+		"tests": [
+			"tests/lua/source-belt-cargo.lua"
 		]
 	}
 ]

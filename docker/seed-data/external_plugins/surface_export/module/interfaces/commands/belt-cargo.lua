@@ -5,9 +5,7 @@ local SourceBeltCargo = require("modules/surface_export/core/source-belt-cargo")
 Base.admin_command("belt-cargo",
   "Inspect or resolve belt cargo a transfer cleared from a locked platform (usage: /belt-cargo <platform_name_or_index> [describe|abandon|restore-present])",
   function(cmd, ctx)
-    local param = ctx.param or ""
-    local target, action = param:match("^(.-)%s+(%S+)$")
-    if not target then target, action = param, "describe" end
+    local target, action = SourceBeltCargo.parse_command(ctx.param)
     if target == "" then
       ctx.print("Usage: /belt-cargo <platform_name_or_index> [describe|abandon|restore-present]")
       ctx.print("Tip: Use /lock-status to see locked platforms")
@@ -23,10 +21,6 @@ Base.admin_command("belt-cargo",
     local name = lock.platform_name or target
     if action == "describe" then
       ctx.print("Platform '" .. name .. "': " .. SourceBeltCargo.describe(lock.cleared_belts))
-      return
-    end
-    if action ~= "abandon" and action ~= "restore-present" then
-      ctx.print("Unknown action '" .. tostring(action) .. "'; use describe, abandon or restore-present")
       return
     end
     local force = game.forces[lock.force_name]

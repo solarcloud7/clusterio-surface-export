@@ -81,7 +81,6 @@ env.storage.async_jobs.test = job
 if standalone then job.destination_instance_id = nil end
 if clone then job.clone_dest_name = "clone-fixture" end
 job.purpose = purpose
--- A transfer spends one callback beginning the staggered belt capture and one on its steps.
 local shift = standalone and 0 or 1
 for tick = 100, 103 + shift do
     env.game.tick = tick

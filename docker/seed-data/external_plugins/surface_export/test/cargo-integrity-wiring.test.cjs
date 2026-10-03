@@ -189,6 +189,15 @@ test("a transfer is refused before locking when a linked belt is connected to an
 	assert.match(body.slice(refusal, refusal + 400), /if crossing > 0 then[\s\S]*?return nil,/, "a crossing must return the refusal, not log and continue");
 });
 
+test("an export is refused before locking while another transfer holds the platform's belt cargo", () => {
+	const body = functionBody(exportPipelineSource(), "function ExportPipeline.queue(", "function ExportPipeline.process_batch(");
+	const held = body.indexOf("held_lock.cleared_belts");
+	const lock = body.indexOf("SurfaceLock.lock_platform(platform, force, lock_opts)");
+	assert.notEqual(held, -1, "queue must check the existing lock for cleared belt cargo");
+	assert.ok(held < lock, "the refusal must come before the 'already locked, continuing' path, which would read the emptied belts");
+	assert.match(body.slice(held, held + 400), /then[\s\S]*?return nil,/, "held belt cargo must return the refusal for every export kind, not log and continue");
+});
+
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
 	const src = exportPipelineSource();
 	const verdictIdx = src.indexOf("SourceCargoIntegrity.verdict(job.census)");

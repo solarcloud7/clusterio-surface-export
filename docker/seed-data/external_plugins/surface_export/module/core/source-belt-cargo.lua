@@ -2,13 +2,17 @@ local BeltRestoration = require("modules/surface_export/import_phases/belt_resto
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local SourceCargoIntegrity = require("modules/surface_export/export_scanners/source-cargo-integrity")
 local CargoCounter = require("modules/surface_export/validators/cargo-counter")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
 
 local SourceBeltCargo = {}
 
 local QUALITY_NORMAL = Util.QUALITY_NORMAL
 local DEFAULT_BUDGET = 100
-local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1", "linked-belt", "lane-splitter" }
+local BELT_TYPES = {}
+for belt_type in pairs(GameUtils.BELT_ENTITY_TYPES) do BELT_TYPES[#BELT_TYPES + 1] = belt_type end
+table.sort(BELT_TYPES)
+local ACTIONS = { describe = true, abandon = true, ["restore-present"] = true }
 
 function SourceBeltCargo.budget()
 	local cfg = storage.surface_export_config
@@ -135,12 +139,18 @@ local function capture_unit(job, state, record, unit, cache, seen, sweeping)
 				items[#items + 1] = { name = name, count = count, quality = quality }
 				local owner = seen[uid]
 				if owner then
-					if owner ~= gi then
-						join_groups(state, owner, gi)
+					if root_of(state, owner.gi) ~= root_of(state, gi) then
+						if not owner.line.line_equals(line) then
+							local reason = string.format("belt capture refused: item %s (%s) is on %s line %d and on a line that is not the same line; capturing it would duplicate it",
+								uid, tostring(stack.name), tostring(unit.id), li)
+							pin(record, reason)
+							error(reason, 0)
+						end
+						join_groups(state, owner.gi, gi)
 						state.merged = state.merged + 1
 					end
 				else
-					seen[uid] = gi
+					seen[uid] = { gi = gi, line = line }
 					pending[#pending + 1] = { gi = gi, li = li, position = math.floor((it.position or 0) * 256 + 0.5),
 						slot = { n = name, q = quality, ct = count, st = BeltRestoration.belt_item_state(stack, cache) } }
 				end
@@ -150,7 +160,7 @@ local function capture_unit(job, state, record, unit, cache, seen, sweeping)
 		lines[#lines + 1] = line
 	end
 	if #lines_out > 0 or not sweeping then
-		SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })
+		SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } }, nil, sweeping)
 	end
 	for _, entry in ipairs(pending) do
 		local g = state.groups[root_of(state, entry.gi)]
@@ -357,6 +367,13 @@ function SourceBeltCargo.restore(lock_data, label, surface, options)
 		log(string.format("[Belt Scan] Restored %d captured belt item(s) onto '%s' after the transfer did not complete; %s", placed, tostring(label), census))
 	end
 	return true, placed
+end
+
+function SourceBeltCargo.parse_command(param)
+	local text = tostring(param or ""):match("^%s*(.-)%s*$")
+	local target, action = text:match("^(.-)%s+(%S+)$")
+	if target and ACTIONS[action] then return target, action end
+	return text, "describe"
 end
 
 function SourceBeltCargo.override(lock_data, action, label, surface)
