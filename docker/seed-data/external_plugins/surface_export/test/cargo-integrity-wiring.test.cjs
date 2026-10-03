@@ -169,7 +169,7 @@ test("the atomic belt scan pairs each belt AFTER its serialized items are patche
 test("the staggered belt capture records each belt's census from the same read, BEFORE clearing its lines", () => {
 	const src = fs.readFileSync(path.join(moduleRoot, "core", "source-belt-cargo.lua"), "utf8");
 	const body = functionBody(src, "local function capture_unit(", "function SourceBeltCargo.step(");
-	const record = body.indexOf("SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } })");
+	const record = body.indexOf("SourceCargoIntegrity.record(job.census, entity, { entity_id = entity_data.entity_id, specific_data = { items = lines_out } }, nil, sweeping)");
 	const clear = body.indexOf("line.clear()");
 	assert.notEqual(record, -1, "each captured belt must be recorded against the census with the items it just read");
 	assert.notEqual(clear, -1, "each captured belt must be cleared in the same callback it was read");
