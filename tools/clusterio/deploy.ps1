@@ -54,6 +54,7 @@ switch ($Scope) {
         if ($Fresh) { $childArgs.Fresh = $true }
         & (Join-Path $here 'build-plugin.ps1') @childArgs
 
+        if ($RestartHosts) { Stop-HostInstances -HostNumber '1', '2' }
         Sync-ControllerWebBundle -Force:$RestartController
         if ($RestartHosts) {
             docker restart surface-export-host-1 surface-export-host-2 | Out-Null

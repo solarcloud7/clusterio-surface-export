@@ -103,6 +103,8 @@ if ((Get-FileHash -LiteralPath $lockPath -Algorithm SHA256).Hash -ne $lockHash) 
     throw 'package-lock.json changed during the build. Stop and inspect the concurrent writer; dependency metadata must stay unchanged.'
 }
 
+if ($RestartHosts) { Stop-HostInstances -HostNumber '1', '2' }
+
 if ($RestartController) {
     Write-Host "Restarting controller to re-read dist/web/manifest.json ..." -ForegroundColor Cyan
     docker restart surface-export-controller | Out-Null

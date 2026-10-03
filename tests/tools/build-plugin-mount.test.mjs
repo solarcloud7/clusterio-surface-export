@@ -48,6 +48,20 @@ function global:docker {
    }
    if ($env:BUILD_FAIL -eq 'true') { $global:LASTEXITCODE = 5 }
   }
+  'exec' {
+   $call = $arguments -join ' '
+   if ($call -match 'instance stop 836570928$') { $global:stopped = $true }
+   elseif ($call -match 'instance list$') {
+    $global:LASTEXITCODE = [int]$env:BUILD_LIST_EXIT
+    'name | id | assignedHost | gamePort | status'; '---'
+    "Dev One | 836570928 | 1 | 34100 | $(if ($global:stopped) { 'stopped' } else { 'running' })"
+    'Dev Two | 902099405 | 2 | 34200 | stopped'
+    'Lab | 907164846 | 2 | 34201 | unknown'
+    'Other | 911111111 | 3 | 34300 | running'
+   }
+   elseif ($call -match 'instance\\.json') { "/clusterio/data/instances/Dev One/instance.json\`t{""instance.id"": 836570928}" }
+  }
+  'restart' {}
   default { throw 'unexpected Docker operation' }
  }
 }
@@ -67,7 +81,7 @@ exit $LASTEXITCODE
 			BUILD_CLUSTER_ROOT: options.clusterRoot || repo,
 			BUILD_SCRIPT: script, BUILD_TARGET: target, BUILD_PACKAGE: options.packageDirectory || "",
 			BUILD_MUTATE_LOCK: options.mutateLock || "",
-			BUILD_FAIL_CLEANUP: String(options.failCleanup || false),
+			BUILD_FAIL_CLEANUP: String(options.failCleanup || false), BUILD_LIST_EXIT: String(options.listExit || 0),
 			BUILD_OUTPUT: options.outputDirectory || "", BUILD_CALLS: calls, BUILD_FAIL: String(fail) } });
 	return { ...result, snapshot: existsSync(`${calls}.snapshot`) ? readFileSync(`${calls}.snapshot`, "utf8").trim() : null,
 		calls: readFileSync(calls, "utf8").trim().split(/\r?\n/).filter(Boolean).map(JSON.parse) };
@@ -115,6 +129,26 @@ test("a restart from a checkout the cluster does not run from refuses before bui
 	const isolated = run(t, "node", false, { clusterRoot: elsewhere });
 	assert.equal(isolated.status, 0, isolated.stderr || isolated.stdout);
 	assert.deepEqual(isolated.calls.map(args => args[0]), ["version", "run"]);
+});
+
+test("a host restart first stops each active instance on the restarted hosts and waits for it to report stopped", { skip }, t => {
+	const result = run(t, "node", false, { restart: true });
+	assert.equal(result.status, 0, result.stderr || result.stdout);
+	const stops = result.calls.filter(args => args[0] === "exec" && args.includes("stop"));
+	assert.deepEqual(stops.map(args => args.join(" ")), ["exec surface-export-controller timeout -k 10 420 npx clusterioctl "
+		+ "--config /clusterio/tokens/config-control.json --log-level error instance stop 836570928"]);
+	const stop = result.calls.indexOf(stops[0]);
+	const restarts = result.calls.map((args, index) => args[0] === "restart" ? index : -1).filter(index => index >= 0);
+	assert.deepEqual(restarts.map(index => result.calls[index].slice(1)), [["surface-export-controller"], ["surface-export-host-1", "surface-export-host-2"]]);
+	assert.ok(restarts.every(index => index > stop), JSON.stringify(result.calls));
+	assert.ok(result.calls.slice(stop + 1, restarts[0]).some(args => args.join(" ").endsWith("instance list")), JSON.stringify(result.calls));
+});
+
+test("an unreadable instance list fails the build wrapper before any restart", { skip }, t => {
+	const result = run(t, "node", false, { restart: true, listExit: 1 });
+	assert.notEqual(result.status, 0);
+	assert.match(result.stderr, /clusterioctl instance list failed \(exit 1\)/);
+	assert.equal(result.calls.some(args => args[0] === "restart" || args.includes("stop")), false, JSON.stringify(result.calls));
 });
 
 test("cleanup failure warns without replacing a build failure or changing a successful exit", { skip }, t => {

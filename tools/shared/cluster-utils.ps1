@@ -130,6 +130,18 @@ function Stop-InstanceWithDeadline {
     }
 }
 
+function Stop-HostInstances {
+    param(
+        [Parameter(Mandatory)][string[]]$HostNumber,
+        [ValidateRange(1, 3600)][int]$TimeoutSec = 420
+    )
+    foreach ($instance in @(Get-InstanceList | Where-Object { $_.Host -in $HostNumber -and $_.Status -notin 'stopped', 'unknown', 'unassigned' })) {
+        Write-Host "Stopping $($instance.Name) (status $($instance.Status)) so its host saves it before the container restarts..." -ForegroundColor Yellow
+        $dataDir = Get-InstanceDataDir -InstanceId $instance.Id -HostNumber $instance.Host
+        Stop-InstanceWithDeadline -InstanceId $instance.Id -HostNumber $instance.Host -DataDir $dataDir -TimeoutSec $TimeoutSec | Out-Null
+    }
+}
+
 function Start-InstanceWithDeadline {
     param(
         [Parameter(Mandatory)][string]$InstanceId,

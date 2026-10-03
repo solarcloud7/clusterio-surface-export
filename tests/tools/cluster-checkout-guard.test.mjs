@@ -78,6 +78,44 @@ try { & $env:GUARD_SCRIPT -Upload -SkipClientSync } catch { $failure = $_.Except
 	assert.deepEqual(outcome.calls.map(call => call.split(" ").slice(0, 2).join(" ")), ["docker ps"]);
 });
 
+function gatewayUpload(restartExit) {
+	const command = `
+$global:calls = [Collections.Generic.List[string]]::new()
+$global:stopped = $false
+function node { $global:calls.Add('node'); $global:LASTEXITCODE = 0 }
+function docker {
+ $call = $args -join ' '
+ $global:calls.Add('docker ' + $call); $global:LASTEXITCODE = 0
+ if ($args[0] -eq 'ps') { "surface-export-controller|$env:GUARD_ROOT" }
+ elseif ($args[0] -eq 'restart') { $global:LASTEXITCODE = [int]$env:GUARD_RESTART_EXIT }
+ elseif ($call -match 'instance stop 836570928$') { $global:stopped = $true }
+ elseif ($call -match 'instance list$') {
+  'name | id | assignedHost | gamePort | status'; '---'
+  "Dev One | 836570928 | 1 | 34100 | $(if ($global:stopped) { 'stopped' } else { 'running' })"
+ }
+ elseif ($call -match 'instance\\.json') { "/clusterio/data/instances/Dev One/instance.json\`t{""instance.id"": 836570928}" }
+}
+$failure = $null
+try { & $env:GUARD_SCRIPT -Upload -SkipClientSync } catch { $failure = $_.Exception.Message }
+@{ error = $failure; calls = @($global:calls) } | ConvertTo-Json -Compress
+`;
+	const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8", env: { ...process.env,
+		GUARD_ROOT: fileURLToPath(new URL("../../", import.meta.url)), GUARD_RESTART_EXIT: String(restartExit),
+		GUARD_SCRIPT: fileURLToPath(new URL("../../tools/surface-export/build-gateway-mod.ps1", import.meta.url)) } });
+	assert.equal(result.status, 0, result.stderr);
+	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+}
+
+test("a gateway mod upload stops the running instance before restarting hosts and fails on a failed restart", { skip }, () => {
+	const uploaded = gatewayUpload(0);
+	assert.equal(uploaded.error, null, JSON.stringify(uploaded));
+	const stop = uploaded.calls.findIndex(call => /^docker exec surface-export-controller timeout -k 10 420 .* instance stop 836570928$/.test(call));
+	const restart = uploaded.calls.indexOf("docker restart surface-export-host-1 surface-export-host-2");
+	assert.ok(stop > uploaded.calls.findIndex(call => call.includes("mod-pack edit")) && restart > stop, JSON.stringify(uploaded.calls));
+	const failed = gatewayUpload(1);
+	assert.match(failed.error || "", /Host restart failed \(exit 1\)/);
+});
+
 test("an unreadable Docker state is refused rather than treated as no cluster", { skip }, () => {
 	const result = guard({ dockerExit: 1 });
 	assert.match(result.error, /docker ps failed \(exit 1\)/);
