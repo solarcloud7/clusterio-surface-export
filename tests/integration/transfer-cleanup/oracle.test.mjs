@@ -56,6 +56,36 @@ test("item quality, belt side, and fluid changes are product failures", () => {
   }
 });
 
+function heldBeltSource(sample) {
+  sample.source.locked = true; sample.source.usable = false; sample.source.beltCargoHeld = true;
+  for (const key of Object.keys(sample.source.cargo.lanes)) sample.source.cargo.lanes[key] = {};
+  sample.destination.held = true; sample.destination.usable = false;
+}
+
+test("a locked source whose transfer lock holds its belt cargo may read empty belts", () => {
+  const r = report();
+  for (const sample of r.fault.samples) heldBeltSource(sample);
+  assert.equal(analyze(r).verdict, "PASS");
+  assert.ok(analyze(r).notTested.some(item => item.includes("holds the captured belt cargo")));
+});
+
+test("held belt cargo exempts only that locked source's lanes", () => {
+  for (const mutate of [
+    s => { s.source.cargo.inventories["steel-chest@8.5,4.5:1"]["iron-plate/rare"]--; },
+    s => { s.source.cargo.fluids["storage-tank@-7.5,0.5"].amount++; },
+    s => { s.source.locked = false; },
+    s => { s.source.beltCargoHeld = false; },
+    s => { delete s.source.beltCargoHeld; },
+    s => { s.destination.beltCargoHeld = true; s.destination.cargo.lanes["transport-belt@-7.5,5.5:1"] = {}; },
+  ]) {
+    const r = report();
+    for (const sample of r.fault.samples) heldBeltSource(sample);
+    mutate(r.fault.samples[0]);
+    if (r.fault.samples[0].source.locked === false) r.fault.samples[0].source.usable = true;
+    assert.ok(analyze(r).violations.includes("physical cargo changed"), "mutation passed: " + mutate);
+  }
+});
+
 test("losing both copies is a failure even without duplicate activation", () => {
   const r = report();
   r.fault.samples = [1, 2].map(tick => ({ source: { present: false, tick }, destination: { present: false, tick } }));

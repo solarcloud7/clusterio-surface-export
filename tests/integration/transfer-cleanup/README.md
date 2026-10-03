@@ -3,6 +3,9 @@
 This is a fault-injection test of the production transfer route, not a proposed protocol implementation.
 The invariant is at most one usable copy, with unchanged item/quality counts, belt-side counts, and fluids.
 Platform indexes, ticks, item positions within a belt segment, and travel pause are not invariants.
+A transfer empties the source's belts as it captures them and keeps that cargo in the source's transfer
+lock, so the belt lanes of a locked source whose lock holds captured belt cargo are not compared; its
+other cargo, the destination, and any unlocked source are.
 
 Run explicitly on idle local instances (no connected players, jobs, locks, holds, or tombstones):
 

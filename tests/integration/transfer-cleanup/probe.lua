@@ -57,6 +57,7 @@ local function observe(name)
   return {present=true,tick=game.tick,index=p.index,surface=s.index,
     platformHidden=p.hidden,surfaceHidden=hidden,travelPaused=p.paused,
     canary=canary,locked=lock~=nil,lockPhase=lock and lock.phase,held=held,
+    beltCargoHeld=lock~=nil and lock.cleared_belts~=nil,
     usable=not p.hidden and not hidden and canary.active and not canary.disabled and not lock and not held,
     cargo={inventories=inventory,lanes=lanes,fluids=fluids,entities=entities}}
 end

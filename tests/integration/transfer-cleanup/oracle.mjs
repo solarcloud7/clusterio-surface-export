@@ -40,6 +40,15 @@ function usable(state) {
   return result;
 }
 
+function cargoMatches(side, state, cargo) {
+  if (side === "source" && state.locked === true && state.beltCargoHeld === true) {
+    const { lanes: _heldLanes, ...observed } = state.cargo;
+    const { lanes: _expectedLanes, ...expected } = cargo;
+    return isDeepStrictEqual(observed, expected);
+  }
+  return isDeepStrictEqual(state.cargo, cargo);
+}
+
 // Pure analysis: never imports a cluster helper or accepts its verdict as physical evidence.
 export function analyze(report) {
   assert.equal(report.schemaVersion, 1);
@@ -90,7 +99,7 @@ export function analyze(report) {
     for (const side of ["source", "destination"]) {
       const state = sample[side];
       if (index) assert.ok(state.tick > fault.samples[index - 1][side].tick, side + " did not advance");
-      if (state.present && !isDeepStrictEqual(state.cargo, cargo)) violations.add("physical cargo changed");
+      if (state.present && !cargoMatches(side, state, cargo)) violations.add("physical cargo changed");
     }
     if (!sample.source.present && !sample.destination.present) violations.add("no recoverable copy remains");
     if (sourceUsable && destinationUsable) violations.add("two usable copies remain");
@@ -99,5 +108,6 @@ export function analyze(report) {
     violations: [...violations],
     reason: violations.size ? [...violations].join("; ")
       : "No invariant violation observed at the tested deletion failure boundary.",
-    notTested: ["process crashes", "lost acknowledgements", "TTL expiry", "message replay", "older-save restoration"] };
+    notTested: ["process crashes", "lost acknowledgements", "TTL expiry", "message replay", "older-save restoration",
+      "belt lanes of a locked source while its transfer lock holds the captured belt cargo"] };
 }
