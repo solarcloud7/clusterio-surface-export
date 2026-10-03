@@ -179,14 +179,14 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				platform.name, crossing)
 		end
 	end
+	local resolution = purpose == "resolution"
 	local held_lock = SurfaceLock.get_lock_data(platform_index)
-	if type(held_lock) == "table" and held_lock.cleared_belts then
+	if not resolution and type(held_lock) == "table" and held_lock.cleared_belts then
 		Timing.finish(job_id, "failed")
 		return nil, string.format(
 			"Platform '%s' has belt cargo held by another transfer (%s); its belts are empty until that transfer finishes or /belt-cargo resolves it",
 			platform.name, SourceBeltCargo.describe(held_lock.cleared_belts))
 	end
-	local resolution = purpose == "resolution"
 	local lineage, lineage_generation, lineage_err
 	if resolution then
 		lineage, lineage_generation = PlatformLineage.get(platform)

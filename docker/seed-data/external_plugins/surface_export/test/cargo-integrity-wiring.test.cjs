@@ -195,7 +195,10 @@ test("an export is refused before locking while another transfer holds the platf
 	const lock = body.indexOf("SurfaceLock.lock_platform(platform, force, lock_opts)");
 	assert.notEqual(held, -1, "queue must check the existing lock for cleared belt cargo");
 	assert.ok(held < lock, "the refusal must come before the 'already locked, continuing' path, which would read the emptied belts");
-	assert.match(body.slice(held, held + 400), /then[\s\S]*?return nil,/, "held belt cargo must return the refusal for every export kind, not log and continue");
+	assert.match(body.slice(held, held + 400), /then[\s\S]*?return nil,/, "held belt cargo must return the refusal, not log and continue");
+	assert.match(body.slice(held - 80, held), /if not resolution and type\(held_lock\) == "table" and $/,
+		"a resolution export must still run on a committed tombstone holding cargo, or its delete action is refused and only 'keep both' remains");
+	assert.ok(body.indexOf("local resolution = purpose == \"resolution\"") < held, "the purpose must be known before the held-cargo check");
 });
 
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
