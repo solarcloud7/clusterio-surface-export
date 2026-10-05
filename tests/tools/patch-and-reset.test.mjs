@@ -42,7 +42,7 @@ function Update-ModuleVersionStamp {}
 }
 
 function run(dir, { uploaded = { 1: "lab-gallery-source-4.zip", 2: "lab-gallery-destination-4.zip" }, loaded = uploaded, uploadExit = 0, autoStarted = false, staleReads = 0,
-	journals = [], archiveFails = false, readinessExit = 0, hangs = {}, stopHangs = false, rconLine = NEGATIVE_RCON, params = {} } = {}) {
+	journals = [], archiveFails = false, readinessExit = 0, hangs = {}, stopHangs = false, stopIgnored = false, rconLine = NEGATIVE_RCON, params = {} } = {}) {
 	const command = `
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
@@ -70,6 +70,7 @@ function docker {
  if ($argv[2] -eq 'sh' -and $argv[1] -eq 'surface-export-controller' -and $argv[4] -match 'clusterioctl') { return '4242' }
  if ($argv[2] -eq 'sh' -and $argv[4] -match 'config\\.ini') { $id = @{ '1' = '${IDS[1]}'; '2' = '${IDS[2]}' }[$argv[1] -replace '\\D', '']; if ((Get-StubState $id) -ne 'stopped') { return '2968' } return }
  if ($argv[2] -eq 'sh' -and $argv[4] -match 'Starting RCON interface') { return $env:SE_RCON_LINE }
+ if ($j -match 'instance stop (\\d+)' -and $env:SE_STOP_IGNORED -eq '1') { return }
  if ($j -match 'instance stop (\\d+)') { if ($env:SE_STOP_HANGS -eq '1' -and $global:state[$Matches[1]] -eq 'starting') { $global:LASTEXITCODE = 124; return } $global:state[$Matches[1]] = 'stopped'; return }
  if ($j -match 'instance start (\\d+)') {
   $id = $Matches[1]
@@ -105,7 +106,7 @@ try { & $env:PAR_SCRIPT -LuaOnly -SkipIncrement @extra *>&1 | ForEach-Object { $
 			SE_LOADED: JSON.stringify({ [IDS[1]]: loaded[1], [IDS[2]]: loaded[2] }), SE_UPLOAD_EXIT: String(uploadExit), SE_AUTO_STARTED: autoStarted ? "1" : "0", SE_STALE_READS: String(staleReads),
 				SE_JOURNALS: journals.join(","), SE_ARCHIVE_FAIL: archiveFails ? "1" : "0", SE_READINESS_EXIT: String(readinessExit),
 				SE_HANGS: JSON.stringify(Object.fromEntries(Object.entries(hangs).map(([host, count]) => [IDS[host], count]))),
-				SE_STOP_HANGS: stopHangs ? "1" : "0", SE_RCON_LINE: rconLine, SE_PARAMS: JSON.stringify(params) } });
+				SE_STOP_HANGS: stopHangs ? "1" : "0", SE_STOP_IGNORED: stopIgnored ? "1" : "0", SE_RCON_LINE: rconLine, SE_PARAMS: JSON.stringify(params) } });
 	assert.equal(result.status, 0, result.stderr);
 	return JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
 }
@@ -200,6 +201,26 @@ test("a reset with no recovery journal archives nothing and still succeeds", { s
 	assert.equal(archives(result.calls).length, 2);
 	assert.equal(result.output.filter(line => line.includes("nothing to archive")).length, 2);
 	assert.equal(result.output.some(line => line.includes(".bak.json")), false);
+});
+
+test("a reset stops each instance through the bounded stop and reads back the stopped state before archiving", { skip }, t => {
+	const result = run(fixture(t), { journals: [1, 2] });
+	assert.equal(result.error, null);
+	const firstArchive = result.calls.indexOf(archives(result.calls)[0]);
+	for (const id of Object.values(IDS)) {
+		const stop = result.calls.findIndex(argv => argv.join(" ").includes("timeout -k 10 420") && argv.join(" ").endsWith(`instance stop ${id}`));
+		assert.ok(stop >= 0 && stop < firstArchive, `${id} is stopped through the bounded stop before any journal moves`);
+	}
+	const lastStop = Math.max(...result.calls.map((argv, i) => (argv.join(" ").includes("instance stop") ? i : -1)));
+	assert.ok(result.calls.slice(lastStop + 1, firstArchive).some(argv => argv.join(" ").includes("instance list")),
+		"the stopped state is read back before the journals move");
+});
+
+test("a stop that never completes fails the reset before anything is archived or restarted", { skip }, t => {
+	const result = run(fixture(t), { journals: [1, 2], stopIgnored: true });
+	assert.match(result.error || "", /did not stop within 420s/);
+	assert.equal(archives(result.calls).length, 0, "no journal moves while an instance may still be writing");
+	assert.equal(result.calls.some(argv => argv[0] === "restart"), false);
 });
 
 test("a failed journal archive stops the reset before any upload", { skip }, t => {

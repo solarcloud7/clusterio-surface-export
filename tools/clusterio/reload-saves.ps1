@@ -56,7 +56,9 @@ foreach ($instance in $instances) {
     if ($stable -lt 2) { throw "Backup not confirmed for $($instance.Name). Refusing to stop either instance." }
     Write-Host "Backup confirmed: ${container}:$save"
 }
-foreach ($instance in $instances) { Invoke-Control instance stop $instance.Id | Out-Null }
+foreach ($instance in $instances) {
+    Stop-InstanceWithDeadline -InstanceId $instance.Id -HostNumber $instance.Host -DataDir (Get-InstanceDataDir -InstanceId $instance.Id -HostNumber $instance.Host) | Out-Null
+}
 Sync-ControllerWebBundle -Force
 docker restart surface-export-host-1 surface-export-host-2 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Host restart failed; backups and existing saves are retained.' }
