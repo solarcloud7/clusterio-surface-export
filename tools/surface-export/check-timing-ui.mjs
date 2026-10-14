@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { developmentCluster } from "../shared/cluster-transport.mjs";
+import { controllerToken } from "../shared/ctl-config.mjs";
 import { launchChromiumOrSkip } from "../tests/integration-skip.mjs";
 import { selectOption, showGatewayPlatform } from "../tests/browser-interactions.mjs";
 
@@ -14,7 +15,7 @@ try {
 	page.on("pageerror", error => errors.push(error.message));
 	await page.goto("http://localhost:8080", { waitUntil: "domcontentloaded" });
 	const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
-	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
+	await page.evaluate(token => localStorage.setItem("controller_token", token), controllerToken(config));
 	await page.goto("http://localhost:8080/surface-export?tab=logs", { waitUntil: "domcontentloaded" });
 	await page.getByRole("button", { name: "Preview logs", exact: true }).click();
 	const preview = page.getByTestId("log-preview");

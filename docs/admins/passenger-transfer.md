@@ -148,11 +148,14 @@ equipment, a nested inventory that takes only part of its contents, and an item 
 tags or a blueprint whose export string is declined. The nested inventory and export
 string cases are logged; a refused grid slot is not.
 
-### inventory_sync
+### player_sync
 
-This plugin does not use inventory_sync. If an instance has an `inventory_sync`
-remote interface, passengers carry no gear, so the two systems cannot both move
-the same items.
+This plugin does not use player_sync, the Clusterio 2.0 name of inventory_sync.
+If an instance has a `player_sync` or `inventory_sync` remote interface,
+passengers carry no gear, so the two systems cannot both move the same items.
+Clusterio's own player_sync module registers no remote interface as of Clusterio
+2.0.1, so the guard only responds to a mod or module that registers one of
+those names.
 
 ## Top buttons
 

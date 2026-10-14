@@ -3,10 +3,10 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { controllerToken, CTL_TOKEN_KEYS } from "../shared/ctl-config.mjs";
 
 const CONTAINER = "surface-export-controller";
 const TOKEN_PATH = "/clusterio/tokens/config-control.json";
-const TOKEN_KEY = "control.controller_token";
 
 function arg(name, fallback) {
 	const i = process.argv.indexOf(`--${name}`);
@@ -25,14 +25,14 @@ try {
 	const raw = execFileSync("docker", ["exec", CONTAINER, "cat", TOKEN_PATH],
 		{ encoding: "utf8", timeout: 30_000 });
 	const parsed = JSON.parse(raw);
-	token = parsed[TOKEN_KEY];
+	token = controllerToken(parsed);
 } catch (err) {
 	console.error(`Could not read the admin token from ${CONTAINER}:${TOKEN_PATH} — ${err.message}`);
 	console.error("Is the cluster up? (docker ps --filter name=surface-export)");
 	process.exit(1);
 }
 if (typeof token !== "string" || token.length === 0) {
-	console.error(`${TOKEN_PATH} has no usable "${TOKEN_KEY}" — refusing to serve an empty token.`);
+	console.error(`${TOKEN_PATH} has no usable ${CTL_TOKEN_KEYS.join(" or ")} — refusing to serve an empty token.`);
 	process.exit(1);
 }
 

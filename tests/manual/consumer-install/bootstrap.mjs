@@ -8,7 +8,7 @@ const version = process.argv[2];
 assert.match(version || "", /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "explicit Clusterio version required");
 const call = (cmd, args) => execFileSync(cmd, args, { cwd: "/consumer", encoding: "utf8", timeout: 240_000, maxBuffer: 1048576 });
 const controller = (...args) => call("/consumer/node_modules/.bin/clusteriocontroller", args);
-const host = (n, ...args) => call("/consumer/node_modules/.bin/clusteriohost", ["--config", `config-host-${n}.json`, ...args]);
+const host = (n, ...args) => call("/consumer/node_modules/.bin/clusteriohost", ["--config", `config-host-${n}.json`, "--create-config", ...args]);
 try {
   assert.notEqual(process.getuid(), 0, "installer must run unprivileged");
   assert.ok(!existsSync("/consumer/package.json"), "consumer directory must start empty");

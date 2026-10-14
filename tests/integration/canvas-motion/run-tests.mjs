@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 import { checkMarkerPersistence } from "./persistence.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
@@ -15,7 +16,7 @@ try {
 	const errors = [];
 	const controller = process.env.SE_WEB_CONTROLLER || "surface-export-controller";
 	const config = execFileSync("docker", ["exec", controller, "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" });
-	const token = JSON.parse(config)["control.controller_token"];
+	const token = controllerToken(JSON.parse(config));
 	assert.equal(typeof token, "string");
 	const openPreview = async (controlledTime = false) => {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, reducedMotion: "no-preference" });

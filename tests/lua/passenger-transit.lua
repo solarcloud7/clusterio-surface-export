@@ -429,6 +429,15 @@ local erin_before = count_items(erin_body)
 manifest = transit.depart("job-4")
 assert(#manifest == 1 and #manifest[1].items == 0 and count_items(erin_body) == erin_before, "inventory_sync disables gear carry-over")
 env.remote.interfaces.inventory_sync = nil
+env.remote.interfaces.player_sync = {}
+local gail_body = character(nil, gear())
+local gail = new_player(21, "gail", true, gail_body)
+parked = transit.park(platform, target, "surfexp_gateway_hub", {gail})
+transit.assign_job(parked, "job-4b")
+local gail_before = count_items(gail_body)
+manifest = transit.depart("job-4b")
+assert(#manifest == 1 and #manifest[1].items == 0 and count_items(gail_body) == gail_before, "player_sync (the Clusterio 2.0 name) disables gear carry-over")
+env.remote.interfaces.player_sync = nil
 local fay_body = character(nil, gear({bonus = 10, main = 90, filled = 85}))
 local fay = new_player(6, "fay", true, fay_body)
 parked = transit.park(platform, target, "surfexp_gateway_hub", {fay})
@@ -437,7 +446,7 @@ manifest = transit.depart("job-5")
 assert(#manifest[1].items == 0 and fay_body.inventories[inventory_ids.character_armor][1].valid_for_read,
 	"armor whose bonus slots are in use should stay rather than spill the inventory")
 assert(#fay.printed == 1, "the passenger should be told their armor stayed")
-print("PASS inventory carry, inventory_sync and full armor pockets change only what is carried")
+print("PASS inventory carry, player_sync or inventory_sync and full armor pockets change only what is carried")
 
 local gil_body = character(nil, gear())
 local gil = new_player(7, "gil", true, gil_body)

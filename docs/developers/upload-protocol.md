@@ -147,7 +147,7 @@ is not a validated destination hold. Transfer-owned source locks do not expire s
 because time passed; explicit resolution is required. Standalone orphan export locks
 retain their existing cleanup behavior.
 
-Clusterio 2.0.0-alpha.27 supplies connection resume and buffered message resend. Its pinned
+Clusterio 2.0.1 supplies connection resume and buffered message resend. Its pinned
 RCON command timeout is 200 seconds. This protocol adds neither a competing upload timeout
 nor automatic import replay after session loss.
 

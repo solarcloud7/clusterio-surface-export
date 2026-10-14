@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 
 const CONTROLLER_CONTAINER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
@@ -41,9 +42,9 @@ const check = (ok, label, detail = "") => {
 
 function adminToken() {
 	const raw = execFileSync("docker", ["exec", CONTROLLER_CONTAINER, "cat", CTL_CONFIG], { encoding: "utf8" });
-	const token = JSON.parse(raw)["control.controller_token"];
+	const token = controllerToken(JSON.parse(raw));
 	if (!token || typeof token !== "string") {
-		throw new Error(`no control.controller_token in ${CTL_CONFIG} — is the controller running?`);
+		throw new Error(`no controller token in ${CTL_CONFIG} — is the controller running?`);
 	}
 	return token;
 }

@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname));
@@ -25,7 +26,7 @@ async function visibleNodes() {
 
 try {
 	await page.goto(base);
-	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
+	await page.evaluate(token => localStorage.setItem("controller_token", token), controllerToken(config));
 	await page.goto(`${base}/surface-export?tab=gateways`);
 	await page.locator(".react-flow__node").first().waitFor({ state: "attached" });
 	await visibleNodes();

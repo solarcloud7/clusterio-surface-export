@@ -1,5 +1,5 @@
 {
-  "clusterio": "2.0.0-alpha.27",
+  "clusterio": "2.0.1",
   "factorio": "2.1.17",
   "gateway": { "name": "surfexp_gateways", "version": "0.7.9" },
   "bases": {

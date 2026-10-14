@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import url from "node:url";
 import { CONTROLLER, createClusterTransport } from "./cluster-transport.mjs";
+import { controllerToken, ctlConfig } from "./ctl-config.mjs";
 export { parseInstanceList } from "./cluster-instances.mjs";
 
 const HERE = path.dirname(url.fileURLToPath(import.meta.url));
@@ -37,7 +38,7 @@ export function readRemoteCluster(name, { file = REMOTE_CLUSTERS_FILE, read = re
 		let control;
 		try { control = JSON.parse(read(entry.controlConfig, "utf8").replace(/^﻿/, "")); }
 		catch (error) { throw new Error(`Cluster "${name}" controlConfig is not valid JSON`, { cause: error }); }
-		token = control?.["control.controller_token"];
+		token = controllerToken(control);
 	}
 	if (typeof token !== "string" || token.length === 0) {
 		throw new Error(`Cluster "${name}" needs a "token", "tokenFile" or "controlConfig" in ${shown}`);
@@ -62,10 +63,6 @@ export function remoteExec(exec, controller, config) {
 export async function withCluster(name, fn, { exec = execFileSync, controller = CONTROLLER, read } = {}) {
 	if (name === DEVELOPMENT) return await fn(createClusterTransport({ controller, exec }));
 	const { url: controllerUrl, token } = readRemoteCluster(name, read ? { read, exists: () => true } : undefined);
-	const config = JSON.stringify({
-		"control.controller_url": controllerUrl,
-		"control.controller_token": token,
-		"control.max_reconnect_delay": 60,
-	});
+	const config = JSON.stringify(ctlConfig({ controllerUrl, token }));
 	return await fn(createClusterTransport({ controller, config: REMOTE_CONFIG_PLACEHOLDER, hosts: {}, exec: remoteExec(exec, controller, config) }));
 }

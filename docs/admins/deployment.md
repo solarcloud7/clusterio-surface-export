@@ -19,17 +19,19 @@ of the Clusterio deployment.
 
 Plugin `0.11.0-beta.6` is the current release under npm's `beta` tag. It requires
 exactly Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
-`surfexp_gateways` mod `0.7.9`. Every release is published by the
+`surfexp_gateways` mod `0.7.9`, and it does not load on Clusterio 2.0. The next
+release requires Clusterio `^2.0.0` (developed against `2.0.1`) and is not
+supported on the alphas. Every release is published by the
 [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
 from a `v*` tag after package acceptance and integration checks; the published
 archive matches the tested archive byte for byte. What changed in each version is
 in the plugin's [changelog](../../docker/seed-data/external_plugins/surface_export/CHANGELOG.md).
 
-npm's `latest` tag still points to `0.9.82`. That version's Clusterio peer
-requirement, `^2.0.0`, excludes the pinned prerelease `2.0.0-alpha.27`, and it does
-not provide the newer upload, portal and save-recovery behavior. Select the beta
-version explicitly. Do not bypass npm peer checks with `--force` or
-`--legacy-peer-deps` to install the older release.
+npm's `latest` tag still points to `0.9.82`, written for the Clusterio alpha API.
+Its Clusterio peer requirement, `^2.0.0`, no longer blocks installation now that
+Clusterio 2.0 is released, and it does not provide the newer upload, portal and
+save-recovery behavior. Select the beta version explicitly. Do not bypass npm
+peer checks with `--force` or `--legacy-peer-deps` to install the older release.
 
 ## Install the npm package
 
@@ -81,7 +83,7 @@ host and control client. For separate installations, install the same package ve
 and register it in each controller, participating host and control-client directory.
 Use `clusteriohost` or `clusterioctl` in place of `clusteriocontroller` where appropriate.
 Preserve other installed plugins and existing configuration. This follows the
-[pinned Clusterio plugin-install procedure](https://github.com/clusterio/clusterio/blob/v2.0.0-alpha.27/README.md#installing-plugins).
+[pinned Clusterio plugin-install procedure](https://github.com/clusterio/clusterio/blob/v2.0.1/README.md#installing-plugins).
 
 For Docker-managed installations, make the package change through the hosting
 project's persistent installation/update mechanism; an edit in a disposable container

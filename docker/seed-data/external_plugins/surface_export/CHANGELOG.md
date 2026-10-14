@@ -4,6 +4,27 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
+## Unreleased
+
+Requires Clusterio `2.0.1` (peer range `^2.0.0`), Factorio Space Age `2.1.20` and the
+`surfexp_gateways` mod `0.7.9`. Earlier plugin versions do not load on Clusterio 2.0,
+and this version is not supported on the 2.0.0 alphas.
+
+### Clusterio 2.0
+
+- The plugin runs on the stable Clusterio 2.0 release. Node.js 22 or newer is
+  required. Clusterio logs a deprecation warning for each of the plugin's
+  controller, instance, ctl and web entry points because they still use the class
+  form; the entry points behave as before.
+- The five `surface_export.*` permissions are declared on the plugin itself. Roles
+  keep their grants.
+- Passengers carry no gear when a `player_sync` remote interface is present, the
+  Clusterio 2.0 name of `inventory_sync`; the old name is still honoured.
+- The repository tools read the clusterioctl token from either the Clusterio 2.0
+  `ctl.controller_token` key or the alpha `control.controller_token` key, and the
+  ctl wrapper keeps `config` (formerly `control-config`) local to the development
+  cluster. Seed instances and the production-profile lab refer to `player_sync`.
+
 ## 0.11.0-beta.6
 
 Requires Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the

@@ -41,7 +41,7 @@ function Transit.owns(player)
 end
 
 function Transit.carry_settings()
-	if remote.interfaces["inventory_sync"] then return {armor = false, inventory = false} end
+	if remote.interfaces["player_sync"] or remote.interfaces["inventory_sync"] then return {armor = false, inventory = false} end
 	local cfg = storage.surface_export_config or {}
 	return {armor = cfg.passenger_carry_armor ~= false, inventory = cfg.passenger_carry_inventory == true}
 end

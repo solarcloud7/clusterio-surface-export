@@ -14,7 +14,7 @@ other group's starting world. It increases runner use, not necessarily elapsed
 wall time by the same amount.
 
 The Factorio runtime is pinned by `factorio.version` in the seed instance
-configuration, and Clusterio 2.0.0-alpha.27 in package dependencies. `.env.example` selects the Docker
+configuration, and Clusterio 2.0.1 in package dependencies. `.env.example` selects the Docker
 image revision. CI creates the declared external client volume and waits for
 seeding/readiness before invoking integration discovery.
 

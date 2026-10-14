@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
+import { controllerToken } from "../shared/ctl-config.mjs";
 
 const CONTROLLER_CONTAINER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
@@ -63,9 +64,9 @@ function parseArgs(argv) {
 
 function adminToken() {
 	const raw = execFileSync("docker", ["exec", CONTROLLER_CONTAINER, "cat", CTL_CONFIG], { encoding: "utf8" });
-	const token = JSON.parse(raw)["control.controller_token"];
+	const token = controllerToken(JSON.parse(raw));
 	if (!token) {
-		throw new Error(`no control.controller_token in ${CTL_CONFIG} — is the controller running?`);
+		throw new Error(`no controller token in ${CTL_CONFIG} — is the controller running?`);
 	}
 	return token;
 }

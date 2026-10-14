@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container; for --cluster <name> other than dev, an entry in tools/clusterio/remote-clusters.local.json
 // produces: clusterioctl output from the development cluster or a named remote cluster
-// does not: run a command outside the read-only list unless --write is given, accept clusterioctl global options, run control-config or plugin commands against a remote cluster, print tokens, or bypass the controller's own permissions; note that instance config list can show game settings such as a server password
+// does not: run a command outside the read-only list unless --write is given, accept clusterioctl global options, run config or plugin commands against a remote cluster, print tokens, or bypass the controller's own permissions; note that instance config list can show game settings such as a server password
 import url from "node:url";
 import { DEVELOPMENT, withCluster } from "../shared/remote-cluster.mjs";
 
@@ -25,7 +25,7 @@ const READ_ONLY = [
 	["surface-export", "conflicts"],
 ];
 
-const LOCAL_ONLY = new Set(["control-config", "plugin"]);
+const LOCAL_ONLY = new Set(["config", "plugin"]);
 const GLOBAL_OPTIONS = ["--config", "--plugin-list", "--log-level", "--bypass-lock-file"];
 
 export function isReadOnly(args) {

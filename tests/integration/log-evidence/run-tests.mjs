@@ -7,12 +7,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 
 const base = process.env.SE_WEB_URL || "http://localhost:8080";
 assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "credentials stay on localhost");
 const browser = await launchChromiumOrSkip("log-evidence");
 const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
-const token = config["control.controller_token"];
+const token = controllerToken(config);
 const errors = [];
 let isolatedLiveUpdates = 0;
 // Keep this suite repeatable on freshly seeded CI: only this browser receives the recorded fixtures.

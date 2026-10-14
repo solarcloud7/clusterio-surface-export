@@ -7,6 +7,7 @@ import { DockerLab, ROOT, PLUGIN, hashTree } from './docker-lab.mjs';
 import { summary, terminal, sample, recoveryCase } from './cases.mjs';
 import { expectedCargo } from '../../integration/transfer-cleanup/oracle.mjs';
 import { withWorkflowLock } from '../../../tools/shared/workflow-lock.mjs';
+import { controllerToken } from '../../../tools/shared/ctl-config.mjs';
 import { exportNotificationFailure, resolvedAdmissions, lostExportNotification, unresolvedAdmissionDiagnostics } from './upload-review-cases.mjs';
 
 const output=process.argv[2];
@@ -100,7 +101,7 @@ await withWorkflowLock(async()=>{
     assert.equal(state.hasBytes,false);assert.equal(state.jobCount,1);assert.equal(state.status.state,'queued');report.lua=state;save();
     const {chromium}=await import('playwright');browser=await chromium.launch({headless:true});
     const page=await browser.newPage();
-    const token=JSON.parse(lab.docker(['exec',lab.controller,'cat','/clusterio/tokens/config-control.json']))['control.controller_token'];
+    const token=controllerToken(JSON.parse(lab.docker(['exec',lab.controller,'cat','/clusterio/tokens/config-control.json'])));
     await page.goto(lab.url);await page.evaluate(t=>localStorage.setItem('controller_token',t),token);
     await page.goto(`${lab.url}/surface-export?tab=logs&transfer=${encodeURIComponent(transferId)}`);
     await page.getByTestId('job-observation').filter({hasText:'Waiting in Lua queue'}).waitFor({timeout:20_000});
