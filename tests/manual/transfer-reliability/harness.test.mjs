@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdtempSync, statSync, unlinkSync, rmdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import vm from "node:vm";
 import { DockerLab, validRun } from "./docker-lab.mjs";
 import { evaluateCopies, analyze, performanceCargo } from "./oracle.mjs";
 import { ageIntent } from "./age-intent.mjs";
+import { patch } from "./fault-hook-patch.mjs";
+import { load, patchStatement, isInstanceEntrypoint } from "./fault-hook-loader.mjs";
 
 const run="se-manual-offline-12345678";
 const copy=()=>({present:true,usable:true,tick:10,platformHidden:false,surfaceHidden:false,
@@ -100,8 +101,7 @@ test("source crash contract distinguishes historical safety from recovery comple
   report.events[1].push(report.events[1][0]);
   assert.equal(analyze(report).verdict,"PASS");
 });
-for (const runtimePath of ["/surface_export/dist/node/instance.js", "/consumer/node_modules/@solarcloud7/plugin-surface-export/dist/node/instance.js"])
-test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,async()=>{
+test("fault hook patch holds only an accepted scoped reply once and is applied to a class once",async()=>{
   let calls=0, rule={run,enabled:true,name:`transfer-cleanup-${run}-a`,action:"source"}; const events=[];
   class InstancePlugin {
     async handleDeleteSourcePlatformMeasured(req){calls++;return {success:req.accepted};}
@@ -109,12 +109,11 @@ test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,asyn
     async handleImportPlatformRequestMeasured(){return {success:true};}
     async handleExportPlatformRequestMeasured(){return {success:true,exportId:"unrelated"};}
   }
-  const module={_load:()=>({InstancePlugin}),_resolveFilename:()=>runtimePath};
   const fs={existsSync:()=>true,readFileSync:()=>JSON.stringify(rule),appendFileSync:(_,s)=>events.push(JSON.parse(s))};
-  vm.runInNewContext(readFileSync(new URL("fault-hook.cjs",import.meta.url),"utf8"),{
-    require:name=>name==="node:fs"?fs:module,process:{env:{SE_MANUAL_RUN:run},pid:1},Symbol,Date,Set,Promise,
-  });
-  module._load("fixture");const instance=new InstancePlugin();
+  assert.throws(()=>patch(InstancePlugin,{fs,env:{},pid:1}),/disposable run identity/);
+  assert.equal(patch(InstancePlugin,{fs,env:{SE_MANUAL_RUN:run},pid:1}),true);
+  assert.equal(patch(InstancePlugin,{fs,env:{SE_MANUAL_RUN:run},pid:1}),false,"a second application leaves the first wrapper alone");
+  const instance=new InstancePlugin();
   assert.deepEqual(await instance.handleDeleteSourcePlatformMeasured({exportId:"foreign",accepted:true}),{success:true});
   const req={exportId:`1:${rule.name}`,accepted:false};
   assert.equal((await instance.handleDeleteSourcePlatformMeasured(req)).success,false);
@@ -122,6 +121,22 @@ test(`fault hook holds only an accepted scoped reply once (${runtimePath})`,asyn
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(resolved,false);assert.equal(calls,3);assert.equal(events.filter(e=>e.kind==="response-held").length,1);
   assert.equal((await instance.handleDeleteSourcePlatformMeasured(req)).success,true);
+  class Partial { async handleDeleteSourcePlatformMeasured(){} }
+  assert.throws(()=>patch(Partial,{fs,env:{SE_MANUAL_RUN:run},pid:1}),/missing handleDestinationTransferGate/);
+});
+for (const runtimePath of ["file:///clusterio/external_plugins/surface_export/dist/node/instance.js", "file:///consumer/node_modules/@solarcloud7/plugin-surface-export/dist/node/instance.js"])
+test(`fault hook loader appends the patch only to the instance entrypoint (${runtimePath})`,async()=>{
+  const original="export class InstancePlugin {}\n";
+  const next=async()=>({format:"module",source:original,shortCircuit:true});
+  const patchedSource=(await load(runtimePath,{format:"module"},next)).source;
+  assert.ok(patchedSource.startsWith(original),"the entrypoint's own source is kept");
+  assert.ok(patchedSource.endsWith(patchStatement(new URL("./fault-hook-patch.mjs",new URL("fault-hook-loader.mjs",import.meta.url)).href)));
+  assert.ok(isInstanceEntrypoint(runtimePath+"?v=1"),"query strings do not hide the entrypoint");
+  for(const other of ["file:///clusterio/external_plugins/surface_export/dist/node/controller.js","file:///clusterio/node_modules/@clusterio/host/dist/node/src/Instance.js"]) {
+    assert.deepEqual(await load(other,{format:"module"},next),{format:"module",source:original,shortCircuit:true});
+  }
+  const commonjs=await load(runtimePath,{format:"commonjs"},async()=>({format:"commonjs",source:original,shortCircuit:true}));
+  assert.equal(commonjs.source,original,"a CommonJS build is left alone; the hook only patches the ES-module entrypoint");
 });
 test("performance comparison rejects duplicate samples, invented zero readings, and changed physical cargo",()=>{
   const measurements=[];

@@ -33,7 +33,8 @@ if(arg==="--analyze") {
     contract:JSON.parse(readFileSync(new URL("../transfer-reliability/contract.json",import.meta.url))),
     hashes:{runner:hash(new URL(import.meta.url)),lab:hash(new URL("../transfer-reliability/docker-lab.mjs",import.meta.url)),
       cases:hash(new URL("../transfer-reliability/cases.mjs",import.meta.url)),oracle:hash(new URL("../transfer-reliability/oracle.mjs",import.meta.url)),
-      faultHook:hash(new URL("../transfer-reliability/fault-hook.cjs",import.meta.url)),packageOracle:hash(new URL("./oracle.mjs",import.meta.url)),
+      faultHook:hash(new URL("../transfer-reliability/fault-hook.mjs",import.meta.url)),faultHookLoader:hash(new URL("../transfer-reliability/fault-hook-loader.mjs",import.meta.url)),
+      faultHookPatch:hash(new URL("../transfer-reliability/fault-hook-patch.mjs",import.meta.url)),packageOracle:hash(new URL("./oracle.mjs",import.meta.url)),
       physicalProbe:hash(join(ROOT,"tests/integration/transfer-cleanup/probe.lua"))}};
   const save=()=>writeFileSync(join(directory,"result.json"),JSON.stringify(report,null,2)+"\n");save();
   const interrupt=()=>{lab.cancelled=true;};process.on("SIGINT",interrupt);process.on("SIGTERM",interrupt);

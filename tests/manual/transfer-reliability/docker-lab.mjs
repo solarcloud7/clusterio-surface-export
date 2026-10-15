@@ -179,7 +179,7 @@ export class DockerLab {
       const h=this.hosts[host];
       this.docker([...common(h.container),"--hostname",h.host,"-e",`HOST_NAME=${h.host}`,"-e","SKIP_CLIENT=true",
         "-e","CONTROLLER_URL=http://clusterio-controller:8080/","-e","SE_SKIP_PREPARE=1","-e",`SE_MANUAL_RUN=${this.run}`,
-        "-e","NODE_OPTIONS=--require=/lab/fault-hook.cjs","-v",`${volume(`host-${host}-data`)}:/clusterio/data`,
+        "-e","NODE_OPTIONS=--import=/lab/fault-hook.mjs","-v",`${volume(`host-${host}-data`)}:/clusterio/data`,
         "-v",`${tokens}:/clusterio/tokens:ro`,"--mount",`type=volume,src=${seedVolume},dst=/clusterio/seed-mods,volume-subpath=mods,readonly`,
         "-v",`${plugins}:/clusterio/external_plugins`,"-v",`${fileURLToPath(new URL("./",import.meta.url))}:/lab:ro`,this.hostImage]);
       this.containers.push(h.container);

@@ -134,7 +134,7 @@ export class ProductionLab extends DockerLab {
       this.command(["instance", "stop", this.hosts[n].instance], 120_000);
       const service = this.config.services["host-" + n];
       service.environment.SE_MANUAL_RUN = this.run;
-      service.environment.NODE_OPTIONS = "--require=/lab/fault-hook.cjs";
+      service.environment.NODE_OPTIONS = "--import=/lab/fault-hook.mjs";
       service.volumes.push({ type: "bind", source: join(ROOT, "tests/manual/transfer-reliability"), target: "/lab", read_only: true });
       this.assertOwned("container", this.hosts[n].container);
     }

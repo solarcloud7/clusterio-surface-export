@@ -92,7 +92,7 @@ export class ConsumerLab extends DockerLab {
       this.docker([...common(this.hosts[n].container), "-v", `${this.dataVolumes[n]}:/clusterio/data`,
         "-v", `${this.clientVolume}:/opt/test-client`,
         "-v", `${join(ROOT, "tests/manual/transfer-reliability")}:/lab:ro`,
-        "-e", `SE_MANUAL_RUN=${this.run}`, "-e", "NODE_OPTIONS=--require=/lab/fault-hook.cjs",
+        "-e", `SE_MANUAL_RUN=${this.run}`, "-e", "NODE_OPTIONS=--import=/lab/fault-hook.mjs",
         "--entrypoint", "sh", this.image, "-c",
         `chown clusterio:clusterio /clusterio/data && exec gosu clusterio /consumer/node_modules/.bin/clusteriohost --config config-host-${n}.json --log-directory /clusterio/data/logs run`]);
     }
