@@ -44,22 +44,23 @@ npx clusterioctl host list
 
 ## 2. Name the instances
 
-The reconcile tool finds servers by name, so each server must carry the exact name
-from the desired state before step 3. Run these from the controller's Clusterio
-directory.
+The reconcile tool finds servers by name, or by id when a desired entry carries
+`instanceId`, so each server must either carry the exact name from the desired
+state or be named by its id there before step 3. Run these from the controller's
+Clusterio directory.
 
 **Servers that already exist under another name** keep their id, host, port and
-saves; only the name changes. Stop the server, rename it, and leave it stopped
-until step 5:
+saves; only the name changes. Put each server's id on its entry in the desired
+state as `instanceId` (`npx clusterioctl instance list` shows the ids) and step 3
+renames it as its first instance action, running or stopped. Renaming a running
+server was checked on Clusterio 2.0.1: the game kept running and the host only
+logged its updated config. To rename by hand instead:
 
 ```text
-npx clusterioctl instance stop fact1
 npx clusterioctl instance config set fact1 instance.name Delta
 ```
 
-The rename was checked on a stopped, unassigned instance of the pinned Clusterio
-version; renaming a running server was not tested. The server's directory on the
-host keeps its old name, which is harmless.
+The server's directory on the host keeps its old name, which is harmless.
 
 **Servers that do not exist yet** are created, assigned and given a port:
 

@@ -162,6 +162,10 @@ yourself; stopped instances are never started); 1 means
 something is blocked or still differs. The tool never deletes mods, mod packs or
 instances, never replaces a stored mod version and never creates instances or
 hosts: see [production rollout](production-rollout.md) for creating servers.
+An instance entry may carry `instanceId`, the id of an existing server. When no
+server has the entry's name, the tool plans a rename of that server as its first
+instance action, running or stopped; when the name belongs to a server with a
+different id, it refuses.
 
 ## Roll back a deployment
 

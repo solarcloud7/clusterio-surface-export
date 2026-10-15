@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { main, parseConfigList, parseModPackShow, planChanges } from "../../tools/clusterio/reconcile.mjs";
+import { main, matchInstance, parseConfigList, parseModPackShow, planChanges, readLive } from "../../tools/clusterio/reconcile.mjs";
 
 const SHOW = `id: 7
 name: Space Age 2.1.20 - Test
@@ -231,4 +231,50 @@ test("the removed gateway layout setting and controller gateway mode are refused
 	stale.controller["surface_export.gateway_mode"] = "multi";
 	assert.deepEqual(planChanges(structuredClone(desired), stale, { modFile }).errors, [],
 		"values left on the live cluster by an older version are ignored, not a reason to block the plan");
+});
+
+test("a server named by instanceId is renamed first and read by id; a name on another id or an invalid id is refused", () => {
+	const rows = [{ name: "fact1", id: "42", status: "running" }, { name: "fact2", id: "43", status: "stopped" }];
+	assert.deepEqual(matchInstance("Delta", 42, rows), { row: rows[0], rename: { from: "fact1", id: 42 } });
+	assert.deepEqual(matchInstance("fact2", undefined, rows), { row: rows[1] });
+	assert.deepEqual(matchInstance("fact2", 43, rows), { row: rows[1] });
+	assert.match(matchInstance("fact2", 42, rows).error, /exists with id 43, not the desired instanceId 42/);
+	assert.match(matchInstance("Delta", 7, rows).error, /no instance is named Delta or has id 7/);
+	assert.match(matchInstance("Delta", "42", rows).error, /must be a positive integer/);
+	assert.match(matchInstance("Delta", undefined, rows).error, /instance Delta does not exist on the cluster/);
+	const calls = [];
+	const transport = { ctl: (...args) => {
+		calls.push(args);
+		if (args[0] === "instance" && args[1] === "list") return "name | id | status\n---\nfact1 | 42 | running\n";
+		if (args[0] === "instance" && args[2] === "list") return "surface_export.debug_mode true\nfactorio.mod_pack_id 7\n";
+		if (args[0] === "mod-pack" && args[1] === "list") return "id | name\n---\n7 | Space Age 2.1.20 - Test\n";
+		if (args[0] === "mod-pack" && args[1] === "show") return SHOW.replace("(disabled) FluidMustFlow", "FluidMustFlow");
+		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
+		if (args[0] === "mod" && args[1] === "show") return `sha1: ${hashes[args[2]]}\n`;
+		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
+		return "";
+	} };
+	const renamed = { ...desired, instances: { Delta: { instanceId: 42, "surface_export.debug_mode": false } } };
+	const live = readLive(transport, renamed);
+	assert.deepEqual(live.renames, { Delta: { from: "fact1", id: 42 } });
+	assert.deepEqual(live.matchErrors, []);
+	assert.ok(calls.some(call => call[0] === "instance" && call[2] === "list" && call[3] === "42"), "the config is read through the id before the rename");
+	const result = planChanges(renamed, live, { modFile });
+	assert.deepEqual(result.errors, []);
+	assert.deepEqual(result.actions.map(action => action.argv), [
+		["instance", "config", "set", "42", "instance.name", "Delta"],
+		["instance", "config", "set", "Delta", "surface_export.debug_mode", "false"],
+	]);
+	assert.deepEqual(result.restart, ["Delta"], "a rename alone needs no restart; the field change does");
+});
+
+test("two desired servers claiming one id, or a name held by another id, block the plan", () => {
+	const twins = { ...desired, instances: { Delta: { instanceId: 42 }, Sigma: { instanceId: 42 } } };
+	const result = planChanges(twins, liveWith({ instances: { Delta: {}, Sigma: {} }, renames: {} }), { modFile });
+	assert.match(result.errors.join("\n"), /instances Delta and Sigma both claim instanceId 42/);
+	const held = planChanges({ ...desired, instances: { fact1: { instanceId: 99 } } },
+		liveWith({ instances: {}, matchErrors: ["instance fact1 exists with id 42, not the desired instanceId 99; fix the desired state or rename that instance deliberately"] }), { modFile });
+	assert.deepEqual(held.errors, ["instance fact1 exists with id 42, not the desired instanceId 99; fix the desired state or rename that instance deliberately"]);
+	const absent = planChanges(desired, liveWith({ instances: {} }), { modFile });
+	assert.deepEqual(absent.errors, ["instance fact1 does not exist on the cluster"]);
 });
