@@ -44,22 +44,23 @@ npx clusterioctl host list
 
 ## 2. Name the instances
 
-The reconcile tool finds servers by name, so each server must carry the exact name
-from the desired state before step 3. Run these from the controller's Clusterio
-directory.
+The reconcile tool finds servers by name, or by id when a desired entry carries
+`instanceId`, so each server must either carry the exact name from the desired
+state or be named by its id there before step 3. Run these from the controller's
+Clusterio directory.
 
 **Servers that already exist under another name** keep their id, host, port and
-saves; only the name changes. Stop the server, rename it, and leave it stopped
-until step 5:
+saves; only the name changes. Put each server's id on its entry in the desired
+state as `instanceId` (`npx clusterioctl instance list` shows the ids) and step 3
+renames it as its first instance action, running or stopped. Renaming a running
+server was checked on Clusterio 2.0.1: the game kept running and the host only
+logged its updated config. To rename by hand instead:
 
 ```text
-npx clusterioctl instance stop fact1
 npx clusterioctl instance config set fact1 instance.name Delta
 ```
 
-The rename was checked on a stopped, unassigned instance of the pinned Clusterio
-version; renaming a running server was not tested. The server's directory on the
-host keeps its old name, which is harmless.
+The server's directory on the host keeps its old name, which is harmless.
 
 **Servers that do not exist yet** are created, assigned and given a port:
 
@@ -89,8 +90,10 @@ node tools/clusterio/reconcile.mjs apply --cluster vm --desired tools/clusterio/
 This uploads the mod ZIPs, creates the mod pack, assigns it to every server and
 sets the controller, host and instance configuration, including each server's
 default planet, the planets it disables and its public server settings. Exit code
-4 is expected here (the instances are not running yet). Then set the Discord bot
-token as described under [Discord bridge](deployment.md#discord-bridge).
+4 here means a restart is pending: a stopped server loads the new configuration
+when it is started in step 5, and a running server needs `--restart` on the
+`apply` command, which restarts it. Then set the Discord bot token as described
+under [Discord bridge](deployment.md#discord-bridge).
 
 ## 4. Create the worlds
 
@@ -116,11 +119,14 @@ tool for this step yet.
 
 ## 5. Start and verify
 
+Start each server that is stopped; a server that was running through step 3 was
+restarted there by `--restart` and needs nothing here:
+
 ```text
 npx clusterioctl instance start Delta
 ```
 
-Start the other three the same way. Then, per server:
+Start the other stopped servers the same way. Then, per server:
 
 - `npx clusterioctl instance list` shows `running` and Factorio `2.1.20`.
 - The Surface Export page's Gateways tab shows all four servers with a portal

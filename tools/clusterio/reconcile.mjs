@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
-// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
-// does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations, the removed surfexp-gateway-instances or surfexp-gateway-layout setting, or the removed surface_export.gateway_mode controller field is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
+// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, including the rename of an existing instance that a desired entry names by `instanceId`, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
+// does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations, the removed surfexp-gateway-instances or surfexp-gateway-layout setting, or the removed surface_export.gateway_mode controller field is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, create instances or rename one whose desired entry carries no `instanceId`, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -77,6 +77,28 @@ export function localModFile(name, version, { dir = LOCAL_MODS, exists = existsS
 }
 
 const RESTART_CONTROLLER_FIELDS = new Set(["surface_export.platform_source_of_truth"]);
+
+export const INSTANCE_ID_FIELD = "instanceId";
+
+export function matchInstance(name, instanceId, rows) {
+	if (instanceId !== undefined && (!Number.isSafeInteger(instanceId) || instanceId <= 0)) {
+		return { error: `instance ${name}: ${INSTANCE_ID_FIELD} must be a positive integer, not ${JSON.stringify(instanceId)}` };
+	}
+	if (instanceId !== undefined && !rows.some(row => Number.isSafeInteger(Number(row.id)) && row.id !== "")) {
+		return { error: `instance ${name}: the instance list carries no ids, so ${INSTANCE_ID_FIELD} cannot be matched` };
+	}
+	const byName = rows.find(row => row.name === name);
+	if (byName) {
+		if (instanceId !== undefined && Number(byName.id) !== instanceId) {
+			return { error: `instance ${name} exists with id ${byName.id}, not the desired ${INSTANCE_ID_FIELD} ${instanceId}; fix the desired state or rename that instance deliberately` };
+		}
+		return { row: byName };
+	}
+	if (instanceId === undefined) return { error: `instance ${name} does not exist on the cluster` };
+	const byId = rows.find(row => Number(row.id) === instanceId);
+	if (!byId) return { error: `instance ${name} does not exist on the cluster: no instance is named ${name} or has id ${instanceId}` };
+	return { row: byId, rename: { from: byId.name, id: instanceId } };
+}
 
 function settingArgs(scope, name, value) {
 	if (value !== null && typeof value === "object") return ["--color-setting", scope, name, JSON.stringify(value)];
@@ -176,10 +198,29 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		}
 	}
 
+	errors.push(...Object.values(live.matchErrors || {}));
+	const claimed = Object.entries(desired.instances || {}).filter(([, fields]) => fields?.[INSTANCE_ID_FIELD] !== undefined);
+	for (const [instance, fields] of claimed) {
+		const twin = claimed.find(([other, otherFields]) => other > instance && otherFields[INSTANCE_ID_FIELD] === fields[INSTANCE_ID_FIELD]);
+		if (twin) errors.push(`instances ${instance} and ${twin[0]} both claim ${INSTANCE_ID_FIELD} ${fields[INSTANCE_ID_FIELD]}`);
+	}
 	for (const [instance, fields] of Object.entries(desired.instances || {})) {
 		const config = live.instances[instance];
-		if (!config) { errors.push(`instance ${instance} does not exist on the cluster`); continue; }
+		if (!config) {
+			if (!live.matchErrors?.[instance]) errors.push(`instance ${instance} does not exist on the cluster`);
+			continue;
+		}
+		const rename = live.renames?.[instance];
+		if (rename) {
+			if (rename.from in (desired.instances || {})) {
+				errors.push(`instance ${instance}: renaming ${rename.from} (id ${rename.id}) would remove the server that the desired entry ${rename.from} configures`);
+				continue;
+			}
+			actions.push({ describe: `rename instance ${rename.from} (id ${rename.id}) -> ${instance}`,
+				argv: ["instance", "config", "set", String(rename.id), "instance.name", instance] });
+		}
 		for (const [field, value] of Object.entries(fields)) {
+			if (field === INSTANCE_ID_FIELD) continue;
 			if (JSON.stringify(config[field]) !== JSON.stringify(value)) {
 				const empty = emptyValueError(instance, field, value);
 				if (empty) { errors.push(empty); continue; }
@@ -232,18 +273,22 @@ export function readLive(transport, desired) {
 	}
 	const controller = parseConfigList(transport.ctl("controller", "config", "list"));
 	const instances = {};
+	const renames = {};
+	const matchErrors = {};
 	const instanceRows = parseTable(transport.ctl("instance", "list"));
-	const names = new Set(instanceRows.map(row => row.name));
 	const instanceIds = Object.fromEntries(instanceRows.map(row => [row.name, Number(row.id)]));
-	for (const instance of Object.keys(desired.instances || {})) {
-		if (names.has(instance)) instances[instance] = parseConfigList(transport.ctl("instance", "config", "list", instance));
+	for (const [instance, fields] of Object.entries(desired.instances || {})) {
+		const match = matchInstance(instance, fields?.[INSTANCE_ID_FIELD], instanceRows);
+		if (match.error) { matchErrors[instance] = match.error; continue; }
+		instances[instance] = parseConfigList(transport.ctl("instance", "config", "list", match.rename ? String(match.row.id) : instance));
+		if (match.rename) renames[instance] = match.rename;
 	}
 	const hosts = {};
 	const connected = new Set(parseTable(transport.ctl("host", "list")).filter(row => row.connected === "true").map(row => row.name));
 	for (const host of Object.keys(desired.hosts || {})) {
 		if (connected.has(host)) hosts[host] = parseConfigList(transport.ctl("host", "config", "list", host));
 	}
-	return { packs, packDetails, mods, modSha1, controller, instances, instanceIds, hosts };
+	return { packs, packDetails, mods, modSha1, controller, instances, instanceIds, renames, matchErrors, hosts };
 }
 
 function printPlan(result, out) {

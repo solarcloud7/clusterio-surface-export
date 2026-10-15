@@ -36,6 +36,7 @@
 	},
 	"instances": {
 		"Delta": {
+			"instanceId": 489642928,
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "nauvis",
@@ -64,6 +65,7 @@
 			}
 		},
 		"Sigma": {
+			"instanceId": 280344241,
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "vulcanus",
@@ -92,6 +94,7 @@
 			}
 		},
 		"Theta": {
+			"instanceId": 1329253049,
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "fulgora",
@@ -120,6 +123,7 @@
 			}
 		},
 		"Omega": {
+			"instanceId": 231718593,
 			"factorio.version": "2.1.20",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "gleba",
