@@ -90,8 +90,10 @@ node tools/clusterio/reconcile.mjs apply --cluster vm --desired tools/clusterio/
 This uploads the mod ZIPs, creates the mod pack, assigns it to every server and
 sets the controller, host and instance configuration, including each server's
 default planet, the planets it disables and its public server settings. Exit code
-4 is expected here (the instances are not running yet). Then set the Discord bot
-token as described under [Discord bridge](deployment.md#discord-bridge).
+4 here means a restart is pending: a stopped server loads the new configuration
+when it is started in step 5, and a running server needs `--restart` on the
+`apply` command, which restarts it. Then set the Discord bot token as described
+under [Discord bridge](deployment.md#discord-bridge).
 
 ## 4. Create the worlds
 
@@ -117,11 +119,14 @@ tool for this step yet.
 
 ## 5. Start and verify
 
+Start each server that is stopped; a server that was running through step 3 was
+restarted there by `--restart` and needs nothing here:
+
 ```text
 npx clusterioctl instance start Delta
 ```
 
-Start the other three the same way. Then, per server:
+Start the other stopped servers the same way. Then, per server:
 
 - `npx clusterioctl instance list` shows `running` and Factorio `2.1.20`.
 - The Surface Export page's Gateways tab shows all four servers with a portal

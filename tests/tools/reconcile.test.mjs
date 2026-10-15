@@ -257,7 +257,7 @@ test("a server named by instanceId is renamed first and read by id; a name on an
 	const renamed = { ...desired, instances: { Delta: { instanceId: 42, "surface_export.debug_mode": false } } };
 	const live = readLive(transport, renamed);
 	assert.deepEqual(live.renames, { Delta: { from: "fact1", id: 42 } });
-	assert.deepEqual(live.matchErrors, []);
+	assert.deepEqual(live.matchErrors, {});
 	assert.ok(calls.some(call => call[0] === "instance" && call[2] === "list" && call[3] === "42"), "the config is read through the id before the rename");
 	const result = planChanges(renamed, live, { modFile });
 	assert.deepEqual(result.errors, []);
@@ -273,8 +273,42 @@ test("two desired servers claiming one id, or a name held by another id, block t
 	const result = planChanges(twins, liveWith({ instances: { Delta: {}, Sigma: {} }, renames: {} }), { modFile });
 	assert.match(result.errors.join("\n"), /instances Delta and Sigma both claim instanceId 42/);
 	const held = planChanges({ ...desired, instances: { fact1: { instanceId: 99 } } },
-		liveWith({ instances: {}, matchErrors: ["instance fact1 exists with id 42, not the desired instanceId 99; fix the desired state or rename that instance deliberately"] }), { modFile });
+		liveWith({ instances: {}, matchErrors: { fact1: "instance fact1 exists with id 42, not the desired instanceId 99; fix the desired state or rename that instance deliberately" } }), { modFile });
 	assert.deepEqual(held.errors, ["instance fact1 exists with id 42, not the desired instanceId 99; fix the desired state or rename that instance deliberately"]);
 	const absent = planChanges(desired, liveWith({ instances: {} }), { modFile });
 	assert.deepEqual(absent.errors, ["instance fact1 does not exist on the cluster"]);
+	const invalid = planChanges({ ...desired, instances: { fact1: { instanceId: "42" } } },
+		liveWith({ instances: {}, matchErrors: { fact1: "instance fact1: instanceId must be a positive integer, not \"42\"" } }), { modFile });
+	assert.deepEqual(invalid.errors, ["instance fact1: instanceId must be a positive integer, not \"42\""], "an invalid id is one error, not also a missing server");
+	const collision = planChanges({ ...desired, instances: { Delta: { instanceId: 42 }, fact1: {} } },
+		liveWith({ instances: { Delta: { "factorio.mod_pack_id": 7 }, fact1: { "factorio.mod_pack_id": 7 } }, renames: { Delta: { from: "fact1", id: 42 } } }), { modFile });
+	assert.match(collision.errors.join("\n"), /renaming fact1 \(id 42\) would remove the server that the desired entry fact1 configures/);
+	assert.ok(!collision.actions.some(action => action.argv[4] === "instance.name"), "no rename is planned over a desired entry");
+	assert.match(matchInstance("Delta", 42, [{ name: "fact1", status: "running" }]).error, /carries no ids/);
+});
+
+test("apply runs the rename before the server's other changes and the re-plan finds it by its new name", async () => {
+	const state = { name: "fact1", debug: true, calls: [] };
+	const transport = { ctl: (...args) => {
+		state.calls.push(args);
+		if (args[0] === "instance" && args[1] === "list") return `name | id | status\n---\n${state.name} | 42 | running\n`;
+		if (args[0] === "instance" && args[2] === "list") return `surface_export.debug_mode ${state.debug}\nfactorio.mod_pack_id 7\n`;
+		if (args[0] === "instance" && args[2] === "set" && args[4] === "instance.name") { assert.equal(args[3], "42"); state.name = args[5]; return ""; }
+		if (args[0] === "instance" && args[2] === "set") { assert.equal(args[3], state.name, "later actions address the server by its current name"); state.debug = args[5] === "true"; return ""; }
+		if (args[0] === "mod-pack" && args[1] === "list") return "id | name\n---\n7 | Space Age 2.1.20 - Test\n";
+		if (args[0] === "mod-pack" && args[1] === "show") return SHOW.replace("(disabled) FluidMustFlow", "FluidMustFlow");
+		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
+		if (args[0] === "mod" && args[1] === "show") return `sha1: ${hashes[args[2]]}\n`;
+		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
+		return "";
+	} };
+	const renamed = { ...desired, instances: { Delta: { instanceId: 42, "surface_export.debug_mode": false } } };
+	const out = { text: "", write(chunk) { this.text += chunk; } };
+	const code = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes"], { out, err: out, read: () => renamed, run: async (_, fn) => fn(transport), modFile });
+	assert.equal(code, 4, out.text);
+	const sets = state.calls.filter(call => call[2] === "set").map(call => call.slice(3));
+	assert.deepEqual(sets, [["42", "instance.name", "Delta"], ["Delta", "surface_export.debug_mode", "false"]]);
+	assert.equal(state.name, "Delta");
+	assert.match(out.text, /Configuration: converged/);
+	assert.match(out.text, /RESTART REQUIRED for Delta/);
 });

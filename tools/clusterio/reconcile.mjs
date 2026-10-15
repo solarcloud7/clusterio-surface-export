@@ -84,6 +84,9 @@ export function matchInstance(name, instanceId, rows) {
 	if (instanceId !== undefined && (!Number.isSafeInteger(instanceId) || instanceId <= 0)) {
 		return { error: `instance ${name}: ${INSTANCE_ID_FIELD} must be a positive integer, not ${JSON.stringify(instanceId)}` };
 	}
+	if (instanceId !== undefined && !rows.some(row => Number.isSafeInteger(Number(row.id)) && row.id !== "")) {
+		return { error: `instance ${name}: the instance list carries no ids, so ${INSTANCE_ID_FIELD} cannot be matched` };
+	}
 	const byName = rows.find(row => row.name === name);
 	if (byName) {
 		if (instanceId !== undefined && Number(byName.id) !== instanceId) {
@@ -195,7 +198,7 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 		}
 	}
 
-	errors.push(...(live.matchErrors || []));
+	errors.push(...Object.values(live.matchErrors || {}));
 	const claimed = Object.entries(desired.instances || {}).filter(([, fields]) => fields?.[INSTANCE_ID_FIELD] !== undefined);
 	for (const [instance, fields] of claimed) {
 		const twin = claimed.find(([other, otherFields]) => other > instance && otherFields[INSTANCE_ID_FIELD] === fields[INSTANCE_ID_FIELD]);
@@ -204,11 +207,15 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 	for (const [instance, fields] of Object.entries(desired.instances || {})) {
 		const config = live.instances[instance];
 		if (!config) {
-			if (!(live.matchErrors || []).some(error => error.startsWith(`instance ${instance} `))) errors.push(`instance ${instance} does not exist on the cluster`);
+			if (!live.matchErrors?.[instance]) errors.push(`instance ${instance} does not exist on the cluster`);
 			continue;
 		}
 		const rename = live.renames?.[instance];
 		if (rename) {
+			if (rename.from in (desired.instances || {})) {
+				errors.push(`instance ${instance}: renaming ${rename.from} (id ${rename.id}) would remove the server that the desired entry ${rename.from} configures`);
+				continue;
+			}
 			actions.push({ describe: `rename instance ${rename.from} (id ${rename.id}) -> ${instance}`,
 				argv: ["instance", "config", "set", String(rename.id), "instance.name", instance] });
 		}
@@ -267,12 +274,12 @@ export function readLive(transport, desired) {
 	const controller = parseConfigList(transport.ctl("controller", "config", "list"));
 	const instances = {};
 	const renames = {};
-	const matchErrors = [];
+	const matchErrors = {};
 	const instanceRows = parseTable(transport.ctl("instance", "list"));
 	const instanceIds = Object.fromEntries(instanceRows.map(row => [row.name, Number(row.id)]));
 	for (const [instance, fields] of Object.entries(desired.instances || {})) {
 		const match = matchInstance(instance, fields?.[INSTANCE_ID_FIELD], instanceRows);
-		if (match.error) { matchErrors.push(match.error); continue; }
+		if (match.error) { matchErrors[instance] = match.error; continue; }
 		instances[instance] = parseConfigList(transport.ctl("instance", "config", "list", match.rename ? String(match.row.id) : instance));
 		if (match.rename) renames[instance] = match.rename;
 	}
