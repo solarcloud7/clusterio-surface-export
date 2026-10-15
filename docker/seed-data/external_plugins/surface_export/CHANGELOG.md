@@ -27,7 +27,9 @@ and this version is not supported on the 2.0.0 alphas.
 - The repository tools read the clusterioctl token from either the Clusterio 2.0
   `ctl.controller_token` key or the alpha `control.controller_token` key, and the
   ctl wrapper keeps `config` (formerly `control-config`) local to the development
-  cluster. Seed instances and the production-profile lab refer to `player_sync`.
+  cluster. The deployment wrapper compares the served web bundle by file name,
+  because Clusterio 2.0 advertises it without the manifest's `static/` prefix.
+  Seed instances and the production-profile lab refer to `player_sync`.
 
 ## 0.11.0-beta.6
 

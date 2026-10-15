@@ -232,12 +232,13 @@ function Sync-ControllerWebBundle {
     }
 
     $advertised = Get-ControllerAdvertisedWebBundle -Container $Container
-    if ($advertised -eq $onDisk -and -not $Force) {
+    $onDiskName = $onDisk -replace '^static/', ''
+    if ((($advertised -replace '^static/', '') -eq $onDiskName) -and -not $Force) {
         Write-Host "Controller already serves the built bundle ($onDisk)." -ForegroundColor Green
         return
     }
 
-    if ($Force -and $advertised -eq $onDisk) {
+    if ($Force -and (($advertised -replace '^static/', '') -eq $onDiskName)) {
         Write-Host "Bundles agree; restarting anyway as requested (controller-side node code)." -ForegroundColor Cyan
     } else {
         Write-Host "Controller is serving a bundle that is no longer on disk — restarting it." -ForegroundColor Yellow
@@ -254,7 +255,7 @@ function Sync-ControllerWebBundle {
         $advertised = Get-ControllerAdvertisedWebBundle -Container $Container
         if ($advertised) {
             $onDisk = (Get-Content $manifestPath -Raw | ConvertFrom-Json).'surface_export.js'
-            if ($advertised -eq $onDisk) {
+            if (($advertised -replace '^static/', '') -eq ($onDisk -replace '^static/', '')) {
                 Write-Host "Controller restarted and is serving $onDisk." -ForegroundColor Green
                 return
             }
