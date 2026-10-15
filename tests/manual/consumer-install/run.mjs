@@ -31,7 +31,7 @@ if (args[0] === "--analyze" && args.length === 2) {
     hashes: { package: hash(join(inputs, "package.tgz")), gateway: hash(join(inputs, "gateway.zip")),
       runner: hash(new URL(import.meta.url)), lab: hash(new URL("./lab.mjs", import.meta.url)), bootstrap: hash(new URL("./bootstrap.mjs", import.meta.url)) } };
   for (const file of ["artifacts.cjs", "browser.mjs", "oracle.mjs", "../transfer-reliability/docker-lab.mjs", "../transfer-reliability/cases.mjs",
-    "../transfer-reliability/fault-hook.cjs", "../transfer-reliability/oracle.mjs", "../../integration/transfer-cleanup/probe.lua"])
+    "../transfer-reliability/fault-hook.mjs", "../transfer-reliability/fault-hook-loader.mjs", "../transfer-reliability/fault-hook-patch.mjs", "../transfer-reliability/oracle.mjs", "../../integration/transfer-cleanup/probe.lua"])
     report.hashes[file] = hash(new URL(file, import.meta.url));
   const save = () => writeFileSync(join(directory, "result.json"), JSON.stringify(report, null, 2) + "\n");
   const interrupt = () => { lab.cancelled = true; }; process.on("SIGINT", interrupt); process.on("SIGTERM", interrupt);

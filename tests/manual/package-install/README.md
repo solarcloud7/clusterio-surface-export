@@ -41,9 +41,12 @@ Observer, fixture and runtime hashes are retained. No new Factorio API is used.
 ## Upgrade and rollback boundary
 
 Public npm metadata inspected on 2026-09-10 reports `0.9.82` as the latest published
-release, with peer requirements `^2.0.0`. The candidate pins `2.0.0-alpha.27`; that
-prerelease is outside the old package's declared peer range. An upgrade/downgrade
-test must not bypass peer checks and call the result supported.
+release, with peer requirements `^2.0.0`. Candidates up to `0.11.0` pinned
+`2.0.0-alpha.27`, a prerelease outside that range; candidates from `0.12.0` run on
+the `2.0.1` image, which the range accepts, so the boundary between the two lines is
+the plugin API, not an npm peer check. The lab reads the expected core version from
+the image tag in `.env.example`. An upgrade/downgrade test must not bypass peer
+checks and call the result supported.
 
 This fixture tests a candidate tarball on existing seed saves plus controller restart,
 not a 0.9.82-to-current migration or an old-code rollback of current journals. Those
