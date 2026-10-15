@@ -109,13 +109,38 @@ A new save always starts on Nauvis. Delta is a normal Nauvis start. Sigma, Theta
 and Omega start their players on Vulcanus, Fulgora and Gleba. At startup the
 plugin creates that planet's surface if it is missing and generates the area
 around 0,0 (see [planets on each instance](configuration.md#planets-on-each-instance)).
-It does not clear hazards there. Prepare the world with the game's own tools:
-start the server, use an administrator account and the map editor or console to
-clear the planet around 0,0, then save and stop. Note what you did so it can be
-repeated. A misspelt planet name, or no free character position within 64 tiles
+It does not clear hazards there. Start the server, then clear the arrival area
+from a checkout of this repository, with the cluster named as in step 3:
+
+```text
+node tools/surface-export/prepare-world.mjs --cluster vm --instance Sigma --dry-run
+node tools/surface-export/prepare-world.mjs --cluster vm --instance Sigma --yes
+```
+
+The tool reads the server's applied default planet, generates the chunks within
+6 chunks (192 tiles) of 0,0 (`--radius-chunks` changes that), counts the hostile
+entities there, checks that a character fits within 64 tiles of 0,0, and prints a
+JSON report with found, destroyed and remaining counts per entity kind. The dry
+run also generates those chunks (its counts are real) but refuses to create a
+missing surface, destroys nothing and exits 3 while hazards exist; `--yes`
+destroys them, charts the area for the player force and exits 0 once nothing
+hostile remains inside the radius and the arrival position exists.
+
+Chunk generation is one blocking call, so the game stalls while it runs. The
+report's `prepareMs` is that call's round trip from the tool; on the development
+host it was 0.81 s (Vulcanus) and 0.88 s (Gleba) for a fresh surface at the
+default radius, 1.7 s and 2.0 s for the ring out to `--radius-chunks 16`, and
+0.67 s when nothing was left to generate, so the stall itself was under 0.3 s at
+the default radius and under 1.4 s at 16 chunks there. Run it before opening the
+server, not while players are on it. The clearing is a snapshot: enemy expansion on Nauvis and
+spawning on Gleba repopulate the area over time, so run it again before opening a
+server that has been up for long. Save afterwards with
+`node tools/clusterio/ctl.mjs --cluster vm --write instance save-game Sigma` if you
+stop the server before its next autosave. The tool does not prepare technology or
+starter inventories, and a demolisher whose body lies outside the radius keeps its
+territory. A misspelt planet name, or no free character position within 64 tiles
 of 0,0, blocks startup recovery and shows in the web interface; hazards near the
-arrival area do not, so check it yourself before opening the server. There is no
-tool for this step yet.
+arrival area do not, so run the tool before opening the server.
 
 ## 5. Start and verify
 
