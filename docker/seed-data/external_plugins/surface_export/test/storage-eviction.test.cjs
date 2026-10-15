@@ -9,26 +9,10 @@ const path = require("node:path");
 
 let writeCount = 0;
 
-const Module = require("node:module");
-const originalLoad = Module._load;
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			escapeString: (value) => String(value),
-			safeOutputFile: async (file, data) => { writeCount += 1; fs.writeFileSync(file, data); },
-			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-			Counter: class {},
-			Histogram: class {},
-		};
-	}
-	if (request === "@clusterio/controller") {
-		return { BaseControllerPlugin: class {} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
-
 const distNode = path.join(__dirname, "..", "dist", "node");
+const { setOutputFileWriterForTest } = require(path.join(distNode, "lib", "persist-queue.js"));
 const { ControllerPlugin } = require(path.join(distNode, "controller.js"));
+setOutputFileWriterForTest(async (file, data) => { writeCount += 1; fs.writeFileSync(file, data); });
 
 function makePlugin() {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-evict-"));
@@ -96,8 +80,10 @@ test("eviction does NOT write — its caller owns the persist", async () => {
 test("what persistStorage writes is what loadStorage reads back", async () => {
 	const plugin = makePlugin();
 	seed(plugin, 2);
+	writeCount = 0;
 
 	await plugin.persistStorage();
+	assert.equal(writeCount, 1, "persistStorage writes exactly once through the plugin's output writer");
 
 	const reloaded = Object.create(ControllerPlugin.prototype);
 	reloaded.storagePath = plugin.storagePath;

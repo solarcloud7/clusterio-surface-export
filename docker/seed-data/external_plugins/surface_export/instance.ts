@@ -5,7 +5,7 @@ import { parseLuaTiming, TIMING_MARKER, TimingClock, timingContext, timed, timed
 import type { ParsedFactorioOutput } from "@clusterio/lib";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
-import { wait } from "@clusterio/lib";
+import { delay } from "./lib/delay";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import { UploadUncertain } from "./lib/upload-session";
 import * as messages from "./messages";
@@ -399,7 +399,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.warn(`Gateway config pull failed, retrying in 10s: ${getErrorMessage(err)}`);
 		}
 		void (async () => {
-			await wait(10_000);
+			await delay(10_000);
 			try {
 				await pullAndApply();
 			} catch (err: unknown) {

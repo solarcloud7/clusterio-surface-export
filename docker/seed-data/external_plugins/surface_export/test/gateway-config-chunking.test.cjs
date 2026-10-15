@@ -5,27 +5,14 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const Module = require("node:module");
-const originalLoad = Module._load;
-let waitGate = () => Promise.resolve();
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			escapeString: (value) => String(value),
-			wait: (...args) => waitGate(...args),
-		};
-	}
-	if (request === "@clusterio/host") {
-		return { BaseInstancePlugin: class { onExit() {} } };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
-
 const pluginDir = path.join(__dirname, "..");
 const distNode = path.join(pluginDir, "dist", "node");
 const helpers = require(path.join(distNode, "helpers.js"));
+const { setDelayForTest } = require(path.join(distNode, "lib", "delay.js"));
 const { LuaInterface } = require(path.join(distNode, "lib", "lua-interface.js"));
 const { InstancePlugin } = require(path.join(distNode, "instance.js"));
+let waitGate = () => Promise.resolve();
+setDelayForTest((...args) => waitGate(...args));
 
 const noopLogger = { info() {}, verbose() {}, warn() {}, error() {} };
 

@@ -5,22 +5,15 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
-const originalLoad = Module._load;
+const { setOutputFileWriterForTest } = require("../dist/node/lib/persist-queue");
+const { LineageRegistry, LINEAGE_REGISTRY_FILENAME, isLineage, lineageCommitPlan, transferCommitDecision } = require("../dist/node/lib/lineage-registry");
 let failWrites = false;
 let writes = 0;
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return { safeOutputFile: async (file, data) => {
-			writes += 1;
-			if (failWrites) throw new Error("disk full");
-			await fs.writeFile(file, data);
-		} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
-const { LineageRegistry, LINEAGE_REGISTRY_FILENAME, isLineage, lineageCommitPlan, transferCommitDecision } = require("../dist/node/lib/lineage-registry");
-Module._load = originalLoad;
+setOutputFileWriterForTest(async (file, data) => {
+	writes += 1;
+	if (failWrites) throw new Error("disk full");
+	await fs.writeFile(file, data);
+});
 
 const L = "lineage:boot-a:15";
 const commit = (overrides = {}) => ({ lineage: L, transferId: "1:job", sourceInstanceId: 1, targetInstanceId: 2,

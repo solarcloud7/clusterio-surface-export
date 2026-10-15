@@ -5,26 +5,18 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
-const originalLoad = Module._load;
-let writes = 0;
-let failWrites = false;
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return { safeOutputFile: async (file, data) => {
-			writes += 1;
-			if (failWrites) throw new Error("disk full");
-			await fs.writeFile(file, data);
-		} };
-	}
-	if (request === "@clusterio/controller") return { BaseControllerPlugin: class {} };
-	return originalLoad.call(this, request, parent, isMain);
-};
+const { setOutputFileWriterForTest } = require("../dist/node/lib/persist-queue");
 const { PortalSlots, assignPortalSlots, PORTAL_SLOTS_FILENAME } = require("../dist/node/lib/portal-slots");
 const { GatewayConfig } = require("../dist/node/lib/gateway-config");
 const { ONE_GATE_NAME } = require("../dist/node/messages");
 const { PORTAL_COLOURS, portalSlotOf, portalGatewayName } = require("../dist/node/shared/portals");
-Module._load = originalLoad;
+let writes = 0;
+let failWrites = false;
+setOutputFileWriterForTest(async (file, data) => {
+	writes += 1;
+	if (failWrites) throw new Error("disk full");
+	await fs.writeFile(file, data);
+});
 
 function recorder() {
 	const lines = { info: [], warn: [], error: [] };

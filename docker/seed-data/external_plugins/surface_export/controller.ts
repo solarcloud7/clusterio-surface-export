@@ -20,7 +20,7 @@ type InstanceStatusChange = { id: number; status?: string };
 import { PlatformTree, instanceAddress } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
-import { enqueueWrite } from "./lib/persist-queue";
+import { enqueueWrite, writeOutputFile } from "./lib/persist-queue";
 import { buildAuditRow } from "./lib/audit-ledger";
 import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } from "./lib/export-storage";
 import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit";
@@ -114,7 +114,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const file = this.playerLocationsPath;
 		if (!file) return;
 		const payload = JSON.stringify({version: 1, locations: [...this.playerLocations]});
-		try { await enqueueWrite(file, () => lib.safeOutputFile(file, payload)); }
+		try { await enqueueWrite(file, () => writeOutputFile(file, payload)); }
 		catch (error: unknown) { this.logger.warn(`Player travel history could not be saved: ${getErrorMessage(error)}`); }
 	}
 
@@ -1200,7 +1200,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				throw new Error(`Recovery intent unavailable for ${requiredTransferId}`);
 			}
 			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
-			await enqueueWrite(this.pendingTransfersPath, () => lib.safeOutputFile(this.pendingTransfersPath, payload));
+			await enqueueWrite(this.pendingTransfersPath, () => writeOutputFile(this.pendingTransfersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
 			if (requiredTransferId) throw err;

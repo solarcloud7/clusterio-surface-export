@@ -1,6 +1,5 @@
 import fs from "fs/promises";
-import { safeOutputFile } from "@clusterio/lib";
-import { enqueueWrite } from "./persist-queue";
+import { enqueueWrite, writeOutputFile } from "./persist-queue";
 import { getErrorMessage, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import type { IControllerPlugin, StoredExport } from "../messages";
 
@@ -69,7 +68,7 @@ export async function persistStoredExports(state: ExportStorageState) {
 	}
 	try {
 		const payload = JSON.stringify(Array.from(state.platformStorage.values()), null, 2);
-		await enqueueWrite(state.storagePath, () => safeOutputFile(state.storagePath, payload));
+		await enqueueWrite(state.storagePath, () => writeOutputFile(state.storagePath, payload));
 		state.consecutiveStorageWriteFailures = 0;
 	} catch (err: unknown) {
 		state.consecutiveStorageWriteFailures = (state.consecutiveStorageWriteFailures ?? 0) + 1;
