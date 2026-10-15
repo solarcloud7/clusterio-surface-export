@@ -271,7 +271,7 @@ function Assert-PluginArtifactsFresh {
     $pluginRoot = Join-Path $script:RepoRoot 'docker/seed-data/external_plugins/surface_export'
     $inputs = @(
         Get-ChildItem "$pluginRoot/lib", "$pluginRoot/shared", "$pluginRoot/web" -File -Recurse
-        Get-ChildItem $pluginRoot -File | Where-Object { $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.js' }
+        Get-ChildItem $pluginRoot -File | Where-Object { $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.cjs' }
         Get-Item "$pluginRoot/scripts/build-web.mjs", "$pluginRoot/scripts/web-assets.mjs"
     )
     $newestInput = $inputs | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1

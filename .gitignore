@@ -52,7 +52,7 @@ docker/seed-data/external_plugins/surface_export/dist/
 docker/seed-data/external_plugins/surface_export/*.js
 # ...but hand-written JS configs in the plugin root are source, not build output:
 !docker/seed-data/external_plugins/surface_export/eslint.config.js
-!docker/seed-data/external_plugins/surface_export/webpack.config.js
+!docker/seed-data/external_plugins/surface_export/webpack.config.cjs
 docker/seed-data/external_plugins/surface_export/*.d.ts
 docker/seed-data/external_plugins/surface_export/*.js.map
 docker/seed-data/external_plugins/surface_export/*.d.ts.map
@@ -63,7 +63,7 @@ docker/seed-data/external_plugins/surface_export/lib/*.js.map
 docker/seed-data/external_plugins/surface_export/lib/*.d.ts.map
 
 # Keep webpack config and web source files
-!docker/seed-data/external_plugins/surface_export/webpack.config.js
+!docker/seed-data/external_plugins/surface_export/webpack.config.cjs
 !docker/seed-data/external_plugins/surface_export/web/*.js
 
 # Node dependencies

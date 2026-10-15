@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { PlatformActionSource } from "../platform-actions";
+import type { PlatformActionSource } from "../platform-actions.js";
 
 export type GatewayNodeActions = {
 	exportingKey: string | null;

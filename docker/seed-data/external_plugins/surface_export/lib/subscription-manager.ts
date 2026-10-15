@@ -1,6 +1,6 @@
-import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, ActiveTransfer } from "../messages";
-import { getErrorMessage } from "../helpers";
-import { recordOperationOutcome } from "./metrics";
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, ActiveTransfer } from "../messages.js";
+import { getErrorMessage } from "../helpers.js";
+import { recordOperationOutcome } from "./metrics.js";
 
 type ControlLink = {
 	send: (event: unknown) => void;
@@ -9,10 +9,10 @@ type ControlLink = {
 
 export class SubscriptionManager {
 	private plugin: IControllerPlugin;
-	private messages: typeof import("../messages");
+	private messages: typeof import("../messages.js");
 	public treeBroadcastLimiter: { activate: () => void; cancel: () => void };
 
-	constructor(plugin: IControllerPlugin, lib: { RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }, messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, lib: { RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }, messages: typeof import("../messages.js")) {
 		this.plugin = plugin;
 		this.messages = messages;
 		this.treeBroadcastLimiter = new lib.RateLimiter({

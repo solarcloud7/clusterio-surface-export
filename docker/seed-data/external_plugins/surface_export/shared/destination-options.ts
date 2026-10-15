@@ -1,4 +1,4 @@
-import type { HostNodeModel, InstanceNodeModel } from "./dto";
+import type { HostNodeModel, InstanceNodeModel } from "./dto.js";
 
 type InstanceTree = { hosts: HostNodeModel[]; unassignedInstances: InstanceNodeModel[] };
 export type DestinationOption = { value: number; label: string; disabled: boolean };

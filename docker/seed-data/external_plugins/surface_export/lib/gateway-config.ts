@@ -1,10 +1,10 @@
 import type { Controller } from "@clusterio/controller";
-import * as messages from "../messages";
-import { getErrorMessage } from "../helpers";
-import { timed } from "./timing";
-import { instanceAddress } from "./platform-tree";
-import { PortalSlots, type PortalHolderChange } from "./portal-slots";
-import { PORTAL_COLOURS, PORTAL_SLOT_COUNT, portalColour, portalColourName, portalGatewayName, type PortalAssignment } from "../shared/portals";
+import * as messages from "../messages.js";
+import { getErrorMessage } from "../helpers.js";
+import { timed } from "./timing.js";
+import { instanceAddress } from "./platform-tree.js";
+import { PortalSlots, type PortalHolderChange } from "./portal-slots.js";
+import { PORTAL_COLOURS, PORTAL_SLOT_COUNT, portalColour, portalColourName, portalGatewayName, type PortalAssignment } from "../shared/portals.js";
 
 export class GatewayConfig {
 	constructor(

@@ -1,6 +1,6 @@
 import type { ConnectionLineComponentProps } from "@xyflow/react";
 
-import { DEFAULT_EDGE_COLOUR } from "./gateway-colours";
+import { DEFAULT_EDGE_COLOUR } from "./gateway-colours.js";
 
 export const CONNECTION_VALID = "#52c41a";
 export const CONNECTION_INVALID = "#dc4446";

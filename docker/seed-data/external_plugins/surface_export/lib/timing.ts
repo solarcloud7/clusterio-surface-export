@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { TimingRecord, TimingOwner, TimingClockContract } from "../shared/timing";
+import type { TimingRecord, TimingOwner, TimingClockContract } from "../shared/timing.js";
 
 const processId = randomUUID();
 export const TIMING_MARKER = "[SE_TIMING_V1]";

@@ -1,8 +1,8 @@
 import React from "react";
 import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata } from "@clusterio/web_ui";
 import type { PrototypeMetadataEntry } from "@clusterio/web_ui";
-import { selectNavigableLocationNames, selectPlanetNames, selectStarMapPlanets } from "../shared/planets";
-import type { SpaceConnectionLike } from "../shared/planets";
+import { selectNavigableLocationNames, selectPlanetNames, selectStarMapPlanets } from "../shared/planets.js";
+import type { SpaceConnectionLike } from "../shared/planets.js";
 
 type Metadata = Map<string, Map<string, PrototypeMetadataEntry>> | undefined;
 

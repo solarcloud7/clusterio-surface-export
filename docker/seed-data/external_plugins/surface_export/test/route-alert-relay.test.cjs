@@ -2,15 +2,8 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const Module = require("node:module");
-const originalLoad = Module._load;
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") return { Counter: class { labels() { return this; } inc() {} }, Histogram: class { labels() { return this; } observe() {} } };
-	return originalLoad.call(this, request, parent, isMain);
-};
 const { RouteAlertRelay } = require("../dist/node/lib/route-alert-relay");
 const messages = require("../dist/node/messages");
-Module._load = originalLoad;
 
 function fixture(online = [1, 2, 3]) {
 	const sends = [];

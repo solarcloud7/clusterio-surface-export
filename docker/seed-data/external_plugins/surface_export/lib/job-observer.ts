@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import type { JobObservation, JobReference, JobStatus, JobStatusBatch } from "../shared/job-status";
+import type { JobObservation, JobReference, JobStatus, JobStatusBatch } from "../shared/job-status.js";
 
 export class JobObserver {
 	private instances = new Map<number, { next: number; cursor: number; pending?: Promise<JobStatusBatch> }>();

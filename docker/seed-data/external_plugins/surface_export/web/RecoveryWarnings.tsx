@@ -1,5 +1,5 @@
 import { Alert } from "antd";
-import type { SurfaceExportState } from "./view-models";
+import type { SurfaceExportState } from "./view-models.js";
 
 export default function RecoveryWarnings({ state }: { state: SurfaceExportState }) {
 	const instances = [...(state.tree?.hosts.flatMap(host => host.instances) || []), ...(state.tree?.unassignedInstances || [])];

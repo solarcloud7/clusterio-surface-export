@@ -1,4 +1,4 @@
-import { GATEWAY_PREFIX } from "./dto";
+import { GATEWAY_PREFIX } from "./dto.js";
 
 export const PORTAL_COLOURS = ["blue", "green", "orange", "purple"] as const;
 

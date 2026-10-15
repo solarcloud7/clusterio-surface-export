@@ -12,7 +12,7 @@ import type {
 	PassengerManifestEntry,
 	AuditRow,
 	PortalListingResponse,
-} from "./shared/dto";
+} from "./shared/dto.js";
 export type {
 	HostNodeModel,
 	InstanceNodeModel,
@@ -32,13 +32,13 @@ export type {
 	AuditRow,
 	PortalListing,
 	PortalListingResponse,
-} from "./shared/dto";
+} from "./shared/dto.js";
 export {
 	GATEWAY_PREFIX,
 	ONE_GATE_NAME,
 	ONE_GATE_NAMES,
-} from "./shared/dto";
-import type { TimingRecord, OperationTiming } from "./shared/timing";
+} from "./shared/dto.js";
+import type { TimingRecord, OperationTiming } from "./shared/timing.js";
 const PLUGIN_NAME = "surface_export";
 
 export class OperationTimingEvent {
@@ -162,7 +162,7 @@ export class RecoveryPolicyRequest {
 	static Response = {
 		jsonSchema: { type: "object", properties: { mode: { type: "string" }, allowAdoption: { type: "boolean" },
 			protectedSourceIndexes: {type: "array", items: {type: "integer"}} }, required: ["mode", "allowAdoption"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes?: number[] }; },
+		fromJSON(json: unknown) { return json as { mode: import("./shared/recovery.js").PlatformSourceOfTruth; allowAdoption: boolean; protectedSourceIndexes?: number[] }; },
 	};
 }
 
@@ -194,15 +194,15 @@ export class LineageClassifyRequest {
 	} as JsonSchema;
 	instanceId: number;
 	epoch: string;
-	platforms: import("./shared/lineage").PlatformFacts[];
-	constructor(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage").PlatformFacts[] }) {
+	platforms: import("./shared/lineage.js").PlatformFacts[];
+	constructor(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage.js").PlatformFacts[] }) {
 		this.instanceId = json.instanceId; this.epoch = json.epoch; this.platforms = json.platforms;
 	}
-	static fromJSON(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage").PlatformFacts[] }) { return new LineageClassifyRequest(json); }
+	static fromJSON(json: { instanceId: number; epoch: string; platforms: import("./shared/lineage.js").PlatformFacts[] }) { return new LineageClassifyRequest(json); }
 	toJSON() { return { instanceId: this.instanceId, epoch: this.epoch, platforms: this.platforms }; }
 	static Response = {
 		jsonSchema: { type: "object", properties: { verdicts: { type: "array", maxItems: 500, items: { type: "object" } } }, required: ["verdicts"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { verdicts: import("./shared/lineage").LineageVerdict[] }; },
+		fromJSON(json: unknown) { return json as { verdicts: import("./shared/lineage.js").LineageVerdict[] }; },
 	};
 }
 
@@ -251,9 +251,9 @@ export class ListLineageConflictsRequest {
 			unavailable: { type: "array", items: { type: "object" } }, resolutions: { type: "array", items: { type: "object" } } },
 		required: ["conflicts", "unavailable", "resolutions"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { conflicts: import("./shared/lineage-resolution").ConflictEntry[];
+			return json as { conflicts: import("./shared/lineage-resolution.js").ConflictEntry[];
 				unavailable: Array<{ instanceId: number; reason: string }>;
-				resolutions: import("./shared/lineage-resolution").PublicResolutionRecord[] };
+				resolutions: import("./shared/lineage-resolution.js").PublicResolutionRecord[] };
 		},
 	};
 }
@@ -277,13 +277,13 @@ export class ResolvePlatformLineageRequest {
 	instanceId: number;
 	platformIndex: number;
 	platformUid: string;
-	action: import("./shared/lineage-resolution").ResolutionAction;
+	action: import("./shared/lineage-resolution.js").ResolutionAction;
 	requestId: string;
-	constructor(json: { instanceId: number; platformIndex: number; platformUid: string; action: import("./shared/lineage-resolution").ResolutionAction; requestId: string }) {
+	constructor(json: { instanceId: number; platformIndex: number; platformUid: string; action: import("./shared/lineage-resolution.js").ResolutionAction; requestId: string }) {
 		this.instanceId = json.instanceId; this.platformIndex = json.platformIndex; this.platformUid = json.platformUid;
 		this.action = json.action; this.requestId = json.requestId;
 	}
-	static fromJSON(json: { instanceId: number; platformIndex: number; platformUid: string; action: import("./shared/lineage-resolution").ResolutionAction; requestId: string }) {
+	static fromJSON(json: { instanceId: number; platformIndex: number; platformUid: string; action: import("./shared/lineage-resolution.js").ResolutionAction; requestId: string }) {
 		return new ResolvePlatformLineageRequest(json);
 	}
 	toJSON() { return { instanceId: this.instanceId, platformIndex: this.platformIndex, platformUid: this.platformUid, action: this.action, requestId: this.requestId }; }
@@ -315,7 +315,7 @@ export class LineageCandidatesRequest {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, epoch: { type: "string" }, error: { type: "string" },
 			platforms: { type: "array", items: { type: "object" } } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { success: boolean; epoch?: string; error?: string; platforms?: import("./shared/lineage").ResolutionCandidate[] };
+			return json as { success: boolean; epoch?: string; error?: string; platforms?: import("./shared/lineage.js").ResolutionCandidate[] };
 		},
 	};
 }
@@ -927,12 +927,12 @@ export class JobsStatusRequest {
 			type: "object", properties: {jobId: {type: "string"}, operationId: {type: "string"}}, additionalProperties: false,
 		}}}, required: ["jobs"], additionalProperties: false,
 	};
-	constructor(readonly jobs: import("./shared/job-status").JobReference[]) {}
-	static fromJSON(json: {jobs: import("./shared/job-status").JobReference[]}) { return new JobsStatusRequest(json.jobs); }
+	constructor(readonly jobs: import("./shared/job-status.js").JobReference[]) {}
+	static fromJSON(json: {jobs: import("./shared/job-status.js").JobReference[]}) { return new JobsStatusRequest(json.jobs); }
 	toJSON() { return {jobs: this.jobs}; }
 	static Response = {
 		jsonSchema: {type: "object", properties: {version: {type: "number"}, epoch: {type: "string"}, observedTick: {type: "number"}, jobs: {type: "array", items: {type: "object"}}}, required: ["version", "epoch", "jobs"]} as JsonSchema,
-		fromJSON(json: unknown) { return json as import("./shared/job-status").JobStatusBatch; },
+		fromJSON(json: unknown) { return json as import("./shared/job-status.js").JobStatusBatch; },
 	};
 }
 
@@ -1072,7 +1072,7 @@ export class InstanceListPlatformsRequest {
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" }, debugMode: { type: "boolean" }, autoPause: { type: ["boolean", "null"] } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; autoPause?: boolean | null; recovery?: import("./shared/recovery").InstanceRecoveryStatus }; },
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[]; debugMode?: boolean; autoPause?: boolean | null; recovery?: import("./shared/recovery.js").InstanceRecoveryStatus }; },
 	};
 }
 
@@ -1794,7 +1794,7 @@ export class ReadEntityEvidenceRequest {
 	toJSON() { return { transferId: this.transferId, file: this.file, tick: this.tick }; }
 	static Response = {
 		jsonSchema: { type: "object", properties: { status: { enum: ["available", "unavailable"] }, file: { type: "string" }, rows: { type: "array" }, totalRows: { type: "integer" }, truncated: { type: "boolean" }, reason: { type: "string" } }, required: ["status", "file", "rows", "totalRows", "truncated"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as import("./shared/entity-evidence").EntityEvidence; },
+		fromJSON(json: unknown) { return json as import("./shared/entity-evidence.js").EntityEvidence; },
 	};
 }
 
@@ -1895,9 +1895,9 @@ export interface ActiveTransfer {
 	platformUid?: string;
 	lineage?: string | null;
 	lineageGeneration?: number | null;
-	sourceRollback?: import("./shared/recovery").SourceRollback;
+	sourceRollback?: import("./shared/recovery.js").SourceRollback;
 	lateDestinationCleanup?: boolean;
- destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status").JobObservation;
+ destinationJobId?: string; jobEpoch?: string; jobObservation?: import("./shared/job-status.js").JobObservation;
 	awaitingLateVerdict?: boolean;
 	queuedRequestId?: string;
 	timingPendingRecovery?: boolean;
@@ -1989,12 +1989,12 @@ export interface PendingTransferIntent {
 export interface IControllerPlugin {
 	handlePlatformExport(event: PlatformExportEvent): Promise<void>;
 	handleImportOperationCompleteEvent(event: ImportOperationCompleteEvent): Promise<void>;
-	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery").PlatformSourceOfTruth; allowAdoption: boolean }>;
+	recoveryReservations?: Map<number, { epoch: string; mode: import("./shared/recovery.js").PlatformSourceOfTruth; allowAdoption: boolean }>;
 	lineagePresence(wanted: Map<number, Set<string>>): Promise<Map<string, { state: "present" } | { state: "absent" } | { state: "unknown"; reason: string }>>;
 	lineageRegistry: {
 		loadError: string | null;
-		precheckTransfer(commit: import("./shared/lineage").TransferCommit): string | null;
-		commitTransfer(commit: import("./shared/lineage").TransferCommit): Promise<"write" | "noop">;
+		precheckTransfer(commit: import("./shared/lineage.js").TransferCommit): string | null;
+		commitTransfer(commit: import("./shared/lineage.js").TransferCommit): Promise<"write" | "noop">;
 	};
 	pendingTransfers?: Map<string, PendingTransferIntent>;
 	persistPendingTransfer(intent: PendingTransferIntent): void;
@@ -2018,7 +2018,7 @@ export interface IControllerPlugin {
 		error(msg: string): void;
 		verbose(msg: string): void;
 	};
-	gatewayConfig?: { portalOf(instanceId: number): import("./shared/portals").PortalAssignment | null };
+	gatewayConfig?: { portalOf(instanceId: number): import("./shared/portals.js").PortalAssignment | null };
 	platformStorage: Map<string, StoredExport>;
 	platformTree: {
 		resolvePlatformUid(instanceId: number, platformIndex: number, forceName: string, expectedUid?: string): Promise<string>;
@@ -2046,9 +2046,9 @@ export interface IControllerPlugin {
 	txLogger: {
 		getObservedDuration(transfer: ActiveTransfer): number | null;
 		rejectObservation(id: string, request: Record<string, unknown>, error: string): Promise<void>;
-		beginObservation(id: string): import("./shared/timing").TimingClockContract;
+		beginObservation(id: string): import("./shared/timing.js").TimingClockContract;
 		bindObservation(from: string, to: string): void;
-		clock(id: string): import("./shared/timing").TimingClockContract;
+		clock(id: string): import("./shared/timing.js").TimingClockContract;
 		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>, atMs?: number | null): void;
 		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
 		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;

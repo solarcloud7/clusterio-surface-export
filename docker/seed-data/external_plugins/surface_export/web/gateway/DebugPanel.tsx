@@ -2,11 +2,11 @@ import { useState } from "react";
 import { Button, Checkbox, Space, Switch, Tag, Tooltip, Typography } from "antd";
 import { CloseOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 
-import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS, SHIP_PHASE_NAMES } from "./debug-mode";
-import { shipPhaseFor } from "./transfer-motion";
-import type { DebugState } from "./debug-mode";
-import MotionPreview from "./MotionPreview";
-import LogPreview from "../logs/LogPreview";
+import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS, SHIP_PHASE_NAMES } from "./debug-mode.js";
+import { shipPhaseFor } from "./transfer-motion.js";
+import type { DebugState } from "./debug-mode.js";
+import MotionPreview from "./MotionPreview.js";
+import LogPreview from "../logs/LogPreview.js";
 import "../logs/style.css";
 
 const { Text } = Typography;

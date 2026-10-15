@@ -73,11 +73,11 @@ export function shipPhaseFor(transfer: string | PositionedTransfer | null | unde
 
 export interface PositionedTransfer {
 	lateDestinationCleanup?: boolean;
-	sourceRollback?: import("./recovery").SourceRollback;
+	sourceRollback?: import("./recovery.js").SourceRollback;
 	registrySource?: "active" | "persisted";
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
-	jobObservation?: import("./job-status").JobObservation;
+	jobObservation?: import("./job-status.js").JobObservation;
 	status?: string;
 	platformName?: string;
 }

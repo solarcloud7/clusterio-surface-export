@@ -1,5 +1,5 @@
-import type { ActiveTransfer, OperationOptions, OperationType } from "../messages";
-import { generateOperationId } from "../helpers";
+import type { ActiveTransfer, OperationOptions, OperationType } from "../messages.js";
+import { generateOperationId } from "../helpers.js";
 
 export function createOperationRecord(
 	operationType: OperationType,

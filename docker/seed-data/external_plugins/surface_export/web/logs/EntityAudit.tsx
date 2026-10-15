@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Collapse, Descriptions, Empty, Input, Table } from "antd";
-import { EntityIcon, ItemIcon } from "../icons";
-import { formatNumeric, formatSigned } from "../utils";
-import type { Evidence } from "./evidence";
+import { EntityIcon, ItemIcon } from "../icons.js";
+import { formatNumeric, formatSigned } from "../utils.js";
+import type { Evidence } from "./evidence.js";
 
 export const entityAuditLabel = (state: string) => ({ mismatch: "Failure recorded", partial: "Partial evidence",
 	pending: "Pending", unavailable: "Evidence unavailable", "not-applicable": "Not applicable" }[state] || state);

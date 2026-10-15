@@ -4,22 +4,22 @@ import { Handle, Position, useStore, useUpdateNodeInternals } from "@xyflow/reac
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
-import { ONE_GATE_NAME } from "../../shared/dto";
-import { portalColourName, type PortalColour } from "../../shared/portals";
-import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOrientation, sourceHandleId, spreadTurns, targetHandleId } from "./gateway-graph";
-import type { PeerPortal, PlatformLike, Portal } from "./gateway-graph";
-import PlatformRows from "./PlatformRows";
-import { useGatewayDebug } from "./debug-mode";
-import { PlanetIcon, usePlanetNames } from "../icons";
-import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours";
+import { ONE_GATE_NAME } from "../../shared/dto.js";
+import { portalColourName, type PortalColour } from "../../shared/portals.js";
+import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOrientation, sourceHandleId, spreadTurns, targetHandleId } from "./gateway-graph.js";
+import type { PeerPortal, PlatformLike, Portal } from "./gateway-graph.js";
+import PlatformRows from "./PlatformRows.js";
+import { useGatewayDebug } from "./debug-mode.js";
+import { PlanetIcon, usePlanetNames } from "../icons.js";
+import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours.js";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 import gatewayBlueArt from "./assets/gateway-blue-64.png";
 import gatewayGreenArt from "./assets/gateway-green-64.png";
 import gatewayOrangeArt from "./assets/gateway-orange-64.png";
 import gatewayPurpleArt from "./assets/gateway-purple-64.png";
-import AutoPauseIcon from "./AutoPauseIcon";
-import { QuarantineContext } from "../lineage-conflicts";
-import { ShowPlanetsContext } from "./node-actions";
+import AutoPauseIcon from "./AutoPauseIcon.js";
+import { QuarantineContext } from "../lineage-conflicts.js";
+import { ShowPlanetsContext } from "./node-actions.js";
 
 const { Text } = Typography;
 

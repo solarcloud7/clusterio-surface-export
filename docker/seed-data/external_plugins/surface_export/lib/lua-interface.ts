@@ -1,14 +1,14 @@
-import { timed, timedSync } from "./timing";
-import { normalizeSectionExport, prepareSectionImport } from "./section-codec";
+import { timed, timedSync } from "./timing.js";
+import { normalizeSectionExport, prepareSectionImport } from "./section-codec.js";
 import { escapeString } from "@clusterio/lib";
-import type { ExportData, PassengerCarry, PassengerManifestEntry } from "../messages";
-import { UploadSessions, type UploadReceipt } from "./upload-session";
+import type { ExportData, PassengerCarry, PassengerManifestEntry } from "../messages.js";
+import { UploadSessions, type UploadReceipt } from "./upload-session.js";
 import {
 	chunkify,
 	GATEWAY_CONFIG_SINGLE_LIMIT, GATEWAY_CONFIG_CHUNK_SIZE,
 	toAsciiJson, simpleChecksum, bracketWrap, getErrorMessage,
 	type FactorioInstance,
-} from "../helpers";
+} from "../helpers.js";
 
 type RconHost = FactorioInstance;
 
@@ -187,13 +187,13 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	async relayRouteAlert(request: { alert: import("../messages").RouteAlert; sourceInstanceId: number; sourceName: string }): Promise<import("../messages").SimpleResponse> {
+	async relayRouteAlert(request: { alert: import("../messages.js").RouteAlert; sourceInstanceId: number; sourceName: string }): Promise<import("../messages.js").SimpleResponse> {
 		const payload = JSON.stringify({ ...request.alert, sourceInstanceId: request.sourceInstanceId, sourceName: request.sourceName });
 		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "route_alert_remote", "${escapeString(payload)}")))`);
 		return JSON.parse(raw.trim());
 	}
 
-	async announcePlayerTravel(request: { playerName: string; sourceName: string; targetName: string }): Promise<import("../messages").SimpleResponse> {
+	async announcePlayerTravel(request: { playerName: string; sourceName: string; targetName: string }): Promise<import("../messages.js").SimpleResponse> {
 		const args = [request.playerName, request.sourceName, request.targetName].map(value => `"${escapeString(value)}"`).join(", ");
 		const raw = await this.host.sendRcon(`/sc rcon.print(helpers.table_to_json(remote.call("surface_export", "announce_player_travel", ${args})))`);
 		return JSON.parse(raw.trim());
@@ -261,7 +261,7 @@ export class LuaInterface {
 	}
 
 	async jobStatus(jobs: Array<{jobId?: string; operationId?: string}>) {
-		return this.protocolCall<import("../shared/job-status").JobStatusBatch>("get_job_status_json", {version: 1, jobs});
+		return this.protocolCall<import("../shared/job-status.js").JobStatusBatch>("get_job_status_json", {version: 1, jobs});
 	}
 
 	async configurePlanetPolicy(disabledPlanets: string[], defaultPlanet: string, instanceName: string, epoch: string) {

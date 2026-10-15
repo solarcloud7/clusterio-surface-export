@@ -3,10 +3,10 @@ import { Alert, Button, Form, InputNumber, Select, Spin, Switch, Typography } fr
 import { CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined, RightOutlined, SettingOutlined, TeamOutlined } from "@ant-design/icons";
 import { ControlContext, useAccount } from "@clusterio/web_ui";
 import { Config, ConfigAccess, ControllerConfig, ControllerConfigGetRequest, ControllerConfigSetRequest } from "@clusterio/lib";
-import { getErrorMessage } from "./utils";
+import { getErrorMessage } from "./utils.js";
 import "./settings.css";
-import type { SurfaceExportState } from "./view-models";
-import { hasDebugInstance } from "./gateway/debug-mode";
+import type { SurfaceExportState } from "./view-models.js";
+import { hasDebugInstance } from "./gateway/debug-mode.js";
 
 const fields = [
 	{ name: "surface_export.platform_source_of_truth", label: "Platform source of truth", group: "recovery", unit: "", help: "Choose how to handle platforms restored by loading an older save. Active and unresolved transfers remain protected, and a copy that another server still holds is quarantined, in both modes.", applies: "Takes effect when each instance restarts.", min: 0 },

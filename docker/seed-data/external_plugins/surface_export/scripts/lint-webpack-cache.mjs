@@ -6,7 +6,7 @@ import { dirname, join, relative } from "node:path";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(SCRIPT_DIR, "..");
-const TARGET = process.argv[2] ?? join(PLUGIN_DIR, "webpack.config.js");
+const TARGET = process.argv[2] ?? join(PLUGIN_DIR, "webpack.config.cjs");
 const ALLOW_MARKER = "lint-webpack-cache:allow";
 
 const ASSIGN = /\b(filename|chunkFilename)\s*:\s*(["'`])([^"'`]*)\2/g;

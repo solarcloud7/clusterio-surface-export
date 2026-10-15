@@ -3,25 +3,25 @@ import { Badge, Tabs, Tooltip, notification } from "antd";
 import { WarningOutlined } from "@ant-design/icons";
 
 import {
-	BaseWebPlugin,
 	ControlContext,
 	PageHeader,
 	PageLayout,
 } from "@clusterio/web_ui";
-import * as messageDefs from "../messages";
-import TransactionLogsTab from "./TransactionLogsTab";
-import GatewayCanvas from "./gateway/GatewayCanvas";
-import ImportModal from "./ImportModal";
-import RecoveryWarnings from "./RecoveryWarnings";
-import QuarantinedPlatforms from "./QuarantinedPlatforms";
-import { QuarantineContext, useLineageConflicts, useQuarantineKeys } from "./lineage-conflicts";
-import SettingsTab from "./SettingsTab";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
+import type { Control, WebPluginContext } from "@clusterio/web_ui";
+import * as messageDefs from "../messages.js";
+import TransactionLogsTab from "./TransactionLogsTab.js";
+import GatewayCanvas from "./gateway/GatewayCanvas.js";
+import ImportModal from "./ImportModal.js";
+import RecoveryWarnings from "./RecoveryWarnings.js";
+import QuarantinedPlatforms from "./QuarantinedPlatforms.js";
+import { QuarantineContext, useLineageConflicts, useQuarantineKeys } from "./lineage-conflicts.js";
+import SettingsTab from "./SettingsTab.js";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models.js";
 
-import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
-import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
-import { nextLiveStatus, resubscribeDelayMs, shouldRetryResubscribe } from "../shared/live-status";
-import type { ConnectionEvent, LiveStatus, SyncOutcome } from "../shared/live-status";
+import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils.js";
+import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate.js";
+import { nextLiveStatus, resubscribeDelayMs, shouldRetryResubscribe } from "../shared/live-status.js";
+import type { ConnectionEvent, LiveStatus, SyncOutcome } from "../shared/live-status.js";
 import "./style.css";
 
 const {
@@ -44,14 +44,15 @@ const {
 } = messageDefs;
 
 type ControlLike = {
-	plugins: Map<string, unknown>;
 	connector: { connected: boolean; on(event: ConnectionEvent, listener: () => void): unknown };
 	send: (message: unknown) => Promise<unknown>;
 	handle: (message: unknown, handler: (payload: unknown) => void | Promise<void>) => void;
 };
 
-function useSurfaceExportPlugin(control: ControlLike): SurfaceExportPlugin {
-	return control.plugins.get("surface_export") as SurfaceExportPlugin;
+function useSurfaceExportPlugin(control: Control): SurfaceExportPlugin {
+	const plugin = WebPlugin.get(control);
+	if (!plugin) throw new Error("The Surface Export web plugin is not loaded for this connection");
+	return plugin as unknown as SurfaceExportPlugin;
 }
 
 function useSurfaceExportState(plugin: SurfaceExportPlugin) {
@@ -105,7 +106,7 @@ function SidebarLabel({ plugin }: { plugin: Pick<SurfaceExportPlugin, "getState"
 }
 
 function SurfaceExportPage() {
-	const control = useContext(ControlContext) as unknown as ControlLike;
+	const control = useContext(ControlContext);
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
@@ -172,8 +173,9 @@ function SurfaceExportPage() {
 	);
 }
 
-export class WebPlugin extends BaseWebPlugin {
-	private get link(): ControlLike { return this.control as unknown as ControlLike; }
+export class WebPlugin {
+	private static readonly instances = new WeakMap<Control, WebPlugin>();
+	private readonly link: ControlLike;
 
 	private callbacks: Array<() => void>;
 	private state: SurfaceExportState;
@@ -186,8 +188,8 @@ export class WebPlugin extends BaseWebPlugin {
 	private lastConnectionEvent: ConnectionEvent | null = null;
 	private resubscribeGeneration = 0;
 
-	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
-		super(container, packageData, info as any, control as any, logger as any);
+	private constructor(control: Control) {
+		this.link = control as unknown as ControlLike;
 		this.callbacks = [];
 		this.state = {
 			quarantine: null,
@@ -205,8 +207,21 @@ export class WebPlugin extends BaseWebPlugin {
 		};
 	}
 
-	override async init() {
-		this.pages = [
+	static async fromContext(context: WebPluginContext): Promise<WebPlugin> {
+		const { control, plugin: info } = context;
+		const plugin = new WebPlugin(control);
+		control.hooks.pages.attach(info.name, () => plugin.pages());
+		plugin.init();
+		WebPlugin.instances.set(control, plugin);
+		return plugin;
+	}
+
+	static get(control: Control): WebPlugin | undefined {
+		return WebPlugin.instances.get(control);
+	}
+
+	private pages() {
+		return [
 			{
 				path: "/surface-export",
 				sidebarName: (<SidebarLabel plugin={this} />) as unknown as string,
@@ -214,7 +229,9 @@ export class WebPlugin extends BaseWebPlugin {
 				content: <SurfaceExportPage />,
 			},
 		];
+	}
 
+	private init() {
 		this.link.handle(SurfaceExportTreeUpdateEvent, payload => this.handleTreeUpdate(payload as JsonObject));
 		this.link.handle(SurfaceExportTransferUpdateEvent, payload => this.handleTransferUpdate(payload as JsonObject));
 		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
@@ -640,3 +657,5 @@ export class WebPlugin extends BaseWebPlugin {
 		});
 	}
 }
+
+export default WebPlugin.fromContext;

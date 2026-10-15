@@ -1,7 +1,7 @@
 import { message as antMessage } from "antd";
 
-import { sanitizeTimestamp, downloadJsonFile, getErrorMessage, getProp } from "./utils";
-import type { JsonObject, SurfaceExportPlugin } from "./view-models";
+import { sanitizeTimestamp, downloadJsonFile, getErrorMessage, getProp } from "./utils.js";
+import type { JsonObject, SurfaceExportPlugin } from "./view-models.js";
 
 export type PlatformActionSource = {
 	instanceId: number;

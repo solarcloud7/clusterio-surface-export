@@ -7,7 +7,7 @@ export const ONE_GATE_NAMES: string[] = [ONE_GATE_NAME];
 
 export interface PortalListing {
 	slot: number;
-	colour: import("./portals").PortalColour;
+	colour: import("./portals.js").PortalColour;
 	gatewayName: string;
 	instanceId: number;
 	instanceName: string;
@@ -17,7 +17,7 @@ export interface PortalListingResponse {
 	portals: PortalListing[];
 	pluginOff: PortalListing[];
 	unassigned: Array<{ instanceId: number; instanceName: string }>;
-	retired: Array<{ slot: number; colour: import("./portals").PortalColour; gatewayName: string; formerInstanceId: number; formerInstanceName: string }>;
+	retired: Array<{ slot: number; colour: import("./portals.js").PortalColour; gatewayName: string; formerInstanceId: number; formerInstanceName: string }>;
 	error?: string;
 }
 
@@ -46,10 +46,10 @@ export interface PassengerManifestEntry {
 
 export interface TransferSummaryModel {
 	lateDestinationCleanup?: boolean;
-	sourceRollback?: import("./recovery").SourceRollback;
+	sourceRollback?: import("./recovery.js").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
-	jobObservation?: import("./job-status").JobObservation;
+	jobObservation?: import("./job-status.js").JobObservation;
 	queuedRequestId?: string;
 	observedDurationMs?: number | null;
 	transferId: string;
@@ -116,8 +116,8 @@ export interface PlatformModel {
 export interface InstanceNodeModel {
 	debugMode?: boolean;
 	autoPause?: boolean;
-	recovery?: import("./recovery").InstanceRecoveryStatus;
-	configuredRecoveryMode?: import("./recovery").PlatformSourceOfTruth;
+	recovery?: import("./recovery.js").InstanceRecoveryStatus;
+	configuredRecoveryMode?: import("./recovery.js").PlatformSourceOfTruth;
 	instanceId: number;
 	instanceName: string;
 	hostId: number | null;
@@ -130,7 +130,7 @@ export interface InstanceNodeModel {
 	platformError: string | null;
 	defaultPlanet: string;
 	disabledPlanets: string[];
-	portal: import("./portals").PortalAssignment | null;
+	portal: import("./portals.js").PortalAssignment | null;
 }
 export interface HostNodeModel {
 	hostId: number;
@@ -144,7 +144,7 @@ export type AuditRowKind = "start" | "terminal";
 
 export interface AuditRow {
 	lateDestinationCleanup?: boolean;
-	sourceRollback?: import("./recovery").SourceRollback;
+	sourceRollback?: import("./recovery.js").SourceRollback;
 	timingPendingRecovery?: boolean;
 	sourceRestored?: boolean;
 	observedDurationMs?: number | null;

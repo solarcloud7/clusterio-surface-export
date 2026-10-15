@@ -1,6 +1,6 @@
 
-import { DEFAULT_DEBUG_STATE, SHIP_PHASE_NAMES } from "./debug-mode";
-import type { DebugScenario, DebugState, ReplayCandidate } from "./debug-mode";
+import { DEFAULT_DEBUG_STATE, SHIP_PHASE_NAMES } from "./debug-mode.js";
+import type { DebugScenario, DebugState, ReplayCandidate } from "./debug-mode.js";
 
 export type CanvasDebugControls = {
 	getState: () => DebugState;

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ConflictEntry } from "../shared/lineage-resolution";
-import { quarantinedKeys } from "../shared/quarantine-view";
-import type { SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import type { ConflictEntry } from "../shared/lineage-resolution.js";
+import { quarantinedKeys } from "../shared/quarantine-view.js";
+import type { SurfaceExportPlugin, SurfaceExportState } from "./view-models.js";
 
 export interface LineageConflictsView {
 	conflicts: ConflictEntry[];

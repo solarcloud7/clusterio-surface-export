@@ -1,7 +1,7 @@
-import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
-import type { EntityEvidence } from "../../shared/entity-evidence";
-import { buildDetailedLogSummary, buildExpectedActualRows } from "../utils";
-import { sourceRollbackFromEvents } from "../../shared/recovery";
+import type { JsonObject, LogDetail, TransferSummary } from "../view-models.js";
+import type { EntityEvidence } from "../../shared/entity-evidence.js";
+import { buildDetailedLogSummary, buildExpectedActualRows } from "../utils.js";
+import { sourceRollbackFromEvents } from "../../shared/recovery.js";
 
 export function record(value: unknown): JsonObject {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};

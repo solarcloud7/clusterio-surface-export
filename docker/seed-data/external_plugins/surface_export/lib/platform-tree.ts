@@ -1,6 +1,6 @@
-import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
-import { getErrorMessage } from "../helpers";
-import { recoveryMode } from "../shared/recovery";
+import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages.js";
+import { getErrorMessage } from "../helpers.js";
+import { recoveryMode } from "../shared/recovery.js";
 
 export function planetList(value: unknown): string[] {
 	return typeof value === "string" ? value.split(",").map(name => name.trim()).filter(Boolean) : [];
@@ -17,9 +17,9 @@ function startTime(instance: { status?: string; startedAtMs?: number }): number 
 
 export class PlatformTree {
 	private plugin: IControllerPlugin;
-	private messages: typeof import("../messages");
+	private messages: typeof import("../messages.js");
 
-	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, messages: typeof import("../messages.js")) {
 		this.plugin = plugin;
 		this.messages = messages;
 	}

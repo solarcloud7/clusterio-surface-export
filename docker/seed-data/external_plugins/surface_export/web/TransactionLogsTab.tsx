@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Input, Pagination, Select, Spin, Tag } from "antd";
 import { BugOutlined, SearchOutlined } from "@ant-design/icons";
-import type { SurfaceExportPlugin, SurfaceExportState } from "./view-models";
-import { getErrorMessage, statusColor } from "./utils";
-import { formatMs } from "../shared/utils";
-import { duration, outcomeGroup, route, statusLabel } from "./logs/evidence";
-import TransferDetail from "./logs/TransferDetail";
-import LogPreview from "./logs/LogPreview";
-import { hasDebugInstance } from "./gateway/debug-mode";
-import ImportModal, { type RestoreSnapshot } from "./ImportModal";
+import type { SurfaceExportPlugin, SurfaceExportState } from "./view-models.js";
+import { getErrorMessage, statusColor } from "./utils.js";
+import { formatMs } from "../shared/utils.js";
+import { duration, outcomeGroup, route, statusLabel } from "./logs/evidence.js";
+import TransferDetail from "./logs/TransferDetail.js";
+import LogPreview from "./logs/LogPreview.js";
+import { hasDebugInstance } from "./gateway/debug-mode.js";
+import ImportModal, { type RestoreSnapshot } from "./ImportModal.js";
 import "./logs/style.css";
 
 export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {

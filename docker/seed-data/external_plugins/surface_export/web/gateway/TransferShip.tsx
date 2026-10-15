@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
-import { shipPosition, shipTravelDuration } from "./ship-motion";
-import type { ShipPhase, ShipTransfer } from "./transfer-motion";
-import { initialShipDistance, shipLabel } from "./transfer-motion";
+import { shipPosition, shipTravelDuration } from "./ship-motion.js";
+import type { ShipPhase, ShipTransfer } from "./transfer-motion.js";
+import { initialShipDistance, shipLabel } from "./transfer-motion.js";
 
 export default function TransferShip({ path, phase, reversed, summary, hidden, onSettled }: {
 	path: string;

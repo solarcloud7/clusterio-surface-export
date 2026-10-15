@@ -1,5 +1,5 @@
-import * as messages from "../messages";
-import { getErrorMessage } from "../helpers";
+import * as messages from "../messages.js";
+import { getErrorMessage } from "../helpers.js";
 
 type RelayInstance = { id: number; isDeleted?: boolean; config: { get(key: string): unknown } };
 

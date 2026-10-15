@@ -1,8 +1,7 @@
 import fs from "fs/promises";
-import * as lib from "@clusterio/lib";
-import { enqueueWrite } from "./persist-queue";
-import { getErrorMessage } from "../helpers";
-import { PORTAL_SLOT_COUNT, portalColour } from "../shared/portals";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { getErrorMessage } from "../helpers.js";
+import { PORTAL_SLOT_COUNT, portalColour } from "../shared/portals.js";
 
 export const PORTAL_SLOTS_FILENAME = "surface_export_portal_slots.json";
 
@@ -243,7 +242,7 @@ export class PortalSlots {
 		if (!file) return;
 		const payload = JSON.stringify({ version: 1, slots: [...next.slots].sort((a, b) => a[0] - b[0]), released: [...next.released] });
 		try {
-			await enqueueWrite(file, () => lib.safeOutputFile(file, payload));
+			await enqueueWrite(file, () => writeOutputFile(file, payload));
 			this.lastWriteError = "";
 		} catch (err: unknown) {
 			const message = getErrorMessage(err);

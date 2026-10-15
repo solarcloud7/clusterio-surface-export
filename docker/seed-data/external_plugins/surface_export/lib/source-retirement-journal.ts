@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { isGeneration, isLineage } from "../shared/lineage";
+import { isGeneration, isLineage } from "../shared/lineage.js";
 
 export interface SourceRetirement {
 	platformUid: string;

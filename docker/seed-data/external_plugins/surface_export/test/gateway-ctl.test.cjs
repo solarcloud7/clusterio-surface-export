@@ -5,48 +5,14 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const Module = require("node:module");
-const originalLoad = Module._load;
-
-const registered = [];
-class FakeCommand {
-	constructor(options) {
-		this.definition = options.definition;
-		this.handler = options.handler;
-		registered.push(this);
-	}
-}
-class FakeCommandTree {
-	constructor(options) { this.name = options.name; this.children = []; }
-	add(command) { this.children.push(command); }
-}
-class NoopMetric {
-	labels() { return this; }
-	inc() {}
-	observe() {}
-}
-
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			Command: FakeCommand,
-			CommandTree: FakeCommandTree,
-			escapeString: (value) => String(value),
-			safeOutputFile: async (file, data) => fs.writeFileSync(file, data),
-			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-			Counter: NoopMetric,
-			Histogram: NoopMetric,
-		};
-	}
-	if (request === "@clusterio/ctl") {
-		return { BaseCtlPlugin: class {} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
+const lib = require("@clusterio/lib");
+const { CtlHooks } = require("@clusterio/ctl");
+const { commandsOf, registeredCommands } = require("./ctl-harness.cjs");
 
 const distNode = path.join(__dirname, "..", "dist", "node");
 const control = require(path.join(distNode, "control.js"));
 const messages = require(path.join(distNode, "messages.js"));
+const registered = registeredCommands();
 
 const read = registered.find(c => String(c.definition[0]) === "gateways");
 
@@ -71,6 +37,17 @@ test("gateways reuses GetGatewaysRequest and prints one JSON line", async () => 
 	assert.ok(sent[0].message instanceof messages.GetGatewaysRequest);
 	assert.equal(printed.length, 1);
 	assert.deepEqual(JSON.parse(printed[0]), reply);
+});
+
+test("the ctl entrypoint attaches the command tree to the addCommands hook under the plugin name", async () => {
+	const quiet = { info() {}, verbose() {}, warn() {}, error() {} };
+	const hooks = new CtlHooks(quiet);
+	await control.default({ hooks, plugin: { name: "surface_export" }, logger: quiet });
+	assert.deepEqual([...hooks.addCommands.attached], ["surface_export"]);
+	const root = new lib.CommandTree({ name: "root", description: "clusterioctl" });
+	await hooks.addCommands.invoke(root);
+	assert.ok(root.subCommands.get("surface-export") instanceof lib.CommandTree, "the hook adds the surface-export tree");
+	assert.ok(commandsOf(root).some(command => command.name === "gateways"));
 });
 
 test("gateway links cannot be written from the command line", () => {

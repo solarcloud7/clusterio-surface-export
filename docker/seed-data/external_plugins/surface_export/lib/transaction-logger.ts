@@ -1,14 +1,13 @@
 import fs from "fs/promises";
-import { snapshotAvailability } from "../shared/snapshot";
-import { safeOutputFile } from "@clusterio/lib";
-import { enqueueWrite } from "./persist-queue";
-import { buildAuditRow } from "./audit-ledger";
-import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention";
-import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages";
-import { TimingClock } from "./timing";
-import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
-import { getErrorMessage, PLUGIN_NAME } from "../helpers";
-import { lateDestinationCleanupFromEvents, sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery";
+import { snapshotAvailability } from "../shared/snapshot.js";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { buildAuditRow } from "./audit-ledger.js";
+import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention.js";
+import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages.js";
+import { TimingClock } from "./timing.js";
+import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing.js";
+import { getErrorMessage, PLUGIN_NAME } from "../helpers.js";
+import { lateDestinationCleanupFromEvents, sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery.js";
 
 export class TransactionLogger {
 	private recoveryHydrated = new WeakSet<object>();
@@ -91,7 +90,7 @@ export class TransactionLogger {
 		await this.plugin.recordAuditRow(buildAuditRow({ transferId: id, rowKind: "terminal", savedAt: entry.savedAt,
 			eventCount: 0, lastEventAt: info.failedAt, info }));
 		if (!this.plugin.transactionLogLoadError) await enqueueWrite(this.plugin.transactionLogPath,
-			() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(this.plugin.persistedTransactionLogs, null, 2)));
+			() => writeOutputFile(this.plugin.transactionLogPath, JSON.stringify(this.plugin.persistedTransactionLogs, null, 2)));
 	}
 
 	getObservedDuration(transfer: ActiveTransfer): number | null {
@@ -231,7 +230,7 @@ export class TransactionLogger {
 		if (active) await this.persistTransactionLog(id, false);
 		else if (!this.plugin.transactionLogLoadError) {
 			await enqueueWrite(this.plugin.transactionLogPath,
-				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(this.plugin.persistedTransactionLogs, null, 2)));
+				() => writeOutputFile(this.plugin.transactionLogPath, JSON.stringify(this.plugin.persistedTransactionLogs, null, 2)));
 		}
 		const summary = active ? this.buildDetailedTransferSummary(id, active)
 			: this.plugin.persistedTransactionLogs.find(entry => entry.transferId === id)?.summary;
@@ -685,7 +684,7 @@ export class TransactionLogger {
 			}
 
 			await enqueueWrite(this.plugin.transactionLogPath,
-				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(retained, null, 2)));
+				() => writeOutputFile(this.plugin.transactionLogPath, JSON.stringify(retained, null, 2)));
 		} catch (err: unknown) {
 			failed = true;
 			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);

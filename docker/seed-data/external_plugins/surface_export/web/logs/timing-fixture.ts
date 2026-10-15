@@ -1,5 +1,5 @@
 // Sanitized Factorio 2.1.17 profiler records from the 2026-09-06 bounded transfer probe.
-import type { OperationTiming } from "../../shared/timing";
+import type { OperationTiming } from "../../shared/timing.js";
 const timing: OperationTiming = {
   "v": 1,
   "records": [

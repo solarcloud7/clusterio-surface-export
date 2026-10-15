@@ -1,35 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { unavailableEvidence } from "./lib/entity-evidence";
+import { unavailableEvidence } from "./lib/entity-evidence.js";
 import { performance } from "node:perf_hooks";
-import { timed, timedSync, timingContext } from "./lib/timing";
+import { timed, timedSync, timingContext } from "./lib/timing.js";
 import fs from "fs/promises";
 import path from "path";
-import { BaseControllerPlugin } from "@clusterio/controller";
-import type { Controller, InstanceRecord } from "@clusterio/controller";
+import type { Controller, ControllerPluginContext, InstanceRecord } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
-import { GatewayConfig } from "./lib/gateway-config";
-import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots";
-import { LineageRegistry, LINEAGE_REGISTRY_FILENAME } from "./lib/lineage-registry";
-import { LineageResolver } from "./lib/lineage-resolution";
-import { RELEASING_RESOLUTIONS } from "./shared/lineage-resolution";
-import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier";
-import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle";
-import { RouteAlertRelay } from "./lib/route-alert-relay";
+import { GatewayConfig } from "./lib/gateway-config.js";
+import { PortalSlots, PORTAL_SLOTS_FILENAME } from "./lib/portal-slots.js";
+import { LineageRegistry, LINEAGE_REGISTRY_FILENAME } from "./lib/lineage-registry.js";
+import { LineageResolver } from "./lib/lineage-resolution.js";
+import { RELEASING_RESOLUTIONS } from "./shared/lineage-resolution.js";
+import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier.js";
+import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle.js";
+import { RouteAlertRelay } from "./lib/route-alert-relay.js";
 
 type InstanceStatusChange = { id: number; status?: string };
-import { PlatformTree, instanceAddress } from "./lib/platform-tree";
-import { TransactionLogger } from "./lib/transaction-logger";
-import { SubscriptionManager } from "./lib/subscription-manager";
-import { enqueueWrite } from "./lib/persist-queue";
-import { buildAuditRow } from "./lib/audit-ledger";
-import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } from "./lib/export-storage";
-import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit";
-import type { AuditRow } from "./lib/audit-ledger";
-import { TransferOrchestrator, JobObservationStopped } from "./lib/transfer-orchestrator";
-import { isInstanceRouteRejection } from "./lib/request-errors";
-import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
-import { recoveryMode, hasUnresolvedOwnership, protectedSourceIndexes, type PlatformSourceOfTruth } from "./shared/recovery";
-import { importableSnapshot } from "./shared/snapshot";
+import { PlatformTree, instanceAddress } from "./lib/platform-tree.js";
+import { TransactionLogger } from "./lib/transaction-logger.js";
+import { SubscriptionManager } from "./lib/subscription-manager.js";
+import { enqueueWrite, writeOutputFile } from "./lib/persist-queue.js";
+import { buildAuditRow } from "./lib/audit-ledger.js";
+import { canonicalizeStoredExport, loadStoredExports, persistStoredExports } from "./lib/export-storage.js";
+import { loadControllerAudit, migrateControllerAudit, recordControllerAuditRow } from "./lib/controller-audit.js";
+import type { AuditRow } from "./lib/audit-ledger.js";
+import { TransferOrchestrator, JobObservationStopped } from "./lib/transfer-orchestrator.js";
+import { isInstanceRouteRejection } from "./lib/request-errors.js";
+import { createOperationRecord as buildOperationRecord } from "./lib/operation-record.js";
+import { recoveryMode, hasUnresolvedOwnership, protectedSourceIndexes, type PlatformSourceOfTruth } from "./shared/recovery.js";
+import { importableSnapshot } from "./shared/snapshot.js";
 import type {
 	IControllerPlugin,
 	ActiveTransfer,
@@ -40,9 +39,9 @@ import type {
 	StoredExport,
 	TransactionLogEntryModel,
 	PersistedTransactionLog,
-} from "./messages";
-import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
+} from "./messages.js";
+import * as messages from "./messages.js";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, STORAGE_FILENAME, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers.js";
 
 const PLUGIN_NAME = "surface_export";
 const TREE_INSTANCE_CONFIG_FIELDS = new Set([
@@ -51,7 +50,30 @@ const TREE_INSTANCE_CONFIG_FIELDS = new Set([
 	"instance.name",
 ]);
 
-export class ControllerPlugin extends BaseControllerPlugin {
+export class ControllerPlugin {
+	private static readonly instances = new WeakMap<Controller, ControllerPlugin>();
+
+	private constructor(readonly controller: Controller, readonly logger: lib.Logger) {}
+
+	static async fromContext(context: ControllerPluginContext): Promise<ControllerPlugin> {
+		const { controller, logger, plugin: info } = context;
+		const plugin = new ControllerPlugin(controller, logger);
+		await plugin.init();
+		controller.hooks.shutdown.attach(info.name, () => plugin.onShutdown());
+		controller.hooks.instanceStatusChanged.attach(info.name, instance => plugin.onInstanceStatusChanged(instance));
+		controller.hooks.instanceConfigFieldChanged.attach(info.name, (instance, field) => plugin.onInstanceConfigFieldChanged(instance, field));
+		controller.hooks.controllerConfigFieldChanged.attach(info.name, field => plugin.onControllerConfigFieldChanged(field));
+		controller.hooks.hostConnectionEvent.attach(info.name, () => plugin.onHostConnectionEvent());
+		controller.hooks.controlConnectionEvent.attach(info.name, (connection, event) => plugin.onControlConnectionEvent(connection, event));
+		controller.hooks.playerEvent.attach(info.name, (instance, event) => plugin.onPlayerEvent(instance, event));
+		ControllerPlugin.instances.set(controller, plugin);
+		return plugin;
+	}
+
+	static get(controller: Controller): ControllerPlugin | undefined {
+		return ControllerPlugin.instances.get(controller);
+	}
+
 	private get c(): Controller { return this.controller; }
 	private cfg<T = unknown>(key: string): T {
 		return (this.controller.config as { get(k: string): unknown }).get(key) as T;
@@ -114,11 +136,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const file = this.playerLocationsPath;
 		if (!file) return;
 		const payload = JSON.stringify({version: 1, locations: [...this.playerLocations]});
-		try { await enqueueWrite(file, () => lib.safeOutputFile(file, payload)); }
+		try { await enqueueWrite(file, () => writeOutputFile(file, payload)); }
 		catch (error: unknown) { this.logger.warn(`Player travel history could not be saved: ${getErrorMessage(error)}`); }
 	}
 
-	override async onPlayerEvent(instance: InstanceRecord, event: lib.PlayerEvent): Promise<void> {
+	async onPlayerEvent(instance: InstanceRecord, event: lib.PlayerEvent): Promise<void> {
 		const playerKey = event.name.toLowerCase();
 		const previousId = this.playerLocations.get(playerKey);
 		if (event.type === "leave") {
@@ -143,7 +165,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		});
 	}
 
-	override async init() {
+	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
 
 		this.platformStorage = new Map();
@@ -500,14 +522,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (this.recoveryReservations.has(instanceId)) throw new Error("Instance is reconciling its loaded save; retry after recovery completes");
 	}
 
-	override async onShutdown() {
+	async onShutdown() {
 		if (this.recoveryTimer) clearInterval(this.recoveryTimer);
 		this.orchestrator.stop();
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
 
-	override onControlConnectionEvent(connection: unknown, event: string) {
+	onControlConnectionEvent(connection: unknown, event: string) {
 		if (event === "close") {
 			this.surfaceExportSubscriptions.delete(
 				connection as { send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } },
@@ -515,11 +537,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	override onHostConnectionEvent() {
+	onHostConnectionEvent() {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 	}
 
-	override async onInstanceStatusChanged(instance?: InstanceStatusChange) {
+	async onInstanceStatusChanged(instance?: InstanceStatusChange) {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		if (instance && instance.status === "running" && this.routeAlerts) await this.routeAlerts.replayTo(instance.id);
 		const gateways = this.gatewayConfig;
@@ -530,7 +552,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	override async onInstanceConfigFieldChanged(_instance: InstanceRecord, field: string) {
+	async onInstanceConfigFieldChanged(_instance: InstanceRecord, field: string) {
 		if (TREE_INSTANCE_CONFIG_FIELDS.has(field)) this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		const gateways = this.gatewayConfig;
 		if (field !== "instance.name" || !gateways) return;
@@ -540,7 +562,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	override async onControllerConfigFieldChanged(field: string) {
+	async onControllerConfigFieldChanged(field: string) {
 		if (field !== "surface_export.passenger_carry_armor" && field !== "surface_export.passenger_carry_inventory"
 			&& field !== "surface_export.discord_invite") return;
 		const gateways = this.gatewayConfig;
@@ -1200,7 +1222,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				throw new Error(`Recovery intent unavailable for ${requiredTransferId}`);
 			}
 			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
-			await enqueueWrite(this.pendingTransfersPath, () => lib.safeOutputFile(this.pendingTransfersPath, payload));
+			await enqueueWrite(this.pendingTransfersPath, () => writeOutputFile(this.pendingTransfersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
 			if (requiredTransferId) throw err;
@@ -1265,3 +1287,5 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return { instances };
 	}
 }
+
+export default ControllerPlugin.fromContext;

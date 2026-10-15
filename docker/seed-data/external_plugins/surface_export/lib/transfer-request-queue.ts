@@ -1,9 +1,8 @@
 import fs from "node:fs/promises";
-import { safeOutputFile } from "@clusterio/lib";
-import { enqueueWrite } from "./persist-queue";
-import { isAdmissionSettled } from "../shared/operation-lifecycle";
-import { parseCanonicalTransferId } from "../shared/utils";
-import type { ActiveTransfer } from "../messages";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { isAdmissionSettled } from "../shared/operation-lifecycle.js";
+import { parseCanonicalTransferId } from "../shared/utils.js";
+import type { ActiveTransfer } from "../messages.js";
 
 export interface QueuedTransferRequest {
 	sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number;
@@ -121,7 +120,7 @@ export class TransferRequestQueue {
 		// Timers and profiler state are not durable queue state.
 		const value = JSON.stringify({v: 2, handoffs: [...this.handoffs], entries: [...this.entries.values()].map(entry => ({ ...entry,
 			operation: { ...entry.operation, validationTimeout: undefined, timing: undefined } }))});
-		await enqueueWrite(this.path, () => safeOutputFile(this.path!, value));
+		await enqueueWrite(this.path, () => writeOutputFile(this.path!, value));
 	}
 
 	private wake() {

@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Collapse, Descriptions, Empty, Space, Spin, Table, Tabs, Tag, Tooltip, message as antMessage } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
-import type { JsonObject, LogDetail, SurfaceExportPlugin, TransferSummary } from "../view-models";
-import { buildGanttRows, buildOperationCountRows, formatBytes, formatNumeric, getErrorMessage } from "../utils";
-import { formatMs } from "../../shared/utils";
-import { diagnosticReport, downloadJson, duration, evidence, record, route, terminal } from "./evidence";
-import AuditTable, { auditLabel } from "./AuditTable";
-import TimingTable from "./TimingTable";
-import EntityAudit, { entityAuditLabel } from "./EntityAudit";
-import type { OperationTiming } from "../../shared/timing";
+import type { JsonObject, LogDetail, SurfaceExportPlugin, TransferSummary } from "../view-models.js";
+import { buildGanttRows, buildOperationCountRows, formatBytes, formatNumeric, getErrorMessage } from "../utils.js";
+import { formatMs } from "../../shared/utils.js";
+import { diagnosticReport, downloadJson, duration, evidence, record, route, terminal } from "./evidence.js";
+import AuditTable, { auditLabel } from "./AuditTable.js";
+import TimingTable from "./TimingTable.js";
+import EntityAudit, { entityAuditLabel } from "./EntityAudit.js";
+import type { OperationTiming } from "../../shared/timing.js";
 import { useAccount } from "@clusterio/web_ui";
-import { PERMISSIONS } from "../../messages";
-import type { RestoreSnapshot } from "../ImportModal";
+import { PERMISSIONS } from "../../messages.js";
+import type { RestoreSnapshot } from "../ImportModal.js";
 
 export default function TransferDetail({ row, detail, loading, error, onRetry, plugin, preview = false, onRestore }: {
 	row: TransferSummary; detail?: LogDetail; loading?: boolean; error?: string; onRetry?: () => void;

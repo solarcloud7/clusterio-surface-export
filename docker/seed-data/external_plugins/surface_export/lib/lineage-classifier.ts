@@ -1,7 +1,7 @@
-import { isGeneration, isLineage, type LineageEntry, type LineageVerdict, type LineageVerdictName, type PlatformFacts } from "../shared/lineage";
-import type { PlatformSourceOfTruth } from "../shared/recovery";
+import { isGeneration, isLineage, type LineageEntry, type LineageVerdict, type LineageVerdictName, type PlatformFacts } from "../shared/lineage.js";
+import type { PlatformSourceOfTruth } from "../shared/recovery.js";
 
-export type { LineageVerdict, LineageVerdictName, PlatformFacts } from "../shared/lineage";
+export type { LineageVerdict, LineageVerdictName, PlatformFacts } from "../shared/lineage.js";
 
 export interface ControllerHints {
 	inTransit: boolean;

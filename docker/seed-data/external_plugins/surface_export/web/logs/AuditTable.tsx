@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Alert, Empty, Input, Radio, Switch, Table, Tag } from "antd";
-import { ItemIcon, FluidIcon } from "../icons";
-import { formatNumeric, formatSigned, parseFluidTemperatureKey } from "../utils";
-import type { Evidence } from "./evidence";
+import { ItemIcon, FluidIcon } from "../icons.js";
+import { formatNumeric, formatSigned, parseFluidTemperatureKey } from "../utils.js";
+import type { Evidence } from "./evidence.js";
 
 export const auditLabel = (state: string) => ({ passed: "Passed", mismatch: "Mismatch", pending: "Pending",
 	unavailable: "Evidence unavailable", "not-applicable": "Not applicable" }[state] || state);

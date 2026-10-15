@@ -1,6 +1,6 @@
 import { deflate, inflate } from "node:zlib";
 import { promisify } from "node:util";
-import { timed, timedSync } from "./timing";
+import { timed, timedSync } from "./timing.js";
 
 const compress = promisify(deflate);
 const decompress = promisify(inflate);

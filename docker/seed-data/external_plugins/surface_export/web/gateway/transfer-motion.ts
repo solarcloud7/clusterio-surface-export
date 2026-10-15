@@ -1,9 +1,9 @@
-import type { TransferSummary } from "../view-models";
-import { shipPhaseFor } from "../../shared/transfer-status";
-import type { ShipTone } from "../../shared/transfer-status";
+import type { TransferSummary } from "../view-models.js";
+import { shipPhaseFor } from "../../shared/transfer-status.js";
+import type { ShipTone } from "../../shared/transfer-status.js";
 
-export { groupEdgeShips, shipPhaseFor, shipLabel, initialShipDistance } from "../../shared/transfer-status";
-export type { EdgeShipGroups, EdgeStatusMarker, ShipPhase, ShipTone } from "../../shared/transfer-status";
+export { groupEdgeShips, shipPhaseFor, shipLabel, initialShipDistance } from "../../shared/transfer-status.js";
+export type { EdgeShipGroups, EdgeStatusMarker, ShipPhase, ShipTone } from "../../shared/transfer-status.js";
 
 const LEGEND_LABELS: Record<ShipTone, string> = {
 	queued: "queued",
@@ -18,7 +18,7 @@ export const SHIP_LEGEND: Array<{ tone: ShipTone; label: string }> =
 
 export const TERMINAL_LINGER_MS = 10000;
 
-export { SHIP_TRAVEL_MS } from "./ship-motion";
+export { SHIP_TRAVEL_MS } from "./ship-motion.js";
 
 const SHIP_MEMORY_CAP = 32;
 const shipMemory = new Map<string, { terminalSeenAt?: number; seenLive?: boolean }>();

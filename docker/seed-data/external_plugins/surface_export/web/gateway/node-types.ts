@@ -1,5 +1,5 @@
-import { InstanceNode } from "./InstanceNode";
-import FloatingEdge from "./FloatingEdge";
+import { InstanceNode } from "./InstanceNode.js";
+import FloatingEdge from "./FloatingEdge.js";
 
 export const CANVAS_NODE_TYPES = {
 	instance: InstanceNode,

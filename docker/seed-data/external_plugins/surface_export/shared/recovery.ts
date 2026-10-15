@@ -1,4 +1,4 @@
-import { hasUnresolvedPlatformOwnership } from "./operation-lifecycle";
+import { hasUnresolvedPlatformOwnership } from "./operation-lifecycle.js";
 
 export type PlatformSourceOfTruth = "plugin_history" | "save_game";
 

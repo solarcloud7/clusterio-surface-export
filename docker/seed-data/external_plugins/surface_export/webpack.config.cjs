@@ -32,6 +32,7 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	cache: { type: "filesystem", buildDependencies: { config: [__filename] } },
 	resolve: {
 		extensions: [".tsx", ".ts", ".jsx", ".js"],
+		extensionAlias: { ".js": [".ts", ".tsx", ".js"] },
 	},
 	output: {
 		path: path.resolve(__dirname, "dist", "web-build"),

@@ -10,28 +10,12 @@ const path = require("node:path");
 const trace = [];
 beforeEach(() => { trace.length = 0; });
 
-const Module = require("node:module");
-const originalLoad = Module._load;
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			escapeString: (value) => String(value),
-			safeOutputFile: async (file, data) => { trace.push("detail"); fs.writeFileSync(file, data); },
-			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-			Counter: class {},
-			Histogram: class {},
-		};
-	}
-	if (request === "@clusterio/controller") {
-		return { BaseControllerPlugin: class {} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
-
-after(() => { Module._load = originalLoad; });
-
 const distNode = path.join(__dirname, "..", "dist", "node");
+const { setOutputFileWriterForTest } = require(path.join(distNode, "lib", "persist-queue.js"));
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
+setOutputFileWriterForTest(async (file, data) => { trace.push("detail"); fs.writeFileSync(file, data); });
+
+after(() => { setOutputFileWriterForTest(null); });
 
 const warnings = [];
 beforeEach(() => { warnings.length = 0; });

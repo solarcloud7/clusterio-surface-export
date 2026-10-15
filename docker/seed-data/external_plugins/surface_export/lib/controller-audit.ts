@@ -1,9 +1,8 @@
-import { safeOutputFile } from "@clusterio/lib";
-import { enqueueWrite } from "./persist-queue";
-import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./audit-ledger";
-import type { AuditRow } from "./audit-ledger";
-import { getErrorMessage } from "../helpers";
-import type { IControllerPlugin } from "../messages";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./audit-ledger.js";
+import type { AuditRow } from "./audit-ledger.js";
+import { getErrorMessage } from "../helpers.js";
+import type { IControllerPlugin } from "../messages.js";
 
 type ControllerAuditState = Pick<IControllerPlugin,
 	"logger" | "auditLedgerPath" | "auditIndex" | "auditRevisions" | "persistedTransactionLogs">;
@@ -57,7 +56,7 @@ export async function migrateControllerAudit(state: ControllerAuditState): Promi
 		});
 	const payload = rows.map(row => `${JSON.stringify(row)}
 `).join("");
-	await enqueueWrite(state.auditLedgerPath, () => safeOutputFile(state.auditLedgerPath, payload));
+	await enqueueWrite(state.auditLedgerPath, () => writeOutputFile(state.auditLedgerPath, payload));
 	state.logger.info(
 		`Audit ledger: migrated ${rows.length} transfer(s) from the detail store into `
 		+ `${state.auditLedgerPath}. The detail store was not modified. NOTE: that store is a BOUNDED `

@@ -1,4 +1,4 @@
-import type { PersistedTransactionLog } from "../messages";
+import type { PersistedTransactionLog } from "../messages.js";
 
 
 export const RESERVED_SUCCESS_SLOTS = 25;

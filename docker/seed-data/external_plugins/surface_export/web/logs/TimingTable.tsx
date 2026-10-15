@@ -1,7 +1,7 @@
 import { Empty, Table } from "antd";
-import type { GanttRow, TimelineAttribution } from "../view-models";
-import type { OperationTiming } from "../../shared/timing";
-import MeasuredTiming, { timingMs } from "./MeasuredTiming";
+import type { GanttRow, TimelineAttribution } from "../view-models.js";
+import type { OperationTiming } from "../../shared/timing.js";
+import MeasuredTiming, { timingMs } from "./MeasuredTiming.js";
 
 export default function TimingTable({ rows, timing, compact = false }: {
  rows: GanttRow[]; attribution?: TimelineAttribution; timing?: OperationTiming | null; compact?: boolean;

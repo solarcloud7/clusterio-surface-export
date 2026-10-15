@@ -1,6 +1,6 @@
 import React from "react";
 import { Collapse, Table, Tag, Tooltip } from "antd";
-import { clockGroups, elapsed, type OperationTiming, type TimingRecord } from "../../shared/timing";
+import { clockGroups, elapsed, type OperationTiming, type TimingRecord } from "../../shared/timing.js";
 
 export const timingMs = (value: number | null | undefined) => value == null ? "Not measured" : `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} ms`;
 const labels = { controller: "Clusterio orchestration", instance: "Clusterio instance handling",

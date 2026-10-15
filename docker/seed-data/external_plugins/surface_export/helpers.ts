@@ -1,4 +1,4 @@
-import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages";
+import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages.js";
 
 export const PLUGIN_NAME = "surface_export";
 
@@ -33,7 +33,7 @@ export function bracketWrap(text: string): string {
 	throw new Error("no safe long-bracket level found for payload");
 }
 
-export { getErrorMessage, generateOperationId, makeCanonicalTransferId, parseCanonicalTransferId } from "./shared/utils";
+export { getErrorMessage, generateOperationId, makeCanonicalTransferId, parseCanonicalTransferId } from "./shared/utils.js";
 
 export function isSessionLostError(err: unknown): boolean {
 	return typeof err === "object" && err !== null

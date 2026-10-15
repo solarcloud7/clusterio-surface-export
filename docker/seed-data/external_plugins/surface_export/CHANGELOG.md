@@ -13,9 +13,13 @@ and this version is not supported on the 2.0.0 alphas.
 ### Clusterio 2.0
 
 - The plugin runs on the stable Clusterio 2.0 release. Node.js 22 or newer is
-  required. Clusterio logs a deprecation warning for each of the plugin's
-  controller, instance, ctl and web entry points because they still use the class
-  form; the entry points behave as before.
+  required. The package is an ES module and its controller, instance, ctl and web
+  entry points are the functions Clusterio 2.0 calls with a plugin context, so
+  Clusterio no longer logs a deprecation warning for each of them at startup. Nothing
+  changes for administrators or players.
+- The web interface keeps listening to its controller connection directly to
+  resubscribe after a reconnect, because Clusterio 2.0.1's web connection hook does
+  not pass the event name.
 - The five `surface_export.*` permissions are declared on the plugin itself. Roles
   keep their grants.
 - The Gateways and Transaction Logs pages resubscribe after the browser reconnects

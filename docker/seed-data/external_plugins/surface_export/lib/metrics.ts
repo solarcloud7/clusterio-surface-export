@@ -1,5 +1,5 @@
 import * as lib from "@clusterio/lib";
-import type { ActiveTransfer } from "../messages";
+import type { ActiveTransfer } from "../messages.js";
 
 const TERMINAL_RESULT: Record<string, string> = {
 	completed: "success",

@@ -70,7 +70,7 @@ export function toGanttGeometry(row: { startMs: number; endMs: number }, totalMs
 
 const NOTICE_THRESHOLD_PCT = 5;
 
-import { formatMs } from "./utils";
+import { formatMs } from "./utils.js";
 
 export function describeAttribution(attribution: TimelineAttribution): { headline: string; detail: string } | null {
 	const notices: Array<{ headline: string; detail: string }> = [];

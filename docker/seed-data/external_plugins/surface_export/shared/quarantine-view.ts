@@ -1,4 +1,4 @@
-import type { ConflictEntry, ResolutionAction } from "./lineage-resolution";
+import type { ConflictEntry, ResolutionAction } from "./lineage-resolution.js";
 
 export type CopyState = "present" | "missing" | "unknown" | "none";
 
