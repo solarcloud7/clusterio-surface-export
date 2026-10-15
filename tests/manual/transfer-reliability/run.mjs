@@ -75,7 +75,7 @@ if(args.length===0||args[0]==="--list"||args[0]==="--help") {
     const directory=join(ROOT,"ci-artifacts",run);mkdirSync(directory,{recursive:true});
     const report={schemaVersion:1,case:chosen.id,run,contract:checkpoint?checkpointContract:contract,sectionedCodec,startedAt:new Date().toISOString(),
       head:execFileSync("git",["rev-parse","HEAD"],{cwd:ROOT,encoding:"utf8"}).trim(),hashes:{},cleanup:{success:false}};
-    for(const file of checkpoint?["run.mjs","docker-lab.mjs","lifecycle.mjs","checkpoint-check.mjs"]:["run.mjs","docker-lab.mjs","cases.mjs","fault-hook.cjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs","destination-rollback.mjs","save-policy.mjs","recovery-browser.mjs","lineage-resolution.mjs","rollback-recovery.mjs"])
+    for(const file of checkpoint?["run.mjs","docker-lab.mjs","lifecycle.mjs","checkpoint-check.mjs"]:["run.mjs","docker-lab.mjs","cases.mjs","fault-hook.mjs","fault-hook-loader.mjs","fault-hook-patch.mjs","age-intent.mjs","performance.lua","oracle.mjs","contract.json","backup-restore.mjs","backup-storage.mjs","destination-rollback.mjs","save-policy.mjs","recovery-browser.mjs","lineage-resolution.mjs","rollback-recovery.mjs"])
       report.hashes[file]=hash(new URL(file,import.meta.url));
     if(checkpoint) report.hashes[".env.example"]=hash(join(ROOT,".env.example"));
     report.hashes["runtime-profile"]=hash(join(ROOT,"tools/shared/runtime-profile.mjs"));
