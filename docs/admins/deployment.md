@@ -19,9 +19,9 @@ of the Clusterio deployment.
 
 Plugin `0.12.0-beta.1` is the current release under npm's `beta` tag. It requires
 Clusterio `^2.0.0` (developed against `2.0.1`), Factorio Space Age `2.1.20` and the
-`surfexp_gateways` mod `0.7.9`. Releases up to `0.11.0-beta.6` require the
-`2.0.0-alpha.27` prerelease and do not load on Clusterio 2.0; this release is not
-supported on the alphas. Every release is published by the
+`surfexp_gateways` mod `0.7.9`. The `0.11.0` betas require the `2.0.0-alpha.27`
+prerelease and do not load on Clusterio 2.0; this release is not supported on the
+alphas. Every release is published by the
 [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
 from a `v*` tag after package acceptance and integration checks; the published
 archive matches the tested archive byte for byte. What changed in each version is
