@@ -109,13 +109,27 @@ A new save always starts on Nauvis. Delta is a normal Nauvis start. Sigma, Theta
 and Omega start their players on Vulcanus, Fulgora and Gleba. At startup the
 plugin creates that planet's surface if it is missing and generates the area
 around 0,0 (see [planets on each instance](configuration.md#planets-on-each-instance)).
-It does not clear hazards there. Prepare the world with the game's own tools:
-start the server, use an administrator account and the map editor or console to
-clear the planet around 0,0, then save and stop. Note what you did so it can be
-repeated. A misspelt planet name, or no free character position within 64 tiles
-of 0,0, blocks startup recovery and shows in the web interface; hazards near the
-arrival area do not, so check it yourself before opening the server. There is no
-tool for this step yet.
+It does not clear hazards there. Start the server, then clear the arrival area
+from a checkout of this repository, with the cluster named as in step 3:
+
+```text
+node tools/surface-export/prepare-world.mjs --cluster vm --instance Sigma --dry-run
+node tools/surface-export/prepare-world.mjs --cluster vm --instance Sigma
+```
+
+The tool reads the server's applied default planet, generates the chunks within
+6 chunks (192 tiles) of 0,0 (`--radius-chunks` changes that), counts the hostile
+entities there, checks that a character fits within 64 tiles of 0,0, and prints a
+JSON report with found, destroyed and remaining counts per entity kind. The dry
+run destroys nothing and exits 3 while hazards exist; the real run destroys them,
+charts the area for the player force and exits 0 once nothing hostile remains
+inside the radius and the arrival position exists. Save afterwards with
+`npx clusterioctl instance save-game Sigma` if you stop the server before its
+next autosave. The tool does not prepare technology or starter inventories, and a
+demolisher whose body lies outside the radius keeps its territory. A misspelt
+planet name, or no free character position within 64 tiles of 0,0, blocks startup
+recovery and shows in the web interface; hazards near the arrival area do not, so
+run the tool before opening the server.
 
 ## 5. Start and verify
 

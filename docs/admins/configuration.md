@@ -83,7 +83,10 @@ planet. Occupants of valid platforms remain aboard. New players use the default
 even if Nauvis is enabled; existing residents of enabled planets are not moved.
 Relocation that Factorio temporarily refuses is retried once per second of
 simulation time. Changing the default does not make its terrain or technology a
-playable starting scenario; administrators still need to prepare the world.
+playable starting scenario. `tools/surface-export/prepare-world.mjs` clears the
+hostile entities around 0,0 on the default planet and checks the arrival position
+(see [create the worlds](production-rollout.md#4-create-the-worlds)); technology
+and starter inventories remain the administrator's to prepare.
 
 The in-game **Instance** panel shows the applied instance name and unavailable
 planets. A configuration edit does not change that panel until restart applies it.
