@@ -10,7 +10,7 @@ RUN echo "$PACKAGE_SHA256  /release/package.tgz" | sha256sum -c - \
     && echo "$GATEWAY_SHA256  /release/gateway.zip" | sha256sum -c - \
     && node /release/verify-gateway.cjs \
     && npm uninstall --omit=dev --no-audit --no-fund \
-      @clusterio/plugin-global_chat @clusterio/plugin-inventory_sync @clusterio/plugin-player_auth \
+      @clusterio/plugin-global_chat @clusterio/plugin-player_sync @clusterio/plugin-player_auth \
       @clusterio/plugin-research_sync @clusterio/plugin-statistics_exporter @clusterio/plugin-subspace_storage \
     && npm install --omit=dev --no-audit --no-fund /release/package.tgz
 COPY verify-install.cjs /release/verify-install.cjs

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 import { developmentCluster } from "../../../tools/shared/cluster-transport.mjs";
 
@@ -34,7 +35,7 @@ try {
 	});
 	await page.goto("http://localhost:8080", { waitUntil: "domcontentloaded" });
 	const config = JSON.parse(execFileSync("docker", ["exec", "surface-export-controller", "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
-	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
+	await page.evaluate(token => localStorage.setItem("controller_token", token), controllerToken(config));
 	await page.goto("http://localhost:8080/surface-export?tab=gateways", { waitUntil: "domcontentloaded" });
 	const sourceName = developmentCluster.instanceName(1);
 	const instance = page.locator(".react-flow__node").filter({ has: page.getByText(sourceName, { exact: true }) }).first();

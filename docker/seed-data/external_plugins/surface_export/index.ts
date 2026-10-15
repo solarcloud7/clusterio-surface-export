@@ -1,49 +1,56 @@
-const lib = require("@clusterio/lib") as { definePermission(opts: { name: string; title: string; description: string }): void };
+import type * as lib from "@clusterio/lib";
 
 import * as messages from "./messages";
 const { PERMISSIONS } = messages;
 
 const PLUGIN_NAME = "surface_export";
 
-lib.definePermission({
-	name: PERMISSIONS.LIST_EXPORTS,
-	title: "List Surface Exports",
-	description: "Allows listing stored Surface Export platform snapshots on the controller.",
-});
-
-lib.definePermission({
-	name: PERMISSIONS.TRANSFER_EXPORTS,
-	title: "Transfer Surface Exports",
-	description: "Allows pushing a stored Surface Export snapshot onto a target instance.",
-});
-
-lib.definePermission({
-	name: PERMISSIONS.UI_VIEW,
-	title: "View Surface Export UI",
-	description: "Allows viewing Surface Export web UI pages and platform tree data.",
-});
-
-lib.definePermission({
-	name: PERMISSIONS.RECOVERY_RESOLVE,
-	title: "Resolve Surface Export platform conflicts",
-	description: "Allows keeping, adopting, releasing or deleting copies of a platform that startup recovery quarantined.",
-});
-
-lib.definePermission({
-	name: PERMISSIONS.VIEW_LOGS,
-	title: "View Surface Export Transaction Logs",
-	description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
-});
+declare module "@clusterio/lib" {
+	export interface Permissions {
+		"surface_export.exports.list": never;
+		"surface_export.exports.transfer": never;
+		"surface_export.ui.view": never;
+		"surface_export.logs.view": never;
+		"surface_export.recovery.resolve": never;
+	}
+}
 
 export const plugin = {
 	name: PLUGIN_NAME,
 	title: "Surface Export",
 	description: "Export and import Factorio space platforms between Clusterio instances",
-	instanceEntrypoint: "dist/node/instance",
-	controllerEntrypoint: "dist/node/controller",
+	instanceEntrypoint: "dist/node/instance.js",
+	controllerEntrypoint: "dist/node/controller.js",
 	webEntrypoint: "./web",
 	routes: ["/surface-export"],
 	features: ["SavePatching", "ScriptCommands"],
+	permissions: [
+		{
+			name: PERMISSIONS.LIST_EXPORTS,
+			title: "List Surface Exports",
+			description: "Allows listing stored Surface Export platform snapshots on the controller.",
+		},
+		{
+			name: PERMISSIONS.TRANSFER_EXPORTS,
+			title: "Transfer Surface Exports",
+			description: "Allows pushing a stored Surface Export snapshot onto a target instance.",
+		},
+		{
+			name: PERMISSIONS.UI_VIEW,
+			title: "View Surface Export UI",
+			description: "Allows viewing Surface Export web UI pages and platform tree data.",
+		},
+		{
+			name: PERMISSIONS.RECOVERY_RESOLVE,
+			title: "Resolve Surface Export platform conflicts",
+			description: "Allows keeping, adopting, releasing or deleting copies of a platform that startup recovery quarantined.",
+		},
+		{
+			name: PERMISSIONS.VIEW_LOGS,
+			title: "View Surface Export Transaction Logs",
+			description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
+		},
+	],
 	instanceConfigFields: {
 		[`${PLUGIN_NAME}.disabled_planets`]: {
 			title: "Unavailable planets",
@@ -216,5 +223,5 @@ export const plugin = {
 		messages.RelayRouteAlertRequest,
 		messages.PushGatewayConfigRequest,
 	],
-	ctlEntrypoint: "dist/node/control",
-};
+	ctlEntrypoint: "dist/node/control.js",
+} satisfies lib.PluginDeclaration;

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 
 export async function recoveryBrowser(lab,report,{restartRequired=false,offlineInstance=null,restoreFailure=false}={}) {
   const {chromium}=await import("playwright");
   assert.match(lab.url,/^http:\/\/127\.0\.0\.1:\d+$/,"only owned loopback lab allowed");
-  const token=JSON.parse(lab.docker(["exec",lab.controller,"cat","/clusterio/tokens/config-control.json"]))["control.controller_token"];
+  const token=controllerToken(JSON.parse(lab.docker(["exec",lab.controller,"cat","/clusterio/tokens/config-control.json"])));
   const browser=await chromium.launch({headless:true});
   const evidence={errors:[],warnings:false,dialog:false,restartRequired:false};
   let page;

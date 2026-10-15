@@ -19,6 +19,9 @@ test("remote cluster config reads a token file and names the missing file withou
 		"control.json": "﻿" + JSON.stringify({ "control.controller_url": "http://internal:8080/", "control.controller_token": TOKEN }) };
 	assert.deepEqual(readRemoteCluster("vm", { file: "c.json", read: name => control[name], exists: name => name in control }),
 		{ url: "https://vm.example/", token: TOKEN }, "a copied control config supplies the token, even with a byte-order mark");
+	const ctl = { ...control, "control.json": JSON.stringify({ "ctl.controller_url": "http://internal:8080/", "ctl.controller_token": TOKEN }) };
+	assert.deepEqual(readRemoteCluster("vm", { file: "c.json", read: name => ctl[name], exists: name => name in ctl }),
+		{ url: "https://vm.example/", token: TOKEN }, "a Clusterio 2.0 ctl config supplies the token under its renamed key");
 });
 
 test("a remote call writes, uses and removes its private config inside one container shell, with the token only on stdin", async () => {
@@ -54,7 +57,7 @@ test("ctl refuses global options anywhere and local-config commands on remote cl
 		["--cluster", "vm", "instance", "list", "--config", "/clusterio/tokens/config-control.json"],
 		["--cluster", "vm", "instance", "list", "--plugin-list=/tmp/evil.json"],
 		["instance", "list", "--log-level", "silly"],
-		["--cluster", "vm", "--write", "control-config", "list"],
+		["--cluster", "vm", "--write", "config", "list"],
 		["--cluster", "vm", "--write", "plugin", "list"],
 	]) {
 		const err = sink();
@@ -62,7 +65,7 @@ test("ctl refuses global options anywhere and local-config commands on remote cl
 		assert.match(err.text(), /^Refusing/);
 	}
 	assert.deepEqual(ran, [], "nothing reached clusterioctl");
-	assert.equal(await ctlMain(["--write", "control-config", "list"], { run, out: sink(), err: sink() }), 0, "the local dev cluster may inspect its own config");
+	assert.equal(await ctlMain(["--write", "config", "list"], { run, out: sink(), err: sink() }), 0, "the local dev cluster may inspect its own config");
 });
 
 test("ctl allows only read-only commands without --write", async () => {

@@ -45,7 +45,7 @@ const {
 
 type ControlLike = {
 	plugins: Map<string, unknown>;
-	connector: { connected: boolean };
+	connector: { connected: boolean; on(event: ConnectionEvent, listener: () => void): unknown };
 	send: (message: unknown) => Promise<unknown>;
 	handle: (message: unknown, handler: (payload: unknown) => void | Promise<void>) => void;
 };
@@ -89,6 +89,7 @@ function LiveStatusBadge({ state }: { state: SurfaceExportState }) {
 }
 
 const QUARANTINE_POLL_MS = 30_000;
+const CONNECTION_EVENTS: readonly ConnectionEvent[] = ["connect", "drop", "resume", "close"];
 
 function SidebarLabel({ plugin }: { plugin: Pick<SurfaceExportPlugin, "getState" | "watchQuarantine"> }) {
 	const read = () => plugin.getState().quarantine?.conflicts.length ?? 0;
@@ -217,9 +218,13 @@ export class WebPlugin extends BaseWebPlugin {
 		this.link.handle(SurfaceExportTreeUpdateEvent, payload => this.handleTreeUpdate(payload as JsonObject));
 		this.link.handle(SurfaceExportTransferUpdateEvent, payload => this.handleTransferUpdate(payload as JsonObject));
 		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
+		for (const event of CONNECTION_EVENTS) {
+			this.link.connector.on(event, () => this.handleConnectionEvent(event));
+		}
+		if (this.link.connector.connected) this.handleConnectionEvent("connect");
 	}
 
-	override onControllerConnectionEvent(event: ConnectionEvent) {
+	handleConnectionEvent(event: ConnectionEvent) {
 		this.lastConnectionEvent = event;
 		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());

@@ -25,7 +25,8 @@ if ($LASTEXITCODE -ne 0) {
 
 try {
     $Config = $ConfigJson | ConvertFrom-Json
-    $Token = $Config.'control.controller_token'
+    $Token = $Config.'ctl.controller_token'
+    if ([string]::IsNullOrWhiteSpace($Token)) { $Token = $Config.'control.controller_token' }
     if ([string]::IsNullOrWhiteSpace($Token)) {
         throw "Token not found in config"
     }

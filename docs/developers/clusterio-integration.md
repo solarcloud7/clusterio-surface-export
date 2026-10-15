@@ -18,14 +18,24 @@ and artwork. It contains no runtime transfer controller.
 
 Paths are relative to the [plugin root](../../docker/seed-data/external_plugins/surface_export/).
 [index.ts](../../docker/seed-data/external_plugins/surface_export/index.ts)
-registers the actual entry points, messages and configuration. There is no separate
-Surface Export host-plugin entry point. Follow each pinned base class's real
-lifecycle hooks; controller initialization is not an instance `onStart` hook.
+registers the actual entry points, messages, permissions and configuration. There
+is no separate Surface Export host-plugin entry point. Follow each pinned base
+class's real lifecycle hooks; controller initialization is not an instance
+`onStart` hook.
 
-The dependency pin is Clusterio `2.0.0-alpha.27`. The development image revision is
-separately configured in `.env.example`. Use the
-[pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.0-alpha.27/docs/writing-plugins.md)
+The dependency pin is Clusterio `2.0.1` with the peer range `^2.0.0`. The
+development image revision is separately configured in `.env.example`. Use the
+[pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/writing-plugins.md)
 and the installed package source for upstream behavior.
+
+Clusterio 2.0 imports plugin entry points as ES modules by file name, so the
+declared entry points carry their `.js` extension. The plugin's own output is
+still CommonJS and exports the controller, instance, ctl and web classes;
+Clusterio 2.0 loads class exports but deprecates them in favour of entry-point
+functions and hooks, logs a warning for each, and describes the conversion in its
+[2.0 plugin migration guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/devs/plugin-migration-to-2.0.md).
+The `@types/ws` development dependency exists because Clusterio's library resolves
+its WebSocket typing to a source file that imports `ws`.
 
 ## Example: follow a web transfer
 

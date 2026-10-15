@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { launchChromiumOrSkip } from "../../../tools/tests/integration-skip.mjs";
+import { controllerToken } from "../../../tools/shared/ctl-config.mjs";
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
 
 const browser = await launchChromiumOrSkip("settings");
@@ -50,7 +51,7 @@ try {
 	});
 	await page.goto(origin, { waitUntil: "domcontentloaded" });
 	const config = JSON.parse(execFileSync("docker", ["exec", controller, "cat", "/clusterio/tokens/config-control.json"], { encoding: "utf8" }));
-	await page.evaluate(token => localStorage.setItem("controller_token", token), config["control.controller_token"]);
+	await page.evaluate(token => localStorage.setItem("controller_token", token), controllerToken(config));
 	await page.goto(`${origin}/surface-export?tab=settings`, { waitUntil: "domcontentloaded" });
 	const input = page.getByRole("spinbutton", { name: "Saved Detailed Transfer Logs" });
 	await input.waitFor();

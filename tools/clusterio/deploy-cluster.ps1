@@ -406,7 +406,8 @@ $tokenJson = docker exec surface-export-controller cat /clusterio/tokens/config-
 if ($LASTEXITCODE -eq 0 -and $tokenJson) {
     try {
         $tokenConfig = $tokenJson | ConvertFrom-Json
-        $adminToken = $tokenConfig.'control.controller_token'
+        $adminToken = $tokenConfig.'ctl.controller_token'
+        if (-not $adminToken) { $adminToken = $tokenConfig.'control.controller_token' }
         if ($adminToken) {
             Write-Host "Admin Token: $adminToken" -ForegroundColor Yellow
             try { $adminToken | Set-Clipboard; Write-Host "(Copied to clipboard)" -ForegroundColor Green }
