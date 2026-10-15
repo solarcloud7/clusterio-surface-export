@@ -9,6 +9,7 @@ import { recoveryCase } from "../transfer-reliability/cases.mjs";
 import { analyzePackage } from "./oracle.mjs";
 import { verifyPackage } from "../../../tools/release/verify-package.mjs";
 import { stagePackage } from "../../../tools/release/stage-package.mjs";
+import { resolveImages } from "../../../tools/shared/runtime-profile.mjs";
 
 const arg=process.argv[2];
 if(arg==="--analyze") {
@@ -47,8 +48,8 @@ if(arg==="--analyze") {
     const [packed]=JSON.parse(raw);assert.equal(packed.name,"@solarcloud7/plugin-surface-export");
     tarball=join(directory,packed.filename);
     report.package={name:packed.name,version:packed.version,integrity:packed.integrity,sha256:hash(tarball),files:packed.files.map(f=>f.path)};save();
-    const tag=readFileSync(join(ROOT,".env.example"),"utf8").match(/^CLUSTERIO_IMAGE_TAG=(.+)$/m)[1].trim();
-    const image=`ghcr.io/solarcloud7/clusterio-docker-controller:${tag}`,consumer=`${run}-npm-consumer`;
+    const runtime=resolveImages({root:ROOT});report.runtime={imageTag:runtime.imageTag,clusterioVersion:runtime.clusterioVersion};save();
+    const image=runtime.controllerImage,consumer=`${run}-npm-consumer`;
     lab.docker(["run","-d","--name",consumer,"--label",`surface-export.manual-run=${run}`,"--entrypoint","sleep",image,"infinity"]);
     lab.docker(["cp",tarball,`${consumer}:/candidate.tgz`]);
     // Normal tarball installation: no --force, --legacy-peer-deps or ignored install hooks.
@@ -57,13 +58,13 @@ if(arg==="--analyze") {
       const fs=require('fs'),path=require('path'),assert=require('assert/strict');
       const root='/clusterio/node_modules/@solarcloud7/plugin-surface-export',p=require(root+'/package.json');
       assert.equal(p.version,process.argv[1]);
-      for(const n of ['controller','ctl','host','lib'])assert.equal(require('@clusterio/'+n+'/package.json').version,'2.0.0-alpha.27');
+      for(const n of ['controller','ctl','host','lib'])assert.equal(require('@clusterio/'+n+'/package.json').version,process.argv[2]);
       assert.equal(require.resolve('@clusterio/lib',{paths:[root]}),require.resolve('@clusterio/lib'));
       const manifest=JSON.parse(fs.readFileSync(root+'/dist/web/manifest.json'));
       for(const value of Object.values(manifest))assert.ok(fs.existsSync(path.join(root,'dist/web',value)),'missing web artifact '+value);
       assert.equal(JSON.parse(fs.readFileSync(root+'/module/module.json')).version,p.version);
       require(root+'/dist/node/index.js');
-      console.log(JSON.stringify({success:true,version:p.version,webEntries:Object.keys(manifest),coreVersion:'2.0.0-alpha.27'}));`,packed.version]));
+      console.log(JSON.stringify({success:true,version:p.version,webEntries:Object.keys(manifest),coreVersion:process.argv[2]}));`,packed.version,runtime.clusterioVersion]));
     lab.docker(["cp",`${consumer}:/clusterio/node_modules/@solarcloud7/plugin-surface-export/.`,installed]);
     report.packageInstall.treeHash=hashTree(installed);save();
     console.log("Tarball installed with normal npm peer resolution; checking the packed runtime in Factorio");
