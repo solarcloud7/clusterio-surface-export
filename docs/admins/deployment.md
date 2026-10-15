@@ -192,10 +192,13 @@ the rollback on a copy first.
 
 The Discord invite printed to joining players is the controller setting
 `surface_export.discord_invite` (see [configuration](configuration.md)). Relaying
-chat to Discord uses the separate `@hornwitser/discord_bridge` Clusterio plugin,
-which is not part of this repository: install and register it on the controller
-like any other plugin, set `discord_bridge.channel_id` (the desired-state file
-carries it), and set the bot token with
+chat to Discord used the separate `@hornwitser/discord_bridge` Clusterio plugin,
+which is not part of this repository. Its last release, 0.2.5, is not a Clusterio
+2.0 plugin: a 2.0 controller throws at startup while it is registered, and a 2.0
+controller without it refuses `config set discord_bridge.channel_id`, so a
+desired-state file for a 2.0 cluster must not carry that field. On a
+2.0.0-alpha.27 controller, install and register it like any other plugin, set
+`discord_bridge.channel_id`, and set the bot token with
 
 ```text
 node tools/clusterio/set-discord-token.mjs --cluster vm

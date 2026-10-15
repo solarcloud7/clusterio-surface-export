@@ -33,7 +33,8 @@ host always need two different ports.
 The controller and both hosts need the same plugin list registered:
 `@solarcloud7/plugin-surface-export` (this plugin), `@clusterio/plugin-research_sync`
 (the desired state sets `research_sync.load_plugin` on every server) and
-`@hornwitser/discord_bridge` if chat is relayed to Discord. Register each with
+`@hornwitser/discord_bridge` only on a 2.0.0-alpha.27 controller (its 0.2.5
+release does not load on Clusterio 2.0). Register each with
 `clusteriocontroller plugin add` or `clusteriohost plugin add` as described in
 [installation](deployment.md#register-the-installed-plugin), then restart the
 controller and hosts and confirm both hosts show as connected:
