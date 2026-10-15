@@ -17,10 +17,10 @@ of the Clusterio deployment.
 
 ## Release availability
 
-Plugin `0.11.0-beta.6` is the current release under npm's `beta` tag. It requires
-exactly Clusterio `2.0.0-alpha.27`, Factorio Space Age `2.1.20` and the
-`surfexp_gateways` mod `0.7.9`, and it does not load on Clusterio 2.0. The next
-release requires Clusterio `^2.0.0` (developed against `2.0.1`) and is not
+Plugin `0.12.0-beta.1` is the current release under npm's `beta` tag. It requires
+Clusterio `^2.0.0` (developed against `2.0.1`), Factorio Space Age `2.1.20` and the
+`surfexp_gateways` mod `0.7.9`. Releases up to `0.11.0-beta.6` require the
+`2.0.0-alpha.27` prerelease and do not load on Clusterio 2.0; this release is not
 supported on the alphas. Every release is published by the
 [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
 from a `v*` tag after package acceptance and integration checks; the published
@@ -41,8 +41,8 @@ Run these commands in the Clusterio installation directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@0.11.0-beta.6 peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@0.11.0-beta.6
+npm view @solarcloud7/plugin-surface-export@0.12.0-beta.1 peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@0.12.0-beta.1
 ```
 
 ### Accepted candidate archive

@@ -4,7 +4,7 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
-## Unreleased
+## 0.12.0-beta.1
 
 Requires Clusterio `2.0.1` (peer range `^2.0.0`), Factorio Space Age `2.1.20` and the
 `surfexp_gateways` mod `0.7.9`. Earlier plugin versions do not load on Clusterio 2.0,
