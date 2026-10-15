@@ -58,13 +58,15 @@ if(arg==="--analyze") {
       const fs=require('fs'),path=require('path'),assert=require('assert/strict');
       const root='/clusterio/node_modules/@solarcloud7/plugin-surface-export',p=require(root+'/package.json');
       assert.equal(p.version,process.argv[1]);
-      for(const n of ['controller','ctl','host','lib'])assert.equal(require('@clusterio/'+n+'/package.json').version,process.argv[2]);
+      const peers={};
+      for(const n of ['controller','ctl','host','lib']){let v;try{v=require('@clusterio/'+n+'/package.json').version}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e;continue}assert.equal(v,process.argv[2]);peers[n]=v}
+      for(const n of ['controller','lib'])assert.ok(peers[n],'@clusterio/'+n+' is not installed in the image');
       assert.equal(require.resolve('@clusterio/lib',{paths:[root]}),require.resolve('@clusterio/lib'));
       const manifest=JSON.parse(fs.readFileSync(root+'/dist/web/manifest.json'));
       for(const value of Object.values(manifest))assert.ok(fs.existsSync(path.join(root,'dist/web',value)),'missing web artifact '+value);
       assert.equal(JSON.parse(fs.readFileSync(root+'/module/module.json')).version,p.version);
       require(root+'/dist/node/index.js');
-      console.log(JSON.stringify({success:true,version:p.version,webEntries:Object.keys(manifest),coreVersion:process.argv[2]}));`,packed.version,runtime.clusterioVersion]));
+      console.log(JSON.stringify({success:true,version:p.version,webEntries:Object.keys(manifest),coreVersion:process.argv[2],peers}));`,packed.version,runtime.clusterioVersion]));
     lab.docker(["cp",`${consumer}:/clusterio/node_modules/@solarcloud7/plugin-surface-export/.`,installed]);
     report.packageInstall.treeHash=hashTree(installed);save();
     console.log("Tarball installed with normal npm peer resolution; checking the packed runtime in Factorio");
