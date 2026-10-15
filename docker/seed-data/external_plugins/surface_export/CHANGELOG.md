@@ -18,6 +18,10 @@ and this version is not supported on the 2.0.0 alphas.
   form; the entry points behave as before.
 - The five `surface_export.*` permissions are declared on the plugin itself. Roles
   keep their grants.
+- The Gateways and Transaction Logs pages resubscribe after the browser reconnects
+  to the controller. Clusterio 2.0's web interface no longer tells a class-based
+  plugin which connection event fired, so the plugin listens to the connection
+  itself.
 - Passengers carry no gear when a `player_sync` remote interface is present, the
   Clusterio 2.0 name of `inventory_sync`; the old name is still honoured.
 - The repository tools read the clusterioctl token from either the Clusterio 2.0
