@@ -1,14 +1,14 @@
 import { Button, Modal, Tooltip, message } from "antd";
 import { ReloadOutlined, WarningOutlined } from "@ant-design/icons";
 import { useAccount } from "@clusterio/web_ui";
-import { PERMISSIONS } from "../messages";
-import { newRestoreRequestId } from "../shared/snapshot";
-import type { ConflictEntry, ResolutionAction } from "../shared/lineage-resolution";
-import { quarantineRow, tripsLabel, type QuarantineCopy, type QuarantineRow } from "../shared/quarantine-view";
-import { formatUptime, uptimeMs } from "../shared/uptime";
-import type { InstanceNodeModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
-import type { LineageConflictsView } from "./lineage-conflicts";
-import { getErrorMessage } from "./utils";
+import { PERMISSIONS } from "../messages.js";
+import { newRestoreRequestId } from "../shared/snapshot.js";
+import type { ConflictEntry, ResolutionAction } from "../shared/lineage-resolution.js";
+import { quarantineRow, tripsLabel, type QuarantineCopy, type QuarantineRow } from "../shared/quarantine-view.js";
+import { formatUptime, uptimeMs } from "../shared/uptime.js";
+import type { InstanceNodeModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models.js";
+import type { LineageConflictsView } from "./lineage-conflicts.js";
+import { getErrorMessage } from "./utils.js";
 
 const VERDICT_TEXT: Record<string, string> = {
 	duplicate: "Another server holds the current copy of this platform.",

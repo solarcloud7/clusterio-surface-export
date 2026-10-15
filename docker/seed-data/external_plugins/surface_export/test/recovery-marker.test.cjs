@@ -5,7 +5,7 @@ const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),ts=r
 const motion={};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,"../web/gateway/transfer-motion.ts"),"utf8"),
 	{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:motion,require:name=>
-	name==="./ship-motion"?{}:require("../dist/node/shared/transfer-status")});
+	name==="./ship-motion.js"?{}:require("../dist/node/shared/transfer-status")});
 
 test("resumed healthy work keeps its phase and job observation", () => {
 	for (const status of ["preparing", "transporting", "awaiting_validation"]) {
@@ -48,8 +48,8 @@ test("debug scenarios and replay candidates preserve recovery presentation", () 
 	vm.runInNewContext(ts.transpileModule(
 		fs.readFileSync(path.join(__dirname, "../web/gateway/debug-mode.ts"), "utf8"),
 		{ compilerOptions: { module: ts.ModuleKind.CommonJS } },
-	).outputText, { exports: debug, require: name => name === "./transfer-motion" ? motion
-		: name === "./gateway-graph" ? {} : require(name) });
+	).outputText, { exports: debug, require: name => name === "./transfer-motion.js" ? motion
+		: name === "./gateway-graph.js" ? {} : require(name) });
 	for (const presentation of [
 		{ status: "failed", sourceRollback: "succeeded" },
 		{ status: "failed", sourceRollback: "failed" },

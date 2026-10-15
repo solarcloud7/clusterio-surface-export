@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { groupEdgeShips, shipPhaseFor } from "./transfer-motion";
-import type { ShipTransfer } from "./transfer-motion";
-import TransferShip from "./TransferShip";
-import EdgeStatusMarker from "./EdgeStatusMarker";
+import { groupEdgeShips, shipPhaseFor } from "./transfer-motion.js";
+import type { ShipTransfer } from "./transfer-motion.js";
+import TransferShip from "./TransferShip.js";
+import EdgeStatusMarker from "./EdgeStatusMarker.js";
 
 export default function EdgeTransfers({ path, ships, anchorInstanceId }: {
 	path: string;

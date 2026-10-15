@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
-const configure = require("../webpack.config.js");
+const configure = require("../webpack.config.cjs");
 const webpack = require("webpack");
 
 async function compileDirect(config) {

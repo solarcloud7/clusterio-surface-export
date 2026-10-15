@@ -1,6 +1,6 @@
-import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
-import type { GanttRow, TimelineAttribution } from "./view-models";
-import { buildTransferTimeline, toGanttGeometry, type TimelineEventInput } from "../shared/transfer-timeline";
+import type { JsonObject, LogEvent, TransferSummary } from "./view-models.js";
+import type { GanttRow, TimelineAttribution } from "./view-models.js";
+import { buildTransferTimeline, toGanttGeometry, type TimelineEventInput } from "../shared/transfer-timeline.js";
 
 function getString(obj: JsonObject, key: string, fallback: string): string;
 function getString(obj: JsonObject, key: string, fallback?: null): string | null;
@@ -24,7 +24,7 @@ export function getProp<T>(obj: object | null | undefined, key: string, fallback
 	return val !== undefined && val !== null ? (val as T) : fallback;
 }
 
-export { getErrorMessage } from "../shared/utils";
+export { getErrorMessage } from "../shared/utils.js";
 
 export function statusColor(status: string) {
 	switch (status) {

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import webpack from "webpack";
-import configure from "../webpack.config.js";
+import configure from "../webpack.config.cjs";
 import { publishWebAssets } from "./web-assets.mjs";
 
 const pluginDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");

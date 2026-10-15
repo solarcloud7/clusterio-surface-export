@@ -4,36 +4,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const Module = require("node:module");
-
-const originalLoad = Module._load;
-const metricDefinitions = [];
-class NoopMetric {
-	constructor(name, help, options) {
-		metricDefinitions.push({ name, help, options });
-	}
-	labels(labels) {
-		this.lastLabels = labels;
-		return this;
-	}
-	inc() {}
-	observe() {}
-}
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			escapeString: (value) => String(value),
-			safeOutputFile: async (file, data) => fs.writeFileSync(file, data),
-			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-			Counter: NoopMetric,
-			Histogram: NoopMetric,
-		};
-	}
-	if (request === "@clusterio/host") {
-		return { BaseInstancePlugin: class {} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
+const lib = require("@clusterio/lib");
 
 const distNode = path.join(__dirname, "..", "dist", "node");
 const moduleRoot = path.join(__dirname, "..", "module");
@@ -232,9 +203,9 @@ test("orchestrator surfaces a failed destination discard as cleanup_failed", asy
 });
 
 test("operation outcome metrics expose bounded failure_stage label", () => {
-	const operationsMetric = metricDefinitions.find(def => def.name === "surface_export_operations_total");
+	const operationsMetric = lib.defaultRegistry.collectors.find(collector => collector.metric?.name === "surface_export_operations_total")?.metric;
 	assert.ok(operationsMetric, "operations total metric should be registered");
-	assert.deepEqual(operationsMetric.options.labels, ["operation", "result", "failure_stage"]);
+	assert.deepEqual(operationsMetric.labels, ["operation", "result", "failure_stage"]);
 });
 
 test("single gate is exact for items and by-name fluids", () => {

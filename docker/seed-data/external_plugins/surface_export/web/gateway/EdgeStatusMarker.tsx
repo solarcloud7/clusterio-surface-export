@@ -1,5 +1,5 @@
 
-import type { EdgeStatusMarker as Marker } from "./transfer-motion";
+import type { EdgeStatusMarker as Marker } from "./transfer-motion.js";
 
 export default function EdgeStatusMarker({ path, marker }: { path: string; marker: Marker }) {
 	const shown = marker.platformNames.slice(0, 5);

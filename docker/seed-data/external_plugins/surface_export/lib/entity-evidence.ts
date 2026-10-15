@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { EntityEvidence, BeltDifference } from "../shared/entity-evidence";
+import type { EntityEvidence, BeltDifference } from "../shared/entity-evidence.js";
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const MAX_ROWS = 500;

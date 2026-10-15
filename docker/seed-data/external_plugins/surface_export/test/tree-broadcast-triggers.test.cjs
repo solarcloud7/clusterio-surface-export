@@ -9,7 +9,7 @@ const path = require("node:path");
 const controllerSource = fs.readFileSync(path.join(__dirname, "..", "controller.ts"), "utf8");
 
 function methodBody(source, name) {
-	const start = source.indexOf(`${name}(`);
+	const start = new RegExp(`^\\t(?:async )?${name}\\(`, "m").exec(source)?.index ?? -1;
 	assert.notEqual(start, -1, `ControllerPlugin must implement ${name} — the tree cannot see cluster state without it`);
 	const open = source.indexOf("{", start);
 	let depth = 0;

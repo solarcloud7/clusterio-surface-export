@@ -1,6 +1,6 @@
 import type * as lib from "@clusterio/lib";
 
-import * as messages from "./messages";
+import * as messages from "./messages.js";
 const { PERMISSIONS } = messages;
 
 const PLUGIN_NAME = "surface_export";

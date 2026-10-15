@@ -1,12 +1,12 @@
 
 import { createContext, useContext } from "react";
 
-import type { InstanceLike, PlatformLike, Portal, TreeLike } from "./gateway-graph";
-import { PORTAL_COLOURS, portalColour, portalGatewayName } from "./gateway-graph";
-import { shipPhaseFor } from "./transfer-motion";
-import type { ShipTransfer } from "./transfer-motion";
-import type { TransferSummary } from "../view-models";
-import type { PlatformTreeState } from "../view-models";
+import type { InstanceLike, PlatformLike, Portal, TreeLike } from "./gateway-graph.js";
+import { PORTAL_COLOURS, portalColour, portalGatewayName } from "./gateway-graph.js";
+import { shipPhaseFor } from "./transfer-motion.js";
+import type { ShipTransfer } from "./transfer-motion.js";
+import type { TransferSummary } from "../view-models.js";
+import type { PlatformTreeState } from "../view-models.js";
 
 export function hasDebugInstance(tree: PlatformTreeState | null | undefined): boolean {
 	return [...(tree?.hosts.flatMap(host => host.instances) ?? []), ...(tree?.unassignedInstances ?? [])]
@@ -178,7 +178,7 @@ export function mockShips(routes: readonly MockShipRoute[], phases: readonly str
 	}).filter(ship => ship.sourceInstanceId !== ship.targetInstanceId) as ShipTransfer[];
 }
 
-export type ReplayCandidate = import("../../shared/transfer-status").PositionedTransfer & {
+export type ReplayCandidate = import("../../shared/transfer-status.js").PositionedTransfer & {
 	transferId: string;
 	status: string;
 	sourceInstanceId: number;
@@ -233,7 +233,7 @@ export type DebugScenario = {
 		platforms?: Array<string | { name?: string; location?: string; status?: string; locked?: boolean }>;
 	}>;
 	routes?: Array<[number, number]>;
-	ships?: Array<import("../../shared/transfer-status").PositionedTransfer & { from: number; to: number; status: string }>;
+	ships?: Array<import("../../shared/transfer-status.js").PositionedTransfer & { from: number; to: number; status: string }>;
 };
 
 const SCENARIO_HOST = "scenario (debug)";

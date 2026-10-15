@@ -5,18 +5,11 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
-const originalLoad = Module._load;
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") return { safeOutputFile: async (file, data) => fs.writeFile(file, data) };
-	return originalLoad.call(this, request, parent, isMain);
-};
 const { LineageRegistry } = require("../dist/node/lib/lineage-registry");
 const { LineageResolver } = require("../dist/node/lib/lineage-resolution");
 const { resolutionActions } = require("../dist/node/shared/lineage-resolution");
 const { hasUnresolvedPlatformOwnership } = require("../dist/node/shared/operation-lifecycle");
 const messages = require("../dist/node/messages");
-Module._load = originalLoad;
 
 const I = 1, H = 2, L = "lineage:boot-old:15";
 

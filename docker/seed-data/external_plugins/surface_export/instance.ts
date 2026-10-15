@@ -1,28 +1,47 @@
 import fs from "fs";
-import { readEntityEvidence } from "./lib/entity-evidence";
+import { readEntityEvidence } from "./lib/entity-evidence.js";
 import { randomUUID } from "node:crypto";
-import { parseLuaTiming, TIMING_MARKER, TimingClock, timingContext, timed, timedSync } from "./lib/timing";
-import type { ParsedFactorioOutput } from "@clusterio/lib";
-import { BaseInstancePlugin } from "@clusterio/host";
-import type { Instance } from "@clusterio/host";
-import { delay } from "./lib/delay";
-import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
-import { UploadUncertain } from "./lib/upload-session";
-import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
-import { LuaInterface } from "./lib/lua-interface";
-import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
-import { SourceRetirementJournal, journalHubMatch, type SourceRetirement } from "./lib/source-retirement-journal";
-import type { LineageVerdict, PlatformFacts } from "./lib/lineage-classifier";
-import { isGeneration, isLineage } from "./lib/lineage-registry";
-import { recoveryMode, type InstanceRecoveryStatus } from "./shared/recovery";
+import { parseLuaTiming, TIMING_MARKER, TimingClock, timingContext, timed, timedSync } from "./lib/timing.js";
+import type { Logger, ParsedFactorioOutput } from "@clusterio/lib";
+import type { Instance, InstancePluginContext } from "@clusterio/host";
+import { delay } from "./lib/delay.js";
+import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages.js";
+import { UploadUncertain } from "./lib/upload-session.js";
+import * as messages from "./messages.js";
+import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, makeCanonicalTransferId, parseCanonicalTransferId, PLUGIN_NAME } from "./helpers.js";
+import { LuaInterface } from "./lib/lua-interface.js";
+import { parseSourceTransferLockStateJson } from "./lib/source-lock-state.js";
+import { SourceRetirementJournal, journalHubMatch, type SourceRetirement } from "./lib/source-retirement-journal.js";
+import type { LineageVerdict, PlatformFacts } from "./lib/lineage-classifier.js";
+import { isGeneration, isLineage } from "./lib/lineage-registry.js";
+import { recoveryMode, type InstanceRecoveryStatus } from "./shared/recovery.js";
 
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
 	sendTo(dst: "controller", message: unknown): Promise<messages.SimpleResponse & { transferId?: string; safeToUnlockSource?: boolean }>;
 };
 
-export class InstancePlugin extends BaseInstancePlugin {
+export class InstancePlugin {
+	private static readonly instances = new WeakMap<Instance, InstancePlugin>();
+
+	private constructor(readonly instance: Instance, readonly logger: Logger) {}
+
+	static async fromContext(context: InstancePluginContext): Promise<InstancePlugin> {
+		const { instance, logger, plugin: info } = context;
+		const plugin = new InstancePlugin(instance, logger);
+		await plugin.init();
+		instance.hooks.start.attach(info.name, () => plugin.onStart());
+		instance.hooks.stop.attach(info.name, () => plugin.onStop());
+		instance.hooks.exit.attach(info.name, () => plugin.onExit());
+		instance.hooks.output.attach(info.name, (parsed, line) => plugin.onOutput(parsed, line));
+		InstancePlugin.instances.set(instance, plugin);
+		return plugin;
+	}
+
+	static get(instance: Instance): InstancePlugin | undefined {
+		return InstancePlugin.instances.get(instance);
+	}
+
 	private get i(): Instance { return this.instance; }
 	private get link(): PermissiveLink { return this.instance as unknown as PermissiveLink; }
 	private cfg<T = unknown>(key: string): T {
@@ -45,7 +64,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return timingContext.run(clock, () => clock.measure(stage, "inclusive", fn));
 	}
 
-	override async onOutput(_parsed: ParsedFactorioOutput, line: string) {
+	async onOutput(_parsed: ParsedFactorioOutput, line: string) {
 		if (!line.includes(TIMING_MARKER)) return;
 		const record = parseLuaTiming(line, this.i.id, this.timingEpoch);
 		if (!record) { this.logger.warn("Invalid profiling record from Factorio"); return; }
@@ -76,11 +95,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 			|| lowered.startsWith("error");
 	}
 
-	override async init() {
+	async init() {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
-		this.lua = new LuaInterface(this, this.logger);
+		this.lua = new LuaInterface({ sendRcon: (command, expectEmpty) => this.i.sendRcon(command, expectEmpty, PLUGIN_NAME) }, this.logger);
 		this.retirementJournal = new SourceRetirementJournal(this.i.path("surface_export_source_retirements.json"));
 		try { await this.retirementJournal.load(); }
 		catch (error) {
@@ -124,7 +143,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initialized");
 	}
 
-	override async onStart() {
+	async onStart() {
 		this.appliedDebugMode = false;
 		this.appliedAutoPause = await this.readAppliedAutoPause();
 		this.timingEpoch = randomUUID();
@@ -420,13 +439,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	override async onStop() {
+	async onStop() {
 		this.lua.uploads.stop();
 		this.timingEpoch = randomUUID(); // Invalidate work awaiting an old RCON reply.
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 
-	override onExit() {
+	onExit() {
 		this.lua.uploads.stop();
 		// Clusterio also calls this on abrupt exit, without a preceding onStop.
 		this.timingEpoch = randomUUID();
@@ -1152,3 +1171,5 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 }
+
+export default InstancePlugin.fromContext;

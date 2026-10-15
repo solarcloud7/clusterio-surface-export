@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button, Modal, Space, Typography } from "antd";
 
-import EdgeTransfers from "./EdgeTransfers";
-import { shipPhaseFor } from "./transfer-motion";
+import EdgeTransfers from "./EdgeTransfers.js";
+import { shipPhaseFor } from "./transfer-motion.js";
 
 const STEPS = [
 	{ sourceInstanceId: -1, targetInstanceId: -2, status: "transporting" },

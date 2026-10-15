@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type Presence } from "./lineage-classifier";
-import type { LineageRegistry } from "./lineage-registry";
-import { protectedSourceIndexes } from "../shared/recovery";
-import { getErrorMessage } from "../helpers";
-import type { LineageEntry, LineageVerdict, PlatformFacts, ResolutionCandidate } from "../shared/lineage";
-import { resolutionActions, type ConflictEntry, type PublicResolutionRecord, type ResolutionAction, type ResolutionRecord } from "../shared/lineage-resolution";
-import type { ActiveTransfer, PendingTransferIntent, StoredExport } from "../messages";
+import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type Presence } from "./lineage-classifier.js";
+import type { LineageRegistry } from "./lineage-registry.js";
+import { protectedSourceIndexes } from "../shared/recovery.js";
+import { getErrorMessage } from "../helpers.js";
+import type { LineageEntry, LineageVerdict, PlatformFacts, ResolutionCandidate } from "../shared/lineage.js";
+import { resolutionActions, type ConflictEntry, type PublicResolutionRecord, type ResolutionAction, type ResolutionRecord } from "../shared/lineage-resolution.js";
+import type { ActiveTransfer, PendingTransferIntent, StoredExport } from "../messages.js";
 
 export interface ResolverHost {
 	lineageRegistry: LineageRegistry;
@@ -50,7 +50,7 @@ interface Evaluated {
 	holderPresence: Presence | undefined;
 }
 
-type Messages = typeof import("../messages");
+type Messages = typeof import("../messages.js");
 type ApplyStep = "prepare_delete" | "retarget" | "authorize" | "mint" | "release" | "restore";
 
 const DELETE_ACTIONS: readonly ResolutionAction[] = ["stale_copy", "keep_other", "keep_this"];

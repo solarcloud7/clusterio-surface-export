@@ -3,14 +3,14 @@ import {
 } from "@xyflow/react";
 import type { EdgeProps, Position } from "@xyflow/react";
 
-import { NODE_DIAMETER, instanceIdFromNodeId, peerPortalHandleId } from "./gateway-graph";
-import { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeFootprint } from "../../shared/edge-geometry";
-import type { NodeCircle } from "../../shared/edge-geometry";
-import { DEFAULT_EDGE_COLOUR } from "./gateway-colours";
-import { DEFAULT_EDGE_SHAPE } from "./layout-store";
-import type { EdgeShape } from "./layout-store";
-import type { ShipTransfer } from "./transfer-motion";
-import EdgeTransfers from "./EdgeTransfers";
+import { NODE_DIAMETER, instanceIdFromNodeId, peerPortalHandleId } from "./gateway-graph.js";
+import { CAPTION_CLEARANCE, CAPTION_WIDTH, GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeFootprint } from "../../shared/edge-geometry.js";
+import type { NodeCircle } from "../../shared/edge-geometry.js";
+import { DEFAULT_EDGE_COLOUR } from "./gateway-colours.js";
+import { DEFAULT_EDGE_SHAPE } from "./layout-store.js";
+import type { EdgeShape } from "./layout-store.js";
+import type { ShipTransfer } from "./transfer-motion.js";
+import EdgeTransfers from "./EdgeTransfers.js";
 
 type PortalNode = {
 	internals?: {

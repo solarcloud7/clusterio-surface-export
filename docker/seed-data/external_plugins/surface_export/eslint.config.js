@@ -1,13 +1,10 @@
-"use strict";
-
-
-const tseslint = require("typescript-eslint");
+import tseslint from "typescript-eslint";
 
 const LINK_METHODS = "handle|handleRequest|handleEvent|sendTo|send|sendRequest|sendEvent|subscribe";
 
-module.exports = tseslint.config(
+export default tseslint.config(
 	{
-		ignores: ["dist/**", "node_modules/**", "**/*.js", "**/*.d.ts", "scripts/vendor/**"],
+		ignores: ["dist/**", "node_modules/**", "**/*.js", "**/*.cjs", "**/*.d.ts", "scripts/vendor/**"],
 	},
 	{
 		files: ["**/*.ts", "**/*.tsx"],
@@ -15,7 +12,7 @@ module.exports = tseslint.config(
 			parser: tseslint.parser,
 			parserOptions: {
 				project: ["./tsconfig.node.json", "./tsconfig.browser.json"],
-				tsconfigRootDir: __dirname,
+				tsconfigRootDir: import.meta.dirname,
 			},
 		},
 		plugins: { "@typescript-eslint": tseslint.plugin },

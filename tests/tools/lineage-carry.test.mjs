@@ -12,16 +12,7 @@ const LINEAGE = "lineage:source-boot:17";
 
 function loadPlugin() {
 	const require = createRequire(import.meta.url);
-	const Module = require("node:module");
-	const originalLoad = Module._load;
-	Module._load = function(request, parent, main) {
-		if (request === "@clusterio/lib") return { escapeString: String, wait: async () => {} };
-		if (request === "@clusterio/host") return { BaseInstancePlugin: class {} };
-		return originalLoad.call(this, request, parent, main);
-	};
-	try {
-		return { ...require(path.join(DIST, "instance.js")), ...require(path.join(DIST, "lib", "lua-interface.js")) };
-	} finally { Module._load = originalLoad; }
+	return { ...require(path.join(DIST, "instance.js")), ...require(path.join(DIST, "lib", "lua-interface.js")) };
 }
 
 async function transportFor(exportData, sectioned) {

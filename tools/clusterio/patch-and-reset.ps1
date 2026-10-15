@@ -21,7 +21,7 @@ Usage:
                                      # save-patched from source, so dist/ is untouched by a
                                      # module/*.lua-only change. REFUSES to run if any build
                                      # input (lib/, shared/, web/, root TS and tsconfig files,
-                                     # webpack.config.js, scripts/build-web.mjs,
+                                     # webpack.config.cjs, scripts/build-web.mjs,
                                      # scripts/web-assets.mjs) is newer than the build stamp
                                      # of dist/node or dist/web (a stale dist would silently
                                      # ship old plugin code).

@@ -1,7 +1,7 @@
 import fs from "fs/promises";
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { getErrorMessage, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
-import type { IControllerPlugin, StoredExport } from "../messages";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { getErrorMessage, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers.js";
+import type { IControllerPlugin, StoredExport } from "../messages.js";
 
 type ExportStorageState = Pick<IControllerPlugin, "logger" | "platformStorage"> & {
 	storagePath: string;

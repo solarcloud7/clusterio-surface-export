@@ -1,8 +1,8 @@
 import fs from "fs/promises";
-import { enqueueWrite } from "./persist-queue";
-import type { AuditRow, AuditRowKind } from "../shared/dto";
+import { enqueueWrite } from "./persist-queue.js";
+import type { AuditRow, AuditRowKind } from "../shared/dto.js";
 
-export type { AuditRow, AuditRowKind } from "../shared/dto";
+export type { AuditRow, AuditRowKind } from "../shared/dto.js";
 
 
 export const AUDIT_ROW_VERSION = 1;
@@ -24,7 +24,7 @@ type RowInput = {
 		lateDestinationCleanup?: boolean | null;
 		timingPendingRecovery?: boolean | null;
 		sourceRestored?: boolean;
-		sourceRollback?: import("../shared/recovery").SourceRollback | null;
+		sourceRollback?: import("../shared/recovery.js").SourceRollback | null;
 		operationType?: string | null;
 		platformName?: string | null;
 		platformIndex?: number | null;

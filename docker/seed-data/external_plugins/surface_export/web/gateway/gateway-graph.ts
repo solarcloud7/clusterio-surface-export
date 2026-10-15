@@ -1,9 +1,9 @@
-import { CAPTION_WIDTH } from "../../shared/edge-geometry";
-import { portalSlotOf } from "../../shared/portals";
-import type { PortalAssignment } from "../../shared/portals";
-import type { PlatformStatusFields } from "../platform-actions";
+import { CAPTION_WIDTH } from "../../shared/edge-geometry.js";
+import { portalSlotOf } from "../../shared/portals.js";
+import type { PortalAssignment } from "../../shared/portals.js";
+import type { PlatformStatusFields } from "../platform-actions.js";
 
-export { PORTAL_COLOURS, portalColour, portalGatewayName } from "../../shared/portals";
+export { PORTAL_COLOURS, portalColour, portalGatewayName } from "../../shared/portals.js";
 
 
 export type PlatformLike = PlatformStatusFields & {

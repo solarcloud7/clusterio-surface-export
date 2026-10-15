@@ -1,13 +1,6 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const Module = require("node:module");
-const originalLoad = Module._load;
-Module._load = function(request, parent, main) {
-	if (request === "@clusterio/lib") return {escapeString: String, wait: async () => {}};
-	if (request === "@clusterio/host") return {BaseInstancePlugin: class {}};
-	return originalLoad.call(this, request, parent, main);
-};
 const {InstancePlugin} = require("../dist/node/instance.js");
 const messages = require("../dist/node/messages.js");
 const {protectedSourceIndexes} = require("../dist/node/shared/recovery.js");

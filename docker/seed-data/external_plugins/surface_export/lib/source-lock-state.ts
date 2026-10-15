@@ -1,4 +1,4 @@
-import { SOURCE_TRANSFER_LOCK_STATES, type SourceTransferLockState, type SourceTransferLockStateResponse } from "../messages";
+import { SOURCE_TRANSFER_LOCK_STATES, type SourceTransferLockState, type SourceTransferLockStateResponse } from "../messages.js";
 
 export { SOURCE_TRANSFER_LOCK_STATES };
 

@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { isAdmissionSettled } from "../shared/operation-lifecycle";
-import { parseCanonicalTransferId } from "../shared/utils";
-import type { ActiveTransfer } from "../messages";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { isAdmissionSettled } from "../shared/operation-lifecycle.js";
+import { parseCanonicalTransferId } from "../shared/utils.js";
+import type { ActiveTransfer } from "../messages.js";
 
 export interface QueuedTransferRequest {
 	sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number;

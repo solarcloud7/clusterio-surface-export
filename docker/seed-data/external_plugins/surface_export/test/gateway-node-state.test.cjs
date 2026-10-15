@@ -14,8 +14,9 @@ const sharedModules = {
 	"../../shared/portals": "../dist/node/shared/portals",
 };
 new Function("require", "exports", compiled.outputText)(id => {
-	assert.ok(Object.hasOwn(sharedModules, id), `unexpected import ${id}`);
-	return require(sharedModules[id]);
+	const specifier = id.replace(/\.js$/, "");
+	assert.ok(Object.hasOwn(sharedModules, specifier), `unexpected import ${id}`);
+	return require(sharedModules[specifier]);
 }, graph);
 
 test("refreshing gateway data retains measured dimensions and placement without retaining stale data", () => {

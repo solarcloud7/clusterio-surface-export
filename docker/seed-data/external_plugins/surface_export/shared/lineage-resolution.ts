@@ -1,4 +1,4 @@
-import type { LineageVerdictName } from "./lineage";
+import type { LineageVerdictName } from "./lineage.js";
 
 export const RESOLUTION_ACTIONS = ["keep_this", "keep_other", "adopt", "stale_copy", "new_platform", "release"] as const;
 export type ResolutionAction = typeof RESOLUTION_ACTIONS[number];

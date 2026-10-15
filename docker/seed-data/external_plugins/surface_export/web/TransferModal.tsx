@@ -2,11 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Select, message as antMessage } from "antd";
 import { ArrowRightOutlined, LoadingOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 
-import { usePlanetOptions } from "./icons";
-import { destinationOptions, canSelectDestination } from "../shared/destination-options";
-import { getErrorMessage, getProp } from "./utils";
-import type { PlatformActionSource } from "./platform-actions";
-import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import { usePlanetOptions } from "./icons.js";
+import { destinationOptions, canSelectDestination } from "../shared/destination-options.js";
+import { getErrorMessage, getProp } from "./utils.js";
+import type { PlatformActionSource } from "./platform-actions.js";
+import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models.js";
 import gatewayArt from "./gateway/assets/gateway-hub-128.png";
 import "./transfer-modal.css";
 

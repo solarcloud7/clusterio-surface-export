@@ -1,13 +1,13 @@
 import fs from "fs/promises";
-import { snapshotAvailability } from "../shared/snapshot";
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { buildAuditRow } from "./audit-ledger";
-import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention";
-import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages";
-import { TimingClock } from "./timing";
-import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing";
-import { getErrorMessage, PLUGIN_NAME } from "../helpers";
-import { lateDestinationCleanupFromEvents, sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery";
+import { snapshotAvailability } from "../shared/snapshot.js";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { buildAuditRow } from "./audit-ledger.js";
+import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention.js";
+import type { IControllerPlugin, ActiveTransfer, StoredExport, PersistedTransactionLog } from "../messages.js";
+import { TimingClock } from "./timing.js";
+import { mergeTiming, type TimingRecord, type OperationTiming } from "../shared/timing.js";
+import { getErrorMessage, PLUGIN_NAME } from "../helpers.js";
+import { lateDestinationCleanupFromEvents, sourceRollbackFromEvents, type SourceRollback } from "../shared/recovery.js";
 
 export class TransactionLogger {
 	private recoveryHydrated = new WeakSet<object>();

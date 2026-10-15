@@ -1,4 +1,4 @@
-import { getErrorMessage, RCON_CHUNK_SIZE, toAsciiJson } from "../helpers";
+import { getErrorMessage, RCON_CHUNK_SIZE, toAsciiJson } from "../helpers.js";
 
 export const UPLOAD_PROTOCOL = 1;
 export interface UploadLimits {

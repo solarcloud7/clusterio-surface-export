@@ -1,8 +1,8 @@
 import fs from "fs";
-import { BaseCtlPlugin } from "@clusterio/ctl";
+import type { CtlPluginContext } from "@clusterio/ctl";
 import { Command, CommandTree } from "@clusterio/lib";
-import * as messages from "./messages";
-import { getErrorMessage } from "./helpers";
+import * as messages from "./messages.js";
+import { getErrorMessage } from "./helpers.js";
 
 type ControlLike = {
 	sendTo: <T = unknown>(target: string, message: unknown) => Promise<T>;
@@ -278,8 +278,10 @@ portalCommands.add(new Command({
 
 surfaceExportCommands.add(portalCommands);
 
-export class CtlPlugin extends BaseCtlPlugin {
-	override async addCommands(rootCommand: CommandTree) {
-		rootCommand.add(surfaceExportCommands);
-	}
+export function addCommands(rootCommand: CommandTree): void {
+	rootCommand.add(surfaceExportCommands);
+}
+
+export default async function loadCtlPlugin(context: CtlPluginContext) {
+	context.hooks.addCommands.attach(context.plugin.name, addCommands);
 }

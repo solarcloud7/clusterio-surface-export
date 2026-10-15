@@ -28,12 +28,26 @@ development image revision is separately configured in `.env.example`. Use the
 [pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/writing-plugins.md)
 and the installed package source for upstream behavior.
 
-Clusterio 2.0 imports plugin entry points as ES modules by file name, so the
-declared entry points carry their `.js` extension. The plugin's own output is
-still CommonJS and exports the controller, instance, ctl and web classes;
-Clusterio 2.0 loads class exports but deprecates them in favour of entry-point
-functions and hooks, logs a warning for each, and describes the conversion in its
+The plugin package is an ES module (`"type": "module"`), so every relative import
+in its TypeScript carries the `.js` extension and the declared entry points name
+their compiled file. Each entry point exports a default async function that
+Clusterio 2.0 calls once with a plugin context, following its
 [2.0 plugin migration guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/devs/plugin-migration-to-2.0.md).
+The controller, instance and web entry points keep a class for their state:
+`ControllerPlugin`, `InstancePlugin` and `WebPlugin` have a private constructor,
+a static `fromContext` that creates the instance, runs its `init` and attaches
+its `on*` methods to the matching hooks under the plugin name, and a static `get`
+that looks the instance up by the controller, instance or control it belongs to.
+The ctl entry point attaches `addCommands` to the ctl hooks. Hook handlers from
+different plugins run concurrently and a handler that takes longer than 15 seconds
+is logged, so hooks are attached only after `init` has finished.
+RCON goes through `instance.sendRcon(command, expectEmpty, "surface_export")`,
+wrapped once in `LuaInterface`. The web entry point listens to the control
+connector for connection events rather than the `controllerConnectionEvent` hook,
+which in Clusterio 2.0.1 receives the connector's emit arguments instead of the
+event name. The CommonJS files are `webpack.config.cjs` and the `test/*.cjs` unit
+tests; the tests load the compiled ES modules through `require()` and inject
+write failures through `lib/persist-queue` and delays through `lib/delay`.
 The `@types/ws` development dependency exists because Clusterio's library resolves
 its WebSocket typing to a source file that imports `ws`.
 

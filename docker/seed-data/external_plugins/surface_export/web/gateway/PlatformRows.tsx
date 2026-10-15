@@ -2,13 +2,13 @@ import { Handle, Position } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
 import { CaretRightOutlined, DownloadOutlined } from "@ant-design/icons";
 
-import { platformHandleId } from "./gateway-graph";
-import type { PlatformLike } from "./gateway-graph";
-import { isMockInstanceId } from "./debug-mode";
-import { platformActionKey, useNodeActions } from "./node-actions";
-import { platformStatus } from "../platform-actions";
-import { PlanetIcon } from "../icons";
-import { useIsQuarantined } from "../lineage-conflicts";
+import { platformHandleId } from "./gateway-graph.js";
+import type { PlatformLike } from "./gateway-graph.js";
+import { isMockInstanceId } from "./debug-mode.js";
+import { platformActionKey, useNodeActions } from "./node-actions.js";
+import { platformStatus } from "../platform-actions.js";
+import { PlanetIcon } from "../icons.js";
+import { useIsQuarantined } from "../lineage-conflicts.js";
 
 const { Text } = Typography;
 

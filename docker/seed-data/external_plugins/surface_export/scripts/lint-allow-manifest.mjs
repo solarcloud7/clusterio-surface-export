@@ -40,7 +40,7 @@ function mdIn(dir, recursive = false) {
 const SCOPES = {
 	"lint-lua:allow": () => walk(join(PLUGIN_DIR, "module"), [".lua"]),
 	"pcall:allow": () => walk(join(PLUGIN_DIR, "module"), [".lua"]),
-	"lint-webpack-cache:allow": () => [join(PLUGIN_DIR, "webpack.config.js")].filter(existsSync),
+	"lint-webpack-cache:allow": () => [join(PLUGIN_DIR, "webpack.config.cjs")].filter(existsSync),
 	"lint-test-grounding:allow": () => walk(join(REPO_DIR, "tests"), [".ps1", ".mjs", ".js"]),
 };
 

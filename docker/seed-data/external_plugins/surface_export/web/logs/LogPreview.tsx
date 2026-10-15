@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Alert, Button, Modal, Select } from "antd";
-import type { JsonObject, LogDetail, TransferSummary } from "../view-models";
-import recorded from "./recorded-fixtures";
-import TransferDetail from "./TransferDetail";
-import measuredTiming from "./timing-fixture";
+import type { JsonObject, LogDetail, TransferSummary } from "../view-models.js";
+import recorded from "./recorded-fixtures.js";
+import TransferDetail from "./TransferDetail.js";
+import measuredTiming from "./timing-fixture.js";
 
 const options = [
 	["profiling", "Recorded profiling sample"], ["tick-only", "Ticks with missing profiler output"],

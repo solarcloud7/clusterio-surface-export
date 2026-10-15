@@ -1,7 +1,7 @@
 import fs from "fs/promises";
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { getErrorMessage } from "../helpers";
-import { PORTAL_SLOT_COUNT, portalColour } from "../shared/portals";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { getErrorMessage } from "../helpers.js";
+import { PORTAL_SLOT_COUNT, portalColour } from "../shared/portals.js";
 
 export const PORTAL_SLOTS_FILENAME = "surface_export_portal_slots.json";
 

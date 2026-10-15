@@ -18,7 +18,7 @@ import { useAccount } from "@clusterio/web_ui";
 
 import "@xyflow/react/dist/style.css";
 
-import { PERMISSIONS } from "../../messages";
+import { PERMISSIONS } from "../../messages.js";
 import {
 	ALL_HOSTS,
 	CAPTION_HEIGHT,
@@ -34,15 +34,15 @@ import {
 	preservePositions,
 	sourceHandleId,
 	targetHandleId,
-} from "./gateway-graph";
-import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours";
-import { portalColourName } from "../../shared/portals";
-import { PORTAL_ART } from "./InstanceNode";
-import type { PortalListingResponse } from "../../shared/dto";
-import type { PlatformLike, Portal, TrafficPair, TrafficRouteModel } from "./gateway-graph";
-import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions";
-import DebugPanel from "./DebugPanel";
-import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon";
+} from "./gateway-graph.js";
+import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours.js";
+import { portalColourName } from "../../shared/portals.js";
+import { PORTAL_ART } from "./InstanceNode.js";
+import type { PortalListingResponse } from "../../shared/dto.js";
+import type { PlatformLike, Portal, TrafficPair, TrafficRouteModel } from "./gateway-graph.js";
+import { NodeActionsContext, ShowPlanetsContext, platformActionKey } from "./node-actions.js";
+import DebugPanel from "./DebugPanel.js";
+import AutoPauseIcon, { AUTO_PAUSE_LABEL } from "./AutoPauseIcon.js";
 import {
 	GatewayDebugContext,
 	DEFAULT_DEBUG_STATE,
@@ -56,22 +56,22 @@ import {
 	scenarioToShips,
 	scenarioToTree,
 	withMockInstances,
-} from "./debug-mode";
-import type { DebugScenario, DebugState } from "./debug-mode";
-import { installCanvasDebugApi } from "./debug-api";
+} from "./debug-mode.js";
+import type { DebugScenario, DebugState } from "./debug-mode.js";
+import { installCanvasDebugApi } from "./debug-api.js";
 import {
 	EDGE_SHAPES, applySavedLayout, clearLayout, loadEdgeShape, loadLayout, loadShowPlanets, saveEdgeShape, saveLayout, saveShowPlanets,
-} from "./layout-store";
-import type { EdgeShape } from "./layout-store";
-import { SHIP_LEGEND, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
-import type { ShipTransfer } from "./transfer-motion";
-import { ONE_GATE_NAME } from "../../shared/dto";
-import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
-import ConnectionLine from "./ConnectionLine";
-import TransferModal from "../TransferModal";
-import { exportPlatformToDownload } from "../platform-actions";
-import type { PlatformActionSource } from "../platform-actions";
-import type { SurfaceExportPlugin, SurfaceExportState } from "../view-models";
+} from "./layout-store.js";
+import type { EdgeShape } from "./layout-store.js";
+import { SHIP_LEGEND, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion.js";
+import type { ShipTransfer } from "./transfer-motion.js";
+import { ONE_GATE_NAME } from "../../shared/dto.js";
+import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types.js";
+import ConnectionLine from "./ConnectionLine.js";
+import TransferModal from "../TransferModal.js";
+import { exportPlatformToDownload } from "../platform-actions.js";
+import type { PlatformActionSource } from "../platform-actions.js";
+import type { SurfaceExportPlugin, SurfaceExportState } from "../view-models.js";
 
 const { Text } = Typography;
 

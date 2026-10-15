@@ -1,8 +1,8 @@
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./audit-ledger";
-import type { AuditRow } from "./audit-ledger";
-import { getErrorMessage } from "../helpers";
-import type { IControllerPlugin } from "../messages";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./audit-ledger.js";
+import type { AuditRow } from "./audit-ledger.js";
+import { getErrorMessage } from "../helpers.js";
+import type { IControllerPlugin } from "../messages.js";
 
 type ControllerAuditState = Pick<IControllerPlugin,
 	"logger" | "auditLedgerPath" | "auditIndex" | "auditRevisions" | "persistedTransactionLogs">;

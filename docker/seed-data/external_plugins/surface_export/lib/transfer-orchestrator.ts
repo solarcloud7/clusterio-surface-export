@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { timed, timedSync, timingContext } from "./timing";
+import { timed, timedSync, timingContext } from "./timing.js";
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
-import { createOperationRecord } from "./operation-record";
-import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue";
-import { hasRecordedOutcome, isAdmissionSettled, isSourceJobPending, isDestinationJobPending, isJobObservationPending } from "../shared/operation-lifecycle";
-import { JobObserver } from "./job-observer";
-import { isInstanceRouteRejection } from "./request-errors";
-import { isGeneration, isLineage, lineageCommitPlan } from "./lineage-registry";
-import { normalizeSourceTransferLockState } from "./source-lock-state";
-import type { JobStatusBatch } from "../shared/job-status";
-import type { TimingRecord } from "../shared/timing";
+import { normalizeExportMetrics, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers.js";
+import { createOperationRecord } from "./operation-record.js";
+import { TransferRequestQueue, type QueueEntry, type QueuedTransferRequest } from "./transfer-request-queue.js";
+import { hasRecordedOutcome, isAdmissionSettled, isSourceJobPending, isDestinationJobPending, isJobObservationPending } from "../shared/operation-lifecycle.js";
+import { JobObserver } from "./job-observer.js";
+import { isInstanceRouteRejection } from "./request-errors.js";
+import { isGeneration, isLineage, lineageCommitPlan } from "./lineage-registry.js";
+import { normalizeSourceTransferLockState } from "./source-lock-state.js";
+import type { JobStatusBatch } from "../shared/job-status.js";
+import type { TimingRecord } from "../shared/timing.js";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, ValidationResult, ExportMetrics, StoredExport, PassengerManifestEntry,
-	PendingTransferIntent, SourceTransferLockStateResponse } from "../messages";
+	PendingTransferIntent, SourceTransferLockStateResponse } from "../messages.js";
 
 const ROLLBACK_RETRY_INITIAL_MS = 30_000;
 const ROLLBACK_RETRY_MAX_MS = 10 * 60_000;
@@ -35,7 +35,7 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
 
 export class TransferOrchestrator {
 	private plugin: IControllerPlugin;
-	private messages: typeof import("../messages");
+	private messages: typeof import("../messages.js");
 	private settlingTransfers = new Map<string, Promise<void>>();
 	private startingTransfers = new Map<string, { targetInstanceId: number; result: Promise<TransferStartResult> }>();
 	readonly requestQueue: TransferRequestQueue;
@@ -58,7 +58,7 @@ export class TransferOrchestrator {
 		}
 	}
 
-	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, messages: typeof import("../messages.js")) {
 		this.plugin = plugin;
 		this.messages = messages;
 		this.observer = new JobObserver(async (instanceId, jobs) => {
@@ -699,7 +699,7 @@ export class TransferOrchestrator {
 		}
 		await Promise.all([...groups].map(async ([instanceId, transfers]) => {
 			let batch: JobStatusBatch;
-			let requested: import("../shared/job-status").JobReference[] | undefined;
+			let requested: import("../shared/job-status.js").JobReference[] | undefined;
 			try {
 				const response = await this.observer.poll(instanceId, transfers.map(t => isSourceJobPending(t.status)
 					? (t.sourceExportId ? {jobId: t.sourceExportId} : {operationId: t.transferId})

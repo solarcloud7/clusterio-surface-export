@@ -1,10 +1,10 @@
 import fs from "fs/promises";
-import { enqueueWrite, writeOutputFile } from "./persist-queue";
-import { getErrorMessage } from "../helpers";
-import { isGeneration, isLineage, type LineageEntry, type TransferCommit } from "../shared/lineage";
-import { RESOLUTION_ACTIONS, type ResolutionRecord } from "../shared/lineage-resolution";
+import { enqueueWrite, writeOutputFile } from "./persist-queue.js";
+import { getErrorMessage } from "../helpers.js";
+import { isGeneration, isLineage, type LineageEntry, type TransferCommit } from "../shared/lineage.js";
+import { RESOLUTION_ACTIONS, type ResolutionRecord } from "../shared/lineage-resolution.js";
 
-export { isGeneration, isLineage, type LineageEntry, type LineageSource, type TransferCommit } from "../shared/lineage";
+export { isGeneration, isLineage, type LineageEntry, type LineageSource, type TransferCommit } from "../shared/lineage.js";
 
 export const LINEAGE_REGISTRY_FILENAME = "surface_export_lineage_registry.json";
 

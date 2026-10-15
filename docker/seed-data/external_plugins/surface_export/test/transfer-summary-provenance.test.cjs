@@ -6,29 +6,6 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const Module = require("node:module");
-const originalLoad = Module._load;
-class NoopMetric {
-	labels() { return this; }
-	inc() {}
-	observe() {}
-}
-Module._load = function patchedLoad(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return {
-			escapeString: (value) => String(value),
-			safeOutputFile: async (file, data) => fs.writeFileSync(file, data),
-			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-			Counter: NoopMetric,
-			Histogram: NoopMetric,
-		};
-	}
-	if (request === "@clusterio/controller") {
-		return { BaseControllerPlugin: class {} };
-	}
-	return originalLoad.call(this, request, parent, isMain);
-};
-
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
 const { buildAuditRow, foldAuditRows, countRevisions } = require(path.join(distNode, "lib", "audit-ledger.js"));

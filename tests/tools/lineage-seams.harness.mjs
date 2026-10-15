@@ -12,27 +12,12 @@ const quiet = { info() {}, warn() {}, error() {}, verbose() {} };
 
 function loadPlugin() {
 	const require = createRequire(import.meta.url);
-	const Module = require("node:module");
-	const originalLoad = Module._load;
-	Module._load = function(request, parent, main) {
-		if (request === "@clusterio/lib") {
-			class Metric { labels() { return this; } inc() {} observe() {} set() {} }
-			const escapeString = value => String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-			return { escapeString, wait: async () => {}, Counter: Metric, Histogram: Metric, Gauge: Metric,
-				safeOutputFile: async (file, data) => require("node:fs").promises.writeFile(file, data) };
-		}
-		if (request === "@clusterio/host") return { BaseInstancePlugin: class {} };
-		if (request === "@clusterio/controller") return { BaseControllerPlugin: class {} };
-		return originalLoad.call(this, request, parent, main);
+	return {
+		...require(path.join(DIST, "instance.js")), ...require(path.join(DIST, "controller.js")),
+		...require(path.join(DIST, "lib", "lua-interface.js")), ...require(path.join(DIST, "lib", "source-retirement-journal.js")),
+		...require(path.join(DIST, "lib", "lineage-registry.js")), ...require(path.join(DIST, "lib", "transfer-orchestrator.js")),
+		messages: require(path.join(DIST, "messages.js")), timing: require(path.join(PLUGIN, "test", "timing-harness.cjs")),
 	};
-	try {
-		return {
-			...require(path.join(DIST, "instance.js")), ...require(path.join(DIST, "controller.js")),
-			...require(path.join(DIST, "lib", "lua-interface.js")), ...require(path.join(DIST, "lib", "source-retirement-journal.js")),
-			...require(path.join(DIST, "lib", "lineage-registry.js")), ...require(path.join(DIST, "lib", "transfer-orchestrator.js")),
-			messages: require(path.join(DIST, "messages.js")), timing: require(path.join(PLUGIN, "test", "timing-harness.cjs")),
-		};
-	} finally { Module._load = originalLoad; }
 }
 
 class LuaWorld {

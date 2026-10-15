@@ -3,25 +3,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const Module = require("node:module");
-const originalLoad = Module._load;
-const registered = [];
-class FakeCommand {
-	constructor(options) { this.definition = options.definition; this.handler = options.handler; registered.push(this); }
-}
-class FakeCommandTree {
-	constructor(options) { this.name = options.name; this.children = []; }
-	add(command) { this.children.push(command); }
-}
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") return { Command: FakeCommand, CommandTree: FakeCommandTree, escapeString: String };
-	if (request === "@clusterio/ctl") return { BaseCtlPlugin: class {} };
-	return originalLoad.call(this, request, parent, isMain);
-};
+const { registeredCommands } = require("./ctl-harness.cjs");
 const distNode = path.join(__dirname, "..", "dist", "node");
-require(path.join(distNode, "control.js"));
 const messages = require(path.join(distNode, "messages.js"));
-Module._load = originalLoad;
+const registered = registeredCommands();
 
 const find = name => registered.find(command => String(command.definition[0]).startsWith(name));
 

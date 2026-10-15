@@ -10,14 +10,14 @@ import {
 	message as antMessage,
 } from "antd";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
-import type { ImportUploadedExportOptions } from "../messages";
+import type { ImportUploadedExportOptions } from "../messages.js";
 import { UploadOutlined } from "@ant-design/icons";
 
-import { usePlanetOptions } from "./icons";
-import { destinationOptions, canSelectDestination } from "../shared/destination-options";
-import { importableSnapshot, newRestoreRequestId } from "../shared/snapshot";
-import { parseJsonFile, getErrorMessage, getProp } from "./utils";
-import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import { usePlanetOptions } from "./icons.js";
+import { destinationOptions, canSelectDestination } from "../shared/destination-options.js";
+import { importableSnapshot, newRestoreRequestId } from "../shared/snapshot.js";
+import { parseJsonFile, getErrorMessage, getProp } from "./utils.js";
+import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models.js";
 
 export type RestoreSnapshot = { exportId: string; timestamp: number | null; platformName: string };
 

@@ -3,23 +3,8 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
-const Module = require("node:module");
-const originalLoad = Module._load;
-class NoopMetric {
-	labels() { return this; }
-	inc() {}
-	observe() {}
-}
-Module._load = function(request, parent, isMain) {
-	if (request === "@clusterio/lib") {
-		return { safeOutputFile: fs.writeFile, Counter: NoopMetric, Histogram: NoopMetric };
-	}
-	if (request === "@clusterio/controller") return { BaseControllerPlugin: class {} };
-	return originalLoad.call(this, request, parent, isMain);
-};
 const { GatewayConfig } = require("../dist/node/lib/gateway-config");
 const { ONE_GATE_NAME } = require("../dist/node/messages");
-Module._load = originalLoad;
 
 function addressFixture(settings = {}) {
 	const config = new Map(Object.entries(settings));
