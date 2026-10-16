@@ -18,6 +18,7 @@ export function parseSetPausedReply(raw: unknown): boolean {
 export class InstancePlugin {
 	phase: ClusterPausePhase | null = null;
 	private epoch = 0;
+	private started = false;
 
 	private constructor(readonly instance: Instance, readonly logger: Logger) {}
 
@@ -27,6 +28,7 @@ export class InstancePlugin {
 		plugin.init();
 		instance.hooks.start.attach(info.name, () => plugin.onStart());
 		instance.hooks.exit.attach(info.name, () => plugin.onExit());
+		instance.hooks.controllerConnectionEvent.attach(info.name, event => plugin.onControllerConnectionEvent(event));
 		return plugin;
 	}
 
@@ -36,14 +38,24 @@ export class InstancePlugin {
 	}
 
 	async onStart() {
+		this.started = true;
+		this.announce();
+	}
+
+	async onControllerConnectionEvent(event: string) {
+		if (event === "connect" && this.started) this.announce();
+	}
+
+	announce() {
 		const epoch = ++this.epoch;
 		void this.reportReady(epoch).catch((error: unknown) => {
-			this.logger.warn(`Cluster pause readiness was not reported; this instance stays running: ${errorMessage(error)}`);
+			this.logger.warn(`Cluster pause readiness was not reported, so the controller neither pauses nor confirms resuming this instance: ${errorMessage(error)}`);
 		});
 	}
 
 	onExit() {
 		this.epoch++;
+		this.started = false;
 		this.phase = null;
 	}
 

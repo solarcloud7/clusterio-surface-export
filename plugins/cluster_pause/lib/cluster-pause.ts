@@ -27,6 +27,7 @@ export interface ClusterPauseDeps {
 	instances(): ClusterPauseInstance[];
 	send(instanceId: number, paused: boolean): Promise<boolean>;
 	emit(event: ClusterPauseState): void;
+	checkpoint(paused: number[]): Promise<void>;
 	nowMs(): number;
 	wallClockMs(): number;
 	setTimer(callback: () => void, durationMs: number): unknown;
@@ -58,6 +59,7 @@ export class ClusterPause {
 	private readonly online = new Map<number, Set<string>>();
 	private readonly paused = new Map<number, { sinceMs: number; confirmed: boolean }>();
 	private readonly latePause = new Set<number>();
+	private readonly ready = new Set<number>();
 	private readonly resuming = new Set<number>();
 	private readonly resumeErrors = new Map<number, string>();
 	private readonly participants = new Map<string, ClusterPauseParticipant>();
@@ -117,7 +119,10 @@ export class ClusterPause {
 	onInstanceStatus(instanceId: number, status: string | undefined) {
 		if (status === "stopped" || status === "unassigned" || status === "deleted") {
 			this.online.delete(instanceId);
+			this.ready.delete(instanceId);
 			this.latePause.delete(instanceId);
+		}
+		if (status === "deleted") {
 			this.resumeErrors.delete(instanceId);
 			if (this.paused.delete(instanceId)) this.publish(false);
 		}
@@ -126,17 +131,19 @@ export class ClusterPause {
 	}
 
 	onInstanceReady(instanceId: number) {
-		if (this.stopped || !this.deps.enabled()) return;
-		if (this.phase === "pausing") {
+		if (this.stopped) return;
+		this.ready.add(instanceId);
+		if (this.deps.enabled() && this.phase === "pausing") {
 			this.resume("instance_state", `instance ${instanceId} became ready while the cluster was pausing`);
 			return;
 		}
-		if (this.phase === "paused") {
+		if (this.deps.enabled() && this.phase === "paused") {
 			this.latePause.add(instanceId);
 			this.evaluate("instance_state");
 			return;
 		}
 		this.sendResume(instanceId);
+		this.evaluate("instance_state");
 	}
 
 	onConfigChanged() {
@@ -170,8 +177,8 @@ export class ClusterPause {
 		const instances = this.deps.instances();
 		const unknown = instances.filter(instance => instance.state === "unknown");
 		if (unknown.length) throw new Error(`The state of ${unknown.map(instance => `${instance.name} (${instance.id})`).join(", ")} is unknown; the cluster stays running`);
-		if (!instances.some(instance => instance.loaded && instance.state === "running")) {
-			throw new Error("No running instance has cluster_pause loaded; there is nothing to pause");
+		if (this.targets(instances).length === 0) {
+			throw new Error("No running instance with cluster_pause loaded has reported ready; there is nothing to pause");
 		}
 		this.hold = null;
 		this.startDraining("command");
@@ -209,6 +216,8 @@ export class ClusterPause {
 			participants: [...this.participants.keys()].sort(),
 			unknownInstances: instances.filter(instance => instance.state === "unknown").map(instance => ({ instanceId: instance.id, name: instance.name })),
 			notLoaded: instances.filter(instance => !instance.loaded).map(instance => ({ instanceId: instance.id, name: instance.name })),
+			notReady: instances.filter(instance => instance.loaded && instance.state === "running" && !this.ready.has(instance.id))
+				.map(instance => ({ instanceId: instance.id, name: instance.name })),
 		};
 	}
 
@@ -223,7 +232,7 @@ export class ClusterPause {
 		const occupied = this.onlineNames().size > 0;
 		switch (this.phase) {
 			case "running":
-				if (!this.hold && !occupied && !unknown && instances.some(instance => instance.loaded && instance.state === "running")) {
+				if (!this.hold && !occupied && !unknown && this.targets(instances).length > 0) {
 					this.startCountdown(trigger === "last_player_left" ? trigger : "instance_state");
 				}
 				return;
@@ -290,10 +299,36 @@ export class ClusterPause {
 		this.evaluate("holds_cleared");
 	}
 
+	private targets(instances: ClusterPauseInstance[]): ClusterPauseInstance[] {
+		return instances.filter(instance => instance.loaded && instance.state === "running" && this.ready.has(instance.id));
+	}
+
+	private async recordTargets(ids: number[], generation: number): Promise<number[] | null> {
+		const added = ids.filter(id => !this.paused.has(id));
+		for (const id of added) this.paused.set(id, { sinceMs: this.deps.wallClockMs(), confirmed: false });
+		let error: string | null = null;
+		try { await this.deps.checkpoint([...this.paused.keys()]); }
+		catch (err) { error = errorMessage(err); }
+		if (error === null && generation === this.generation) return added;
+		for (const id of added) this.paused.delete(id);
+		if (error !== null) this.fail(`The pause targets could not be recorded before pausing: ${error}`);
+		else {
+			this.publish(false);
+			this.retryResumes();
+		}
+		return null;
+	}
+
 	private async pauseAll(instances: ClusterPauseInstance[]) {
 		const generation = ++this.generation;
 		this.phase = "pausing";
-		const targets = instances.filter(instance => instance.loaded && instance.state === "running");
+		const targets = this.targets(instances);
+		if (targets.length === 0) {
+			this.resume("instance_state", "no running instance with cluster_pause loaded has reported ready");
+			return;
+		}
+		const added = await this.recordTargets(targets.map(instance => instance.id), generation);
+		if (!added) return;
 		const results = await Promise.all(targets.map(async instance => {
 			try { return { instance, confirmed: await this.deps.send(instance.id, true) === true, error: null as string | null }; }
 			catch (error) { return { instance, confirmed: false, error: errorMessage(error) }; }
@@ -301,15 +336,13 @@ export class ClusterPause {
 		for (const result of results) {
 			if (result.confirmed || result.error !== null) {
 				this.paused.set(result.instance.id, { sinceMs: this.deps.wallClockMs(), confirmed: result.confirmed });
+			} else if (added.includes(result.instance.id)) {
+				this.paused.delete(result.instance.id);
 			}
 		}
 		if (generation !== this.generation) {
 			this.publish(false);
 			this.retryResumes();
-			return;
-		}
-		if (targets.length === 0) {
-			this.resume("instance_state", "no running instance has cluster_pause loaded");
 			return;
 		}
 		const failed = results.filter(result => !result.confirmed);
@@ -329,12 +362,15 @@ export class ClusterPause {
 		this.latePausing = true;
 		const failures: string[] = [];
 		try {
+			const added = await this.recordTargets(ids, generation);
+			if (!added) return;
 			await Promise.all(ids.map(async instanceId => {
 				let confirmed = false;
 				let error: string | null = null;
 				try { confirmed = await this.deps.send(instanceId, true) === true; }
 				catch (err) { error = errorMessage(err); }
 				if (confirmed || error !== null) this.paused.set(instanceId, { sinceMs: this.deps.wallClockMs(), confirmed });
+				else if (added.includes(instanceId)) this.paused.delete(instanceId);
 				if (!confirmed) failures.push(`${instanceId}: ${error ?? "the instance reported it is not paused"}`);
 			}));
 		} finally {

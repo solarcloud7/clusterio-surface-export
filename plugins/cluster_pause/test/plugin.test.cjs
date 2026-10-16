@@ -11,6 +11,10 @@ const { ControllerPlugin, CLUSTER_PAUSE_RENDEZVOUS, STATE_FILENAME, loadPersiste
 const { parseSetPausedReply } = require("../dist/node/instance.js");
 
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
+const until = async (check, timeoutMs = 2000) => {
+	const deadline = Date.now() + timeoutMs;
+	while (!check() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+};
 const quiet = { info() {}, warn() {}, error() {} };
 
 test("every declared message round-trips through toJSON and fromJSON", () => {
@@ -107,8 +111,10 @@ test("the controller plugin persists what it paused and a restarted controller r
 	assert.equal(ControllerPlugin.get(first.controller), loaded);
 	assert.deepEqual(loaded.machine.status().participants, ["se"]);
 	assert.equal(first.broadcasts[0].reason, "controller_start");
-	await first.handlers.get("ClusterPauseControlRequest")(new messages.ClusterPauseControlRequest({ action: "pause" }));
+	for (const id of [1, 2]) await first.handlers.get("ClusterPauseInstanceReadyEvent")(new messages.ClusterPauseInstanceReadyEvent(), { id });
 	await settle();
+	await first.handlers.get("ClusterPauseControlRequest")(new messages.ClusterPauseControlRequest({ action: "pause" }));
+	await until(() => loaded.machine.currentPhase === "paused");
 	assert.equal(loaded.machine.currentPhase, "paused");
 	assert.ok(first.sent.some(([target, message]) => target === "allInstances" && message.phase === "paused"));
 	await loaded.onShutdown();
@@ -122,6 +128,9 @@ test("the controller plugin persists what it paused and a restarted controller r
 	assert.deepEqual(resumed, [[1, false], [2, false]]);
 	assert.deepEqual(restarted.machine.state().online, [{ instanceId: 1, name: "dev1", players: ["solar"] }]);
 	await second.hooks.playerEvent(second.controller.instances.get(1), { type: "leave", name: "Solar" });
+	assert.equal(restarted.machine.currentPhase, "running", "no instance has reported ready to this controller yet");
+	for (const id of [1, 2]) await second.handlers.get("ClusterPauseInstanceReadyEvent")(new messages.ClusterPauseInstanceReadyEvent(), { id });
+	await until(() => restarted.machine.currentPhase === "countdown");
 	assert.equal(restarted.machine.currentPhase, "countdown");
 	await second.hooks.playerEvent(undefined, { type: "join", name: "Ghost" });
 	assert.equal(restarted.machine.currentPhase, "countdown");

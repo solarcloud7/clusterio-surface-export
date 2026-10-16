@@ -49,6 +49,7 @@ export interface ClusterPauseStatus extends ClusterPauseState {
 	participants: string[];
 	unknownInstances: ClusterPauseInstanceSummary[];
 	notLoaded: ClusterPauseInstanceSummary[];
+	notReady: ClusterPauseInstanceSummary[];
 }
 
 export interface ClusterPausePersisted {

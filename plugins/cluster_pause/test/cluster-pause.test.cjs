@@ -6,11 +6,11 @@ const { ClusterPause } = require("../dist/node/lib/cluster-pause.js");
 
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 
-function harness({ enabled = true, restored = null, instances } = {}) {
+async function harness({ enabled = true, restored = null, instances, ready = null, seed = [] } = {}) {
 	let now = 0;
 	let nextTimer = 1;
 	const timers = new Map();
-	const sent = [], events = [], info = [], warn = [];
+	const sent = [], events = [], info = [], warn = [], checkpoints = [];
 	const replies = new Map();
 	const world = {
 		enabled,
@@ -27,6 +27,7 @@ function harness({ enabled = true, restored = null, instances } = {}) {
 			return reply ? reply(paused) : paused;
 		},
 		emit: event => events.push(event),
+		checkpoint: async paused => { checkpoints.push({ paused: [...paused], sentBefore: sent.length }); if (world.checkpointError) throw new Error(world.checkpointError); },
 		nowMs: () => now,
 		wallClockMs: () => 1_000_000 + now,
 		setTimer: (callback, durationMs) => { const id = nextTimer++; timers.set(id, { callback, at: now + durationMs }); return id; },
@@ -40,7 +41,13 @@ function harness({ enabled = true, restored = null, instances } = {}) {
 		}
 		await settle();
 	};
-	return { machine, world, sent, events, info, warn, replies, timers, advance };
+	machine.seed(seed);
+	for (const instance of world.instances) {
+		if (ready ? ready.includes(instance.id) : instance.loaded && instance.state === "running") machine.onInstanceReady(instance.id);
+	}
+	await settle();
+	sent.length = 0;
+	return { machine, world, sent, events, info, warn, replies, timers, checkpoints, advance };
 }
 
 function participant(holds = []) {
@@ -60,8 +67,7 @@ async function drainToPause(h, p) {
 }
 
 test("a join during the countdown cancels it and nothing is paused", async () => {
-	const h = harness();
-	h.machine.seed([[1, "Solar"]]);
+	const h = await harness({ seed: [[1, "Solar"]] });
 	h.machine.start();
 	h.machine.onPlayerEvent(1, "leave", "Solar");
 	assert.equal(h.machine.currentPhase, "countdown");
@@ -76,7 +82,7 @@ test("a join during the countdown cancels it and nothing is paused", async () =>
 });
 
 test("draining waits on every hold, tells participants before reading holds, then pauses every loaded running instance", async () => {
-	const h = harness({ instances: [
+	const h = await harness({ instances: [
 		{ id: 1, name: "one", loaded: true, state: "running" },
 		{ id: 2, name: "two", loaded: true, state: "running" },
 		{ id: 3, name: "three", loaded: false, state: "running" },
@@ -109,7 +115,7 @@ test("draining waits on every hold, tells participants before reading holds, the
 
 test("a participant that throws or returns no list counts as holding, is named in status and logged once", async () => {
 	for (const listHolds of [() => { throw new Error("broken"); }, () => undefined]) {
-		const h = harness();
+		const h = await harness();
 		h.machine.start();
 		h.machine.registerParticipant("bad", { listHolds, onPhase() {} });
 		await h.advance(30000);
@@ -125,7 +131,7 @@ test("a participant that throws or returns no list counts as holding, is named i
 });
 
 test("a failed pause request unpauses every instance that may have paused, returns to running and waits for the next change", async () => {
-	const h = harness();
+	const h = await harness();
 	h.replies.set(2, async paused => { if (paused) throw new Error("timed out"); return false; });
 	await drainToPause(h, participant());
 	assert.equal(h.machine.currentPhase, "running");
@@ -141,7 +147,7 @@ test("a failed pause request unpauses every instance that may have paused, retur
 });
 
 test("an unpause that is not confirmed keeps the instance listed as paused and is retried", async () => {
-	const h = harness();
+	const h = await harness();
 	await drainToPause(h, participant());
 	let fail = true;
 	h.replies.set(1, async paused => { if (!paused && fail) throw new Error("rcon unavailable"); return paused; });
@@ -156,7 +162,7 @@ test("an unpause that is not confirmed keeps the instance listed as paused and i
 });
 
 test("a controller restart starts running, keeps seeded players and resumes the instances the previous run had paused", async () => {
-	const h = harness({ restored: { paused: [2, "bad"] } });
+	const h = await harness({ restored: { paused: [2, "bad"] }, ready: [] });
 	h.machine.seed([[1, "Solar"]]);
 	h.machine.start();
 	await settle();
@@ -170,7 +176,7 @@ test("a controller restart starts running, keeps seeded players and resumes the 
 });
 
 test("disabled sends nothing, and turning it off while paused resumes every instance", async () => {
-	const off = harness({ enabled: false });
+	const off = await harness({ enabled: false });
 	off.machine.start();
 	off.machine.poll();
 	off.machine.onPlayerEvent(1, "leave", "Solar");
@@ -178,7 +184,7 @@ test("disabled sends nothing, and turning it off while paused resumes every inst
 	assert.equal(off.machine.currentPhase, "running");
 	assert.deepEqual(off.sent, []);
 	assert.throws(() => off.machine.control("pause"), /turned off/);
-	const on = harness();
+	const on = await harness();
 	await drainToPause(on, participant());
 	assert.equal(on.machine.currentPhase, "paused");
 	on.world.enabled = false;
@@ -190,7 +196,7 @@ test("disabled sends nothing, and turning it off while paused resumes every inst
 });
 
 test("an instance in an unknown state blocks the countdown and cancels draining", async () => {
-	const h = harness();
+	const h = await harness();
 	h.world.instances[1] = { ...h.world.instances[1], state: "unknown" };
 	h.machine.start();
 	h.machine.poll();
@@ -207,7 +213,7 @@ test("an instance in an unknown state blocks the countdown and cancels draining"
 });
 
 test("an instance that starts while paused is paused only once no hold remains", async () => {
-	const h = harness();
+	const h = await harness();
 	const p = participant();
 	await drainToPause(h, p);
 	h.world.instances.push({ id: 3, name: "three", loaded: true, state: "running" });
@@ -224,8 +230,7 @@ test("an instance that starts while paused is paused only once no hold remains",
 });
 
 test("commands: pause is refused while anyone is online, resume keeps the countdown off until the next join or leave", async () => {
-	const h = harness();
-	h.machine.seed([[1, "Solar"]]);
+	const h = await harness({ seed: [[1, "Solar"]] });
 	h.machine.start();
 	assert.throws(() => h.machine.control("pause"), /Players are online \(solar\)/);
 	h.machine.onPlayerEvent(1, "leave", "Solar");
@@ -247,9 +252,70 @@ test("commands: pause is refused while anyone is online, resume keeps the countd
 });
 
 test("a participant registering while draining is told the current phase at once", async () => {
-	const h = harness();
+	const h = await harness();
 	await drainToPause(h, participant([{ reason: "busy" }]));
 	const late = participant();
 	h.machine.registerParticipant("late", late);
 	assert.equal(late.calls[0], "onPhase:draining");
+});
+
+test("an instance that has not reported ready is neither paused nor a target", async () => {
+	const h = await harness({ ready: [1] });
+	await drainToPause(h, participant());
+	assert.equal(h.machine.currentPhase, "paused");
+	assert.deepEqual(h.sent, [[1, true]]);
+	assert.deepEqual(h.machine.status().notReady.map(entry => entry.instanceId), [2]);
+	const none = await harness({ ready: [] });
+	none.machine.start();
+	none.machine.registerParticipant("se", participant());
+	none.machine.poll();
+	await none.advance(60000);
+	assert.equal(none.machine.currentPhase, "running");
+	assert.throws(() => none.machine.control("pause"), /reported ready/);
+	assert.deepEqual(none.sent, []);
+});
+
+test("pause targets are recorded before any pause order, and a failed record sends none", async () => {
+	const h = await harness();
+	await drainToPause(h, participant());
+	assert.deepEqual(h.checkpoints, [{ paused: [1, 2], sentBefore: 0 }]);
+	const broken = await harness();
+	broken.world.checkpointError = "disk full";
+	await drainToPause(broken, participant());
+	assert.deepEqual(broken.sent, []);
+	assert.equal(broken.machine.currentPhase, "running");
+	assert.match(broken.machine.status().lastError, /could not be recorded before pausing: disk full/);
+	assert.deepEqual(broken.machine.state().paused, []);
+});
+
+test("an instance stopped while paused stays listed until it confirms a resume; a deleted one is dropped", async () => {
+	const h = await harness();
+	await drainToPause(h, participant());
+	h.world.instances[1] = { ...h.world.instances[1], state: "stopped" };
+	h.machine.onInstanceStatus(2, "stopped");
+	h.machine.onPlayerEvent(1, "join", "Solar");
+	await settle();
+	assert.deepEqual(h.sent.filter(([, paused]) => !paused), [[1, false]]);
+	assert.deepEqual(h.machine.state().paused, [2]);
+	h.world.instances[1] = { ...h.world.instances[1], state: "running" };
+	h.machine.onInstanceStatus(2, "running");
+	h.machine.onInstanceReady(2);
+	await settle();
+	assert.deepEqual(h.machine.state().paused, []);
+	const deleted = await harness();
+	deleted.replies.set(1, async paused => { if (!paused) throw new Error("unreachable"); return true; });
+	await drainToPause(deleted, participant());
+	deleted.machine.onPlayerEvent(2, "join", "Solar");
+	await settle();
+	assert.deepEqual(deleted.machine.state().paused, [1]);
+	deleted.machine.onInstanceStatus(1, "deleted");
+	assert.deepEqual(deleted.machine.state().paused, []);
+});
+
+test("a ready report resumes the instance even while cluster pause is turned off", async () => {
+	const h = await harness({ enabled: false, ready: [] });
+	h.machine.onInstanceReady(1);
+	await settle();
+	assert.deepEqual(h.sent, [[1, false]]);
+	assert.equal(h.machine.currentPhase, "running");
 });

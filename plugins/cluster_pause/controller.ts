@@ -101,6 +101,7 @@ export class ControllerPlugin {
 			instances: () => this.instances(),
 			send: (instanceId, paused) => this.send(instanceId, paused),
 			emit: event => this.emit(event),
+			checkpoint: paused => this.persist({ version: 1, phase: "draining", sinceMs: Date.now(), paused }),
 			nowMs: () => performance.now(),
 			wallClockMs: () => Date.now(),
 			setTimer: (callback, durationMs) => setTimeout(callback, durationMs).unref(),
@@ -158,19 +159,20 @@ export class ControllerPlugin {
 		const message = new messages.ClusterPauseStateEvent(event);
 		this.c.subscriptions.broadcast(message);
 		this.c.sendTo("allInstances", message);
-		this.persist(event);
+		this.persist({ version: 1, phase: event.phase, sinceMs: event.sinceMs, paused: event.paused }).catch((error: unknown) => {
+			this.logger.warn(`Cluster pause state could not be saved: ${errorMessage(error)}`);
+		});
 	}
 
-	persist(event: ClusterPauseState) {
-		const record: ClusterPausePersisted = { version: 1, phase: event.phase, sinceMs: event.sinceMs, paused: event.paused };
+	persist(record: ClusterPausePersisted): Promise<void> {
 		const file = this.statePath;
-		this.writing = this.writing.then(async () => {
+		const write = this.writing.then(async () => {
 			const temporary = `${file}.tmp`;
 			await fs.writeFile(temporary, JSON.stringify(record));
 			await fs.rename(temporary, file);
-		}).catch((error: unknown) => {
-			this.logger.warn(`Cluster pause state could not be saved: ${errorMessage(error)}`);
 		});
+		this.writing = write.then(() => undefined, () => undefined);
+		return write;
 	}
 
 	holdCheckIntervalMs(): number {
