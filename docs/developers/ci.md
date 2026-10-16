@@ -14,8 +14,8 @@ other group's starting world. It increases runner use, not necessarily elapsed
 wall time by the same amount.
 
 The Factorio runtime is pinned by `factorio.version` in the seed instance
-configuration, and Clusterio 2.0.2 in package dependencies. `.env.example` selects the Docker
-image revision. CI creates the declared external client volume and waits for
+configuration, and Clusterio by `devDependencies` in the plugin's `package.json`.
+`.env.example` selects the Docker image revision. CI creates the declared external client volume and waits for
 seeding/readiness before invoking integration discovery.
 
 On failure, inspect the first failed stage and its retained artifacts. Setup,
@@ -35,7 +35,12 @@ publication with lifecycle scripts disabled.
 Tag publication additionally requires fast/integration checks and the
 `npm-publish` environment. It publishes the same verified tarball with provenance;
 it does not rebuild or repack. Prerelease versions use the derived prerelease
-distribution tag rather than silently replacing the stable tag. A manual dry run
+distribution tag rather than silently replacing the stable tag. A following job creates
+the tag's GitHub Release with the same tarball attached, marked as a prerelease for
+alpha, beta and rc versions. `tools/release/release-notes.mjs` writes its body: the
+version's CHANGELOG section and a compatibility table read from the tagged files
+(plugin and gateway versions, tested Clusterio version and peer range, the seed
+Factorio pin and `CLUSTERIO_IMAGE_TAG`). A manual dry run
 does not prove credentials, provenance exchange or actual registry publication.
 
 The [package lab](../../tests/manual/package-install/README.md) records exactly

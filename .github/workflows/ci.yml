@@ -666,3 +666,39 @@ jobs:
         env:
           NPM_DIST_TAG: ${{ steps.verified-package.outputs.dist-tag }}
         run: npm publish ./release-package/package.tgz --ignore-scripts --provenance --access public --tag "$NPM_DIST_TAG"
+
+  # Separate from publish: npm cannot republish a version, so a failed Release must be re-runnable on its own.
+  github-release:
+    name: Create GitHub Release
+    needs: [package-acceptance, publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Download published package from this run
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.package-acceptance.outputs.artifact-id }}
+          path: release-package
+      - name: Verify bytes, version, commit and native evidence
+        run: node tools/release/verify-package.mjs release-package
+      - name: Write release notes from the tagged files
+        id: notes
+        run: node tools/release/release-notes.mjs --tag "$GITHUB_REF_NAME" --package release-package/package.tgz --out release-notes.md
+      - name: Create the Release with the published tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" release-package/package.tgz --verify-tag \
+            --title "$GITHUB_REF_NAME" --notes-file release-notes.md "${flags[@]}"
