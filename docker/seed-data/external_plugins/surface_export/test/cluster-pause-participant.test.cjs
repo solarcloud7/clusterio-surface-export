@@ -210,6 +210,23 @@ test("a new queued transfer request is refused while pausing, but a replay of a 
 	assert.equal(replay.transferId, "request:existing");
 });
 
+test("a settled queue entry, or one pruned while admission awaited, does not let a new request past the pause", async t => {
+	const { orchestrator, plugin } = orchestratorHarness("The cluster is pausing because no players are online.");
+	t.after(() => orchestrator.requestQueue.stop());
+	const request = { sourceInstanceId: 11, sourcePlatformIndex: 5, targetInstanceId: 22 };
+	orchestrator.requestQueue.entries.set("request:done", { id: "request:done", operation: { transferId: "request:done", status: "completed" }, request: { ...request } });
+	const settled = await orchestrator.handleStartPlatformTransferRequest(request);
+	assert.equal(settled.success, false);
+	assert.match(settled.error, PAUSING);
+	orchestrator.requestQueue.entries.clear();
+	orchestrator.requestQueue.entries.set("request:live", { id: "request:live", operation: { transferId: "request:live", status: "preparing" }, request: { ...request } });
+	plugin.autoPauseRefusal = async () => { orchestrator.requestQueue.entries.clear(); return null; };
+	const pruned = await orchestrator.handleStartPlatformTransferRequest(request);
+	assert.equal(pruned.success, false);
+	assert.match(pruned.error, PAUSING);
+	assert.equal(orchestrator.requestQueue.entries.size, 0);
+});
+
 test("a new lineage resolution is refused while paused, and a retry of a known request goes through", async () => {
 	const plugin = Object.create(ControllerPlugin.prototype);
 	const resolved = [];

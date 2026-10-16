@@ -1147,7 +1147,8 @@ export class TransferOrchestrator {
 		if (!source || source.isDeleted || !target || target.isDeleted || source.id === target.id
 			|| coercePlatformIndex(request.sourcePlatformIndex) === null) return reject("Invalid source, destination or platform");
 		if (!this.plugin.isInstanceOnline(source.id) || !this.plugin.isInstanceOnline(target.id)) return reject("Both instances must be online to queue a transfer");
-		const clusterPaused = this.requestQueue.find(request) ? null : this.plugin.clusterPauseRefusal?.([source.id, target.id]);
+		const queued = this.requestQueue.find(request);
+		const clusterPaused = queued && !isAdmissionSettled(queued.operation) ? null : this.plugin.clusterPauseRefusal?.([source.id, target.id]);
 		if (clusterPaused) return reject(`${clusterPaused} Nothing was locked or exported.`);
 		for (const [instanceId, role] of [[source.id, "source"], [target.id, "destination"]] as const) {
 			const refusal = await this.plugin.autoPauseRefusal(instanceId, role);
@@ -1165,6 +1166,8 @@ export class TransferOrchestrator {
 			catch (error) { return { success: false, error: getErrorMessage(error) }; }
 			return { success: true, transferId: existing.operation.transferId, message: "Transfer already queued or active" };
 		}
+		const pausedSinceCheck = this.plugin.clusterPauseRefusal?.([source.id, target.id]);
+		if (pausedSinceCheck) return reject(`${pausedSinceCheck} Nothing was locked or exported.`);
 		if ([...this.plugin.activeTransfers.values()].some(operation => operation.sourceInstanceId === source.id
 			&& operation.platformIndex === request.sourcePlatformIndex && operation.forceName === (request.forceName || "player")
 			&& !hasRecordedOutcome(operation.status))) {
