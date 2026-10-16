@@ -255,14 +255,19 @@ function parseReply(text) {
 	throw new Error(`the instance replied without JSON: ${String(text).trim().slice(0, 500) || "(empty)"}`);
 }
 
+function report(stream, context, error, code) {
+	stream.write(`${context}${String(error?.stderr || error?.message || error).trim()}\n`);
+	return code;
+}
+
 export async function main(argv, { out = process.stdout, err = process.stderr, run = withCluster, read = readFileSync, now = Date.now } = {}) {
 	let options;
 	try { options = parseArgs(argv); }
-	catch (error) { err.write(`${USAGE}\n\n${error.message}\n`); return 2; }
+	catch (error) { return report(err, `${USAGE}\n\n`, error, 2); }
 	if (options.help) { out.write(`${USAGE}\n`); return 0; }
 	let json;
 	try { json = decodeBlueprint(read(options.blueprint, "utf8")); }
-	catch (error) { err.write(`${error.message}\n`); return 2; }
+	catch (error) { return report(err, "", error, 2); }
 	const expected = summarize(json);
 	if (!expected.entities[HUB]) { err.write("the blueprint has no space-platform-hub; only space-platform blueprints are supported\n"); return 2; }
 	const name = options.name || `${expected.label || "Imported blueprint"} (import)`;
@@ -318,8 +323,7 @@ export async function main(argv, { out = process.stdout, err = process.stderr, r
 		if (!complete) err.write("INCOMPLETE: the platform is missing entities, modules or tiles from the blueprint\n");
 		return complete ? 0 : 3;
 	} catch (error) {
-		err.write(`${options.instance} on ${options.cluster}: ${String(error?.stderr || error?.message || error).trim()}\n`);
-		return 1;
+		return report(err, `${options.instance} on ${options.cluster}: `, error, 1);
 	}
 }
 
