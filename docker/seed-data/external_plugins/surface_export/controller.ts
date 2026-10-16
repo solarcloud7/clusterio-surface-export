@@ -14,6 +14,7 @@ import { RELEASING_RESOLUTIONS } from "./shared/lineage-resolution.js";
 import { classifyPlatform, lineageKey, type ClassifyContext, type ControllerHints, type LineageVerdict, type PlatformFacts, type Presence } from "./lib/lineage-classifier.js";
 import { hasUnresolvedPlatformOwnership } from "./shared/operation-lifecycle.js";
 import { RouteAlertRelay } from "./lib/route-alert-relay.js";
+import { ClusterPauseParticipant } from "./lib/cluster-pause-participant.js";
 
 type InstanceStatusChange = { id: number; status?: string };
 import { PlatformTree, instanceAddress } from "./lib/platform-tree.js";
@@ -93,6 +94,7 @@ export class ControllerPlugin {
 	storageLoadError!: string | null;
 	gatewayConfig?: GatewayConfig;
 	routeAlerts?: RouteAlertRelay;
+	clusterPause?: ClusterPauseParticipant;
 	consecutiveStorageWriteFailures!: number;
 	transactionLogPath!: string;
 	auditLedgerPath!: string;
@@ -250,8 +252,10 @@ export class ControllerPlugin {
 		this.c.handle(messages.GetStoredExportRequest, this.handleGetStoredExportRequest.bind(this));
 		this.c.handle(messages.ImportUploadedExportRequest, this.handleImportUploadedExportRequest.bind(this));
 		this.c.handle(messages.ExportPlatformForDownloadRequest, this.handleExportPlatformForDownloadRequest.bind(this));
-		this.c.handle(messages.TransferPlatformRequest, this.orchestrator.handleTransferPlatformRequest.bind(this.orchestrator));
-		this.c.handle(messages.StartPlatformTransferRequest, this.orchestrator.handleStartPlatformTransferRequest.bind(this.orchestrator));
+		this.c.handle(messages.TransferPlatformRequest, (request: messages.TransferPlatformRequest) =>
+			this.trackAdmission(() => this.orchestrator.handleTransferPlatformRequest(request)));
+		this.c.handle(messages.StartPlatformTransferRequest, (request: messages.StartPlatformTransferRequest) =>
+			this.trackAdmission(() => this.orchestrator.handleStartPlatformTransferRequest(request)));
 		this.c.handle(messages.TransferValidationEvent, this.orchestrator.handleTransferValidation.bind(this.orchestrator));
 		this.c.handle(messages.ImportOperationCompleteEvent, this.handleImportOperationCompleteEvent.bind(this));
 		this.c.handle(messages.GetPlatformTreeRequest, this.handleGetPlatformTreeRequest.bind(this));
@@ -273,6 +277,9 @@ export class ControllerPlugin {
 		this.c.handle(messages.ResolvePlatformLineageRequest, this.handleResolvePlatformLineageRequest.bind(this));
 		this.c.handle(messages.AbandonPlatformResolutionRequest, this.handleAbandonPlatformResolutionRequest.bind(this));
 		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
+
+		this.clusterPause = new ClusterPauseParticipant(this, this.logger);
+		this.clusterPause.attach(this.c);
 
 		this.logger.info("Surface Export controller plugin initialized");
 		this.startRecovery();
@@ -309,11 +316,13 @@ export class ControllerPlugin {
 				allowAdoption: !hasUnresolvedOwnership(request.instanceId, this.pendingTransfers.values(), this.activeTransfers.values()),
 				protectedSourceIndexes: protectedSourceIndexes(request.instanceId, this.pendingTransfers.values(), this.activeTransfers.values()) };
 			this.recoveryReservations.set(request.instanceId, session);
+			this.clusterPauseHoldsChanged();
 			return session;
 		}
 		const session = this.recoveryReservations.get(request.instanceId);
 		if (request.action !== "finish" || session?.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
 		this.recoveryReservations.delete(request.instanceId);
+		this.clusterPauseHoldsChanged();
 		this.refreshGatewaysAfterRecovery(request.instanceId);
 		return session;
 	}
@@ -397,6 +406,13 @@ export class ControllerPlugin {
 	}
 
 	async handleResolvePlatformLineageRequest(request: messages.ResolvePlatformLineageRequest) {
+		return this.trackAdmission(() => this.admitPlatformResolution(request));
+	}
+
+	private async admitPlatformResolution(request: messages.ResolvePlatformLineageRequest) {
+		const known = this.lineageRegistry?.listResolutions().some(record => record.requestId === request.requestId);
+		const clusterPaused = known ? null : this.clusterPauseRefusal([request.instanceId]);
+		if (clusterPaused) return { success: false, error: `${clusterPaused} Nothing was resolved.` };
 		const result = await this.resolver.resolve(request);
 		this.subscriptions?.queueTreeBroadcast(this.lastTreeForceName || "player");
 		return result;
@@ -722,7 +738,7 @@ export class ControllerPlugin {
 
 	private async observeUploadedImport(request: messages.ImportUploadedExportOptions) {
 		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
-		const result = await timingContext.run(clock, () => this.handleImportUploadedExportRequestMeasured(request));
+		const result = await this.trackAdmission(() => timingContext.run(clock, () => this.handleImportUploadedExportRequestMeasured(request)));
 		if (!result.success && !clock.operationId) {
 			try { await this.txLogger.rejectObservation(clock.jobId, { ...request, operationType: "import" }, result.error || "Import request rejected"); }
 			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
@@ -751,6 +767,8 @@ export class ControllerPlugin {
 		if (!resolved || !resolvedInstance || resolvedInstance.isDeleted) {
 			return { success: false, error: `Target instance not found: ${targetInstanceId}` };
 		}
+		const clusterPaused = this.clusterPauseRefusal([resolved.id]);
+		if (clusterPaused) return { success: false, error: `${clusterPaused} No platform was imported.` };
 		const pausedTarget = await this.autoPauseRefusal(resolved.id, "destination");
 		if (pausedTarget) return { success: false, error: `${pausedTarget} No platform was imported.` };
 
@@ -855,7 +873,7 @@ export class ControllerPlugin {
 
 	async handleExportPlatformForDownloadRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; sourcePlatformUid?: string; forceName?: string }) {
 		const clock = this.txLogger.beginObservation(`request:${randomUUID()}`);
-		const result = await timingContext.run(clock, () => this.handleExportPlatformForDownloadRequestMeasured(request));
+		const result = await this.trackAdmission(() => timingContext.run(clock, () => this.handleExportPlatformForDownloadRequestMeasured(request)));
 		if (!result.success && !clock.operationId) {
 			try { await this.txLogger.rejectObservation(clock.jobId, { ...request, operationType: "export" }, result.error || "Export request rejected"); }
 			catch (error) { this.logger.warn(`Rejected-request profiling failed: ${getErrorMessage(error)}`); }
@@ -880,6 +898,8 @@ export class ControllerPlugin {
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
 		}
+		const clusterPaused = this.clusterPauseRefusal([sourceInstanceId]);
+		if (clusterPaused) return { success: false, error: `${clusterPaused} Nothing was locked or exported.` };
 		const pausedSource = await this.autoPauseRefusal(sourceInstanceId, "source");
 		if (pausedSource) return { success: false, error: `${pausedSource} Nothing was locked or exported.` };
 		const platformUid = await this.platformTree.resolvePlatformUid(sourceInstanceId, sourcePlatformIndex, forceName, request.sourcePlatformUid);
@@ -1232,11 +1252,13 @@ export class ControllerPlugin {
 	persistPendingTransfer(intent: messages.PendingTransferIntent): void {
 		// Unresolved recovery authority is not log retention. Only explicit resolution removes it.
 		this.pendingTransfers.set(intent.transferId, intent);
+		this.clusterPauseHoldsChanged();
 		void this.persistPendingTransfers();
 	}
 
 	removePendingTransfer(transferId: string): void {
 		if (this.pendingTransfers.delete(transferId)) {
+			this.clusterPauseHoldsChanged();
 			void this.persistPendingTransfers();
 		}
 	}
@@ -1252,6 +1274,18 @@ export class ControllerPlugin {
 		}
 		return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has auto-pause on, so it stops running while no players are online. `
 			+ "Platform transfers, imports and exports are refused there; turn off auto_pause in its factorio.settings and restart it.";
+	}
+
+	clusterPauseRefusal(instanceIds: number[]): string | null {
+		return this.clusterPause?.refusal(instanceIds) ?? null;
+	}
+
+	clusterPauseHoldsChanged(): void {
+		this.clusterPause?.changed();
+	}
+
+	trackAdmission<T>(work: () => Promise<T>): Promise<T> {
+		return this.clusterPause ? this.clusterPause.track(work) : work();
 	}
 
 	isInstanceOnline(instanceId: number): boolean {

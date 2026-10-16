@@ -2002,6 +2002,8 @@ export interface IControllerPlugin {
 	removePendingTransfer(transferId: string): void;
 	isInstanceOnline(instanceId: number): boolean;
 	autoPauseRefusal(instanceId: number, role: "source" | "destination"): Promise<string | null>;
+	clusterPauseRefusal?(instanceIds: number[]): string | null;
+	clusterPauseHoldsChanged?(): void;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;

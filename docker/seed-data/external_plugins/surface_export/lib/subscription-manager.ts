@@ -78,6 +78,7 @@ export class SubscriptionManager {
 		if (!transfer) {
 			return;
 		}
+		this.plugin.clusterPauseHoldsChanged?.();
 		this.plugin.transferRevision += 1;
 		const transferSummary = this.plugin.txLogger.buildTransferSummary(
 			transfer.transferId,
