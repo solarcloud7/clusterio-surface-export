@@ -51,10 +51,10 @@
     }
   },
   "devDependencies": {
-    "@clusterio/controller": "2.0.1",
-    "@clusterio/ctl": "2.0.1",
-    "@clusterio/host": "2.0.1",
-    "@clusterio/lib": "2.0.1",
+    "@clusterio/controller": "2.0.2",
+    "@clusterio/ctl": "2.0.2",
+    "@clusterio/host": "2.0.2",
+    "@clusterio/lib": "2.0.2",
     "@types/node": "^24.13.4",
     "eslint": "^9.39.4",
     "typescript": "^5.5.4",
