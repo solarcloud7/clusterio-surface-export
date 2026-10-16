@@ -97,6 +97,7 @@ jobs:
           lua5.2 tests/lua/import-setup-cleanup.lua
           lua5.2 tests/lua/tile-scanner.lua
           lua5.2 tests/lua/tile-batching.lua
+          lua5.2 tests/lua/tile-chunk-generation.lua
           lua5.2 tests/lua/payload-encoder.lua
           lua5.2 tests/lua/section-codec.lua
           lua5.2 tests/lua/section-import.lua
