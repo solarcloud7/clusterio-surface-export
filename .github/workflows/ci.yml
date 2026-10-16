@@ -53,6 +53,13 @@ jobs:
         working-directory: ${{ env.PLUGIN_DIR }}
         run: npm test
 
+      - name: Lint and test (cluster_pause plugin, Surface Export toolchain)
+        working-directory: plugins/cluster_pause
+        run: |
+          ln -s "$GITHUB_WORKSPACE/${{ env.PLUGIN_DIR }}/node_modules" node_modules
+          npm run lint
+          npm test
+
       - name: Test (repo root — manifest, meters, pins, testkit)
         run: npm test
 

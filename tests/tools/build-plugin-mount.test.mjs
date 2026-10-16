@@ -71,6 +71,7 @@ if ($env:BUILD_FAIL -eq 'true') {
  $extra = @{}
  if ($env:BUILD_PACKAGE) { $extra.PackageDirectory = $env:BUILD_PACKAGE; $extra.OutputDirectory = $env:BUILD_OUTPUT }
  if ($env:BUILD_RESTART -eq 'true') { $extra.RestartController = $true; $extra.RestartHosts = $true }
+ if ($env:BUILD_PLUGIN) { $extra.Plugin = $env:BUILD_PLUGIN }
  & $env:BUILD_SCRIPT $env:BUILD_TARGET @extra
 }
 exit $LASTEXITCODE
@@ -80,7 +81,7 @@ exit $LASTEXITCODE
 			BUILD_LINKED: String(options.linked || false), BUILD_RESTART: String(options.restart || false),
 			BUILD_CLUSTER_ROOT: options.clusterRoot || repo,
 			BUILD_SCRIPT: script, BUILD_TARGET: target, BUILD_PACKAGE: options.packageDirectory || "",
-			BUILD_MUTATE_LOCK: options.mutateLock || "",
+			BUILD_MUTATE_LOCK: options.mutateLock || "", BUILD_PLUGIN: options.plugin || "",
 			BUILD_FAIL_CLEANUP: String(options.failCleanup || false), BUILD_LIST_EXIT: String(options.listExit || 0),
 			BUILD_OUTPUT: options.outputDirectory || "", BUILD_CALLS: calls, BUILD_FAIL: String(fail) } });
 	return { ...result, snapshot: existsSync(`${calls}.snapshot`) ? readFileSync(`${calls}.snapshot`, "utf8").trim() : null,
@@ -103,6 +104,29 @@ test("lint and unit tests see the full checkout with isolated plugin dependencie
 		assert.ok(snapshot.endsWith(",dst=/repo/docker/seed-data/external_plugins/surface_export/package-lock.json,readonly"));
 		assert.equal(existsSync(snapshot.slice("type=bind,src=".length).split(",dst=")[0]), false);
 		assert.ok(args.at(-1).includes("SE_SKIP_PREPARE=1 npm ci"));
+	}
+});
+
+test("cluster_pause builds in the same container flow with the surface_export dependency volume", { skip }, t => {
+	const plugin = "/repo/plugins/cluster_pause", deps = "/repo/docker/seed-data/external_plugins/surface_export";
+	for (const [target, script] of [["lint", "npm run lint"], ["test", "npm test"], ["node", "npm run build:node"]]) {
+		const result = run(t, target, false, { plugin: "cluster_pause" });
+		assert.equal(result.status, 0, result.stderr || result.stdout);
+		assert.deepEqual(result.calls.map(args => args[0]), ["version", "run"]);
+		const args = result.calls[1];
+		assert.equal(args[args.indexOf("--mount") + 1], `type=bind,src=${repo},dst=/repo`);
+		assert.equal(args[args.indexOf("-w") + 1], plugin);
+		const volumes = args.flatMap((value, index) => value === "-v" ? [args[index + 1]] : []);
+		assert.deepEqual(volumes, [`se_plugin_build_nm:${deps}/node_modules`, `se_plugin_build_nm:${plugin}/node_modules`]);
+		assert.ok(args.find(value => value.endsWith("package-lock.json,readonly")).endsWith(`,dst=${deps}/package-lock.json,readonly`));
+		const inner = args.at(-1);
+		assert.ok(inner.startsWith(`cd ${deps}; set -e;`), inner);
+		assert.ok(inner.includes(`cd ${plugin}; echo '[build] ${script}'; ${script};`), inner);
+	}
+	for (const [target, options] of [["web", {}], ["smoke", {}], ["node", { restart: true }]]) {
+		const refused = run(t, target, false, { plugin: "cluster_pause", ...options });
+		assert.notEqual(refused.status, 0);
+		assert.deepEqual(refused.calls, []);
 	}
 });
 
