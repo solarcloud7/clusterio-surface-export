@@ -1,7 +1,7 @@
 {
   "clusterio": "2.0.1",
   "factorio": "2.1.17",
-  "gateway": { "name": "surfexp_gateways", "version": "0.7.9" },
+  "gateway": { "name": "surfexp_gateways", "version": "0.7.10" },
   "bases": {
     "controller": "ghcr.io/solarcloud7/clusterio-docker-controller@sha256:7ac6a217b8f487a0acb57e600f127836bc132c5b97f69e80d3deb78af234dd7e",
     "host": "ghcr.io/solarcloud7/clusterio-docker-host@sha256:03aae51faa19539889af08e3703f1b963fe58398638f13ea1f87881c360ee27d"

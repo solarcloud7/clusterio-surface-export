@@ -117,7 +117,7 @@ do
   file:close()
 end
 local gateway_hub = load_layout().surfexp_gateway_hub
-assert(gateway_hub.starmap_icon:find("starmap-gateway-hub.png", 1, true) and gateway_hub.starmap_icon_size == 512,
+assert(gateway_hub.starmap_icon:find("starmap-gateway-hub-padded.png", 1, true) and gateway_hub.starmap_icon_size == 640,
   "the Gateway draws its own portal where the sun was")
-assert(gateway_hub.magnitude >= 3, "the Gateway is sun-sized so its label clears the portal")
+assert(gateway_hub.magnitude >= 5, "the Gateway is large enough that its name sits above the portal names")
 print("eclipse: PASS (the sun is blacked out and the Gateway takes its place)")

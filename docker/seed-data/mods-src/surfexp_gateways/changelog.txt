@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.10
+  Changes:
+    - The Gateway name on the star map sits above the portal names instead of level with Purple and Blue.
+---------------------------------------------------------------------------------------------------
 Version: 0.7.9
   Changes:
     - Remove the four-gateway layout setting and the "Server destinations" setting.
