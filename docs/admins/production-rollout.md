@@ -20,7 +20,7 @@ configures instances that exist; it does not create them, so steps 1, 2 and 4 ar
 Hosts: `clusterio-host-1` and `clusterio-host-2`, two servers each. Every server
 reaches every other server through the coloured portals; the controller assigns
 the colours. The file also carries the mod pack (Space Age 2.1.20 with
-`surfexp_gateways` 0.7.9 and the other mods), each server's public settings,
+`surfexp_gateways` 0.7.10 and the other mods), each server's public settings,
 `debug_mode` off, and the controller's Discord invite and bridge channel.
 
 Host assignment and game ports are not in the file. The public cluster already
