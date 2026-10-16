@@ -1,0 +1,63 @@
+{
+  "name": "@solarcloud7/plugin-cluster-pause",
+  "version": "0.1.0",
+  "description": "Clusterio plugin that pauses every server together while nobody plays",
+  "type": "module",
+  "main": "dist/node/index.js",
+  "types": "dist/node/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:node": "tsc -p tsconfig.node.json",
+    "build": "npm run build:node",
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run build:node && node --test \"test/*.test.cjs\""
+  },
+  "keywords": [
+    "clusterio",
+    "factorio",
+    "pause",
+    "clusterio-plugin"
+  ],
+  "author": "Solarcloud7",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/solarcloud7/clusterio-surface-export.git",
+    "directory": "plugins/cluster_pause"
+  },
+  "files": [
+    "dist/node/**/*.js",
+    "dist/node/**/*.d.ts",
+    "module/",
+    "package.json"
+  ],
+  "peerDependencies": {
+    "@clusterio/controller": "^2.0.0",
+    "@clusterio/ctl": "^2.0.0",
+    "@clusterio/host": "^2.0.0",
+    "@clusterio/lib": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@clusterio/controller": {
+      "optional": true
+    },
+    "@clusterio/ctl": {
+      "optional": true
+    },
+    "@clusterio/host": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@clusterio/controller": "2.0.1",
+    "@clusterio/ctl": "2.0.1",
+    "@clusterio/host": "2.0.1",
+    "@clusterio/lib": "2.0.1",
+    "@types/node": "^24.13.4",
+    "eslint": "^9.39.4",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.70.0"
+  }
+}
