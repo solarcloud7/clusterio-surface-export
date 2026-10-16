@@ -49,7 +49,9 @@ See [batching](docs/technical/batching.md) and [timing](docs/technical/timing.md
 
 ## Verification and limits
 
-The recorded package and consumer acceptance used **0.10.281**, Clusterio
+The current release is **0.12.0-beta.2** for Clusterio **2.0.2**. Its release workflow
+built and tested the exact package before publishing it to npm. The retained manual
+evidence below is older: the recorded package and consumer acceptance used **0.10.281**, Clusterio
 **2.0.0-alpha.27** and Factorio Space Age **2.1.17**. Those results identify
 historically tested artifacts, not a certification of every later source revision
 or a statement about the currently published release. The current seed runtime and
