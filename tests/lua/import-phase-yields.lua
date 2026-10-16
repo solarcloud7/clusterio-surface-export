@@ -115,8 +115,9 @@ local function scenario(options)
         mark("fluids"); return {count = 0, segment_temps = {witness = 15}}
     end}
     cache["validators/transfer-validation"] = {
-        validate_import = function(_, _, opts)
+        validate_import = function(_, expected, opts)
             mark("validate"); assert(opts.strict and opts.segment_temps.witness == 15)
+            assert(expected.tiles == env.storage.async_jobs.test.tiles_to_place, "transfer validation must receive the payload tiles")
             return not options.reject, {success = not options.reject, mismatchDetails = "injected rejection"}
         end,
         store_validation_result = noop,

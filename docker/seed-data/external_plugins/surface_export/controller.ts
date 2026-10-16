@@ -1021,7 +1021,7 @@ export class ControllerPlugin {
 			operation.status = event.cleanupFailed ? "cleanup_failed" : "failed";
 			operation.error = error;
 			operation.failedAt = Date.now();
-			if (event.failedStage === "items" || event.failedStage === "fluids"
+			if (event.failedStage === "items" || event.failedStage === "fluids" || event.failedStage === "tiles"
 				|| event.failedStage === "belts" || event.failedStage === "test_hook"
 				|| event.failedStage === "entities" || event.failedStage === "cargo_integrity"
 				|| event.failedStage === "destination_hold") {

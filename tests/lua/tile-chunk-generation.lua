@@ -27,7 +27,11 @@ local function fake_surface(generated)
 		local cx, cy = chunk_of(x, y)
 		surface.requested[key(cx, cy)] = {cx, cy}
 	end
+	surface.force_batches = {}
 	function surface.force_generate_chunk_requests()
+		local batch = 0
+		for _ in pairs(surface.requested) do batch = batch + 1 end
+		surface.force_batches[#surface.force_batches + 1] = batch
 		for k, chunk in pairs(surface.requested) do
 			if not surface.generated[k] then
 				surface.generations = surface.generations + 1
@@ -82,10 +86,11 @@ local function load_tile_restoration()
 	return assert(loadfile(root .. "import_phases/tile_restoration.lua", "t", env))()
 end
 
-local function restore(surface, tiles, entities)
+local function restore(surface, tiles, entities, fields)
 	local job = {job_id = "job", tiles_to_place = tiles, entities_to_create = entities or {}, target_surface = surface, metrics = {}}
+	for k, v in pairs(fields or {}) do job[k] = v end
 	local module = load_tile_restoration()
-	for _ = 1, 50 do
+	for _ = 1, 200 do
 		if module.process(job, 1000) then return job end
 	end
 	error("tile restoration never completed")
@@ -119,6 +124,28 @@ generate_everything(surface)
 assert(surface.count_tiles_filtered({name = FOUNDATION}) == #tiles - 1, "tiles lost when remaining chunks generated")
 assert(surface.count_tiles_filtered({name = "modded-floor"}) == 1, "overlay tile lost")
 print("PASS restoration generates payload chunks before set_tiles; later generation keeps all " .. #tiles .. " tiles")
+
+local wide_tiles = {}
+for cx = -4, 4 do
+	for cy = -4, 4 do wide_tiles[#wide_tiles + 1] = {name = FOUNDATION, position = {x = cx * 32 + 5, y = cy * 32 + 5}} end
+end
+local wide = fake_surface(hub_chunks)
+restore(wide, wide_tiles)
+local most = 0
+for _, n in ipairs(wide.force_batches) do most = math.max(most, n) end
+assert(#wide.force_batches >= 3 and most <= 32, "chunk generation not bounded per callback: " .. #wide.force_batches .. " batches, max " .. most)
+assert(wide.count_tiles_filtered({name = FOUNDATION}) == #wide_tiles, "batched generation lost tiles")
+print("PASS chunk generation spans " .. #wide.force_batches .. " callbacks of at most 32 chunks")
+
+local resumed = fake_surface(hub_chunks)
+local half = math.floor(#tiles / 2)
+local already = {}
+for i = 1, half do already[i] = tiles[i] end
+resumed.set_tiles(already)
+restore(resumed, tiles, nil, {tile_cursor = {index = half + 1, foundation = true, placed = half, failed = 0}})
+generate_everything(resumed)
+assert(resumed.count_tiles_filtered({name = FOUNDATION}) == #tiles - 1, "tiles placed before an upgrade were lost on resume")
+print("PASS a job resumed mid-placement re-places tiles after generating chunks")
 
 local stuck = fake_surface(hub_chunks)
 stuck.force_generate_chunk_requests = function() stuck.requested = {} end
@@ -175,6 +202,19 @@ assert(passed == false and result.failedStage == "tiles", "tiles in ungenerated 
 assert(tostring(result.mismatchDetails):find("not generated"), "ungenerated chunk not reported")
 assert(pending.generations == 0, "validation generated chunks")
 print("PASS tiles in ungenerated chunks fail validation without generating them")
+
+local offset = fake_surface({{-1, -1}, {0, -1}, {-1, 0}, {0, 0}, {-1, 1}, {0, 1}, {-1, 2}, {0, 2}})
+offset.set_tiles(tiles)
+local moved = {}
+for x = -8, 7 do
+	offset.tiles[x .. ":" .. 71] = nil
+	moved[#moved + 1] = {name = FOUNDATION, position = {x = x + 16, y = 0}}
+end
+offset.set_tiles(moved)
+assert(offset.count_tiles_filtered({name = FOUNDATION}) == #tiles - 1, "fixture must keep the global count")
+passed, result = validate(offset)
+assert(passed == false and result.failedStage == "tiles", "a chunk loss offset by a gain elsewhere passed validation")
+print("PASS a loss in one chunk is not hidden by a gain in another")
 
 local gained = fake_surface({{-1, -1}, {0, -1}, {-1, 0}, {0, 0}, {-1, 1}, {0, 1}, {-1, 2}, {0, 2}})
 gained.set_tiles(tiles)
