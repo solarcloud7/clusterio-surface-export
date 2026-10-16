@@ -3,7 +3,8 @@
 [index.ts](../../docker/seed-data/external_plugins/surface_export/index.ts) registers
 the plugin's controller and instance fields. The tables below use the
 `surface_export.` prefix. They describe registered defaults, not the values
-currently applied to an existing cluster.
+currently applied to an existing cluster. [Settings at a glance](settings-at-a-glance.md)
+lists the values the public cluster sets.
 
 ## Controller settings
 
