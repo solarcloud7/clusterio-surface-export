@@ -61,5 +61,50 @@
 		"tests": [
 			"tests/lua/tile-chunk-generation.lua"
 		]
+	},
+	{
+		"name": "a new generation plan restarts tile placement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "            job.tile_cursor = nil\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "chunk generation is bounded per callback",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "plan.index + CHUNKS_PER_CALLBACK - 1",
+		"replace": "#plan.chunks",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "transfer validation receives the payload tiles",
+		"file": "docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua",
+		"find": "\t\t\ttiles = job.tiles_to_place,\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/import-phase-yields.lua"
+		]
+	},
+	{
+		"name": "the chunk bound is exactly 32",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "plan.index + CHUNKS_PER_CALLBACK - 1",
+		"replace": "plan.index + CHUNKS_PER_CALLBACK",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "a finished generation plan is cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "            job.tile_chunk_plan = nil\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
 	}
 ]
