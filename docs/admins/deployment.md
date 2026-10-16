@@ -17,9 +17,9 @@ of the Clusterio deployment.
 
 ## Release availability
 
-Plugin `0.12.0-beta.1` is the current release under npm's `beta` tag. It requires
+Plugin `0.12.0-beta.2` is the current release under npm's `beta` tag. It requires
 Clusterio `^2.0.0` (developed against `2.0.2`), Factorio Space Age `2.1.20` and the
-`surfexp_gateways` mod `0.7.9`. The `0.11.0` betas require the `2.0.0-alpha.27`
+`surfexp_gateways` mod `0.7.10`. The `0.11.0` betas require the `2.0.0-alpha.27`
 prerelease and do not load on Clusterio 2.0; this release is not supported on the
 alphas. Every release is published by the
 [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
@@ -41,8 +41,8 @@ Run these commands in the Clusterio installation directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@0.12.0-beta.1 peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@0.12.0-beta.1
+npm view @solarcloud7/plugin-surface-export@0.12.0-beta.2 peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@0.12.0-beta.2
 ```
 
 ### Accepted candidate archive
@@ -91,7 +91,7 @@ layer is not a durable installation.
 
 ## Enable the gateway mod and verify startup
 
-Add the matching `surfexp_gateways` release (`0.7.9` for this plugin version) from
+Add the matching `surfexp_gateways` release (`0.7.10` for this plugin version) from
 the Mod Portal to the instances' Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
 bundled mods enabled. Players need the matching mod pack when joining; the gateway
 mod alone does not provide the server-side transfer implementation.

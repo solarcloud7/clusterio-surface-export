@@ -4,6 +4,17 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
+## 0.12.0-beta.2
+
+Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
+and the `surfexp_gateways` mod `0.7.10`.
+
+- Each player sees the name of the server they are on as a small label at the top
+  right, just left of the research and minimap column. (#410)
+- With `surfexp_gateways` 0.7.10, the Gateway's name on the star map sits above the
+  portal names instead of level with Purple and Blue. (#411)
+- Built and tested on Clusterio 2.0.2. Installs on 2.0.1 remain supported. (#412)
+
 ## 0.12.0-beta.1
 
 Requires Clusterio `2.0.1` (peer range `^2.0.0`), Factorio Space Age `2.1.20` and the
