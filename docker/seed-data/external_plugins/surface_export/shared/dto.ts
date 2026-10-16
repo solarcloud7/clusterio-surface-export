@@ -250,7 +250,7 @@ export interface ValidationResult {
 	fluidCountMatch: boolean;
 	success?: boolean;
 	message?: string;
-	failedStage?: 'items' | 'fluids' | 'belts' | 'entities' | 'cargo_integrity' | 'destination_hold' | 'test_hook' | null;
+	failedStage?: 'items' | 'fluids' | 'tiles' | 'belts' | 'entities' | 'cargo_integrity' | 'destination_hold' | 'test_hook' | null;
 	measurementAvailable?: boolean;
 	measurementErrors?: string[];
 	testForcedFailure?: boolean;
@@ -264,6 +264,12 @@ export interface ValidationResult {
 	actualItemCounts?: Record<string, number>;
 	expectedFluidCounts?: Record<string, number>;
 	actualFluidCounts?: Record<string, number>;
+	tileCountMatch?: boolean;
+	expectedTileCounts?: Record<string, number>;
+	actualTileCounts?: Record<string, number>;
+	tileLossByType?: Record<string, number>;
+	tileGains?: Record<string, number>;
+	ungeneratedTileChunks?: number;
 	entityTypeBreakdown?: Record<string, number>;
 	failedEntityLosses?: {
 		entity_count: number;

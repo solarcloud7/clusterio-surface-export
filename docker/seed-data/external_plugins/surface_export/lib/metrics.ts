@@ -43,7 +43,8 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 	operation.metricsRecorded = true;
 
 	const operationLabel = operation.operationType || "unknown";
-	const failureStage = operation.failedStage === "items" || operation.failedStage === "fluids" || operation.failedStage === "belts"
+	const failureStage = operation.failedStage === "items" || operation.failedStage === "fluids" || operation.failedStage === "tiles"
+		|| operation.failedStage === "belts"
 		? operation.failedStage : "none";
 	operationsTotal.labels({ operation: operationLabel, result, failure_stage: failureStage }).inc();
 

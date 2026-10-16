@@ -4,13 +4,13 @@ local jobs = {}
 local batch_limit = 2000
 local expected_stages = {
 	["source-lua"] = {"preflight", "locking", "preparation", "scheduler_wait", "entities", "belt_capture", "ground_items", "verification_census", "finalize_payload", "serialization", "compression", "cache_output", "diagnostic_output", "file_output", "source_unlock", "failure_diagnostics"},
-	["destination-lua"] = {"queue_setup", "decode", "decompression", "decode_payload", "compatibility_checks", "platform_preparation", "scheduler_wait", "tiles", "beacons", "entities", "hub_mapping", "hub", "belts", "state", "deferred_beacon_wait", "inventories", "held_items", "fluids", "verdict_handling", "verification_preparation", "exact_verification", "item_census", "fluid_census", "item_comparison", "fluid_comparison", "diagnostic_capture", "diagnostic_output", "failure_diagnostics", "passenger_evacuation", "destination_recovery", "activation"},
+	["destination-lua"] = {"queue_setup", "decode", "decompression", "decode_payload", "compatibility_checks", "platform_preparation", "scheduler_wait", "tiles", "beacons", "entities", "hub_mapping", "hub", "belts", "state", "deferred_beacon_wait", "inventories", "held_items", "fluids", "verdict_handling", "verification_preparation", "exact_verification", "item_census", "fluid_census", "tile_census", "item_comparison", "fluid_comparison", "tile_comparison", "diagnostic_capture", "diagnostic_output", "failure_diagnostics", "passenger_evacuation", "destination_recovery", "activation"},
 }
 
 -- Nested preparation records share the parent's local clock; never sum them with it.
 for owner, names in pairs({
 	["source-lua"] = {"schedule_capture", "entity_collection", "entity_sorting", "tile_scan", "export_job_setup"},
-	["destination-lua"] = {"platform_naming", "target_resolution", "platform_creation", "starter_pack", "starter_cleanup", "platform_parking", "schedule_restoration", "import_cargo_totals"},
+	["destination-lua"] = {"platform_naming", "target_resolution", "platform_creation", "starter_pack", "starter_cleanup", "platform_parking", "schedule_restoration", "import_cargo_totals", "chunk_generation"},
 }) do
 	for _, name in ipairs(names) do table.insert(expected_stages[owner], name) end
 end

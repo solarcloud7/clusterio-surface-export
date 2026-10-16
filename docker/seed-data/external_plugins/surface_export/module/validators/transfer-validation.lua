@@ -67,6 +67,79 @@ local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts,
     return fluid_match, fluid_mismatches, recon
 end
 
+local MAX_TILE_MISMATCHES = 10
+
+local function count_tiles(surface, expected_tiles)
+    local columns, chunks, expected_by_name = {}, {}, {}
+    for _, tile in ipairs(expected_tiles) do
+        local position = tile.position
+        local x = position and (position.x or position[1])
+        local y = position and (position.y or position[2])
+        if type(tile.name) ~= "string" or type(x) ~= "number" or type(y) ~= "number" then
+            error("Tile integrity: malformed payload tile")
+        end
+        local cx, cy = math.floor(x / 32), math.floor(y / 32)
+        local column = columns[cx]
+        if not column then
+            column = {}
+            columns[cx] = column
+        end
+        local chunk = column[cy]
+        if not chunk then
+            chunk = {cx = cx, cy = cy, expected = {}, actual = {}}
+            column[cy] = chunk
+            chunks[#chunks + 1] = chunk
+        end
+        chunk.expected[tile.name] = (chunk.expected[tile.name] or 0) + 1
+        expected_by_name[tile.name] = (expected_by_name[tile.name] or 0) + 1
+    end
+    for _, chunk in ipairs(chunks) do
+        chunk.generated = surface.is_chunk_generated({chunk.cx, chunk.cy})
+        local area = {{chunk.cx * 32, chunk.cy * 32}, {chunk.cx * 32 + 32, chunk.cy * 32 + 32}}
+        for name in pairs(chunk.expected) do
+            chunk.actual[name] = surface.count_tiles_filtered({area = area, name = name})
+        end
+    end
+    return chunks, expected_by_name
+end
+
+local function compare_tiles(chunks)
+    local actual_by_name, loss, gains, mismatches = {}, {}, {}, {}
+    local ungenerated, lost_chunks, total = 0, 0, 0
+    local function mismatch(text)
+        total = total + 1
+        if #mismatches < MAX_TILE_MISMATCHES then mismatches[#mismatches + 1] = text end
+    end
+    for _, chunk in ipairs(chunks) do
+        if not chunk.generated then
+            ungenerated = ungenerated + 1
+            mismatch(string.format("chunk %d,%d not generated", chunk.cx, chunk.cy))
+        end
+        local chunk_lost = false
+        for name, expected in pairs(chunk.expected) do
+            local actual = chunk.actual[name]
+            actual_by_name[name] = (actual_by_name[name] or 0) + actual
+            if actual < expected then
+                chunk_lost = true
+                loss[name] = (loss[name] or 0) + expected - actual
+                mismatch(string.format("chunk %d,%d %s: expected %d, got %d", chunk.cx, chunk.cy, name, expected, actual))
+            elseif actual > expected then
+                gains[name] = (gains[name] or 0) + actual - expected
+            end
+        end
+        if chunk_lost then lost_chunks = lost_chunks + 1 end
+    end
+    if total > #mismatches then mismatches[#mismatches + 1] = string.format("%d more", total - #mismatches) end
+    return {
+        match = ungenerated == 0 and lost_chunks == 0,
+        actual_by_name = actual_by_name,
+        loss = loss,
+        gains = gains,
+        ungenerated = ungenerated,
+        mismatches = mismatches,
+    }
+end
+
 local function validate_import(surface, expected_verification, options)
     options = options or {}
     if not surface or not surface.valid then
@@ -148,6 +221,12 @@ local function validate_import(surface, expected_verification, options)
     Timing.start(options.timing_job_id, "fluid_census", "execution", "exact_verification")
     local actual_fluid_counts = CargoCounter.count_fluids(surface, options.segment_temps)
     Timing.stop(options.timing_job_id, "fluid_census")
+    local tile_chunks, expected_tile_counts
+    if expected_verification.tiles then
+        Timing.start(options.timing_job_id, "tile_census", "execution", "exact_verification")
+        tile_chunks, expected_tile_counts = count_tiles(surface, expected_verification.tiles)
+        Timing.stop(options.timing_job_id, "tile_census")
+    end
     Timing.start(options.timing_job_id, "item_comparison", "execution", "exact_verification")
 
     
@@ -215,8 +294,16 @@ local function validate_import(surface, expected_verification, options)
 
     Timing.stop(options.timing_job_id, "fluid_comparison")
     if not fluid_match then Timing.fail(options.timing_job_id, "fluid_comparison") end
+    local tiles = nil
+    if tile_chunks then
+        Timing.start(options.timing_job_id, "tile_comparison", "execution", "exact_verification")
+        tiles = compare_tiles(tile_chunks)
+        Timing.stop(options.timing_job_id, "tile_comparison")
+        if not tiles.match then Timing.fail(options.timing_job_id, "tile_comparison") end
+    end
+    local tile_match = tiles == nil or tiles.match
     local mismatch_details = nil
-    if not item_match or not fluid_match then
+    if not item_match or not fluid_match or not tile_match then
         local details_parts = {}
 
         if not item_match then
@@ -225,6 +312,10 @@ local function validate_import(surface, expected_verification, options)
 
         if not fluid_match then
             table.insert(details_parts, "Fluid mismatches: " .. table.concat(fluid_mismatches, "; "))
+        end
+
+        if not tile_match then
+            table.insert(details_parts, "Tile mismatches: " .. table.concat(tiles.mismatches, "; "))
         end
 
         mismatch_details = table.concat(details_parts, " | ")
@@ -268,13 +359,26 @@ local function validate_import(surface, expected_verification, options)
         totalItemLoss = total_item_loss,
         fluidReconciliation = fluid_reconciliation,
     }
+    if tiles then
+        validation_result.tileCountMatch = tiles.match
+        validation_result.expectedTileCounts = expected_tile_counts
+        validation_result.actualTileCounts = tiles.actual_by_name
+        validation_result.tileLossByType = next(tiles.loss) and tiles.loss or nil
+        validation_result.tileGains = next(tiles.gains) and tiles.gains or nil
+        validation_result.ungeneratedTileChunks = tiles.ungenerated
+        for name, extra in pairs(tiles.gains) do
+            log(string.format("[TransferValidation] Destination has %d %s tile(s) absent from the payload", extra, name))
+        end
+    end
 
-    local success = item_match and fluid_match
+    local success = item_match and fluid_match and tile_match
     validation_result.success = success
     if not item_match then
         validation_result.failedStage = "items"
     elseif not fluid_match then
         validation_result.failedStage = "fluids"
+    elseif not tile_match then
+        validation_result.failedStage = "tiles"
     end
 
     if total_item_loss > 0 then
@@ -300,7 +404,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     if ok then return success, result end
     local detail = "Cargo integrity measurement unavailable: " .. tostring(success)
     local job_id = options and options.timing_job_id
-    for _, stage in ipairs({"item_census", "fluid_census", "item_comparison", "fluid_comparison"}) do
+    for _, stage in ipairs({"item_census", "fluid_census", "tile_census", "item_comparison", "fluid_comparison", "tile_comparison"}) do
         Timing.stop(job_id, stage)
     end
     log(detail)

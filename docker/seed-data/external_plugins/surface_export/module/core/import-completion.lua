@@ -387,6 +387,7 @@ function ImportCompletion.run_phase2(job, batch_size)
 		local cargo_expectations = {
 			item_counts = copy_counts(job.platform_data.verification.item_counts),
 			fluid_counts = copy_counts(job.platform_data.verification.fluid_counts),
+			tiles = job.tiles_to_place,
 		}
 		do
 			local _cfg2 = storage.surface_export_config
