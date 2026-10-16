@@ -88,5 +88,23 @@
 		"tests": [
 			"tests/lua/import-phase-yields.lua"
 		]
+	},
+	{
+		"name": "the chunk bound is exactly 32",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "plan.index + CHUNKS_PER_CALLBACK - 1",
+		"replace": "plan.index + CHUNKS_PER_CALLBACK",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "a finished generation plan is cleared",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "            job.tile_chunk_plan = nil\n",
+		"replace": "",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
 	}
 ]

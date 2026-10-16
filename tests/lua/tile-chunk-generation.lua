@@ -129,13 +129,12 @@ local wide_tiles = {}
 for cx = -4, 4 do
 	for cy = -4, 4 do wide_tiles[#wide_tiles + 1] = {name = FOUNDATION, position = {x = cx * 32 + 5, y = cy * 32 + 5}} end
 end
-local wide = fake_surface(hub_chunks)
-restore(wide, wide_tiles)
-local most = 0
-for _, n in ipairs(wide.force_batches) do most = math.max(most, n) end
-assert(#wide.force_batches >= 3 and most <= 32, "chunk generation not bounded per callback: " .. #wide.force_batches .. " batches, max " .. most)
-assert(wide.count_tiles_filtered({name = FOUNDATION}) == #wide_tiles, "batched generation lost tiles")
-print("PASS chunk generation spans " .. #wide.force_batches .. " callbacks of at most 32 chunks")
+local wide = fake_surface({})
+local wide_job = restore(wide, wide_tiles)
+local batches = table.concat(wide.force_batches, ",")
+assert(batches == "32,32,17", "chunk generation not bounded at 32 chunks per callback: " .. batches)
+assert(wide_job.tile_chunks_generated == true and wide_job.tile_chunk_plan == nil, "generation plan left in the saved job")
+print("PASS chunk generation runs in callbacks of " .. batches .. " chunks and clears its plan")
 
 local resumed = fake_surface(hub_chunks)
 local half = math.floor(#tiles / 2)
