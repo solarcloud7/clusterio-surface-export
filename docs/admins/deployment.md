@@ -18,7 +18,7 @@ of the Clusterio deployment.
 ## Release availability
 
 Plugin `0.12.0-beta.1` is the current release under npm's `beta` tag. It requires
-Clusterio `^2.0.0` (developed against `2.0.1`), Factorio Space Age `2.1.20` and the
+Clusterio `^2.0.0` (developed against `2.0.2`), Factorio Space Age `2.1.20` and the
 `surfexp_gateways` mod `0.7.9`. The `0.11.0` betas require the `2.0.0-alpha.27`
 prerelease and do not load on Clusterio 2.0; this release is not supported on the
 alphas. Every release is published by the
@@ -83,7 +83,7 @@ host and control client. For separate installations, install the same package ve
 and register it in each controller, participating host and control-client directory.
 Use `clusteriohost` or `clusterioctl` in place of `clusteriocontroller` where appropriate.
 Preserve other installed plugins and existing configuration. This follows the
-[pinned Clusterio plugin-install procedure](https://github.com/clusterio/clusterio/blob/v2.0.1/README.md#installing-plugins).
+[pinned Clusterio plugin-install procedure](https://github.com/clusterio/clusterio/blob/v2.0.2/README.md#installing-plugins).
 
 For Docker-managed installations, make the package change through the hosting
 project's persistent installation/update mechanism; an edit in a disposable container
