@@ -100,6 +100,25 @@ test("holds cover active and queued work, pending intents, passengers, admission
 	assert.deepEqual(joined().handlers.listHolds(), []);
 });
 
+test("an instance with Surface Export holds the pause from starting until its recovery finishes", () => {
+	const state = source();
+	const { participant, handlers, api } = joined(state);
+	participant.onInstanceStatus(4, "starting", false);
+	participant.onInstanceStatus(5, "starting", true);
+	assert.deepEqual(handlers.listHolds(), [{ reason: "instance starting up", ref: "5" }]);
+	participant.onInstanceStatus(5, "running", true);
+	state.recoveryReservations.set(5, {});
+	assert.deepEqual(handlers.listHolds(), [{ reason: "instance reconciling its save", ref: "5" }]);
+	state.recoveryReservations.delete(5);
+	const before = api.changed;
+	participant.onRecoveryFinished(5);
+	assert.equal(api.changed, before + 1);
+	assert.deepEqual(handlers.listHolds(), []);
+	participant.onInstanceStatus(6, "starting", true);
+	participant.onInstanceStatus(6, "stopped", true);
+	assert.deepEqual(handlers.listHolds(), []);
+});
+
 test("new work is refused while draining or paused, and to an instance whose resume is unconfirmed", () => {
 	const { participant, handlers } = joined();
 	assert.equal(participant.refusal([1]), null);

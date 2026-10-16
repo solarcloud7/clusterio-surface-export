@@ -58,6 +58,7 @@ export class ClusterPauseParticipant {
 	private phase = "running";
 	private paused = new Set<number>();
 	private admissions = 0;
+	private readonly starting = new Set<number>();
 
 	constructor(private readonly source: ParticipantSource, private readonly logger: { info(message: string): void }) {}
 
@@ -104,6 +105,17 @@ export class ClusterPauseParticipant {
 		this.api?.holdsChanged(PARTICIPANT_NAME);
 	}
 
+	onInstanceStatus(instanceId: number, status: string | undefined, loaded: boolean): void {
+		const before = this.starting.has(instanceId);
+		if (status === "starting" && loaded) this.starting.add(instanceId);
+		else if (status !== "running") this.starting.delete(instanceId);
+		if (before !== this.starting.has(instanceId)) this.changed();
+	}
+
+	onRecoveryFinished(instanceId: number): void {
+		if (this.starting.delete(instanceId)) this.changed();
+	}
+
 	listHolds(): ClusterPauseHold[] {
 		const holds: ClusterPauseHold[] = [];
 		const listed = new Set<string>();
@@ -119,6 +131,9 @@ export class ClusterPauseParticipant {
 			if (!listed.has(transferId)) holds.push({ reason: "pending transfer intent", ref: transferId });
 		}
 		if (this.admissions > 0) holds.push({ reason: "admission request in progress", ref: String(this.admissions) });
+		for (const instanceId of this.starting) {
+			if (!this.source.recoveryReservations.has(instanceId)) holds.push({ reason: "instance starting up", ref: String(instanceId) });
+		}
 		for (const instanceId of this.source.recoveryReservations.keys()) {
 			holds.push({ reason: "instance reconciling its save", ref: String(instanceId) });
 		}

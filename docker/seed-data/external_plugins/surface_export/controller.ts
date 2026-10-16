@@ -322,6 +322,7 @@ export class ControllerPlugin {
 		const session = this.recoveryReservations.get(request.instanceId);
 		if (request.action !== "finish" || session?.epoch !== request.epoch) throw new Error("Recovery session changed; restart the instance");
 		this.recoveryReservations.delete(request.instanceId);
+		this.clusterPause?.onRecoveryFinished(request.instanceId);
 		this.clusterPauseHoldsChanged();
 		this.refreshGatewaysAfterRecovery(request.instanceId);
 		return session;
@@ -558,6 +559,8 @@ export class ControllerPlugin {
 	}
 
 	async onInstanceStatusChanged(instance?: InstanceStatusChange) {
+		if (instance) this.clusterPause?.onInstanceStatus(instance.id, instance.status,
+			this.c.instances.get(instance.id)?.config.get("surface_export.load_plugin") !== false);
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 		if (instance && instance.status === "running" && this.routeAlerts) await this.routeAlerts.replayTo(instance.id);
 		const gateways = this.gatewayConfig;
