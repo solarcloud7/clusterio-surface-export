@@ -1,0 +1,65 @@
+[
+	{
+		"name": "chunks are generated before tile placement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "if not job.tile_chunks_generated then",
+		"replace": "if false then",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "generation is verified before placement",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "            error(string.format(\"Chunk %d,%d not generated; import stopped before tile placement\", chunk[1], chunk[2]))",
+		"replace": "",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "entity positions are covered",
+		"file": "docker/seed-data/external_plugins/surface_export/module/import_phases/tile_restoration.lua",
+		"find": "    for _, entity in ipairs(job.entities_to_create or {}) do add(entity.position) end",
+		"replace": "",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "tile census gates success",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "local tile_match = tiles == nil or tiles.match",
+		"replace": "local tile_match = true",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "ungenerated payload chunks fail the census",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "match = ungenerated == 0 and lost_chunks == 0,",
+		"replace": "match = lost_chunks == 0,",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "a per-chunk shortfall fails the census",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "            if actual < expected then",
+		"replace": "            if false then",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	},
+	{
+		"name": "tile failures name the tiles stage",
+		"file": "docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua",
+		"find": "        validation_result.failedStage = \"tiles\"",
+		"replace": "        validation_result.failedStage = \"items\"",
+		"tests": [
+			"tests/lua/tile-chunk-generation.lua"
+		]
+	}
+]
