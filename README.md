@@ -6,7 +6,7 @@ contains a TypeScript plugin, a save-patched Lua module and the gateway mod.
 Install the plugin package into Clusterio and add the
 [gateway mod](https://mods.factorio.com/mod/surfexp_gateways) to its mod pack.
 Use the [installation guide](docs/admins/deployment.md#release-availability)
-to install the [current release](https://github.com/solarcloud7/clusterio-surface-export/releases/latest) explicitly. This repository's Docker
+to install the newest [release](https://github.com/solarcloud7/clusterio-surface-export/releases) explicitly. This repository's Docker
 setup is for development and acceptance tests. Use [Clusterio](https://github.com/clusterio/clusterio#installation) or
 [clusterio-docker](https://github.com/solarcloud7/clusterio-docker) to host the cluster.
 
@@ -49,9 +49,9 @@ See [batching](docs/technical/batching.md) and [timing](docs/technical/timing.md
 
 ## Verification and limits
 
-The [current release](https://github.com/solarcloud7/clusterio-surface-export/releases/latest) page lists the versions it was
-built and tested with. Its release workflow built and tested the exact package before
-publishing it to npm. The retained manual
+Each page on the [releases list](https://github.com/solarcloud7/clusterio-surface-export/releases), newest first,
+names the versions that release was built and tested with. The release workflow built
+and tested the exact package before publishing it to npm and attaching it there. The retained manual
 evidence below is older: the recorded package and consumer acceptance used **0.10.281**, Clusterio
 **2.0.0-alpha.27** and Factorio Space Age **2.1.17**. Those results identify
 historically tested artifacts, not a certification of every later source revision

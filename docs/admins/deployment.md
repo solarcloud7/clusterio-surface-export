@@ -17,8 +17,8 @@ of the Clusterio deployment.
 
 ## Release availability
 
-The [current release](https://github.com/solarcloud7/clusterio-surface-export/releases/latest) is published under npm's `beta` tag.
-Its compatibility table lists the Clusterio version it was tested on, the supported
+The newest entry on the [releases page](https://github.com/solarcloud7/clusterio-surface-export/releases) is the current release, published
+under npm's `beta` tag. Its compatibility table lists the Clusterio version it was tested on, the supported
 Clusterio range, the Factorio Space Age version, the `surfexp_gateways` mod version and
 the clusterio-docker image. The `0.11.0` betas require the `2.0.0-alpha.27`
 prerelease and do not load on Clusterio 2.0; the `0.12.0` betas are not supported on the
