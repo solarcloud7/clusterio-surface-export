@@ -1,6 +1,7 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local Timing = require("modules/surface_export/utils/operation-timing")
 local TileRestoration = {}
+local CHUNKS_PER_CALLBACK = 32
 
 local function covered_chunks(job)
     local seen, chunks = {}, {}
@@ -24,16 +25,18 @@ local function covered_chunks(job)
     return chunks
 end
 
-local function generate_chunks(surface, chunks)
+local function generate_chunks(surface, chunks, first, last)
     local requested = 0
-    for _, chunk in ipairs(chunks) do
+    for i = first, last do
+        local chunk = chunks[i]
         if not surface.is_chunk_generated(chunk) then
             surface.request_to_generate_chunks({chunk[1] * 32 + 16, chunk[2] * 32 + 16}, 0)
             requested = requested + 1
         end
     end
     if requested > 0 then surface.force_generate_chunk_requests() end
-    for _, chunk in ipairs(chunks) do
+    for i = first, last do
+        local chunk = chunks[i]
         if not surface.is_chunk_generated(chunk) then
             error(string.format("Chunk %d,%d not generated; import stopped before tile placement", chunk[1], chunk[2]))
         end
@@ -48,16 +51,26 @@ function TileRestoration.process(job, budget)
 
     if not job.tile_chunks_generated then
         Timing.start(job.job_id, "chunk_generation", "execution", "tiles")
-        local chunks = covered_chunks(job)
-        local ok, requested = pcall(generate_chunks, job.target_surface, chunks)
+        local plan = job.tile_chunk_plan
+        if not plan then
+            plan = {chunks = covered_chunks(job), index = 1, generated = 0}
+            job.tile_chunk_plan = plan
+            job.tile_cursor = nil
+        end
+        local last = math.min(#plan.chunks, plan.index + CHUNKS_PER_CALLBACK - 1)
+        local ok, requested = pcall(generate_chunks, job.target_surface, plan.chunks, plan.index, last)
         Timing.stop(job.job_id, "chunk_generation")
         if not ok then
             Timing.fail(job.job_id, "chunk_generation")
             error(requested, 0)
         end
-        job.tile_chunks_generated = true
-        log(string.format("[FactorioSurfaceExport] Payload chunks before tile placement: covered=%d, generated=%d",
-            #chunks, requested))
+        plan.index, plan.generated = last + 1, plan.generated + requested
+        if plan.index > #plan.chunks then
+            job.tile_chunks_generated = true
+            job.tile_chunk_plan = nil
+            log(string.format("[FactorioSurfaceExport] Payload chunks before tile placement: covered=%d, generated=%d",
+                #plan.chunks, plan.generated))
+        end
         return false
     end
 
