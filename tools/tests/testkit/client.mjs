@@ -17,7 +17,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const recipe = fileURLToPath(new URL("client/", import.meta.url));
 const artifacts = join(root, "ci-artifacts/client");
 const label = "surface-export.client-run";
-const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], starmap: ["starmap-remote.png", "starmap.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding-only.png", "no-planets.png", "no-boarding.png", "empty.png", "hidden.png", "debug.png"] };
+const scenarios = { smoke: ["smoke.png"], "gui-anchors": ["remote.png", "hub.png"], starmap: ["starmap-remote.png", "starmap.png"], "instance-label": ["character.png", "long-name.png", "remote.png"], "remote-view-panels": ["small.png", "grown.png", "shrunk.png", "scrolling.png", "boarding-only.png", "no-planets.png", "no-boarding.png", "empty.png", "hidden.png", "debug.png"] };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const sha = data => createHash("sha256").update(data).digest("hex");
 const json = path => JSON.parse(readFileSync(path, "utf8"));
@@ -32,7 +32,7 @@ export function validateRunId(id) {
 export function parseClientOptions(args) {
 	const [action, ...rest] = args;
 	assert.ok(["doctor", "run", "inspect", "cleanup"].includes(action),
-		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors|starmap> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] | inspect <run-id> | cleanup <run-id>");
+		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors|starmap|instance-label> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] | inspect <run-id> | cleanup <run-id>");
 	if (action === "doctor") { assert.equal(rest.length, 0); return { action }; }
 	if (action !== "run") { assert.equal(rest.length, 1); return { action, id: validateRunId(rest[0]) }; }
 	const scenario = rest.shift();
