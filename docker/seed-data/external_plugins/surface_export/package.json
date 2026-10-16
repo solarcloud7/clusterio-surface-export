@@ -76,11 +76,11 @@
     }
   },
   "devDependencies": {
-    "@clusterio/controller": "2.0.1",
-    "@clusterio/ctl": "2.0.1",
-    "@clusterio/host": "2.0.1",
-    "@clusterio/lib": "2.0.1",
-    "@clusterio/web_ui": "2.0.1",
+    "@clusterio/controller": "2.0.2",
+    "@clusterio/ctl": "2.0.2",
+    "@clusterio/host": "2.0.2",
+    "@clusterio/lib": "2.0.2",
+    "@clusterio/web_ui": "2.0.2",
     "@types/node": "^24.13.4",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.22",

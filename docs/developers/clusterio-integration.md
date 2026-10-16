@@ -23,16 +23,16 @@ is no separate Surface Export host-plugin entry point. Follow each pinned base
 class's real lifecycle hooks; controller initialization is not an instance
 `onStart` hook.
 
-The dependency pin is Clusterio `2.0.1` with the peer range `^2.0.0`. The
+The dependency pin is Clusterio `2.0.2` with the peer range `^2.0.0`. The
 development image revision is separately configured in `.env.example`. Use the
-[pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/writing-plugins.md)
+[pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.2/docs/writing-plugins.md)
 and the installed package source for upstream behavior.
 
 The plugin package is an ES module (`"type": "module"`), so every relative import
 in its TypeScript carries the `.js` extension and the declared entry points name
 their compiled file. Each entry point exports a default async function that
 Clusterio 2.0 calls once with a plugin context, following its
-[2.0 plugin migration guide](https://github.com/clusterio/clusterio/blob/v2.0.1/docs/devs/plugin-migration-to-2.0.md).
+[2.0 plugin migration guide](https://github.com/clusterio/clusterio/blob/v2.0.2/docs/devs/plugin-migration-to-2.0.md).
 The controller, instance and web entry points keep a class for their state:
 `ControllerPlugin`, `InstancePlugin` and `WebPlugin` have a private constructor,
 a static `fromContext` that creates the instance, runs its `init` and attaches
@@ -45,7 +45,7 @@ RCON goes through `instance.sendRcon(command, expectEmpty, "surface_export")`,
 wrapped once in `LuaInterface`. The web entry point listens to the control
 connector for connection events rather than the `controllerConnectionEvent` hook,
 which in Clusterio 2.0.1 receives the connector's emit arguments instead of the
-event name. The CommonJS files are `webpack.config.cjs` and the `test/*.cjs` unit
+event name; 2.0.2 fixes the hook, and the peer range still admits 2.0.1. The CommonJS files are `webpack.config.cjs` and the `test/*.cjs` unit
 tests; the tests load the compiled ES modules through `require()` and inject
 write failures through `lib/persist-queue` and delays through `lib/delay`.
 The `@types/ws` development dependency exists because Clusterio's library resolves
