@@ -38,7 +38,9 @@ colours are assigned by the cluster, so read the portal's label rather than
 memorising a colour. The public cluster has four servers, each starting on a
 different planet: Delta (Nauvis), Sigma (Vulcanus), Theta (Fulgora) and Omega
 (Gleba). Join any of them from the Factorio server browser; their names start
-with "Clusterio: PlatformExport".
+with "Clusterio: PlatformExport". Once you are in, the server's own name, for
+example "Delta", appears at the top right, just left of the research and minimap
+column.
 Your own server's colour is locked. A platform whose schedule stops at a portal is
 sent automatically and continues its schedule on the other server.
 
