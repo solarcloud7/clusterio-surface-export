@@ -4,6 +4,18 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
+## 0.12.0-beta.3
+
+Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
+and the `surfexp_gateways` mod `0.7.10`.
+
+- A platform whose foundation reaches beyond the area the destination server had
+  generated no longer arrives with missing foundation. The import generates every
+  chunk the platform covers before it places tiles, a bounded number per tick. (#418, #419)
+- Transfer validation counts foundation and other tiles per chunk. A transfer that
+  loses tiles now fails validation at the `tiles` stage instead of reporting success.
+  Extra tiles on the destination are reported but accepted. (#418)
+
 ## 0.12.0-beta.2
 
 Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
