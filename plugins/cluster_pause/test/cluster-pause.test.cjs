@@ -27,7 +27,13 @@ async function harness({ enabled = true, restored = null, instances, ready = nul
 			return reply ? reply(paused) : paused;
 		},
 		emit: event => events.push(event),
-		checkpoint: async paused => { checkpoints.push({ paused: [...paused], sentBefore: sent.length }); if (world.checkpointError) throw new Error(world.checkpointError); },
+		checkpoint: async paused => {
+			checkpoints.push({ paused: [...paused], sentBefore: sent.length });
+			const gate = world.checkpointGate;
+			world.checkpointGate = null;
+			if (gate) await gate;
+			if (world.checkpointError) throw new Error(world.checkpointError);
+		},
 		nowMs: () => now,
 		wallClockMs: () => 1_000_000 + now,
 		setTimer: (callback, durationMs) => { const id = nextTimer++; timers.set(id, { callback, at: now + durationMs }); return id; },
@@ -318,4 +324,24 @@ test("a ready report resumes the instance even while cluster pause is turned off
 	await settle();
 	assert.deepEqual(h.sent, [[1, false]]);
 	assert.equal(h.machine.currentPhase, "running");
+});
+
+test("a superseded pause attempt never removes the targets a newer attempt recorded", async () => {
+	const h = await harness();
+	let release;
+	h.world.checkpointGate = new Promise(resolve => { release = resolve; });
+	await drainToPause(h, participant());
+	assert.equal(h.machine.currentPhase, "draining");
+	h.machine.onPlayerEvent(1, "join", "Solar");
+	await settle();
+	h.machine.onPlayerEvent(1, "leave", "Solar");
+	h.machine.control("pause");
+	await settle();
+	assert.equal(h.machine.currentPhase, "paused");
+	assert.deepEqual(h.machine.state().paused, [1, 2]);
+	release();
+	await settle();
+	assert.equal(h.machine.currentPhase, "paused");
+	assert.deepEqual(h.machine.state().paused, [1, 2]);
+	assert.deepEqual(h.events.at(-1).paused, [1, 2]);
 });

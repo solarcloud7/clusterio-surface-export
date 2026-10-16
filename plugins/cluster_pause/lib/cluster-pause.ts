@@ -310,12 +310,13 @@ export class ClusterPause {
 		try { await this.deps.checkpoint([...this.paused.keys()]); }
 		catch (err) { error = errorMessage(err); }
 		if (error === null && generation === this.generation) return added;
-		for (const id of added) this.paused.delete(id);
-		if (error !== null) this.fail(`The pause targets could not be recorded before pausing: ${error}`);
-		else {
+		if (generation !== this.generation) {
 			this.publish(false);
 			this.retryResumes();
+			return null;
 		}
+		for (const id of added) this.paused.delete(id);
+		this.fail(`The pause targets could not be recorded before pausing: ${error}`);
 		return null;
 	}
 
@@ -336,7 +337,7 @@ export class ClusterPause {
 		for (const result of results) {
 			if (result.confirmed || result.error !== null) {
 				this.paused.set(result.instance.id, { sinceMs: this.deps.wallClockMs(), confirmed: result.confirmed });
-			} else if (added.includes(result.instance.id)) {
+			} else if (generation === this.generation && added.includes(result.instance.id)) {
 				this.paused.delete(result.instance.id);
 			}
 		}
@@ -370,7 +371,7 @@ export class ClusterPause {
 				try { confirmed = await this.deps.send(instanceId, true) === true; }
 				catch (err) { error = errorMessage(err); }
 				if (confirmed || error !== null) this.paused.set(instanceId, { sinceMs: this.deps.wallClockMs(), confirmed });
-				else if (added.includes(instanceId)) this.paused.delete(instanceId);
+				else if (generation === this.generation && added.includes(instanceId)) this.paused.delete(instanceId);
 				if (!confirmed) failures.push(`${instanceId}: ${error ?? "the instance reported it is not paused"}`);
 			}));
 		} finally {
