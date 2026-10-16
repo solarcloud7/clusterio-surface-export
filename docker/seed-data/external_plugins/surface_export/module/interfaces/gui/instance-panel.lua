@@ -1,4 +1,5 @@
 local Boarding = require("modules/surface_export/core/platform-boarding")
+local InstanceLabel = require("modules/surface_export/interfaces/gui/instance-label")
 local Panel = {}
 local FRAME = "surfexp_instance_panel"
 local OPEN = "surfexp_instance_open"
@@ -51,6 +52,7 @@ function Panel.refresh_position(player)
 	end
 	local planets = player.gui.screen[PLANETS]
 	if planets then place(player, planets, MARGIN + 2 / scale, estimate_left(player) - 6 + 2 / scale) end
+	InstanceLabel.refresh_position(player)
 end
 
 function Panel.refresh_viewport(event)
@@ -182,6 +184,7 @@ function Panel.refresh_planets(player)
 end
 
 function Panel.refresh_button(player)
+	InstanceLabel.refresh(player)
 	Panel.refresh_planets(player)
 	local policy = storage.surface_export_planet_policy
 	local button = player.gui.top[OPEN]

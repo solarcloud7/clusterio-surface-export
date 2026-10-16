@@ -132,6 +132,13 @@ local ui_env = setmetatable({storage = {surface_export_planet_policy = {default_
 			return true
 		end}
 	end}, {__index = _G})
+local boarding_require = ui_env.require
+ui_env.require = function(name)
+	if name == "modules/surface_export/interfaces/gui/instance-label" then
+		return assert(loadfile(root .. "interfaces/gui/instance-label.lua", "t", ui_env))()
+	end
+	return boarding_require(name)
+end
 local panel_path = root .. "interfaces/gui/instance-panel.lua"
 local panel = assert(loadfile(panel_path, "t", ui_env))()
 local planets_name, boarding_section = "surfexp_instance_planets", "surfexp_boarding_section"
@@ -217,3 +224,21 @@ frame = ui_player.gui.screen[planets_name]
 assert(not contains(frame.surfexp_planet_section, "label", "None"), "an unavailable planet should replace None")
 ui_env.storage.surface_export_planet_policy.disabled = {}
 print("PASS the Boarding section appears only with eligible platforms; Unavailable Planets renders None only when empty")
+local label_module = ui_env.require("modules/surface_export/interfaces/gui/instance-label")
+label_module.refresh(ui_player)
+local label = ui_player.gui.screen.surfexp_instance_name
+assert(label and label.caption == "One", "the instance label should show only the instance name")
+assert(label.location[1] == 1600 - (256 + 8 + 320) and label.location[2] == 8, "the label should end just left of the right-hand column")
+ui_player.display_scale, ui_player.display_resolution = 1.5, {width = 1280, height = 900}
+panel.refresh_position(ui_player)
+assert(label.location[1] == 404 and label.location[2] == 12, "the label should follow the UI scale")
+ui_player.display_scale, ui_player.display_resolution = 1, {width = 1600, height = 1000}
+ui_env.storage.surface_export_planet_policy.instance_name = "Two"
+label_module.refresh(ui_player)
+assert(ui_player.gui.screen.surfexp_instance_name.caption == "Two", "a renamed instance should update the label")
+local saved_policy = ui_env.storage.surface_export_planet_policy
+ui_env.storage.surface_export_planet_policy = nil
+label_module.refresh(ui_player)
+assert(not ui_player.gui.screen.surfexp_instance_name, "without a planet policy the label should be removed")
+ui_env.storage.surface_export_planet_policy = saved_policy
+print("PASS the instance label shows only the instance name, ends left of the right-hand column at both scales and follows renames")

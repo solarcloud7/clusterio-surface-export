@@ -53,6 +53,11 @@ script.on_event(defines.events.on_tick, function()
 		if player.controller_type == defines.controllers.cutscene then player.exit_cutscene() end
 		if run.scenario == "starmap" then
 			assert(Policy.ensure_player(player, true))
+		elseif run.scenario == "instance-label" then
+			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora", disabledPlanets = {"nauvis", "vulcanus"}, instanceName = "Delta"}.success)
+			assert(Policy.ensure_player(player, true))
+			Panel.refresh_button(player)
+			assert(player.gui.screen.surfexp_instance_name.caption == "Delta")
 		elseif Panel then
 			assert(Policy.ensure_player(player, true))
 			assert(player.enter_space_platform(storage.ships[1]))
@@ -87,13 +92,24 @@ script.on_event(defines.events.on_tick, function()
 			for slot = 1, 4 do game.forces.player.unlock_space_location("surfexp_gateway_" .. slot) end
 			player.set_controller{type = defines.controllers.remote, surface = game.surfaces.nauvis}
 		end
-		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click 64 94 0 0", [240] = "capture starmap.png 0 0 0"})[elapsed]
+		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click " .. math.floor(64 * player.display_scale + 0.5) .. " " .. math.floor(94 * player.display_scale + 0.5) .. " 0 0", [195] = "drag " .. math.floor(player.display_resolution.width / 2) .. " " .. math.floor(player.display_resolution.height * 0.75) .. " " .. math.floor(player.display_resolution.width / 2 + 700 * player.display_scale) .. " " .. math.floor(player.display_resolution.height * 0.75 + 150 * player.display_scale), [240] = "capture starmap.png 0 0 0"})[elapsed]
 		if request then
 			storage.pointer_requests = (storage.pointer_requests or 0) + 1
 			helpers.write_file("pointer-request-" .. storage.pointer_requests .. ".txt", request .. "\n", false)
 			local name = request:match("^capture (%S+)")
 			if name then storage.captures[#storage.captures + 1] = name end
 		end
+	elseif run.scenario == "instance-label" then
+		if elapsed == 60 then
+			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora", disabledPlanets = {"nauvis", "vulcanus"}, instanceName = "Clusterio test server with a long instance name"}.success)
+			Panel.refresh_button(player)
+		end
+		if elapsed == 120 then
+			assert(Policy.apply{version = 1, epoch = run.id, defaultPlanet = "fulgora", disabledPlanets = {"nauvis", "vulcanus"}, instanceName = "Delta"}.success)
+			Panel.refresh_button(player)
+			player.set_controller{type = defines.controllers.remote, surface = game.planets.fulgora.surface}
+		end
+		capture = ({[45] = "character", [105] = "long-name", [165] = "remote"})[elapsed]
 	elseif run.scenario == "gui-anchors" then
 		if elapsed == 75 then player.opened = storage.ships[1].hub end
 		capture = ({[45] = "remote", [120] = "hub"})[elapsed]
@@ -151,14 +167,14 @@ script.on_event(defines.events.on_tick, function()
 		storage.captures[#storage.captures + 1] = path
 		if Panel then
 			local state = {panels = {}}
-			for _, name in ipairs({"surfexp_instance_planets", "surfexp_instance_panel"}) do
+			for _, name in ipairs({"surfexp_instance_planets", "surfexp_instance_panel", "surfexp_instance_name"}) do
 				local frame = player.gui.screen[name]
 				if frame then state.panels[name] = {location = frame.location, tags = frame.tags} end
 			end
 			helpers.write_file(capture .. "-positions.json", helpers.table_to_json(state), false)
 		end
 	end
-	if elapsed == (run.scenario == "starmap" and 360 or run.scenario == "gui-anchors" and 150 or (Panel and 680 or 75)) then
+	if elapsed == (run.scenario == "starmap" and 360 or run.scenario == "gui-anchors" and 150 or run.scenario == "instance-label" and 240 or (Panel and 680 or 75)) then
 		helpers.write_file("client-result.json", helpers.table_to_json({runId = run.id,
 			scenario = run.scenario, status = "captured", engineVersion = script.active_mods.base,
 			resolution = player.display_resolution, scale = player.display_scale, screenshots = storage.captures}), false)
