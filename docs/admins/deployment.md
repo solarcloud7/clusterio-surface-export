@@ -17,20 +17,21 @@ of the Clusterio deployment.
 
 ## Release availability
 
-Plugin `0.12.0-beta.2` is the current release under npm's `beta` tag. It requires
-Clusterio `^2.0.0` (developed against `2.0.2`), Factorio Space Age `2.1.20` and the
-`surfexp_gateways` mod `0.7.10`. The `0.11.0` betas require the `2.0.0-alpha.27`
-prerelease and do not load on Clusterio 2.0; this release is not supported on the
+The [current release](https://github.com/solarcloud7/clusterio-surface-export/releases/latest) is published under npm's `beta` tag.
+Its compatibility table lists the Clusterio version it was tested on, the supported
+Clusterio range, the Factorio Space Age version, the `surfexp_gateways` mod version and
+the clusterio-docker image. The `0.11.0` betas require the `2.0.0-alpha.27`
+prerelease and do not load on Clusterio 2.0; the `0.12.0` betas are not supported on the
 alphas. Every release is published by the
 [release workflow](https://github.com/solarcloud7/clusterio-surface-export/actions/workflows/ci.yml)
 from a `v*` tag after package acceptance and integration checks; the published
-archive matches the tested archive byte for byte. What changed in each version is
+archive matches the tested archive byte for byte and is attached to its release page. What changed in each version is
 in the plugin's [changelog](../../docker/seed-data/external_plugins/surface_export/CHANGELOG.md).
 
 npm's `latest` tag still points to `0.9.82`, written for the Clusterio alpha API.
 Its Clusterio peer requirement, `^2.0.0`, no longer blocks installation now that
 Clusterio 2.0 is released, and it does not provide the newer upload, portal and
-save-recovery behavior. Select the beta version explicitly. Do not bypass npm
+save-recovery behavior. Select the `beta` tag explicitly. Do not bypass npm
 peer checks with `--force` or `--legacy-peer-deps` to install the older release.
 
 ## Install the npm package
@@ -41,8 +42,8 @@ Run these commands in the Clusterio installation directory:
 
 ```text
 npm view @solarcloud7/plugin-surface-export dist-tags
-npm view @solarcloud7/plugin-surface-export@0.12.0-beta.2 peerDependencies
-npm install --save-exact @solarcloud7/plugin-surface-export@0.12.0-beta.2
+npm view @solarcloud7/plugin-surface-export@beta version peerDependencies
+npm install --save-exact @solarcloud7/plugin-surface-export@beta
 ```
 
 ### Accepted candidate archive
@@ -91,8 +92,8 @@ layer is not a durable installation.
 
 ## Enable the gateway mod and verify startup
 
-Add the matching `surfexp_gateways` release (`0.7.10` for this plugin version) from
-the Mod Portal to the instances' Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
+Add the `surfexp_gateways` version named in the release's compatibility table from
+the [Mod Portal](https://mods.factorio.com/mod/surfexp_gateways) to the instances' Clusterio mod pack. Use a licensed Factorio Space Age installation with its required
 bundled mods enabled. Players need the matching mod pack when joining; the gateway
 mod alone does not provide the server-side transfer implementation.
 

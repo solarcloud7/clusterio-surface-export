@@ -23,7 +23,8 @@ is no separate Surface Export host-plugin entry point. Follow each pinned base
 class's real lifecycle hooks; controller initialization is not an instance
 `onStart` hook.
 
-The dependency pin is Clusterio `2.0.2` with the peer range `^2.0.0`. The
+The Clusterio dependency pin is `devDependencies` and the supported range is
+`peerDependencies` in the plugin's `package.json`. The
 development image revision is separately configured in `.env.example`. Use the
 [pinned plugin guide](https://github.com/clusterio/clusterio/blob/v2.0.2/docs/writing-plugins.md)
 and the installed package source for upstream behavior.

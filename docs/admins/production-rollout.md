@@ -19,8 +19,8 @@ configures instances that exist; it does not create them, so steps 1, 2 and 4 ar
 
 Hosts: `clusterio-host-1` and `clusterio-host-2`, two servers each. Every server
 reaches every other server through the coloured portals; the controller assigns
-the colours. The file also carries the mod pack (Space Age 2.1.20 with
-`surfexp_gateways` 0.7.10 and the other mods), each server's public settings,
+the colours. The file also carries the mod pack (the Space Age and
+`surfexp_gateways` versions and the other mods), each server's public settings,
 `debug_mode` off, and the controller's Discord invite and bridge channel.
 
 Host assignment and game ports are not in the file. The public cluster already
@@ -154,7 +154,7 @@ npx clusterioctl instance start Delta
 
 Start the other stopped servers the same way. Then, per server:
 
-- `npx clusterioctl instance list` shows `running` and Factorio `2.1.20`.
+- `npx clusterioctl instance list` shows `running` and the mod pack's Factorio version.
 - The Surface Export page's Gateways tab shows all four servers with a portal
   colour each and no quarantined platforms.
 - `npx clusterioctl instance export-data Delta` once, so the web interface has
