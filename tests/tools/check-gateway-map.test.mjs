@@ -22,14 +22,14 @@ test("rejects dangling connections even when hidden is true", () => {
 	state.routes.surfexp_gateway_link_extra = { from: "nauvis", to: "surfexp_gateway_1", hidden: true };
 	assert.throws(() => verifyGatewayMap(state), /only the expected planets link to the Gateway/);
 	const planet = snapshot();
-	planet.routes.surfexp_gateway_link_hub_aquilo = { from: "aquilo", to: "surfexp_gateway_hub" };
+	planet.routes.surfexp_gateway_link_hub_aquilo = { from: "gleba", to: "surfexp_gateway_hub" };
 	assert.throws(() => verifyGatewayMap(planet), /only the expected planets link to the Gateway/);
 });
 
 test("rejects a missing Gateway route, a hidden portal, a missing portal and a per-server destination", () => {
 	const missing = snapshot();
 	delete missing.routes.surfexp_gateway_link_hub;
-	assert.throws(() => verifyGatewayMap(missing), /only the expected planets link to the Gateway/);
+	assert.throws(() => verifyGatewayMap(missing), /Nauvis links to the Gateway/);
 	const hidden = snapshot();
 	hidden.locations.surfexp_gateway_1.hidden = true;
 	assert.throws(() => verifyGatewayMap(hidden), /visibility/);
@@ -48,7 +48,8 @@ test("evidence recorded before 0.7 is checked against its five planet routes", (
 	}
 	const hubPlanets = ["nauvis", "vulcanus", "gleba", "fulgora", "aquilo"];
 	verifyGatewayMap(state, { hubPlanets });
-	assert.throws(() => verifyGatewayMap(state), /only the expected planets link to the Gateway/);
+	verifyGatewayMap(state);
+	assert.throws(() => verifyGatewayMap(state, { hubPlanets: ["nauvis"] }), /only the expected planets link to the Gateway/);
 	delete state.routes.surfexp_gateway_link_hub_aquilo;
 	assert.throws(() => verifyGatewayMap(state, { hubPlanets }), /only the expected planets link to the Gateway/);
 	const before = snapshot();

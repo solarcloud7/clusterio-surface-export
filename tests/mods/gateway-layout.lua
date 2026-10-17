@@ -133,6 +133,7 @@ local function final_stage(ring_on)
       fulgora = {type = "planet", name = "fulgora", distance = 25, orientation = 0.6, magnitude = 0.9},
       aquilo = {type = "planet", name = "aquilo", distance = 35, orientation = 0.8, magnitude = 0.6},
       luna = {type = "planet", name = "luna", distance = 17, orientation = 0.275, magnitude = 0.3, orbit = {parent = {type = "planet", name = "nauvis"}, distance = 2, orientation = 0.25}},
+      trench = {type = "planet", name = "trench", hidden = true, distance = 15.6, orientation = 0.5, magnitude = 0.65},
     },
     ["space-location"] = {
       surfexp_gateway_hub = {type = "space-location", name = "surfexp_gateway_hub", distance = 0, orientation = 0.245},
@@ -167,16 +168,17 @@ do
   local mx, my = position(raw.planet.luna)
   assert(math.abs(mx - (nx + 2)) < 1e-6 and math.abs(my - ny) < 1e-6, "a moon keeps its offset beside its planet")
   assert(raw["space-location"]["shattered-planet"].distance == 70, "outer locations stay where they are")
+  assert(raw.planet.trench.distance == 15.6 and raw.planet.trench.orientation == 0.5, "a hidden planet stays off the ring")
   for name in pairs(raw.planet) do
-    local spoke = raw["space-connection"]["surfexp_gateway_spoke_" .. name]
-    if name == "nauvis" then
-      assert(not spoke, "Nauvis keeps its existing route")
+    local spoke = raw["space-connection"]["surfexp_gateway_link_hub_" .. name]
+    if name == "nauvis" or name == "trench" then
+      assert(not spoke, name .. " gets no new spoke: Nauvis keeps its existing route and hidden planets are not destinations")
     else
       assert(spoke and spoke.from == name and spoke.to == "surfexp_gateway_hub" and spoke.length == 15001 and spoke.shape == "line" and spoke.icon, name .. " has a straight 15001 km spoke")
     end
   end
   assert(raw["space-connection"].surfexp_gateway_link_hub.shape == "line", "the Nauvis route is a straight spoke")
-  assert(not raw["space-connection"]["surfexp_gateway_spoke_shattered-planet"], "outer locations get no spoke")
+  assert(not raw["space-connection"]["surfexp_gateway_link_hub_shattered-planet"], "outer locations get no spoke")
   local wide = final_stage(true)
   for i = 1, 40 do wide.planet["extra" .. i] = {type = "planet", name = "extra" .. i, distance = 50, orientation = i / 41, magnitude = 1} end
   settings = {startup = {["surfexp-ring-layout"] = {value = true}}}
@@ -189,6 +191,6 @@ end
 do
   local raw = final_stage(false)
   assert(raw.planet.vulcanus.distance == 10 and raw.planet.vulcanus.orientation == 0.1, "ring off keeps the original positions")
-  assert(raw["space-connection"].surfexp_gateway_spoke_fulgora, "spokes exist with the ring off")
+  assert(raw["space-connection"].surfexp_gateway_link_hub_fulgora, "spokes exist with the ring off")
   print("ring off: PASS (original positions, spokes still present)")
 end

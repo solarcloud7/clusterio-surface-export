@@ -22,7 +22,7 @@ end
 local function ring_layout()
 	local ring = {}
 	for _, planet in pairs(data.raw.planet or {}) do
-		if not parent_of(planet) then ring[#ring + 1] = planet end
+		if not planet.hidden and not parent_of(planet) then ring[#ring + 1] = planet end
 	end
 	if #ring == 0 then return end
 	table.sort(ring, function(a, b)
@@ -86,11 +86,11 @@ local nauvis_route = data.raw["space-connection"] and data.raw["space-connection
 if nauvis_route then nauvis_route.shape = "line" end
 
 local spokes = {}
-for name in pairs(data.raw.planet or {}) do
-	if name ~= "nauvis" and data.raw["space-location"][HUB] then
+for name, planet in pairs(data.raw.planet or {}) do
+	if name ~= "nauvis" and not planet.hidden and data.raw["space-location"][HUB] then
 		spokes[#spokes + 1] = {
 			type = "space-connection",
-			name = "surfexp_gateway_spoke_" .. name,
+			name = "surfexp_gateway_link_hub_" .. name,
 			subgroup = "planet-connections",
 			from = name,
 			to = HUB,

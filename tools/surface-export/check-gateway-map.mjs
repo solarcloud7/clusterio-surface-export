@@ -13,8 +13,12 @@ const HUB = "surfexp_gateway_hub";
 const PORTALS = [1, 2, 3, 4].map(i => `surfexp_gateway_${i}`);
 const portalRoute = name => name.replace("surfexp_gateway_", "surfexp_gateway_link_");
 const hubRoute = planet => `surfexp_gateway_link_hub${planet === "nauvis" ? "" : `_${planet}`}`;
-export function verifyGatewayMap(state, { version, baseline, hubPlanets = ["nauvis"], hiddenPortals = false } = {}) {
+export function verifyGatewayMap(state, { version, baseline, hubPlanets, hiddenPortals = false } = {}) {
 	if (version) assert.equal(state.mod, version, "loaded mod version");
+	if (!hubPlanets) {
+		hubPlanets = Object.entries(state.routes).filter(([name]) => name.startsWith("surfexp_gateway_link_hub")).map(([, route]) => route.from);
+		assert.ok(hubPlanets.includes("nauvis"), "Nauvis links to the Gateway");
+	}
 	const portalRoutes = hiddenPortals ? [] : PORTALS.map(portalRoute);
 	const fixedRoutes = Object.keys(state.routes).filter(name => !portalRoutes.includes(name));
 	assert.deepEqual(fixedRoutes.sort(), hubPlanets.map(hubRoute).sort(),
