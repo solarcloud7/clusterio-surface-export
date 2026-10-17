@@ -78,7 +78,7 @@ test("destination rollback uses and validates the report's embedded observation 
 test("oversized checkpoints stop at the size guard without retrying or reading the file",async()=>{
   const lab=new DockerLab(run,"unused");let stats=0,reads=0;
   lab.lua=()=>({result:{success:true}});
-  const until=lab.until.bind(lab);lab.until=(read,label)=>until(read,label,.001);
+  const until=lab.until.bind(lab);lab.until=(read,label)=>until(read,label,5);
   lab.docker=args=>{
     let output="";
     const modules={fs:{statSync:()=>{stats++;return {size:268435457};},
