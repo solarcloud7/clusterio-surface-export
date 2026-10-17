@@ -31,7 +31,7 @@ function makeInstance(id, hostId, status, debugMode) {
 	};
 }
 
-function makeTree(statuses, appliedDebug = new Map(), appliedAutoPause = new Map()) {
+function makeTree(statuses, appliedDebug = new Map(), appliedAutoPause = new Map(), tickPaused = new Map()) {
 	const polled = [];
 	const hosts = new Map([[1, { id: 1, name: "host-1", connected: true, isDeleted: false }]]);
 	const instances = new Map(statuses.map(([id, status, debugMode]) => [id, makeInstance(id, 1, status, debugMode)]));
@@ -41,7 +41,8 @@ function makeTree(statuses, appliedDebug = new Map(), appliedAutoPause = new Map
 			instances,
 			async sendTo(target) {
 				polled.push(target.instanceId);
-				return { platforms: [], debugMode: appliedDebug.get(target.instanceId), autoPause: appliedAutoPause.get(target.instanceId) };
+				return { platforms: [], debugMode: appliedDebug.get(target.instanceId), autoPause: appliedAutoPause.get(target.instanceId),
+					tickPaused: tickPaused.get(target.instanceId) };
 			},
 		},
 		activeTransfers: new Map(),
@@ -119,5 +120,13 @@ test("platform status preserves unknown auto-pause rather than confirming it off
 		new Map([[1, true], [2, false], [3, null]]));
 	for (const [id, expected] of [[1, true], [2, false], [3, null], [4, null]]) {
 		assert.equal((await tree.requestInstancePlatforms(id)).autoPause, expected);
+	}
+});
+
+test("platform status passes the paused game state through and keeps an unknown one unknown", async () => {
+	const { tree } = makeTree([[1, "running"], [2, "running"], [3, "running"], [4, "running"]], new Map(), new Map(),
+		new Map([[1, true], [2, false], [3, "yes"]]));
+	for (const [id, expected] of [[1, true], [2, false], [3, null], [4, null]]) {
+		assert.equal((await tree.requestInstancePlatforms(id)).tickPaused, expected);
 	}
 });
