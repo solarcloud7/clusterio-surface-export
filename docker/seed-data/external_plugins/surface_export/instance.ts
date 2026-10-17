@@ -146,6 +146,7 @@ export class InstancePlugin {
 	async onStart() {
 		this.appliedDebugMode = false;
 		this.appliedAutoPause = await this.readAppliedAutoPause();
+		void this.warnIfFrozen();
 		this.timingEpoch = randomUUID();
 		const epoch = this.timingEpoch;
 		// Clusterio bounds onStart. Keep the variable-size roster off that hook;
@@ -327,6 +328,29 @@ export class InstancePlugin {
 			this.logger.warn(`Could not read the auto_pause setting this server started with: ${getErrorMessage(err)}`);
 			return null;
 		}
+	}
+
+	async readTickPaused(): Promise<{ paused: boolean; clusterPause: boolean } | null> {
+		try {
+			const raw = String(await this.i.sendRcon(
+				`/sc rcon.print((game.tick_paused and "paused" or "running") .. (remote.interfaces["cluster_pause"] and " cluster_pause" or ""))`,
+				false, PLUGIN_NAME) ?? "").trim();
+			const match = /^(paused|running)( cluster_pause)?$/.exec(raw);
+			if (match) return { paused: match[1] === "paused", clusterPause: match[2] !== undefined };
+			this.logger.warn(`Could not read whether the game is paused: unexpected reply ${raw.slice(0, 200)}`);
+		} catch (err: unknown) {
+			this.logger.warn(`Could not read whether the game is paused: ${getErrorMessage(err)}`);
+		}
+		return null;
+	}
+
+	async warnIfFrozen(): Promise<boolean> {
+		const state = await this.readTickPaused();
+		if (!state?.paused || state.clusterPause) return false;
+		this.logger.warn("This save loaded with its game paused (game.tick_paused) and the cluster_pause plugin is not loaded here, "
+			+ "so nothing will resume it. Transfers, imports and exports to and from this instance are refused while it is paused. "
+			+ "Resume it with /sc game.tick_paused = false, or load cluster_pause on this instance.");
+		return true;
 	}
 
 	async sendConfigurationToLua() {
@@ -853,9 +877,11 @@ export class InstancePlugin {
 	async handleInstanceListPlatformsRequest(request: { forceName?: string }) {
 		const forceName = request.forceName || "player";
 		const platforms = await this.listPlatforms(forceName);
+		const tickPaused = await this.readTickPaused();
 		return {
 			debugMode: this.appliedDebugMode === true,
 			autoPause: this.appliedAutoPause,
+			tickPaused: tickPaused?.paused ?? null,
 			instanceId: this.i.id,
 			instanceName: this.i.config.get("instance.name"),
 			forceName,

@@ -1,0 +1,9 @@
+{
+  "name": "cluster_pause",
+  "dependencies": {
+    "clusterio": "*"
+  },
+  "load": [
+    "control.lua"
+  ]
+}

@@ -90,6 +90,7 @@ export class PlatformTree {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
 				debugMode: response?.debugMode === true,
 				autoPause: typeof response?.autoPause === "boolean" ? response.autoPause : null,
+				tickPaused: typeof response?.tickPaused === "boolean" ? response.tickPaused : null,
 				recovery: response?.recovery,
 				error: null,
 			};

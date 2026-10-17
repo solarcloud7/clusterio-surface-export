@@ -73,6 +73,9 @@ test("ctl allows only read-only commands without --write", async () => {
 	assert.ok(isReadOnly(["mod-pack", "show", "3"]));
 	assert.ok(isReadOnly(["surface-export", "conflicts"]), "listing quarantined platforms only reads");
 	assert.ok(!isReadOnly(["surface-export", "resolve-platform"]));
+	assert.ok(isReadOnly(["cluster-pause", "status", "--watch"]), "reading or watching the cluster pause state only reads");
+	assert.ok(!isReadOnly(["cluster-pause", "pause"]));
+	assert.ok(!isReadOnly(["cluster-pause", "resume"]));
 	assert.ok(!isReadOnly(["instance", "stop", "fact1"]));
 	assert.ok(!isReadOnly(["instance", "config", "set", "fact1", "x", "y"]));
 	assert.ok(!isReadOnly(["instance", "send-rcon", "fact1", "/sc game.print(1)"]));

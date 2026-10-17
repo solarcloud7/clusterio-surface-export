@@ -4,10 +4,17 @@ param(
     [switch]$RestartController,
     [switch]$RestartHosts,
     [string]$OutputDirectory,
-    [string]$PackageDirectory
+    [string]$PackageDirectory,
+    [ValidateSet('surface_export', 'cluster_pause')][string]$Plugin = 'surface_export'
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Plugin -eq 'cluster_pause') {
+    if ($Target -in @('web', 'smoke')) { throw "cluster_pause has no $Target target; use node, lint, test or all." }
+    if ($PackageDirectory) { throw 'cluster_pause has no staged-package build.' }
+    if ($RestartController -or $RestartHosts) { throw 'cluster_pause is not deployed to the development cluster; build it without restarts.' }
+}
 
 . "$PSScriptRoot/../shared/cluster-utils.ps1"
 $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugins/surface_export").Path
@@ -72,7 +79,18 @@ $Inner = "set -e; echo '[node] '`$(node -v); " +
          "echo '$lockHash' > node_modules/.se-build-lock-sha256; fi; " +
          "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
 
-if ($Target -in @('lint', 'test', 'smoke')) {
+$DepsDir = $null
+$PluginNodeModules = @()
+if ($Plugin -eq 'cluster_pause') {
+    $RepoPath = (Resolve-Path "$PSScriptRoot/../..").Path
+    $MountSrc = $RepoPath
+    $MountDst = '/repo'
+    $DepsDir = '/repo/docker/seed-data/external_plugins/surface_export'
+    $WorkDir = '/repo/plugins/cluster_pause'
+    $PluginNodeModules = @('-v', "${DepsVolume}:$WorkDir/node_modules")
+    $Inner = $Inner -replace "echo '\[build\] ", "cd $WorkDir; echo '[build] "
+    $Inner = "cd $DepsDir; $Inner"
+} elseif ($Target -in @('lint', 'test', 'smoke')) {
     $RepoPath = (Resolve-Path "$PSScriptRoot/../..").Path
     $MountSrc = $RepoPath
     $MountDst = '/repo'
@@ -83,7 +101,8 @@ if ($Target -in @('lint', 'test', 'smoke')) {
     $WorkDir = '/app'
 }
 
-Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
+$DepsRoot = if ($DepsDir) { $DepsDir } else { $WorkDir }
+Write-Host "Building plugin $Plugin ($Target) in $Image ..." -ForegroundColor Cyan
 if ($OutputDirectory) { $OutputMount = @('--mount', "type=bind,src=$ResolvedOutput,dst=$WorkDir/dist") }
 if ($PackageDirectory -and $Target -in @('lint', 'test', 'smoke')) {
     $PackageMount = @('--mount', "type=bind,src=$PluginPath,dst=$WorkDir")
@@ -92,8 +111,9 @@ docker run --rm `
     @OutputMount `
     @PackageMount `
     --mount "type=bind,src=$MountSrc,dst=$MountDst" `
-    --mount "type=bind,src=$LockSnapshot,dst=$WorkDir/package-lock.json,readonly" `
-    -v "${DepsVolume}:$WorkDir/node_modules" `
+    --mount "type=bind,src=$LockSnapshot,dst=$DepsRoot/package-lock.json,readonly" `
+    -v "${DepsVolume}:$DepsRoot/node_modules" `
+    @PluginNodeModules `
     -w $WorkDir `
     $Image `
     sh -c $Inner

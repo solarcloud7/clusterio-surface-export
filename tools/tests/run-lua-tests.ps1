@@ -37,6 +37,7 @@ foreach ($testPath in $Test) {
         $mounts += @('tests/lab-gallery/fixture-unlock.lua', 'tests/lab-gallery/fixture-sweep.lua')
     }
     if ($testPath -eq 'tests/mods/gateway-layout.lua') { $mounts += 'docker/seed-data/mods-src/surfexp_gateways' }
+    if ($testPath -eq 'tests/lua/cluster-pause.lua') { $mounts += 'plugins/cluster_pause/module' }
     if ($testPath -eq 'tests/lua/callback-profiler.lua') { $mounts += 'tests/instruments/callback-profile/probe.lua' }
     if ($testPath -eq 'tests/manual/transfer-reliability/performance.test.lua') {
         $mounts += 'tests/manual/transfer-reliability/performance.lua'
