@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, lstatSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -32,12 +32,12 @@ export function validateRunId(id) {
 export function parseClientOptions(args) {
 	const [action, ...rest] = args;
 	assert.ok(["doctor", "run", "inspect", "cleanup"].includes(action),
-		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors|starmap|instance-label> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] | inspect <run-id> | cleanup <run-id>");
+		"usage: client doctor | run <smoke|remote-view-panels|gui-anchors|starmap|instance-label> [--resolution 1600x1000] [--scale 1] [--timeout-seconds 240] [--pack-mods yes] | inspect <run-id> | cleanup <run-id>");
 	if (action === "doctor") { assert.equal(rest.length, 0); return { action }; }
 	if (action !== "run") { assert.equal(rest.length, 1); return { action, id: validateRunId(rest[0]) }; }
 	const scenario = rest.shift();
 	assert.ok(Object.hasOwn(scenarios, scenario), "Unknown graphical scenario");
-	const options = { action, scenario, width: 1600, height: 1000, scale: 1, timeoutSeconds: 240 };
+	const options = { action, scenario, width: 1600, height: 1000, scale: 1, timeoutSeconds: 240, packMods: false };
 	const seen = new Set();
 	while (rest.length) {
 		const flag = rest.shift(), value = rest.shift();
@@ -51,6 +51,9 @@ export function parseClientOptions(args) {
 		} else if (flag === "--timeout-seconds") {
 			options.timeoutSeconds = Number(value);
 			assert.ok(Number.isInteger(options.timeoutSeconds) && options.timeoutSeconds >= 30 && options.timeoutSeconds <= 600);
+		} else if (flag === "--pack-mods") {
+			assert.equal(value, "yes", "--pack-mods takes yes");
+			options.packMods = true;
 		} else throw new Error(`Unknown client option ${flag}`);
 	}
 	return options;
@@ -131,6 +134,15 @@ function stage(dir, id, options, version) {
 		const mod = json(join(source, "mods-src/surfexp_gateways/info.json"));
 		copy(join(source, "mods-src/surfexp_gateways"), join(mods, `${mod.name}_${mod.version}`));
 		names.push(mod.name);
+		if (options.packMods) {
+			const pack = join(source, "mods");
+			for (const file of readdirSync(pack)) {
+				const match = /^(.+)_\d+\.\d+\.\d+\.zip$/.exec(file);
+				if (!match || match[1] === mod.name) continue;
+				copy(join(pack, file), join(mods, file));
+				names.push(match[1]);
+			}
+		}
 	}
 	save(join(probe, "info.json"), { name: "se_client_probe", version: "0.0.1", title: "Disposable client probe", author: "local",
 		factorio_version: version.split(".").slice(0, 2).join("."), dependencies: names.filter(name => name !== "se_client_probe") });

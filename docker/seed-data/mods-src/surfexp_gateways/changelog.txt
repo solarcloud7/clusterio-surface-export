@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.7.11
+  Changes:
+    - Every planet has a straight route to the Gateway, so servers that start on a planet other than Nauvis can fly
+      their platforms to it. Outer locations such as the Shattered Planet keep only their existing routes.
+    - New startup setting "Planets in a ring around the Gateway", on by default: every planet sits on one ring around
+      the Gateway, sized by the number of planets, with moons kept beside their planets.
+---------------------------------------------------------------------------------------------------
 Version: 0.7.10
   Changes:
     - The Gateway name on the star map sits above the portal names instead of level with Purple and Blue.

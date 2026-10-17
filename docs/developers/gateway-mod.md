@@ -22,11 +22,17 @@ client synchronization. `-Upload` changes the configured mod pack and restarts
 hosts; schedule this as a deployment, not a compile-only check. Inspect its
 `-ModPack` argument if the installation does not use the development pack.
 
-The mod defines one Gateway, `surfexp_gateway_hub`, at the centre of the star map
-and connected to Nauvis only. Four portals, `surfexp_gateway_1` to `surfexp_gateway_4`
+The mod defines one Gateway, `surfexp_gateway_hub`, at the centre of the star map.
+Every visible planet, including modded planets, has a straight 15,001 km route
+(`surfexp_gateway_link_hub_<planet>`, `surfexp_gateway_link_hub` for Nauvis) to it,
+so a platform at any server's planet can reach the Gateway. Outer locations such as
+the Shattered Planet keep only their existing routes. The startup setting
+`surfexp-ring-layout` (on by default) places the planets evenly on a ring around
+the Gateway, with a radius that grows with the planet count; moons keep their
+offset from their planet. Four portals, `surfexp_gateway_1` to `surfexp_gateway_4`
 (Blue, Green, Orange and Purple), orbit the Gateway on the diagonals. Each
-has a straight route from the Gateway. The mod has no startup settings; the
-controller decides at runtime which server each portal leads to. See
+has a straight route from the Gateway. The controller decides at runtime which
+server each portal leads to. See
 [portals](../admins/configuration.md#portals).
 
 ## Publish to the Mod Portal
