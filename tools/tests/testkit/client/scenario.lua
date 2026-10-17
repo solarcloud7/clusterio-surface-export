@@ -91,8 +91,32 @@ script.on_event(defines.events.on_tick, function()
 		if elapsed == 30 then
 			for slot = 1, 4 do game.forces.player.unlock_space_location("surfexp_gateway_" .. slot) end
 			player.set_controller{type = defines.controllers.remote, surface = game.surfaces.nauvis}
+			game.forces.player.unlock_space_location("surfexp_gateway_hub")
+			local ship = assert(game.forces.player.create_space_platform{name = "Route test", planet = "fulgora", starter_pack = "space-platform-starter-pack"})
+			ship.apply_starter_pack()
+			ship.schedule = {current = 1, records = {{station = "surfexp_gateway_hub"}}}
+			ship.paused = false
+			storage.route_ship = ship
+			storage.route_samples = {}
 		end
-		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click " .. math.floor(64 * player.display_scale + 0.5) .. " " .. math.floor(94 * player.display_scale + 0.5) .. " 0 0", [195] = "drag " .. math.floor(player.display_resolution.width / 2) .. " " .. math.floor(player.display_resolution.height * 0.75) .. " " .. math.floor(player.display_resolution.width / 2 + 700 * player.display_scale) .. " " .. math.floor(player.display_resolution.height * 0.75 + 150 * player.display_scale), [240] = "capture starmap.png 0 0 0"})[elapsed]
+		if storage.route_ship and (elapsed == 120 or elapsed == 300) then
+			local ship = storage.route_ship
+			local state
+			for name, value in pairs(defines.space_platform_state) do if value == ship.state then state = name end end
+			storage.route_samples["t" .. elapsed] = {state = state, location = ship.space_location and ship.space_location.name,
+				connection = ship.space_connection and ship.space_connection.name, distance = ship.distance}
+			if elapsed == 300 then
+				local routes = {}
+				for name, route in pairs(prototypes.space_connection) do
+					if route.to.name == "surfexp_gateway_hub" or route.from.name == "surfexp_gateway_hub" then
+						routes[#routes + 1] = {name = name, from = route.from.name, to = route.to.name, hidden = route.hidden, hidden_in_factoriopedia = route.hidden_in_factoriopedia}
+					end
+				end
+				helpers.write_file("route-result.json", helpers.table_to_json({samples = storage.route_samples, routes = routes,
+					fulgora_unlocked = game.forces.player.is_space_location_unlocked("fulgora"), nauvis_unlocked = game.forces.player.is_space_location_unlocked("nauvis")}), false)
+			end
+		end
+		local request = ({[90] = "capture starmap-remote.png 0 0 0", [150] = "click " .. math.floor(64 * player.display_scale + 0.5) .. " " .. math.floor(94 * player.display_scale + 0.5) .. " 0 0", [240] = "capture starmap.png 0 0 0"})[elapsed]
 		if request then
 			storage.pointer_requests = (storage.pointer_requests or 0) + 1
 			helpers.write_file("pointer-request-" .. storage.pointer_requests .. ".txt", request .. "\n", false)
