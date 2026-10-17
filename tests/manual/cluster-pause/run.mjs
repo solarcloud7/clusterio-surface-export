@@ -179,8 +179,18 @@ await withWorkflowLock(async () => {
 			}, "admitted transfer listed", 30);
 			cluster.transferId = transferId;
 			cluster.pauseCommand = timed(() => json(lab.ctl("cluster-pause", "pause")));
-			cluster.draining = await waitForPhase("draining", 60);
+			cluster.draining = cluster.pauseCommand.value;
+			assert.equal(cluster.draining?.phase, "draining", `pause command did not start draining: ${JSON.stringify(cluster.pauseCommand)}`);
 			cluster.pausedAfterTransfer = await waitForPhase("paused", 300);
+			const ordered = lab.docker(["logs", lab.controller], { tailChars: 400000 }).split(/\r?\n/)
+				.filter(line => !line.startsWith("[cluster-log]")).map((line, index) => ({ index, line }));
+			const first = pattern => ordered.find(({ line }) => pattern.test(line))?.index ?? null;
+			cluster.order = {
+				drainingWithHold: first(new RegExp(`Cluster pause draining \\(command\\).*${transferId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)),
+				exportRequested: first(/export_requested:.*transfer-cleanup-.*-pause|transfer-cleanup-.*-pause.*export_requested/),
+				transferCompleted: first(/-pause_[^\]]*\] .*transfer_completed/),
+				paused: ordered.filter(({ line }) => /Cluster pause paused \(holds_cleared\)/.test(line)).at(-1)?.index ?? null,
+			};
 			cluster.pausedAfterTransferAtMs = at();
 			cluster.transfer = summary(lab, transferId);
 			cluster.frozenAfterTransfer = [await sampleTicks(1), await sampleTicks(2)];
@@ -283,7 +293,9 @@ await withWorkflowLock(async () => {
 		}
 		const c = report.cluster;
 		if (c) {
-			const transferHold = c.phaseLog.some(entry => entry.phase === "draining" && entry.holds?.some(hold => hold.ref === c.transferId));
+			const transferHold = c.draining?.holds?.some(hold => hold.ref === c.transferId) === true
+				&& c.order.drainingWithHold !== null && c.order.transferCompleted !== null
+				&& c.order.drainingWithHold < c.order.transferCompleted && c.order.transferCompleted < c.order.paused;
 			observation.cluster = {
 				phases: c.phaseLog.map(entry => `${entry.atMs}ms ${entry.phase} (${entry.reason})${entry.holds?.length ? ` holds=${entry.holds.map(h => h.reason).join("|")}` : ""}`),
 				frozen: c.frozen.map(sample => sample.advanced),
