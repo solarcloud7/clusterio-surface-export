@@ -30,13 +30,14 @@ export function hashTree(directory) {
 export function validRun(run) { return /^se-manual-[a-z0-9-]{8,60}$/.test(run); }
 
 export class DockerLab {
-  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false, runtime = {}} = {}) {
+  constructor(run, directory, {sameSourceSave = false, sectionedCodec = false, packageDirectory = null, exposeHttp = false, runtime = {}, extraPlugins = [], factorioSettings = {}} = {}) {
     assert.ok(validRun(run), "invalid disposable run identity");
     this.run = run; this.directory = directory; this.sameSourceSave = sameSourceSave; this.sectionedCodec = sectionedCodec;
     this.evidenceFile = join(resolve(directory), "commands.jsonl");
     this.packageDirectory = packageDirectory;
     this.runtimeOptions = {...runtime, packageDirectory: packageDirectory || undefined};
     this.exposeHttp = exposeHttp;
+    this.extraPlugins = extraPlugins; this.factorioSettings = factorioSettings;
     this.network = run; this.controller = `${run}-controller`;
     this.hosts = Object.fromEntries(seededInstances().map(h => [h.hostNumber,
       {...h, container: `${run}-host-${h.hostNumber}`} ]));
@@ -135,6 +136,11 @@ export class DockerLab {
       for (const part of ["dist","module","package.json","package-lock.json","scripts/prepare-build.mjs"])
         cpSync(join(PLUGIN,part),join(bundle,part),{recursive:true});
     }
+    for (const extra of this.extraPlugins) {
+      assert.match(extra.name,/^[a-z0-9_]+$/,"invalid extra plugin name"); assert.notEqual(extra.name,"surface_export");
+      for (const file of ["dist/node/index.js","package.json"]) assert.ok(existsSync(join(extra.directory,file)),`stage ${extra.name} first`);
+      hashTree(extra.directory); cpSync(extra.directory,join(this.directory,"bundle",extra.name),{recursive:true});
+    }
     for (const h of Object.values(this.hosts)) {
       const source = join(ROOT,"docker/seed-data/hosts",h.host,h.instance), dest = join(seed,"hosts",h.host,h.instance);
       mkdirSync(dest,{recursive:true});
@@ -143,7 +149,7 @@ export class DockerLab {
       config["factorio.version"] = runtime.factorioVersion;
       config["surface_export.sectioned_codec"] = this.sectionedCodec;
       config["factorio.settings"] = {...config["factorio.settings"], visibility:{public:false,lan:false},
-        autosave_interval:0, auto_pause:false};
+        autosave_interval:0, auto_pause:false, ...this.factorioSettings};
       writeFileSync(join(dest,"instance.json"),JSON.stringify(config,null,2));
       assert.equal(h.seededSaves.length,1,"one explicit seed save required");
       const reference = this.sameSourceSave
@@ -154,7 +160,8 @@ export class DockerLab {
       if(reference) assert.equal(hash(saveSource).toUpperCase(),reference.sha256,"golden source hash mismatch");
       cpSync(saveSource,join(dest,h.seededSaves[0]));
     }
-    this.stagedHashes={seed:hashTree(seed),plugin:hashTree(bundle)};
+    this.stagedHashes={seed:hashTree(seed),plugin:hashTree(bundle),
+      ...Object.fromEntries(this.extraPlugins.map(extra=>[extra.name,hashTree(join(this.directory,"bundle",extra.name))]))};
     this.docker(["network","create","--label",`${LABEL}=${this.run}`,this.network]); this.networkCreated=true;
     const volume = suffix => {
       const name=`${this.run}-${suffix}`;
