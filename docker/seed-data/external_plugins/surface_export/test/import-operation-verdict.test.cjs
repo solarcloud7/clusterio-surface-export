@@ -112,7 +112,7 @@ function makeControllerHarness() {
 	};
 	plugin.subscriptions = { emitTransferUpdate() {}, queueTreeBroadcast() {} };
 	plugin.platformTree = { resolvePlatformUid: async (_id, index, _force, uid) => uid || `fixture:${index}`, resolveInstanceName: (id) => `instance-${id}`,
-		requestInstancePlatforms: async () => ({ platforms: [], autoPause: false, error: null }) };
+		requestInstancePlatforms: async () => ({ platforms: [], autoPause: false, tickPaused: false, error: null }) };
 	plugin.orchestrator = { pruneOldTransfers() {} };
 	plugin.isInstanceOnline = () => true;
 	return { plugin, operation, logged };
@@ -619,11 +619,15 @@ test("an operation with no verdict is given none", async () => {
 test("auto-pause admission requires a confirmed false value and a successful status request", async () => {
 	const { plugin } = makeControllerHarness();
 	for (const [reply, expected] of [
-		[{ autoPause: true }, /has auto-pause on/],
-		[{ autoPause: false }, null],
-		[{ autoPause: null }, /unavailable auto-pause status/],
+		[{ autoPause: true, tickPaused: false }, /has auto-pause on/],
+		[{ autoPause: false, tickPaused: false }, null],
+		[{ autoPause: null, tickPaused: false }, /unavailable auto-pause status/],
 		[{}, /unavailable auto-pause status/],
-		[{ error: "RCON unavailable", autoPause: false }, /Status request failed: RCON unavailable/],
+		[{ error: "RCON unavailable", autoPause: false, tickPaused: false }, /Status request failed: RCON unavailable/],
+		[{ autoPause: false, tickPaused: true }, /has its game paused \(game\.tick_paused\).*game\.tick_paused = false/],
+		[{ autoPause: true, tickPaused: true }, /has auto-pause on/],
+		[{ autoPause: false, tickPaused: null }, /did not report whether its game is paused/],
+		[{ autoPause: false }, /did not report whether its game is paused/],
 	]) {
 		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], error: null, ...reply });
 		const refusal = await plugin.autoPauseRefusal(2, "destination");
@@ -632,12 +636,13 @@ test("auto-pause admission requires a confirmed false value and a successful sta
 	}
 });
 
-test("standalone export and import refuse an auto-paused instance before any record or dispatch", async () => {
-	for (const kind of ["export", "import"]) for (const state of [true, null, undefined, "error"]) {
+test("standalone export and import refuse an auto-paused or frozen instance before any record or dispatch", async () => {
+	for (const kind of ["export", "import"]) for (const state of [true, null, undefined, "error", "frozen"]) {
 		const { plugin } = makeControllerHarness();
 		plugin.recoveryReservations = new Map();
 		plugin.requireRecoveryReady = () => {};
-		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], autoPause: state === "error" ? false : state, error: state === "error" ? "RCON unavailable" : null });
+		plugin.platformTree.requestInstancePlatforms = async () => ({ platforms: [], autoPause: state === "error" || state === "frozen" ? false : state,
+			tickPaused: state === "frozen", error: state === "error" ? "RCON unavailable" : null });
 		plugin.platformTree.resolveTargetInstance = () => ({ id: 2, instance: {} });
 		let records = 0, sends = 0;
 		plugin.createOperationRecord = async () => { records++; throw new Error("no operation may be recorded"); };
@@ -646,7 +651,7 @@ test("standalone export and import refuse an auto-paused instance before any rec
 			? await plugin.handleExportPlatformForDownloadRequestMeasured({ sourceInstanceId: 1, sourcePlatformIndex: 3 })
 			: await plugin.handleImportUploadedExportRequestMeasured({ targetInstanceId: 2, exportData: { platform: { force: "player" }, entities: [] } });
 		assert.equal(result.success, false, kind);
-		assert.match(result.error, state === true ? /has auto-pause on/ : /unavailable auto-pause status/);
+		assert.match(result.error, state === true ? /has auto-pause on/ : state === "frozen" ? /has its game paused/ : /unavailable auto-pause status/);
 		assert.match(result.error, kind === "export" ? /Nothing was locked or exported/ : /No platform was imported/);
 		assert.equal(records, 0, kind);
 		assert.equal(sends, 0, kind);

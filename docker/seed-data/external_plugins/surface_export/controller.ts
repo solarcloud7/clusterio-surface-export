@@ -1267,16 +1267,24 @@ export class ControllerPlugin {
 	}
 
 	async autoPauseRefusal(instanceId: number, role: "source" | "destination"): Promise<string | null> {
-		const { autoPause, error } = await this.platformTree.requestInstancePlatforms(instanceId);
-		if (!error && autoPause === false) return null;
+		const { autoPause, tickPaused, error } = await this.platformTree.requestInstancePlatforms(instanceId);
+		if (!error && autoPause === false && tickPaused === false) return null;
 		const name = this.platformTree.resolveInstanceName(instanceId);
-		if (error || autoPause !== true) {
-			return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has unavailable auto-pause status. `
+		const label = `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId})`;
+		if (error || (autoPause !== true && autoPause !== false)) {
+			return `${label} has unavailable auto-pause status. `
 				+ "Work was not admitted; retry after the instance confirms auto_pause is off."
 				+ (error ? ` Status request failed: ${error}` : " Check the instance settings and restart it if needed.");
 		}
-		return `The ${role} instance ${name ? `"${name}" ` : ""}(${instanceId}) has auto-pause on, so it stops running while no players are online. `
-			+ "Platform transfers, imports and exports are refused there; turn off auto_pause in its factorio.settings and restart it.";
+		if (autoPause === true) {
+			return `${label} has auto-pause on, so it stops running while no players are online. `
+				+ "Platform transfers, imports and exports are refused there; turn off auto_pause in its factorio.settings and restart it.";
+		}
+		if (tickPaused === true) {
+			return `${label} has its game paused (game.tick_paused), so work there would stop halfway. Work was not admitted. `
+				+ "If the cluster_pause plugin is not loaded there, resume the game with /sc game.tick_paused = false, then retry.";
+		}
+		return `${label} did not report whether its game is paused. Work was not admitted; retry once the instance answers.`;
 	}
 
 	clusterPauseRefusal(instanceIds: number[]): string | null {
