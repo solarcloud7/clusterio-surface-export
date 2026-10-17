@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// requires: Docker with the pinned lab images; a stage directory under ci-artifacts holding built surface_export and cluster_pause packages (--package-dir)
-// produces: ci-artifacts/se-manual-*/result.json with engine observations of game.tick_paused on a dedicated server (script pause, RCON while paused,
-//           a save and a Clusterio stop while paused, the next start), and the cluster_pause phases on two instances: countdown, draining held by a
-//           transfer in flight, paused, admission refused while paused, resume; game ticks are read on each server, not taken from the plugin
-// does not: touch the development cluster, connect a game client, or prove behaviour on other Factorio versions or with other plugins loaded
+// requires: Docker with the pinned lab images; a stage directory under ci-artifacts holding built surface_export and cluster_pause packages (--package-dir);
+//           for the client phase, the full client volume and the testkit client graphics image (--client-image)
+// produces: ci-artifacts/se-manual-*/result.json with, per selected phase: engine observations of game.tick_paused on a dedicated server (script pause,
+//           RCON while paused, a save and a Clusterio stop while paused, the next start); the cluster_pause phases on two instances (countdown, draining
+//           held by a transfer in flight, paused, admission refused while paused, resume); a client joining a paused server with and without the plugin;
+//           and Surface Export refusing a transfer into a paused game, then completing it after an unpause; game ticks and cargo are read on each server
+// does not: touch the development cluster, use a Factorio account, carry a passenger, or prove behaviour on other Factorio versions
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -29,7 +31,7 @@ const stage = resolve(ROOT, values["package-dir"]);
 const within = relative(join(ROOT, "ci-artifacts"), stage);
 assert.ok(within && !within.startsWith("..") && !isAbsolute(within), "package stage must be under ci-artifacts");
 const phases = new Set(values.phases.split(","));
-assert.ok([...phases].every(phase => ["engine", "cluster", "client"].includes(phase)), "phases: engine, cluster, client");
+assert.ok([...phases].every(phase => ["engine", "cluster", "client", "frozen"].includes(phase)), "phases: engine, cluster, client, frozen");
 assert.ok(!phases.has("client") || /^surface-export-client-gui:[a-f0-9]{16}$/.test(values["client-image"] ?? ""),
 	"the client phase needs --client-image surface-export-client-gui:<tag> (build it with tools/tests/testkit/client/Dockerfile)");
 assert.ok(!values.attach || validRun(values.attach), "--attach takes a kept se-manual run id");
@@ -276,6 +278,61 @@ await withWorkflowLock(async () => {
 			client.resumeEnd = timed(() => json(lab.ctl("cluster-pause", "resume")));
 			save();
 		}
+
+		if (phases.has("frozen")) {
+			const frozen = report.frozen = {};
+			const hostLog = (host, text) => lab.docker(["logs", lab.hosts[host].container], { tailChars: 400000 }).split(/\r?\n/)
+				.filter(line => line.includes(text));
+			const startTransfer = index => timed(() => lab.ctl("surface-export", "start-transfer", String(lab.ids[1]), String(index), String(lab.ids[2])).trim());
+			const sourceUnchanged = state => state.present && !state.locked && state.index === frozen.sourceBefore.index
+				&& JSON.stringify(state.cargo) === JSON.stringify(frozen.sourceBefore.cargo);
+			controllerConfig("cluster_pause.enabled", false);
+			frozen.running = await waitForPhase("running", 30);
+			const name = `transfer-cleanup-${run}-frozen`;
+			lab.probe(1, "build", name);
+			frozen.sourceBefore = lab.probe(1, "read", name).state;
+			assert.deepEqual(frozen.sourceBefore.cargo, expectedCargo, "fixture does not match the independent cargo contract");
+
+			frozen.runtimePause = timed(() => lab.ctl("instance", "send-rcon", instance(2), "/sc game.tick_paused = true").trim());
+			frozen.runtimeTicks = await sampleTicks(2);
+			frozen.runtimeRefusal = startTransfer(frozen.sourceBefore.index);
+			frozen.runtimeSource = lab.probe(1, "read", name).state;
+			frozen.runtimeRows = transferRow(name);
+			save();
+
+			frozen.stop = timed(() => lab.ctl("instance", "stop", instance(2)).trim());
+			frozen.loadPluginOff = timed(() => lab.ctl("instance", "config", "set", instance(2), "cluster_pause.load_plugin", "false").trim());
+			frozen.start = timed(() => lab.ctl("instance", "start", instance(2)).trim());
+			frozen.afterStart = await waitForGame(2);
+			frozen.restartTicks = await sampleTicks(2);
+			frozen.warning = await lab.until(() => hostLog(2, "This save loaded with its game paused").at(-1), "frozen-save warning", 60)
+				.catch(error => ({ error: error.message }));
+			frozen.restartRefusal = startTransfer(frozen.sourceBefore.index);
+			frozen.restartSource = lab.probe(1, "read", name).state;
+			frozen.restartRows = transferRow(name);
+			save();
+
+			frozen.unpause = timed(() => lab.ctl("instance", "send-rcon", instance(2), "/sc game.tick_paused = false").trim());
+			frozen.unpausedTicks = await sampleTicks(2, 2);
+			frozen.retry = await lab.until(() => {
+				const attempt = startTransfer(frozen.sourceBefore.index);
+				return attempt.value ? attempt : false;
+			}, "transfer admitted after the unpause", 120).catch(error => ({ error: error.message }));
+			frozen.completed = await lab.until(() => transferRow(name).find(row => row.status === "completed"), "transfer after the unpause completed", 180)
+				.catch(error => ({ error: error.message, rows: transferRow(name) }));
+			frozen.destination = lab.probe(2, "read", name).state;
+			frozen.sourceAfter = lab.probe(1, "read", name).state;
+			save();
+
+			frozen.restoreStop = timed(() => lab.ctl("instance", "stop", instance(2)).trim());
+			frozen.loadPluginOn = timed(() => lab.ctl("instance", "config", "set", instance(2), "cluster_pause.load_plugin", "true").trim());
+			frozen.restoreStart = timed(() => lab.ctl("instance", "start", instance(2)).trim());
+			frozen.restored = await waitForGame(2);
+			for (const host of [1, 2]) try { lab.probe(host, "cleanup", name); }
+			catch (error) { (frozen.cleanupErrors ??= []).push(`${host}: ${error.message}`); }
+			frozen.sourceUnchangedAfterRefusals = sourceUnchanged(frozen.runtimeSource) && sourceUnchanged(frozen.restartSource);
+			save();
+		}
 	}, analyze: () => {
 		if (report.error) return {};
 		const observation = {};
@@ -311,6 +368,22 @@ await withWorkflowLock(async () => {
 					&& JSON.stringify(c.refusedAfter.cargo) === JSON.stringify(c.refusedBefore.cargo),
 				resumedAgain: c.resumedAgain.map(sample => sample.advanced),
 				watchLines: c.watch?.length,
+			};
+		}
+		const f = report.frozen;
+		if (f) {
+			observation.frozen = {
+				runtimeTicks: f.runtimeTicks.advanced,
+				runtimeRefusal: f.runtimeRefusal.error?.match(/Error: (.+)/)?.[1] ?? f.runtimeRefusal.value,
+				restartTicks: f.restartTicks.advanced,
+				warning: f.warning?.error ?? Boolean(f.warning),
+				restartRefusal: f.restartRefusal.error?.match(/Error: (.+)/)?.[1] ?? f.restartRefusal.value,
+				refusalsLeftNoTransfer: f.runtimeRows.length === 0 && f.restartRows.length === 0,
+				sourceUnchangedAfterRefusals: f.sourceUnchangedAfterRefusals,
+				unpausedTicks: f.unpausedTicks.advanced,
+				retryStatus: f.completed?.status ?? f.completed,
+				destinationCargoMatches: JSON.stringify(f.destination?.cargo) === JSON.stringify(expectedCargo),
+				sourceRemoved: f.sourceAfter?.present === false,
 			};
 		}
 		const k = report.client;
