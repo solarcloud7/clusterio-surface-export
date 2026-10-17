@@ -1,27 +1,27 @@
 {
 	"modPack": {
-		"name": "Space Age 2.1.20 - Surface Export 0.7.11",
-		"factorioVersion": "2.1.20",
+		"name": "Space Age 2.1.22 - Surface Export 0.7.11",
+		"factorioVersion": "2.1.22",
 		"mods": {
-			"base": "2.1.20",
-			"space-age": "2.1.20",
-			"quality": "2.1.20",
-			"elevated-rails": "2.1.20",
-			"recycler": "2.1.20",
+			"base": "2.1.22",
+			"space-age": "2.1.22",
+			"quality": "2.1.22",
+			"elevated-rails": "2.1.22",
+			"recycler": "2.1.22",
 			"surfexp_gateways": "0.7.11",
-			"PlanetsLib": "2.0.1",
-			"maraxsis": "1.39.4",
-			"FluidMustFlow": "1.5.0",
+			"PlanetsLib": "2.0.10",
+			"maraxsis": "1.39.22",
+			"FluidMustFlow": "1.5.1",
 			"SpidertronEnhancements": "1.11.0",
-			"SpidertronPatrols": "2.7.0"
+			"SpidertronPatrols": "2.7.1"
 		},
 		"sha1": {
 			"surfexp_gateways": "e938514aaf7c44745ed13a236a092b33c051a5b1",
-			"PlanetsLib": "2bc1b9a592e610a33a6c3ddfc90b104774442916",
-			"maraxsis": "18de3e1fcca2df06c8180d56b81fba09dc739bc1",
-			"FluidMustFlow": "6c576d8d354cf930a64d79819af8f9b002583792",
+			"PlanetsLib": "f7e2da760621927f9ca85e5f791e24cacf4ef3af",
+			"maraxsis": "b5c453f8701f194bfd3d0d08bc13a69beb18af0c",
+			"FluidMustFlow": "c8820efe820b4f30358b491c8e9d96a7207bbef4",
 			"SpidertronEnhancements": "293e1fda6c88523913f776083d444dcce5579d4a",
-			"SpidertronPatrols": "e05fb50107a0e3fa793fced4f65468180948ba0f"
+			"SpidertronPatrols": "6206267780bec98aa0352438715db8cb5fade826"
 		},
 		"settings": {
 			"runtime-global": {
@@ -36,7 +36,7 @@
 	"instances": {
 		"Delta": {
 			"instanceId": 489642928,
-			"factorio.version": "2.1.20",
+			"factorio.version": "2.1.22",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "nauvis",
 			"surface_export.disabled_planets": "vulcanus,fulgora,gleba,aquilo",
@@ -65,7 +65,7 @@
 		},
 		"Sigma": {
 			"instanceId": 280344241,
-			"factorio.version": "2.1.20",
+			"factorio.version": "2.1.22",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "vulcanus",
 			"surface_export.disabled_planets": "nauvis,fulgora,gleba,aquilo,maraxsis",
@@ -94,7 +94,7 @@
 		},
 		"Theta": {
 			"instanceId": 1329253049,
-			"factorio.version": "2.1.20",
+			"factorio.version": "2.1.22",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "fulgora",
 			"surface_export.disabled_planets": "nauvis,vulcanus,gleba,aquilo,maraxsis",
@@ -123,7 +123,7 @@
 		},
 		"Omega": {
 			"instanceId": 231718593,
-			"factorio.version": "2.1.20",
+			"factorio.version": "2.1.22",
 			"surface_export.debug_mode": false,
 			"surface_export.default_planet": "gleba",
 			"surface_export.disabled_planets": "nauvis,vulcanus,fulgora,maraxsis",

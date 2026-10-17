@@ -30,7 +30,7 @@ Keep the checked-in image pin unless testing a deliberate upgrade.
 ```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm ci
-docker volume create factorio-client-2120
+docker volume create factorio-client-2122
 ./tools/clusterio/build-plugin.ps1 -Target all
 ./tools/surface-export/build-gateway-mod.ps1 -SkipClientSync
 docker compose pull
@@ -63,7 +63,7 @@ volume named for that version at `/opt/factorio-client`. Host 2 sets
 
 Having the full client installed does not make a server process render the GUI.
 For UI screenshots, run the graphical client with a display and a disposable
-save. Factorio's [`take_screenshot` API](https://lua-api.factorio.com/2.1.20/classes/LuaGameScript.html#take_screenshot)
+save. Factorio's [`take_screenshot` API](https://lua-api.factorio.com/2.1.22/classes/LuaGameScript.html#take_screenshot)
 does nothing when Factorio runs headless.
 
 ## Connect a Steam client
