@@ -4,6 +4,19 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
+## 0.12.0-beta.4
+
+Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
+and the `surfexp_gateways` mod `0.7.11`.
+
+- `surfexp_gateways` 0.7.11: every planet, modded planets included, has a route to the
+  Gateway, so a platform on any server's planet can fly there. Planets sit on a ring
+  around the Gateway; the startup setting `surfexp-ring-layout` turns that off. (#423)
+- Surface Export takes part in the new `cluster_pause` plugin when it is loaded: it holds
+  the pause while transfers, passengers, admissions or startup recovery are in flight,
+  and refuses new transfers and imports while the cluster pauses. Without
+  `cluster_pause`, nothing changes. (#422)
+
 ## 0.12.0-beta.3
 
 Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
