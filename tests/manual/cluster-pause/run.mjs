@@ -15,7 +15,6 @@ import { withWorkflowLock } from "../../../tools/shared/workflow-lock.mjs";
 import { DockerLab, ROOT, hash, sleep, validRun } from "../transfer-reliability/docker-lab.mjs";
 import { startClient, stopClient, screenshot, clientLog } from "./client.mjs";
 import { runLab } from "../transfer-reliability/lifecycle.mjs";
-import { summary } from "../transfer-reliability/cases.mjs";
 import { expectedCargo } from "../../integration/transfer-cleanup/oracle.mjs";
 
 const { values } = parseArgs({ options: {
@@ -74,6 +73,8 @@ await withWorkflowLock(async () => {
 		.trim().split(/\r?\n/).filter(Boolean);
 	const controllerLog = pattern => lab.docker(["logs", lab.controller], { tailChars: 400000 }).split(/\r?\n/)
 		.filter(line => line.includes(pattern));
+	const transferRow = platformName => JSON.parse(lab.ctl("surface-export", "list-transfers", "200").trim().split(/\r?\n/).at(-1))
+		.filter(row => row.platformName === platformName);
 	const waitForGame = (host, seconds = 180) => lab.until(() => game(host), `RCON on ${instance(host)}`, seconds);
 	const phaseLog = [];
 	const waitForPhase = (phase, seconds) => lab.until(() => {
@@ -192,7 +193,7 @@ await withWorkflowLock(async () => {
 				paused: ordered.filter(({ line }) => /Cluster pause paused \(holds_cleared\)/.test(line)).at(-1)?.index ?? null,
 			};
 			cluster.pausedAfterTransferAtMs = at();
-			cluster.transfer = summary(lab, transferId);
+			cluster.transfer = transferRow(name);
 			cluster.frozenAfterTransfer = [await sampleTicks(1), await sampleTicks(2)];
 			save();
 
@@ -206,7 +207,7 @@ await withWorkflowLock(async () => {
 			cluster.resumedAgain = [await sampleTicks(1, 2), await sampleTicks(2, 2)];
 			cluster.destination = lab.probe(2, "read", name).state;
 			cluster.sourceAfter = lab.probe(1, "read", name).state;
-			cluster.transferFinal = summary(lab, transferId);
+			cluster.transferFinal = transferRow(name);
 			cluster.controllerLog = controllerLog("Cluster pause");
 			lab.docker(["exec", lab.controller, "sh", "-c", "pkill -INT -f 'cluster-pause status --watch' || true"]);
 			await sleep(1000);
@@ -301,7 +302,7 @@ await withWorkflowLock(async () => {
 				frozen: c.frozen.map(sample => sample.advanced),
 				resumed: c.resumed.map(sample => sample.advanced),
 				transferHeldDraining: transferHold,
-				transferStatus: c.transferFinal?.status,
+				transferStatus: c.transferFinal?.map(row => `${row.transferId} ${row.status}`),
 				destinationCargoMatches: JSON.stringify(c.destination?.cargo) === JSON.stringify(expectedCargo),
 				sourceRemoved: c.sourceAfter?.present === false,
 				frozenAfterTransfer: c.frozenAfterTransfer.map(sample => sample.advanced),
