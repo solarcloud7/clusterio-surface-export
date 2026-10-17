@@ -28,7 +28,7 @@ manually unlocking or deleting anything.
 
 ## Travel through an in-game gateway
 
-Each instance has one Gateway at the centre of the star map, connected to Nauvis.
+Each instance has one Gateway at the centre of the star map, with a route from every planet.
 It is a space location, not another planet. Every server can reach every other
 server through it; there are no links to configure. Four coloured portals orbit
 the Gateway: Blue, Green, Orange and Purple. Each colour belongs to one
