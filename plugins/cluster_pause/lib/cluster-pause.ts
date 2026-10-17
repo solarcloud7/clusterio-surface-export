@@ -135,6 +135,7 @@ export class ClusterPause {
 		this.ready.add(instanceId);
 		if (this.deps.enabled() && this.phase === "pausing") {
 			this.resume("instance_state", `instance ${instanceId} became ready while the cluster was pausing`);
+			this.sendResume(instanceId);
 			return;
 		}
 		if (this.deps.enabled() && this.phase === "paused") {

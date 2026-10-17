@@ -345,3 +345,21 @@ test("a superseded pause attempt never removes the targets a newer attempt recor
 	assert.deepEqual(h.machine.state().paused, [1, 2]);
 	assert.deepEqual(h.events.at(-1).paused, [1, 2]);
 });
+
+test("an instance that reports ready while the cluster is pausing cancels the pause and is itself resumed", async () => {
+	const h = await harness({ instances: [
+		{ id: 1, name: "one", loaded: true, state: "running" },
+		{ id: 2, name: "two", loaded: true, state: "running" },
+		{ id: 3, name: "three", loaded: true, state: "running" },
+	], ready: [1, 2] });
+	let release;
+	h.world.checkpointGate = new Promise(resolve => { release = resolve; });
+	await drainToPause(h, participant());
+	h.machine.onInstanceReady(3);
+	await settle();
+	release();
+	await settle();
+	assert.equal(h.machine.currentPhase, "running");
+	assert.ok(h.sent.some(([id, paused]) => id === 3 && paused === false), JSON.stringify(h.sent));
+	assert.ok(!h.sent.some(([id, paused]) => id === 3 && paused === true), JSON.stringify(h.sent));
+});

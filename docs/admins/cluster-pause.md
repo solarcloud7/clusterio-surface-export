@@ -24,12 +24,12 @@ that does not load it is never paused and is listed under `notLoaded` in `status
 |---|---|---|
 | `running` | Start, a join, `resume`, the feature turned off, or an instance whose state is unknown | Nobody is online on any server |
 | `countdown` | Nobody is online | A join, or `countdown_ms` passes |
-| `draining` | The countdown ends, or `pause` | A join, or no participant holds the pause any more |
-| `paused` | Every running instance that reported ready confirmed the pause | A join, or `resume` |
+| `draining` | The countdown ends, or `pause` | A join, `resume`, the feature turned off, an instance whose state is unknown, or no participant holds the pause any more |
+| `paused` | Every running instance that reported ready confirmed the pause | A join, `resume`, or the feature turned off |
 
 While the cluster drains or is paused, Surface Export refuses new transfers, imports, exports and
 platform resolutions with a message that names the pause. Transfers already admitted, their retries
-and recovery continue, and each holds the pause until it finishes.
+and recovery are not refused for the cluster pause, and each holds the pause until it finishes.
 
 ## Commands
 
@@ -58,13 +58,18 @@ plugin found in its `external_plugins` directory and the development cluster mou
 
 A save made while the game is paused keeps `game.tick_paused`. This includes Clusterio's save when
 an instance stops. When such an instance starts with `cluster_pause` loaded, the plugin resumes it
-once the instance reports ready, unless the cluster is still paused. Without `cluster_pause`, the
-game stays paused:
+once the instance reports ready, unless the cluster is paused, in which case it stays paused with
+the rest. `cluster-pause resume` unpauses every instance that loads the plugin. Without
+`cluster_pause`, the game stays paused:
 
 - The instance logs a warning that names the command to resume it.
-- Surface Export refuses transfers, imports and exports to and from any instance whose game is paused or
-  that does not report whether it is, whatever paused it.
 - `/sc game.tick_paused = false` on that server resumes it.
+
+Separately from the cluster pause, Surface Export checks the game of the source and the destination
+each time it admits a transfer, import or export, when a queued transfer starts, and again before a
+transfer's import. It refuses when either game is paused or does not report whether it is, whatever
+paused it. A transfer refused after its export fails and unlocks its unchanged source; if that unlock
+fails, the source stays locked for [recovery](recovery.md).
 
 To remove the plugin, resume first:
 

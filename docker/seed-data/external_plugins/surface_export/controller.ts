@@ -1284,7 +1284,8 @@ export class ControllerPlugin {
 			return `${label} has its game paused (game.tick_paused), so work there would stop halfway. Work was not admitted. `
 				+ "If the cluster_pause plugin is not loaded there, resume the game with /sc game.tick_paused = false, then retry.";
 		}
-		return `${label} did not report whether its game is paused. Work was not admitted; retry once the instance answers.`;
+		return `${label} did not report whether its game is paused. Work was not admitted; retry once the instance answers. `
+			+ "If its Surface Export plugin is older than the controller's, restart the instance on the current version.";
 	}
 
 	clusterPauseRefusal(instanceIds: number[]): string | null {
