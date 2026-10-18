@@ -130,6 +130,7 @@ export interface InstanceNodeModel {
 	platformError: string | null;
 	defaultPlanet: string;
 	disabledPlanets: string[];
+	modPackId: number | null;
 	portal: import("./portals.js").PortalAssignment | null;
 }
 export interface HostNodeModel {

@@ -10,7 +10,7 @@ import { activePlanets, facingTurn, instanceNodeId, peerPortalHandleId, portalOr
 import type { PeerPortal, PlatformLike, Portal } from "./gateway-graph.js";
 import PlatformRows from "./PlatformRows.js";
 import { useGatewayDebug } from "./debug-mode.js";
-import { PlanetIcon, usePlanetNames } from "../icons.js";
+import { IconPackScope, PlanetIcon, usePlanetNames } from "../icons.js";
 import { PORTAL_LINK_COLOUR, portalHex } from "./gateway-colours.js";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 import gatewayBlueArt from "./assets/gateway-blue-64.png";
@@ -197,6 +197,7 @@ export type InstanceNodeData = {
 	platforms: PlatformLike[];
 	defaultPlanet: string;
 	disabledPlanets: string[];
+	modPackId?: number | null;
 	portal: Portal | null;
 	peers?: PeerPortal[];
 };
@@ -222,75 +223,77 @@ export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 	const gateway = ONE_GATE_NAME;
 
 	return (
-		<div
-			className={
-				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
-				+ " surface-export-instance-node-shaped"
-			}
-			style={{ "--surface-export-portal-glow": node.portal ? portalHex(node.portal.colour) : PORTAL_LINK_COLOUR } as CSSProperties}
-			onPointerDown={list.rearm}
-		>
-			<Handle
-				type="target"
-				position={Position.Left}
-				id={targetHandleId(gateway)}
-				isConnectable={Boolean(isConnectable)}
-				isConnectableStart={false}
-				className="surface-export-gw-cover"
-				title={`Drop a platform here to transfer it to ${node.instanceName}`}
-			/>
-			<Handle
-				type="source"
-				position={Position.Right}
-				id={sourceHandleId(gateway)}
-				isConnectable={false}
-				className="surface-export-gw-cover surface-export-gw-anchor"
-			/>
+		<IconPackScope modPackId={node.modPackId}>
 			<div
-				className="surface-export-instance-face"
-				style={NODE_FACE_ART[gateway] ? { backgroundImage: `url(${NODE_FACE_ART[gateway]})` } : undefined}
+				className={
+					`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
+					+ " surface-export-instance-node-shaped"
+				}
+				style={{ "--surface-export-portal-glow": node.portal ? portalHex(node.portal.colour) : PORTAL_LINK_COLOUR } as CSSProperties}
+				onPointerDown={list.rearm}
 			>
-				{NODE_FACE_ART[gateway] ? null : <PlanetIcon name={gateway} size={96} title={gateway} />}
-			</div>
-
-			<div className="surface-export-instance-node-body surface-export-instance-node-caption">
-				<Text
-					strong
-					className="surface-export-instance-node-name"
-					title={node.hostName ? `${node.instanceName} — on ${node.hostName}` : node.instanceName}
-				>
-					{node.instanceName}
-				</Text>
-				<div className="surface-export-instance-node-meta">
-					{node.address
-						? <Text type="secondary" className="surface-export-instance-node-port">{node.address}</Text>
-						: <Text type="secondary" className="surface-export-instance-node-port">no port assigned</Text>}
-				</div>
-			</div>
-
-			<OutgoingPortals selfId={id} peers={node.peers || []} />
-			<ServerFooter
-				portal={node.portal ?? null}
-				instanceName={node.instanceName}
-				defaultPlanet={node.defaultPlanet || "nauvis"}
-				disabledPlanets={node.disabledPlanets || []}
-			/>
-
-			{list.visible || quarantinedPlatforms.length ? (
-				<PlatformRows
-					platforms={list.visible ? node.platforms : quarantinedPlatforms}
-					instanceId={node.instanceId}
-					instanceName={node.instanceName}
-					canEdit={Boolean(isConnectable)}
-					onHold={list.hold}
-					onRelease={list.release}
-					onPressed={list.holdUntilPointerUp}
+				<Handle
+					type="target"
+					position={Position.Left}
+					id={targetHandleId(gateway)}
+					isConnectable={Boolean(isConnectable)}
+					isConnectableStart={false}
+					className="surface-export-gw-cover"
+					title={`Drop a platform here to transfer it to ${node.instanceName}`}
 				/>
-			) : null}
+				<Handle
+					type="source"
+					position={Position.Right}
+					id={sourceHandleId(gateway)}
+					isConnectable={false}
+					className="surface-export-gw-cover surface-export-gw-anchor"
+				/>
+				<div
+					className="surface-export-instance-face"
+					style={NODE_FACE_ART[gateway] ? { backgroundImage: `url(${NODE_FACE_ART[gateway]})` } : undefined}
+				>
+					{NODE_FACE_ART[gateway] ? null : <PlanetIcon name={gateway} size={96} title={gateway} />}
+				</div>
 
-			{node.autoPause ? <span className="surface-export-autopause-badge"><AutoPauseIcon /></span> : null}
+				<div className="surface-export-instance-node-body surface-export-instance-node-caption">
+					<Text
+						strong
+						className="surface-export-instance-node-name"
+						title={node.hostName ? `${node.instanceName} — on ${node.hostName}` : node.instanceName}
+					>
+						{node.instanceName}
+					</Text>
+					<div className="surface-export-instance-node-meta">
+						{node.address
+							? <Text type="secondary" className="surface-export-instance-node-port">{node.address}</Text>
+							: <Text type="secondary" className="surface-export-instance-node-port">no port assigned</Text>}
+					</div>
+				</div>
 
-			{showGeometry ? <GeometryOverlay /> : null}
-		</div>
+				<OutgoingPortals selfId={id} peers={node.peers || []} />
+				<ServerFooter
+					portal={node.portal ?? null}
+					instanceName={node.instanceName}
+					defaultPlanet={node.defaultPlanet || "nauvis"}
+					disabledPlanets={node.disabledPlanets || []}
+				/>
+
+				{list.visible || quarantinedPlatforms.length ? (
+					<PlatformRows
+						platforms={list.visible ? node.platforms : quarantinedPlatforms}
+						instanceId={node.instanceId}
+						instanceName={node.instanceName}
+						canEdit={Boolean(isConnectable)}
+						onHold={list.hold}
+						onRelease={list.release}
+						onPressed={list.holdUntilPointerUp}
+					/>
+				) : null}
+
+				{node.autoPause ? <span className="surface-export-autopause-badge"><AutoPauseIcon /></span> : null}
+
+				{showGeometry ? <GeometryOverlay /> : null}
+			</div>
+		</IconPackScope>
 	);
 }

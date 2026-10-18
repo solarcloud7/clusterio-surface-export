@@ -6,6 +6,10 @@ export function planetList(value: unknown): string[] {
 	return typeof value === "string" ? value.split(",").map(name => name.trim()).filter(Boolean) : [];
 }
 
+export function modPackIdOf(value: unknown): number | null {
+	return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
 export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
 }
@@ -189,6 +193,7 @@ export class PlatformTree {
 				configuredRecoveryMode: recoveryMode(this.plugin.controller.config?.get("surface_export.platform_source_of_truth")),
 				defaultPlanet: String(instance.config.get("surface_export.default_planet") || "nauvis").trim() || "nauvis",
 				disabledPlanets: planetList(instance.config.get("surface_export.disabled_planets")),
+				modPackId: modPackIdOf(instance.config.get("factorio.mod_pack_id")),
 				portal: this.resolvePortal(instanceId),
 			};
 
