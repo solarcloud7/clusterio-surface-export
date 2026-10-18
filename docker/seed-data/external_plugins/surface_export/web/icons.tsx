@@ -1,6 +1,7 @@
 import React from "react";
-import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata } from "@clusterio/web_ui";
+import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata, useModPacks } from "@clusterio/web_ui";
 import type { PrototypeMetadataEntry } from "@clusterio/web_ui";
+import { hasIconExport, selectIconPack } from "../shared/icon-pack.js";
 import { selectNavigableLocationNames, selectPlanetNames, selectStarMapPlanets } from "../shared/planets.js";
 import type { SpaceConnectionLike } from "../shared/planets.js";
 
@@ -27,8 +28,17 @@ function findEntry(metadata: Metadata, name: string, preferTypes?: string[]): Pr
 	return undefined;
 }
 
+const IconPackContext = React.createContext<number | null>(null);
+
+export function IconPackScope({ modPackId, children }: { modPackId: number | null | undefined; children: React.ReactNode }) {
+	return <IconPackContext.Provider value={modPackId ?? null}>{children}</IconPackContext.Provider>;
+}
+
 function useProtoLookup() {
-	const modPack = useDefaultModPack();
+	const scopedId = React.useContext(IconPackContext);
+	const defaultPack = useDefaultModPack();
+	const [packs] = useModPacks();
+	const modPack = React.useMemo(() => selectIconPack(scopedId, defaultPack, packs.values()), [scopedId, defaultPack, packs]);
 	const metadata = useExportPrototypeMetadata(modPack);
 	return { modPack, modPackId: modPack?.id, metadata };
 }
@@ -82,12 +92,16 @@ const FACTORIO_ICON_NATURAL_PX = 32;
 type ProtoIconProps = { name: string; size?: number; title?: string; preferTypes?: string[] };
 
 export function ProtoIcon({ name, size = FACTORIO_ICON_NATURAL_PX, title, preferTypes }: ProtoIconProps) {
-	const { modPackId, metadata } = useProtoLookup();
+	const { modPack, modPackId, metadata } = useProtoLookup();
 	const prototype = findEntry(metadata, name, preferTypes);
 	const scale = size / FACTORIO_ICON_NATURAL_PX;
+	const loading = hasIconExport(modPack) && !metadata;
+	const missing = prototype || loading ? null : hasIconExport(modPack)
+		? `${name}: no icon in mod pack "${modPack?.name}"`
+		: `${name}: icons are not exported for ${modPack ? `mod pack "${modPack.name}"` : "any mod pack"}`;
 	return (
 		<span
-			title={title ?? name}
+			title={missing ?? title ?? name}
 			style={{
 				display: "inline-block",
 				width: size,

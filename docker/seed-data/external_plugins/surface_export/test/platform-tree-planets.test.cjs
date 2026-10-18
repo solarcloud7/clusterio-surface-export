@@ -44,6 +44,15 @@ test("each server carries its configured default planet and its unavailable plan
 	]);
 });
 
+test("each server carries the mod pack its instance config names, so its card draws icons from that pack", async () => {
+	const tree = makeTree({ instances: [
+		[1, { "factorio.mod_pack_id": 1435814603 }],
+		[2, { "factorio.mod_pack_id": "1435814603" }],
+		[3, {}],
+	] });
+	assert.deepEqual((await nodes(tree)).map(node => node.modPackId), [1435814603, null, null]);
+});
+
 test("a server's portal colour and label come from the controller's portal assignment", async () => {
 	const tree = makeTree({ instances: [[1, {}], [2, {}], [3, {}]] });
 	tree.plugin.gatewayConfig = { portalOf: id => id === 3 ? null : { slot: id, colour: id === 1 ? "blue" : "green", label: `instance-${id}` } };

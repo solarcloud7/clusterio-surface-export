@@ -26,6 +26,7 @@ export type InstanceLike = {
 	autoPause?: boolean;
 	defaultPlanet?: string;
 	disabledPlanets?: string[];
+	modPackId?: number | null;
 	portal?: Portal | null;
 	platforms?: PlatformLike[];
 };
@@ -364,6 +365,7 @@ export function buildGraph(
 					platforms,
 					defaultPlanet: instance.defaultPlanet || "nauvis",
 					disabledPlanets: instance.disabledPlanets || [],
+					modPackId: instance.modPackId ?? null,
 					portal: instance.portal ?? null,
 					peers: peerPortalsFor(instance.instanceId, everyInstance),
 				},
