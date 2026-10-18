@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // requires: Docker with the development controller container (its /clusterio/seed-data/mods holds the mod ZIPs to upload); a desired-state file such as tools/clusterio/desired/vm.json; for a remote cluster, its entry in tools/clusterio/remote-clusters.local.json
-// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack, and controller, host and instance config to the desired state, including the rename of an existing instance that a desired entry names by `instanceId`, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
+// produces: `plan`: the exact clusterioctl commands that bring stored mods, the desired mod pack (also as the controller's default mod pack unless the desired file sets `defaultModPack: false` or names `controller.default_mod_pack_id` itself), and controller, host and instance config to the desired state, including the rename of an existing instance that a desired entry names by `instanceId`, with blocked items and the instances that need a restart; `apply --yes`: runs them in order, stops at the first failure, re-plans after success, and reports configuration convergence separately from runtime (restart pending, or restarted and running)
 // does not: configure gateway links or portal colours (every server reaches every other server and the controller assigns each server a portal colour; a desired file that still sets gatewayLinks, serverDestinations, the removed surfexp-gateway-instances or surfexp-gateway-layout setting, or the removed surface_export.gateway_mode controller field is blocked), replace a stored mod version, delete stored mods, other mod packs or instances, create instances or rename one whose desired entry carries no `instanceId`, remove settings, set empty values, restart instances unless --restart is given (and then only running ones), read back what the running games loaded, or authorize a change on a shared cluster
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -12,6 +12,7 @@ const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const LOCAL_MODS = path.resolve(HERE, "../../docker/seed-data/mods");
 const CONTAINER_MODS = "/clusterio/seed-data/mods";
 export const BUILTIN_MODS = new Set(["base", "space-age", "quality", "elevated-rails", "recycler"]);
+const DEFAULT_MOD_PACK_FIELD = "controller.default_mod_pack_id";
 
 export function parseTable(text) {
 	const lines = String(text).split(/\r?\n/).filter(line => line.includes("|"));
@@ -239,6 +240,16 @@ export function planChanges(desired, live, { modFile = localModFile } = {}) {
 					argv: ["instance", "config", "set", instance, "factorio.mod_pack_id", String(existing.id)] });
 				restart.add(instance);
 			}
+		}
+	}
+
+	if (want && desired.defaultModPack !== false && desired.controller?.[DEFAULT_MOD_PACK_FIELD] === undefined) {
+		if (!existing) {
+			actions.push({ describe: `controller ${DEFAULT_MOD_PACK_FIELD} -> "${want.name}"`, packId: want.name,
+				argv: ["controller", "config", "set", DEFAULT_MOD_PACK_FIELD, "<id of new pack>"] });
+		} else if (live.controller[DEFAULT_MOD_PACK_FIELD] !== existing.id) {
+			actions.push({ describe: `controller ${DEFAULT_MOD_PACK_FIELD}: ${JSON.stringify(live.controller[DEFAULT_MOD_PACK_FIELD])} -> ${existing.id} ("${want.name}")`,
+				argv: ["controller", "config", "set", DEFAULT_MOD_PACK_FIELD, String(existing.id)] });
 		}
 	}
 

@@ -42,7 +42,7 @@ function liveWith(overrides = {}) {
 		packDetails: { 7: parseModPackShow(SHOW) },
 		mods: new Set(["surfexp_gateways_0.6.12", "FluidMustFlow_1.5.0"]),
 		modSha1: { "surfexp_gateways_0.6.12": hashes.surfexp_gateways, "FluidMustFlow_1.5.0": hashes.FluidMustFlow },
-		controller: { "surface_export.platform_source_of_truth": "plugin_history" },
+		controller: { "surface_export.platform_source_of_truth": "plugin_history", "controller.default_mod_pack_id": 7 },
 		instances: { fact1: { "surface_export.debug_mode": false, "factorio.mod_pack_id": 7 } },
 		...overrides,
 	};
@@ -67,12 +67,15 @@ test("a missing pack plans uploads, a pinned create and deferred instance pointe
 		["mod", "upload", "/clusterio/seed-data/mods/FluidMustFlow_1.5.0.zip"],
 		["mod-pack", "create", "Space Age 2.1.20 - Test"],
 		["instance", "config", "set"],
+		["controller", "config", "set"],
 	]);
 	const create = result.actions[2].argv;
 	assert.ok(create.includes("surfexp_gateways:0.6.12:a96c8f968f260f7c6aff1880e7394bdb1853f75d"));
 	assert.ok(create.join(" ").includes("--string-setting startup example-startup-string first"));
 	assert.ok(create.join(" ").includes("--bool-setting runtime-global surfexp-platform-boarding true"));
 	assert.equal(result.actions[3].packId, "Space Age 2.1.20 - Test");
+	assert.deepEqual(result.actions[4].argv, ["controller", "config", "set", "controller.default_mod_pack_id", "<id of new pack>"]);
+	assert.equal(result.actions[4].packId, "Space Age 2.1.20 - Test");
 	assert.deepEqual(result.restart, ["fact1"]);
 	assert.ok(result.exportNeeded);
 });
@@ -81,7 +84,7 @@ test("a cluster that matches plans nothing; drift plans only the differences", (
 	const enabled = liveWith();
 	enabled.packDetails[7].mods.FluidMustFlow.enabled = true;
 	assert.deepEqual(planChanges(desired, enabled, { modFile }).actions, []);
-	const drift = planChanges(desired, liveWith({ controller: { "surface_export.platform_source_of_truth": "save_game" } }), { modFile });
+	const drift = planChanges(desired, liveWith({ controller: { "surface_export.platform_source_of_truth": "save_game", "controller.default_mod_pack_id": 7 } }), { modFile });
 	assert.deepEqual(drift.actions.map(action => action.argv), [
 		["mod-pack", "edit", "7", "--add-mods", "FluidMustFlow:1.5.0:6c576d8d354cf930a64d79819af8f9b002583792"],
 		["controller", "config", "set", "surface_export.platform_source_of_truth", "plugin_history"],
@@ -102,7 +105,7 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 	const err = { text: "", write(chunk) { this.text += chunk; } };
 	assert.equal(await main(["apply", "--cluster", "vm", "--desired", "d.json"], { out, err, read: () => desired, run: async () => 0 }), 2);
 	assert.match(err.text, /pass --yes/);
-	const state = { packs: [], created: false, calls: [], fact1Pack: undefined };
+	const state = { packs: [], created: false, calls: [], fact1Pack: undefined, defaultPack: 1 };
 	const transport = { ctl: (...args) => {
 		state.calls.push(args);
 		if (args[0] === "mod-pack" && args[1] === "list") return state.created ? "id | name\n---\n9 | Space Age 2.1.20 - Test\n" : "id | name\n---\n";
@@ -112,7 +115,8 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 		}
 		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
 		if (args[0] === "mod" && args[1] === "show") return `name: ${args[2]}\nversion: ${args[3]}\nsha1: ${hashes[args[2]]}\n`;
-		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
+		if (args[0] === "controller" && args[2] === "set") { state.defaultPack = Number(args[4]); return ""; }
+		if (args[0] === "controller") return `surface_export.platform_source_of_truth "plugin_history"\ncontroller.default_mod_pack_id ${state.defaultPack}\n`;
 		if (args[0] === "instance" && args[1] === "list") return "name | status\n---\nfact1 | running\n";
 		if (args[0] === "instance" && args[2] === "list") return `surface_export.debug_mode false\nfactorio.mod_pack_id ${state.fact1Pack ?? 1}\n`;
 		if (args[0] === "instance" && args[2] === "set") { state.fact1Pack = Number(args[5]); return ""; }
@@ -121,11 +125,12 @@ test("apply needs --yes, resolves the new pack id after creating it, and re-plan
 	const code = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes"], { out, err, read: () => desired, run: async (_, fn) => fn(transport), modFile });
 	assert.equal(code, 4, "configuration converged but the restart is still pending");
 	assert.deepEqual(state.calls.find(call => call[2] === "set"), ["instance", "config", "set", "fact1", "factorio.mod_pack_id", "9"]);
+	assert.deepEqual(state.calls.find(call => call[0] === "controller" && call[2] === "set"), ["controller", "config", "set", "controller.default_mod_pack_id", "9"]);
 	assert.match(out.text, /Configuration: converged/);
 	assert.match(out.text, /Runtime: RESTART REQUIRED for fact1; the running games still use their previous configuration/);
 	assert.ok(!state.calls.some(call => call[1] === "restart"), "nothing is restarted without --restart");
 
-	state.created = false; state.fact1Pack = undefined; state.calls.length = 0; out.text = "";
+	state.created = false; state.fact1Pack = undefined; state.defaultPack = 1; state.calls.length = 0; out.text = "";
 	const restarted = await main(["apply", "--cluster", "vm", "--desired", "d.json", "--yes", "--restart"],
 		{ out, err, read: () => desired, run: async (_, fn) => fn(transport), modFile, sleep: async () => {}, pollAttempts: 2 });
 	assert.equal(restarted, 0, out.text);
@@ -147,6 +152,19 @@ test("stored bytes that differ from the pin block the plan; a stale or missing p
 	assert.deepEqual(repin.restart, ["fact1"]);
 	const flagged = parseModPackShow(SHOW.replace("  surfexp_gateways 0.6.12", "  ! surfexp_gateways 0.6.12"));
 	assert.equal(flagged.mods.surfexp_gateways.stored, "checksum-mismatch");
+});
+
+test("the controller default mod pack follows the desired pack without restarting anything", () => {
+	const stale = liveWith({ controller: { "surface_export.platform_source_of_truth": "plugin_history", "controller.default_mod_pack_id": 3 } });
+	stale.packDetails[7].mods.FluidMustFlow.enabled = true;
+	const result = planChanges(desired, stale, { modFile });
+	assert.deepEqual(result.errors, []);
+	assert.deepEqual(result.actions.map(action => action.argv), [["controller", "config", "set", "controller.default_mod_pack_id", "7"]]);
+	assert.deepEqual(result.restart, []);
+	assert.equal(result.exportNeeded, false);
+	assert.deepEqual(planChanges({ ...desired, defaultModPack: false }, stale, { modFile }).actions, []);
+	const explicit = { ...desired, controller: { ...desired.controller, "controller.default_mod_pack_id": 3 } };
+	assert.deepEqual(planChanges(explicit, stale, { modFile }).actions, []);
 });
 
 test("a startup-setting change on an assigned pack restarts only the instances on that pack", () => {
@@ -251,7 +269,7 @@ test("a server named by instanceId is renamed first and read by id; a name on an
 		if (args[0] === "mod-pack" && args[1] === "show") return SHOW.replace("(disabled) FluidMustFlow", "FluidMustFlow");
 		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
 		if (args[0] === "mod" && args[1] === "show") return `sha1: ${hashes[args[2]]}\n`;
-		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
+		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\ncontroller.default_mod_pack_id 7\n';
 		return "";
 	} };
 	const renamed = { ...desired, instances: { Delta: { instanceId: 42, "surface_export.debug_mode": false } } };
@@ -299,7 +317,7 @@ test("apply runs the rename before the server's other changes and the re-plan fi
 		if (args[0] === "mod-pack" && args[1] === "show") return SHOW.replace("(disabled) FluidMustFlow", "FluidMustFlow");
 		if (args[0] === "mod" && args[1] === "list") return "name | version\n---\nsurfexp_gateways | 0.6.12\nFluidMustFlow | 1.5.0\n";
 		if (args[0] === "mod" && args[1] === "show") return `sha1: ${hashes[args[2]]}\n`;
-		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\n';
+		if (args[0] === "controller") return 'surface_export.platform_source_of_truth "plugin_history"\ncontroller.default_mod_pack_id 7\n';
 		return "";
 	} };
 	const renamed = { ...desired, instances: { Delta: { instanceId: 42, "surface_export.debug_mode": false } } };
