@@ -4,6 +4,18 @@ Versions follow the npm package. Each entry lists what an administrator or playe
 sees; internal refactors are omitted. Pull request numbers refer to
 [clusterio-surface-export](https://github.com/solarcloud7/clusterio-surface-export).
 
+## 0.12.0-beta.5
+
+Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.22`
+and the `surfexp_gateways` mod `0.7.11`.
+
+- The web map draws each server's planet icons from the mod pack that server runs.
+  Before, every icon came from the controller's default mod pack, so a default pack
+  without exported icons showed "?" on every planet. A missing icon's tooltip now names
+  the pack. (#427)
+- Built and tested on Factorio 2.1.22, with maraxsis 1.39.22, PlanetsLib 2.0.10,
+  FluidMustFlow 1.5.1 and SpidertronPatrols 2.7.1 in the development pack. (#425)
+
 ## 0.12.0-beta.4
 
 Requires Clusterio `^2.0.0` (built and tested on `2.0.2`), Factorio Space Age `2.1.20`
